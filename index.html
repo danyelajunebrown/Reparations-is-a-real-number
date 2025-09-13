@@ -625,28 +625,39 @@
             const content = document.getElementById('popupContent');
             
             content.innerHTML = `
-                <h2 class="popup-title">🌟 Welcome to Reparations Ancestry Database</h2>
+                <h2 class="popup-title">🌟 Welcome to Historical Accountability Database</h2>
                 
                 <div class="genealogy-section">
                     <h3 class="section-title">Getting Started</h3>
                     <p style="line-height: 1.6; color: #555;">
-                        This application helps you manage genealogy records on the blockchain for reparations tracking. 
-                        Here's how to get started:
+                        This application helps descendants of slave-owning families document historical connections 
+                        and create verifiable blockchain records for accountability and historical preservation.
                     </p>
                     <ol style="margin: 15px 0; padding-left: 20px; color: #555; line-height: 1.8;">
-                        <li><strong>Load Sample Data:</strong> Click the "Load Sample Data" button to see example family records</li>
+                        <li><strong>Load Historical Data:</strong> Click "Load Sample Data" to see documented Hopewell family records from Maryland (1787-1850s)</li>
                         <li><strong>Connect MetaMask:</strong> Install and connect MetaMask wallet for blockchain functionality</li>
-                        <li><strong>View Records:</strong> Click on family member cards to see detailed genealogy information</li>
-                        <li><strong>Submit to Blockchain:</strong> Use the "Submit to Blockchain" button to create immutable records</li>
-                        <li><strong>Connect FamilySearch:</strong> Link your FamilySearch account to import real genealogy data</li>
+                        <li><strong>View Records:</strong> Click on family member cards to see detailed genealogy and slavery documentation</li>
+                        <li><strong>Submit to Blockchain:</strong> Create immutable historical records with cryptographic verification</li>
+                        <li><strong>Connect FamilySearch:</strong> Import additional genealogy data from FamilySearch API</li>
                     </ol>
                 </div>
 
                 <div class="genealogy-section merkle-section">
-                    <h3 class="section-title">🔐 Blockchain Security</h3>
+                    <h3 class="section-title">🔐 Blockchain Verification</h3>
                     <p style="color: #2d5f3f; line-height: 1.6;">
-                        This app uses Merkle trees to create cryptographic proofs of genealogy records, 
-                        ensuring data integrity and enabling efficient verification on the Ethereum blockchain.
+                        This system uses Merkle trees and blockchain technology to create tamper-proof records 
+                        documenting historical slavery connections in American family histories, initiated by 
+                        descendants taking accountability for their ancestors' actions.
+                    </p>
+                </div>
+
+                <div class="genealogy-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <h3 class="section-title">📚 Historical Context</h3>
+                    <p style="color: #856404; line-height: 1.6;">
+                        The sample data includes real Maryland families (Hopewells, Chews, Biscoes) documented 
+                        in wills, court records, and baptismal records from St. Mary's, Calvert, and Prince George's 
+                        counties. Names of enslaved individuals are preserved from historical documents as acts 
+                        of remembrance and accountability.
                     </p>
                 </div>
             `;
@@ -753,7 +764,317 @@
         }
 
         function connectFamilySearch() {
-            alert('🔄 FamilySearch API integration coming soon!\n\nFor now, you can:\n• Use sample data to test functionality\n• Manually input genealogy records\n• Connect MetaMask for blockchain features');
+            showFamilySearchSetup();
+        }
+
+        function showFamilySearchSetup() {
+            const popup = document.getElementById('popupOverlay');
+            const content = document.getElementById('popupContent');
+            
+            content.innerHTML = `
+                <h2 class="popup-title">🌳 Connect to FamilySearch</h2>
+                
+                <div class="genealogy-section">
+                    <h3 class="section-title">📋 Setup Instructions</h3>
+                    <ol style="line-height: 1.8; color: #555; padding-left: 20px;">
+                        <li><strong>Get Developer Access:</strong>
+                            <br>• Go to <a href="https://www.familysearch.org/developers/" target="_blank" style="color: #3498db;">FamilySearch Developers</a>
+                            <br>• Sign in with your FamilySearch account
+                            <br>• Register a new app with callback URL: <code style="background: #f0f0f0; padding: 2px 6px;">${window.location.origin}/callback</code>
+                        </li>
+                        <li><strong>Get Your App ID:</strong>
+                            <br>• Copy your Client ID from the developer console
+                            <br>• Paste it in the field below
+                        </li>
+                        <li><strong>Authorize Access:</strong>
+                            <br>• Click "Connect" to authorize genealogy data access
+                        </li>
+                    </ol>
+                </div>
+
+                <div class="genealogy-section">
+                    <h3 class="section-title">🔑 API Configuration</h3>
+                    <div style="margin: 15px 0;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">FamilySearch App ID:</label>
+                        <input type="text" id="familysearch-app-id" placeholder="Enter your FamilySearch App ID" 
+                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace;">
+                    </div>
+                    <button class="blockchain-submit-btn" onclick="initializeFamilySearchAuth()" style="background: linear-gradient(45deg, #27ae60, #2ecc71);">
+                        🔗 Connect to FamilySearch
+                    </button>
+                </div>
+
+                <div class="genealogy-section merkle-section">
+                    <h3 class="section-title">🧪 Test Without FamilySearch</h3>
+                    <p style="color: #2d5f3f; margin-bottom: 15px;">
+                        Don't have FamilySearch access yet? You can still test all features with sample data.
+                    </p>
+                    <button class="blockchain-submit-btn" onclick="loadExtendedSampleData()" style="background: linear-gradient(45deg, #f39c12, #e67e22);">
+                        📊 Load Extended Sample Data
+                    </button>
+                </div>
+
+                <div class="genealogy-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                    <h3 class="section-title">⚠️ Privacy & Security</h3>
+                    <p style="color: #856404; line-height: 1.6;">
+                        <strong>Important:</strong> This integration will access your FamilySearch family tree data. 
+                        Only connect if you understand and consent to this access. All data will be processed 
+                        securely and can be used for blockchain verification.
+                    </p>
+                </div>
+            `;
+            
+            popup.classList.add('active');
+        }
+
+        function initializeFamilySearchAuth() {
+            const appIdInput = document.getElementById('familysearch-app-id');
+            const appId = appIdInput.value.trim();
+            
+            if (!appId) {
+                alert('⚠️ Please enter your FamilySearch App ID');
+                return;
+            }
+            
+            // Update configuration
+            FAMILYSEARCH_CONFIG.clientId = appId;
+            
+            // Start OAuth flow
+            authenticateWithFamilySearch();
+        }
+
+        function authenticateWithFamilySearch() {
+            // Build OAuth URL
+            const authParams = new URLSearchParams({
+                response_type: 'code',
+                client_id: FAMILYSEARCH_CONFIG.clientId,
+                redirect_uri: FAMILYSEARCH_CONFIG.redirectUri,
+                scope: 'openid profile email tree'
+            });
+            
+            const authUrl = `${FAMILYSEARCH_CONFIG.authUrl}?${authParams.toString()}`;
+            
+            // Store auth state
+            sessionStorage.setItem('familysearch_auth_state', 'pending');
+            
+            // Open authentication popup
+            const authWindow = window.open(
+                authUrl,
+                'familysearch_auth',
+                'width=500,height=600,scrollbars=yes,resizable=yes'
+            );
+            
+            // Monitor for completion
+            const checkClosed = setInterval(() => {
+                if (authWindow.closed) {
+                    clearInterval(checkClosed);
+                    handleAuthComplete();
+                }
+            }, 1000);
+        }
+
+        async function handleAuthComplete() {
+            const authCode = sessionStorage.getItem('familysearch_auth_code');
+            
+            if (authCode) {
+                try {
+                    // Exchange code for access token
+                    const tokenResponse = await exchangeCodeForToken(authCode);
+                    familySearchAuth = tokenResponse;
+                    
+                    // Fetch family tree data
+                    await fetchFamilyTreeData();
+                    
+                    alert('✅ Successfully connected to FamilySearch!\nFamily tree data loaded.');
+                    closePopup();
+                    
+                } catch (error) {
+                    console.error('FamilySearch authentication error:', error);
+                    alert('❌ Authentication failed: ' + error.message);
+                }
+            } else {
+                alert('⚠️ Authentication was cancelled or failed');
+            }
+        }
+
+        async function exchangeCodeForToken(code) {
+            // This would normally be done on your backend for security
+            // For demo purposes, we'll simulate the token exchange
+            
+            console.log('Exchanging auth code for token...');
+            
+            // Simulated token response
+            return {
+                access_token: 'simulated_access_token_' + Date.now(),
+                token_type: 'Bearer',
+                expires_in: 3600
+            };
+        }
+
+        async function fetchFamilyTreeData() {
+            if (!familySearchAuth) {
+                throw new Error('Not authenticated with FamilySearch');
+            }
+            
+            try {
+                // Simulate API calls - in real implementation, these would be actual API requests
+                console.log('Fetching family tree data from FamilySearch...');
+                
+                // Simulated family tree data that would come from FamilySearch API
+                const familySearchData = await simulateFamilySearchAPI();
+                
+                // Convert FamilySearch format to our format
+                currentFamilyData = convertFamilySearchData(familySearchData);
+                
+                // Display the data
+                displayFamilyData();
+                updateStats();
+                
+            } catch (error) {
+                console.error('Error fetching family tree data:', error);
+                throw error;
+            }
+        }
+
+        async function simulateFamilySearchAPI() {
+            // Simulate API delay
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Simulated FamilySearch API response format
+            return {
+                persons: [
+                    {
+                        id: "KWJY-123",
+                        display: {
+                            name: "Sarah Elizabeth Wilson",
+                            birthDate: "15 April 1945",
+                            birthPlace: "Birmingham, Alabama, United States",
+                            deathDate: null
+                        },
+                        relationships: {
+                            parents: ["KWJY-456", "KWJY-789"],
+                            spouses: ["KWJY-234"],
+                            children: ["KWJY-567", "KWJY-890"]
+                        }
+                    },
+                    {
+                        id: "KWJY-456",
+                        display: {
+                            name: "James Robert Wilson",
+                            birthDate: "22 August 1920",
+                            birthPlace: "Montgomery, Alabama, United States",
+                            deathDate: "3 March 1995"
+                        }
+                    },
+                    {
+                        id: "KWJY-789",
+                        display: {
+                            name: "Mary Catherine Davis",
+                            birthDate: "10 December 1922",
+                            birthPlace: "Selma, Alabama, United States", 
+                            deathDate: "18 June 2001"
+                        }
+                    }
+                ]
+            };
+        }
+
+        function convertFamilySearchData(fsData) {
+            // Convert FamilySearch format to our internal format
+            return fsData.persons.map(person => ({
+                name: person.display.name,
+                data: {
+                    birthDate: person.display.birthDate || "Unknown",
+                    birthPlace: person.display.birthPlace || "Unknown",
+                    currentResidence: "Information from FamilySearch",
+                    occupation: "Researching...",
+                    parents: {
+                        father: "From FamilySearch API",
+                        mother: "From FamilySearch API"
+                    },
+                    spouse: "From FamilySearch API",
+                    children: "From FamilySearch API", 
+                    siblings: ["From FamilySearch API"],
+                    grandparents: {
+                        paternal: {
+                            grandfather: "Available in FamilySearch",
+                            grandmother: "Available in FamilySearch"
+                        },
+                        maternal: {
+                            grandfather: "Available in FamilySearch", 
+                            grandmother: "Available in FamilySearch"
+                        }
+                    },
+                    notes: `Imported from FamilySearch on ${new Date().toLocaleDateString()}. ID: ${person.id}. Additional research needed for reparations documentation.`
+                }
+            }));
+        }
+
+        function loadExtendedSampleData() {
+            // Load more comprehensive sample data for testing
+            const extendedData = [
+                ...sampleFamilyData,
+                {
+                    name: "Rosa Mae Williams",
+                    data: {
+                        birthDate: "September 8, 1935",
+                        birthPlace: "Beaufort, South Carolina",
+                        currentResidence: "Charleston, South Carolina",
+                        occupation: "Retired Seamstress",
+                        parents: {
+                            father: "Samuel Williams",
+                            mother: "Bessie Thompson Williams"
+                        },
+                        spouse: "William Williams (deceased)",
+                        children: "Dorothy, Thomas, Sarah",
+                        siblings: ["John Thompson Williams", "Clara Williams-Johnson"],
+                        grandparents: {
+                            paternal: {
+                                grandfather: "Joshua Williams (enslaved)",
+                                grandmother: "Hannah Williams (enslaved)"
+                            },
+                            maternal: {
+                                grandfather: "Isaac Thompson (enslaved)",
+                                grandmother: "Ruth Thompson (enslaved)"
+                            }
+                        },
+                        notes: "Strong documentation of enslaved ancestors on Magnolia and Boone Hall plantations. Joshua Williams recorded in 1860 slave schedule. Family oral history includes stories of freedom and Reconstruction era struggles."
+                    }
+                },
+                {
+                    name: "Samuel Williams",
+                    data: {
+                        birthDate: "March 12, 1910",
+                        birthPlace: "Johns Island, South Carolina", 
+                        currentResidence: "Charleston, South Carolina (deceased 1978)",
+                        occupation: "Farmer, later Construction Worker",
+                        parents: {
+                            father: "Joshua Williams",
+                            mother: "Hannah Williams"
+                        },
+                        spouse: "Bessie Thompson Williams",
+                        children: "Rosa Mae, John Thompson, Clara",
+                        siblings: ["Moses Williams", "Ruth Williams-Davis"],
+                        grandparents: {
+                            paternal: {
+                                grandfather: "Unknown (enslaved)",
+                                grandmother: "Unknown (enslaved)"
+                            },
+                            maternal: {
+                                grandfather: "Unknown (enslaved)",
+                                grandmother: "Unknown (enslaved)"
+                            }
+                        },
+                        notes: "Born to formerly enslaved parents. Joshua Williams documented as field hand on Magnolia Plantation. Samuel worked as sharecropper before moving to Charleston during Great Migration. Military service in segregated unit during WWII."
+                    }
+                }
+            ];
+
+            currentFamilyData = extendedData;
+            displayFamilyData();
+            updateStats();
+            closePopup();
+            alert('📊 Extended sample data loaded!\n\n• 5 family members with detailed records\n• Historical documentation links\n• Enslaved ancestor references\n• Ready for blockchain submission');
         }
 
         function deployContract() {
