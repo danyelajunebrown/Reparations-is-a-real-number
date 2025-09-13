@@ -1,208 +1,88 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+/// @title ReparationsLedger
+/// @notice Minimal contract to publish Merkle-root snapshots and verify Merkle proofs
+contract ReparationsLedger {
+    address public owner;
+    uint256 public snapshotCount;
 
-/**
- * @title ReparationsLedger
- * @dev Smart contract for tracking genealogy data and reparations payments
- */
-contract ReparationsLedger is Ownable, ReentrancyGuard {
-    
-    struct AncestryRecord {
-        string name;                    // Person's name
-        string genealogyDataHash;       // IPFS hash of genealogy documents
-        uint256 calculatedReparations;  // Amount owed in wei
-        bool verified;                  // Has been verified by authorities
-        bool settled;                   // Has debt been paid
-        address submitter;              // Who submitted this record
-        uint256 submissionTime;         // When it was submitted
-        string notes;                   // Additional information
+    struct Snapshot {
+        bytes32 merkleRoot;
+        uint256 timestamp;
+        string metadataURI; // optional: IPFS/Arweave/HTTP pointer describing the snapshot
     }
-    
-    struct PaymentRecord {
-        uint256 amount;                 // Amount paid
-        address recipient;              // Who received payment
-        uint256 timestamp;              // When payment was made
-        string transactionHash;         // Reference to payment transaction
+
+    mapping(uint256 => Snapshot) public snapshots;
+
+    event SnapshotPublished(
+        uint256 indexed snapshotId,
+        bytes32 indexed merkleRoot,
+        uint256 timestamp,
+        string metadataURI
+    );
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "ReparationsLedger: caller is not the owner");
+        _;
     }
-    
-    // Mapping from record ID to ancestry record
-    mapping(bytes32 => AncestryRecord) public ancestryRecords;
-    
-    // Mapping from record ID to payment history
-    mapping(bytes32 => PaymentRecord[]) public paymentHistory;
-    
-    // Mapping of verified authorities who can approve records
-    mapping(address => bool) public verificationAuthorities;
-    
-    // Events
-    event RecordSubmitted(bytes32 indexed recordId, string name, address submitter);
-    event RecordVerified(bytes32 indexed recordId, address verifiedBy);
-    event PaymentMade(bytes32 indexed recordId, uint256 amount, address recipient);
-    event DebtSettled(bytes32 indexed recordId, string name);
-    event AuthorityAdded(address authority);
-    event AuthorityRemoved(address authority);
-    
+
     constructor() {
-        // Contract owner is initial verification authority
-        verificationAuthorities[msg.sender] = true;
+        owner = msg.sender;
+        snapshotCount = 0;
     }
-    
-    /**
-     * @dev Add a verification authority
-     * @param authority Address to add as verification authority
-     */
-    function addVerificationAuthority(address authority) external onlyOwner {
-        verificationAuthorities[authority] = true;
-        emit AuthorityAdded(authority);
-    }
-    
-    /**
-     * @dev Remove a verification authority
-     * @param authority Address to remove as verification authority
-     */
-    function removeVerificationAuthority(address authority) external onlyOwner {
-        verificationAuthorities[authority] = false;
-        emit AuthorityRemoved(authority);
-    }
-    
-    /**
-     * @dev Submit a new ancestry record for verification
-     * @param name Name of the ancestor
-     * @param genealogyDataHash IPFS hash of supporting documents
-     * @param calculatedReparations Amount of reparations calculated
-     * @param notes Additional notes or context
-     */
-    function submitAncestryRecord(
-        string memory name,
-        string memory genealogyDataHash,
-        uint256 calculatedReparations,
-        string memory notes
-    ) external returns (bytes32) {
-        // Create unique ID for this record
-        bytes32 recordId = keccak256(abi.encodePacked(
-            name,
-            genealogyDataHash,
-            msg.sender,
-            block.timestamp
-        ));
-        
-        // Ensure record doesn't already exist
-        require(ancestryRecords[recordId].submitter == address(0), "Record already exists");
-        
-        // Create the record
-        ancestryRecords[recordId] = AncestryRecord({
-            name: name,
-            genealogyDataHash: genealogyDataHash,
-            calculatedReparations: calculatedReparations,
-            verified: false,
-            settled: false,
-            submitter: msg.sender,
-            submissionTime: block.timestamp,
-            notes: notes
-        });
-        
-        emit RecordSubmitted(recordId, name, msg.sender);
-        return recordId;
-    }
-    
-    /**
-     * @dev Verify an ancestry record
-     * @param recordId ID of the record to verify
-     */
-    function verifyRecord(bytes32 recordId) external {
-        require(verificationAuthorities[msg.sender], "Not authorized to verify");
-        require(ancestryRecords[recordId].submitter != address(0), "Record does not exist");
-        require(!ancestryRecords[recordId].verified, "Record already verified");
-        
-        ancestryRecords[recordId].verified = true;
-        emit RecordVerified(recordId, msg.sender);
-    }
-    
-    /**
-     * @dev Record a reparations payment
-     * @param recordId ID of the ancestry record
-     * @param recipient Address of payment recipient
-     * @param transactionHash Reference to the actual payment transaction
-     */
-    function recordPayment(
-        bytes32 recordId,
-        address recipient,
-        string memory transactionHash
-    ) external payable nonReentrant {
-        require(ancestryRecords[recordId].submitter != address(0), "Record does not exist");
-        require(ancestryRecords[recordId].verified, "Record not verified");
-        require(!ancestryRecords[recordId].settled, "Debt already settled");
-        require(msg.value > 0, "Payment amount must be greater than 0");
-        
-        // Record the payment
-        paymentHistory[recordId].push(PaymentRecord({
-            amount: msg.value,
-            recipient: recipient,
+
+    /// @notice Publish a new snapshot (Merkle root) with optional metadata URI.
+    /// @param merkleRoot The Merkle root hash of the snapshot.
+    /// @param metadataURI Optional URI describing the snapshot (e.g., IPFS CID).
+    /// @return snapshotId The incremental id of the saved snapshot.
+    function publishSnapshot(bytes32 merkleRoot, string calldata metadataURI)
+        external
+        onlyOwner
+        returns (uint256 snapshotId)
+    {
+        snapshotCount++;
+        snapshotId = snapshotCount;
+        snapshots[snapshotId] = Snapshot({
+            merkleRoot: merkleRoot,
             timestamp: block.timestamp,
-            transactionHash: transactionHash
-        }));
-        
-        // Check if total payments cover the calculated reparations
-        uint256 totalPaid = getTotalPaid(recordId);
-        if (totalPaid >= ancestryRecords[recordId].calculatedReparations) {
-            ancestryRecords[recordId].settled = true;
-            emit DebtSettled(recordId, ancestryRecords[recordId].name);
-        }
-        
-        emit PaymentMade(recordId, msg.value, recipient);
-        
-        // Transfer payment to recipient
-        payable(recipient).transfer(msg.value);
+            metadataURI: metadataURI
+        });
+
+        emit SnapshotPublished(snapshotId, merkleRoot, block.timestamp, metadataURI);
     }
-    
-    /**
-     * @dev Get total amount paid for a record
-     * @param recordId ID of the ancestry record
-     */
-    function getTotalPaid(bytes32 recordId) public view returns (uint256) {
-        uint256 total = 0;
-        PaymentRecord[] memory payments = paymentHistory[recordId];
-        for (uint256 i = 0; i < payments.length; i++) {
-            total += payments[i].amount;
-        }
-        return total;
+
+    /// @notice Update owner (multisig address recommended in production).
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "ReparationsLedger: new owner is the zero address");
+        owner = newOwner;
     }
-    
-    /**
-     * @dev Get payment history for a record
-     * @param recordId ID of the ancestry record
-     */
-    function getPaymentHistory(bytes32 recordId) external view returns (PaymentRecord[] memory) {
-        return paymentHistory[recordId];
-    }
-    
-    /**
-     * @dev Check if a debt is settled
-     * @param recordId ID of the ancestry record
-     */
-    function isDebtSettled(bytes32 recordId) external view returns (bool) {
-        return ancestryRecords[recordId].settled;
-    }
-    
-    /**
-     * @dev Get remaining debt amount
-     * @param recordId ID of the ancestry record
-     */
-    function getRemainingDebt(bytes32 recordId) external view returns (uint256) {
-        if (ancestryRecords[recordId].settled) {
-            return 0;
+
+    /// @notice Verify a Merkle proof for a given leaf against a root.
+    /// @param root The Merkle root to verify against.
+    /// @param leaf The leaf hash (typically keccak256 of the entry).
+    /// @param proof An array of sibling hashes from leaf to root.
+    /// @return True if proof is valid (leaf included in root) otherwise false.
+    function verify(bytes32 root, bytes32 leaf, bytes32[] calldata proof)
+        public
+        pure
+        returns (bool)
+    {
+        bytes32 computed = leaf;
+        for (uint256 i = 0; i < proof.length; i++) {
+            bytes32 sibling = proof[i];
+            if (computed <= sibling) {
+                // sort pair to be consistent with off-chain tree ordering
+                computed = keccak256(abi.encodePacked(computed, sibling));
+            } else {
+                computed = keccak256(abi.encodePacked(sibling, computed));
+            }
         }
-        
-        uint256 totalPaid = getTotalPaid(recordId);
-        uint256 totalOwed = ancestryRecords[recordId].calculatedReparations;
-        
-        if (totalPaid >= totalOwed) {
-            return 0;
-        }
-        
-        return totalOwed - totalPaid;
+        return computed == root;
+    }
+
+    /// @notice Convenience getter for snapshot root
+    function getSnapshotRoot(uint256 snapshotId) external view returns (bytes32) {
+        return snapshots[snapshotId].merkleRoot;
     }
 }
