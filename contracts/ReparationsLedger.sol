@@ -1,88 +1,55 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.0;
 
-/// @title ReparationsLedger
-/// @notice Minimal contract to publish Merkle-root snapshots and verify Merkle proofs
 contract ReparationsLedger {
+    // --- MERKLE VERIFICATION ---
+    bytes32 public merkleRoot;
+
+    // Owner-only control (for now, just the deployer)
     address public owner;
-    uint256 public snapshotCount;
-
-    struct Snapshot {
-        bytes32 merkleRoot;
-        uint256 timestamp;
-        string metadataURI; // optional: IPFS/Arweave/HTTP pointer describing the snapshot
-    }
-
-    mapping(uint256 => Snapshot) public snapshots;
-
-    event SnapshotPublished(
-        uint256 indexed snapshotId,
-        bytes32 indexed merkleRoot,
-        uint256 timestamp,
-        string metadataURI
-    );
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "ReparationsLedger: caller is not the owner");
-        _;
-    }
 
     constructor() {
         owner = msg.sender;
-        snapshotCount = 0;
     }
 
-    /// @notice Publish a new snapshot (Merkle root) with optional metadata URI.
-    /// @param merkleRoot The Merkle root hash of the snapshot.
-    /// @param metadataURI Optional URI describing the snapshot (e.g., IPFS CID).
-    /// @return snapshotId The incremental id of the saved snapshot.
-    function publishSnapshot(bytes32 merkleRoot, string calldata metadataURI)
-        external
-        onlyOwner
-        returns (uint256 snapshotId)
-    {
-        snapshotCount++;
-        snapshotId = snapshotCount;
-        snapshots[snapshotId] = Snapshot({
-            merkleRoot: merkleRoot,
-            timestamp: block.timestamp,
-            metadataURI: metadataURI
-        });
-
-        emit SnapshotPublished(snapshotId, merkleRoot, block.timestamp, metadataURI);
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not authorized");
+        _;
     }
 
-    /// @notice Update owner (multisig address recommended in production).
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "ReparationsLedger: new owner is the zero address");
-        owner = newOwner;
+    // Set the Merkle root (from off-chain computation)
+    function setMerkleRoot(bytes32 _root) public onlyOwner {
+        merkleRoot = _root;
     }
 
-    /// @notice Verify a Merkle proof for a given leaf against a root.
-    /// @param root The Merkle root to verify against.
-    /// @param leaf The leaf hash (typically keccak256 of the entry).
-    /// @param proof An array of sibling hashes from leaf to root.
-    /// @return True if proof is valid (leaf included in root) otherwise false.
-    function verify(bytes32 root, bytes32 leaf, bytes32[] calldata proof)
-        public
-        pure
-        returns (bool)
-    {
-        bytes32 computed = leaf;
+    // Verify proof of inclusion for a leaf
+    function verifyProof(bytes32 leaf, bytes32[] memory proof) public view returns (bool) {
+        bytes32 computedHash = leaf;
         for (uint256 i = 0; i < proof.length; i++) {
-            bytes32 sibling = proof[i];
-            if (computed <= sibling) {
-                // sort pair to be consistent with off-chain tree ordering
-                computed = keccak256(abi.encodePacked(computed, sibling));
+            bytes32 proofElement = proof[i];
+            if (computedHash <= proofElement) {
+                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
             } else {
-                computed = keccak256(abi.encodePacked(sibling, computed));
+                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
             }
         }
-        return computed == root;
+        return computedHash == merkleRoot;
     }
 
-    /// @notice Convenience getter for snapshot root
-    function getSnapshotRoot(uint256 snapshotId) external view returns (bytes32) {
-        return snapshots[snapshotId].merkleRoot;
+    // --- ORIGINAL LEDGER ENTRIES ---
+    struct Entry {
+        string description;
+        uint256 value;
+        address addedBy;
+    }
+
+    Entry[] public entries;
+
+    function addReparationsEntry(string memory _desc, uint256 _val) public {
+        entries.push(Entry(_desc, _val, msg.sender));
+    }
+
+    function getEntriesCount() public view returns (uint256) {
+        return entries.length;
     }
 }
