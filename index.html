@@ -3,13 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ancestry Database</title>
+    <title>Reparations Ancestry Database</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
+
+        // Start when page loads
+        document.addEventListener('DOMContentLoaded', init);
 
         body {
             font-family: 'Arial', sans-serif;
@@ -56,6 +59,11 @@
             border: 2px solid #357ABD;
         }
 
+        .person.liable .person-body {
+            background: #e74c3c;
+            border-color: #c0392b;
+        }
+
         .person-head {
             width: 20px;
             height: 20px;
@@ -68,6 +76,11 @@
             border: 2px solid #357ABD;
         }
 
+        .person.liable .person-head {
+            background: #e74c3c;
+            border-color: #c0392b;
+        }
+
         .person-arms {
             position: absolute;
             top: 15px;
@@ -76,6 +89,10 @@
             height: 3px;
             background: #357ABD;
             border-radius: 2px;
+        }
+
+        .person.liable .person-arms {
+            background: #c0392b;
         }
 
         .person-legs {
@@ -94,6 +111,11 @@
             height: 12px;
             background: #357ABD;
             border-radius: 0 0 3px 3px;
+        }
+
+        .person.liable .person-legs::before,
+        .person.liable .person-legs::after {
+            background: #c0392b;
         }
 
         .person-legs::before {
@@ -135,7 +157,7 @@
             backdrop-filter: blur(20px);
             border-radius: 20px;
             padding: 40px;
-            max-width: 600px;
+            max-width: 800px;
             width: 90%;
             max-height: 80vh;
             overflow-y: auto;
@@ -211,339 +233,4 @@
             margin-bottom: 15px;
         }
 
-        .info-label {
-            font-weight: bold;
-            color: #555;
-        }
-
-        .info-value {
-            color: #333;
-        }
-
-        .family-tree {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 15px;
-            margin-top: 20px;
-        }
-
-        @keyframes walk {
-            0%, 100% { transform: translateX(0) rotate(0deg); }
-            25% { transform: translateX(2px) rotate(-1deg); }
-            75% { transform: translateX(-2px) rotate(1deg); }
-        }
-
-        .person.walking {
-            animation: walk 2s ease-in-out infinite;
-        }
-
-        .title {
-            position: absolute;
-            top: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            font-size: 36px;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-            z-index: 5;
-        }
-
-        .instructions {
-            position: absolute;
-            bottom: 120px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: rgba(255,255,255,0.9);
-            text-align: center;
-            font-size: 16px;
-            z-index: 5;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1 class="title">Family Ancestry Database</h1>
-        <p class="instructions">Hover over the walking figures to see names, click to view genealogy data</p>
-        
-        <!-- People will be added here by JavaScript -->
-        
-        <!-- Popup Overlay -->
-        <div class="popup-overlay" id="popupOverlay"></div>
-        
-        <!-- Genealogy Popup -->
-        <div class="genealogy-popup" id="genealogyPopup">
-            <button class="popup-close" id="closePopup">&times;</button>
-            <div class="popup-content" id="popupContent">
-                <!-- Content will be dynamically loaded -->
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const people = [
-            {
-                id: 1,
-                name: "Danyela June Brown",
-                data: {
-                    birthDate: "June 15, 1985",
-                    birthPlace: "San Francisco, California",
-                    currentResidence: "Portland, Oregon",
-                    occupation: "Graphic Designer",
-                    parents: {
-                        father: "Robert Michael Brown",
-                        mother: "Linda Marie Johnson"
-                    },
-                    grandparents: {
-                        paternal: {
-                            grandfather: "William Brown",
-                            grandmother: "Margaret Smith"
-                        },
-                        maternal: {
-                            grandfather: "James Johnson",
-                            grandmother: "Patricia Davis"
-                        }
-                    },
-                    siblings: ["Adrian Lee Brown"],
-                    spouse: "Not married",
-                    children: "None",
-                    notes: "Studied at Art Institute of California. Passionate about sustainable design and environmental conservation."
-                }
-            },
-            {
-                id: 2,
-                name: "Adrian Lee Brown",
-                data: {
-                    birthDate: "March 22, 1988",
-                    birthPlace: "San Francisco, California",
-                    currentResidence: "Seattle, Washington",
-                    occupation: "Software Engineer",
-                    parents: {
-                        father: "Robert Michael Brown",
-                        mother: "Linda Marie Johnson"
-                    },
-                    grandparents: {
-                        paternal: {
-                            grandfather: "William Brown",
-                            grandmother: "Margaret Smith"
-                        },
-                        maternal: {
-                            grandfather: "James Johnson",
-                            grandmother: "Patricia Davis"
-                        }
-                    },
-                    siblings: ["Danyela June Brown"],
-                    spouse: "Sarah Elizabeth Chen (m. 2020)",
-                    children: "Emma Brown (2022)",
-                    notes: "Computer Science graduate from UC Berkeley. Specializes in machine learning and data science."
-                }
-            }
-        ];
-
-        let currentHovered = null;
-        let isPopupOpen = false;
-
-        function createPersonElement(person) {
-            const personEl = document.createElement('div');
-            personEl.className = 'person walking';
-            personEl.dataset.personId = person.id;
-            
-            // Random starting position at bottom of screen
-            const startX = Math.random() * (window.innerWidth - 40);
-            const startY = window.innerHeight - 80;
-            
-            personEl.style.left = startX + 'px';
-            personEl.style.bottom = '20px';
-            
-            personEl.innerHTML = `
-                <div class="person-head"></div>
-                <div class="person-body">
-                    <div class="person-arms"></div>
-                    <div class="person-legs"></div>
-                </div>
-                <div class="name-label">${person.name}</div>
-            `;
-            
-            // Add event listeners
-            personEl.addEventListener('mouseenter', () => handleHover(personEl, person));
-            personEl.addEventListener('mouseleave', () => handleUnhover(personEl));
-            personEl.addEventListener('click', () => showGenealogyPopup(person));
-            
-            return personEl;
-        }
-
-        function handleHover(element, person) {
-            if (currentHovered && currentHovered !== element) {
-                currentHovered.classList.remove('hovered', 'centered');
-            }
-            
-            currentHovered = element;
-            element.classList.add('hovered', 'centered');
-            element.classList.remove('walking');
-        }
-
-        function handleUnhover(element) {
-            if (!isPopupOpen) {
-                element.classList.remove('hovered', 'centered');
-                element.classList.add('walking');
-                currentHovered = null;
-            }
-        }
-
-        function showGenealogyPopup(person) {
-            isPopupOpen = true;
-            const popup = document.getElementById('genealogyPopup');
-            const overlay = document.getElementById('popupOverlay');
-            const content = document.getElementById('popupContent');
-            
-            const data = person.data;
-            
-            content.innerHTML = `
-                <h2 class="popup-title">${person.name}</h2>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">Personal Information</h3>
-                    <div class="info-grid">
-                        <div class="info-label">Birth Date:</div>
-                        <div class="info-value">${data.birthDate}</div>
-                        <div class="info-label">Birth Place:</div>
-                        <div class="info-value">${data.birthPlace}</div>
-                        <div class="info-label">Current Residence:</div>
-                        <div class="info-value">${data.currentResidence}</div>
-                        <div class="info-label">Occupation:</div>
-                        <div class="info-value">${data.occupation}</div>
-                    </div>
-                </div>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">Family</h3>
-                    <div class="info-grid">
-                        <div class="info-label">Father:</div>
-                        <div class="info-value">${data.parents.father}</div>
-                        <div class="info-label">Mother:</div>
-                        <div class="info-value">${data.parents.mother}</div>
-                        <div class="info-label">Spouse:</div>
-                        <div class="info-value">${data.spouse}</div>
-                        <div class="info-label">Children:</div>
-                        <div class="info-value">${data.children}</div>
-                        <div class="info-label">Siblings:</div>
-                        <div class="info-value">${data.siblings.join(', ')}</div>
-                    </div>
-                </div>
-                
-                <div class="family-tree">
-                    <h3 class="section-title">Grandparents</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div>
-                            <h4 style="color: #2980b9; margin-bottom: 10px;">Paternal</h4>
-                            <div class="info-grid">
-                                <div class="info-label">Grandfather:</div>
-                                <div class="info-value">${data.grandparents.paternal.grandfather}</div>
-                                <div class="info-label">Grandmother:</div>
-                                <div class="info-value">${data.grandparents.paternal.grandmother}</div>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 style="color: #2980b9; margin-bottom: 10px;">Maternal</h4>
-                            <div class="info-grid">
-                                <div class="info-label">Grandfather:</div>
-                                <div class="info-value">${data.grandparents.maternal.grandfather}</div>
-                                <div class="info-label">Grandmother:</div>
-                                <div class="info-value">${data.grandparents.maternal.grandmother}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">Notes</h3>
-                    <p style="color: #555; line-height: 1.6;">${data.notes}</p>
-                </div>
-            `;
-            
-            overlay.classList.add('active');
-            popup.classList.add('active');
-        }
-
-        function closePopup() {
-            isPopupOpen = false;
-            const popup = document.getElementById('genealogyPopup');
-            const overlay = document.getElementById('popupOverlay');
-            
-            overlay.classList.remove('active');
-            popup.classList.remove('active');
-            
-            // Reset hovered person
-            if (currentHovered) {
-                currentHovered.classList.remove('hovered', 'centered');
-                currentHovered.classList.add('walking');
-                currentHovered = null;
-            }
-        }
-
-        function animatePeople() {
-            const peopleElements = document.querySelectorAll('.person:not(.hovered)');
-            
-            peopleElements.forEach(person => {
-                if (person.classList.contains('walking')) {
-                    const currentLeft = parseFloat(person.style.left) || 0;
-                    
-                    // Get or initialize direction and speed for this person
-                    if (!person.dataset.direction) {
-                        person.dataset.direction = Math.random() > 0.5 ? '1' : '-1';
-                        person.dataset.speed = (0.8 + Math.random() * 0.4).toString(); // 0.8 to 1.2
-                        person.dataset.changeTimer = '0';
-                    }
-                    
-                    let direction = parseFloat(person.dataset.direction);
-                    let speed = parseFloat(person.dataset.speed);
-                    let changeTimer = parseFloat(person.dataset.changeTimer);
-                    
-                    // Occasionally change direction randomly
-                    changeTimer++;
-                    if (changeTimer > 200 + Math.random() * 200) { // Change every 2-4 seconds roughly
-                        direction *= -1;
-                        person.dataset.direction = direction.toString();
-                        changeTimer = 0;
-                    }
-                    person.dataset.changeTimer = changeTimer.toString();
-                    
-                    let newLeft = currentLeft + (direction * speed);
-                    
-                    // Bounce off walls
-                    if (newLeft < 0) {
-                        newLeft = 0;
-                        person.dataset.direction = '1';
-                    }
-                    if (newLeft > window.innerWidth - 30) {
-                        newLeft = window.innerWidth - 30;
-                        person.dataset.direction = '-1';
-                    }
-                    
-                    person.style.left = newLeft + 'px';
-                }
-            });
-        }
-
-        // Initialize
-        function init() {
-            const container = document.querySelector('.container');
-            
-            people.forEach(person => {
-                const personElement = createPersonElement(person);
-                container.appendChild(personElement);
-            });
-            
-            // Add event listeners for popup
-            document.getElementById('closePopup').addEventListener('click', closePopup);
-            document.getElementById('popupOverlay').addEventListener('click', closePopup);
-            
-            // Start animation loop
-            setInterval(animatePeople, 100);
-        }
-
-        // Start when page loads
-        document.addEventListener('DOMContentLoaded', init);
-    </script>
-</body>
-</html>
+        .
