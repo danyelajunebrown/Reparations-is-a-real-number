@@ -1,248 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reparations Ancestry Database</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reparations Ancestry Database</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      height: 100vh;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
 
-        body {
-            font-family: 'Arial', sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            height: 100vh;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .container {
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
-
-        .person {
-            position: absolute;
-            width: 40px;
-            height: 60px;
-            cursor: pointer;
-            transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            z-index: 10;
-        }
-
-        .person.hovered {
-            transform: scale(1.5);
-            z-index: 100;
-        }
-
-        .person.centered {
-            left: 50% !important;
-            top: 50% !important;
-            transform: translate(-50%, -50%) scale(1.8) !important;
-            z-index: 100;
-        }
-
-        .person-body {
-            width: 100%;
-            height: 100%;
-            background: #4A90E2;
-            border-radius: 20px 20px 8px 8px;
-            position: relative;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            border: 2px solid #357ABD;
-        }
-
-        .person.liable .person-body {
-            background: #e74c3c;
-            border-color: #c0392b;
-        }
-
-        .person-head {
-            width: 20px;
-            height: 20px;
-            background: #4A90E2;
-            border-radius: 50%;
-            position: absolute;
-            top: -10px;
-            left: 50%;
-            transform: translateX(-50%);
-            border: 2px solid #357ABD;
-        }
-
-        .person.liable .person-head {
-            background: #e74c3c;
-            border-color: #c0392b;
-        }
-
-        .person-arms {
-            position: absolute;
-            top: 15px;
-            left: -8px;
-            right: -8px;
-            height: 3px;
-            background: #357ABD;
-            border-radius: 2px;
-        }
-
-        .person.liable .person-arms {
-            background: #c0392b;
-        }
-
-        .person-legs {
-            position: absolute;
-            bottom: -8px;
-            left: 8px;
-            right: 8px;
-            height: 12px;
-        }
-
-        .person-legs::before,
-        .person-legs::after {
-            content: '';
-            position: absolute;
-            width: 6px;
-            height: 12px;
-            background: #357ABD;
-            border-radius: 0 0 3px 3px;
-        }
-
-        .person.liable .person-legs::before,
-        .person.liable .person-legs::after {
-            background: #c0392b;
-        }
-
-        .person-legs::before {
-            left: 0;
-        }
-
-        .person-legs::after {
-            right: 0;
-        }
-
-        .name-label {
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255,255,255,0.95);
-            padding: 8px 12px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: bold;
-            color: #2c3e50;
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            backdrop-filter: blur(10px);
-        }
-
-        .person.hovered .name-label {
-            opacity: 1;
-        }
-
-        .genealogy-popup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0);
-            background: rgba(255,255,255,0.98);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 800px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.3);
-            z-index: 1000;
-            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-        }
-
-        .genealogy-popup.active {
-            transform: translate(-50%, -50%) scale(1);
-        }
-
-        .popup-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(5px);
-            z-index: 999;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .popup-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .popup-close {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            background: none;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            color: #666;
-            transition: color 0.2s ease;
-        }
-
-        .popup-close:hover {
-            color: #333;
-        }
-
-        .popup-title {
-            font-size: 28px;
-            font-weight: bold;
-            color: #2c3e50;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-
-        .genealogy-section {
-            margin-bottom: 25px;
-        }
-
-        .section-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #34495e;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #3498db;
-            padding-bottom: 5px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-    </style>
+    h1 {
+      font-size: 2em;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Your content here -->
-    </div>
+  <h1>Page is Working</h1>
 
-    <!-- Add your script here -->
-    <script>
-        // Ensure this function exists or remove the event listener if it's not needed
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('Page Loaded!');
-            // Call your init function or any other logic here
-        });
-    </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      console.log("DOM fully loaded and parsed.");
+    });
+  </script>
 </body>
 </html>
