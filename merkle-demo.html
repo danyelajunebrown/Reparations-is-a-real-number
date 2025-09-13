@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Merkle Demo (Browser)</title>
+</head>
+<body style="font-family: sans-serif; background: #111; color: #eee; padding: 2em;">
+  <h1>Merkle Tree Demo (Browser-Only)</h1>
+  <pre id="output"></pre>
+
+  <script>
+    // --- simple keccak256 using built-in Web Crypto API (SHA-256 fallback here) ---
+    async function hash(data) {
+      // encode string to Uint8Array
+      const enc = new TextEncoder().encode(data);
+      const buf = await crypto.subtle.digest("SHA-256", enc);
+      return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    // --- build a merkle tree from leaves (array of strings) ---
+    async function buildMerkle(leaves) {
+      // hash all leaves
+      let level = await Promise.all(leaves.map(hash));
+      const tree = [level]; // tree[0] = leaf level
+
+      while (level.length > 1) {
+        const nextLevel = [];
+        for (let i = 0; i < level.length; i += 2) {
+          const left = level[i];
+          const right = level[i + 1] || left; // duplicate if odd
+          const combined = await hash(left + right);
+          nextLevel.push(combined);
+        }
+        tree.unshift(nextLevel); // prepend to tree
+        level = nextLevel;
+      }
+
+      return tree; // root is tree[0][0]
+    }
+
+    // --- reconstruct proof for leaf index ---
+    function getProof(tree, leafIndex) {
+      const proof = [];
+      let idx = leafIndex;
+
+      for (let level = tree.length - 1; level > 0; level--) {
+        const nodes = tree[level];
+        const isRightNode = idx % 2;
+        const siblingIndex = isRightNode ? idx - 1 : idx + 1;
+        if (siblingIndex < nodes.length) {
+          proof.push(nodes[siblingIndex]);
+        }
+        idx = Math.floor(idx / 2);
+      }
+      return proof;
+    }
+
+    (async () => {
+      // Example dataset
+      const entries = [
+        "Ancestor A: value=100",
+        "Ancestor B: value=200",
+        "Ancestor C: value=300"
+      ];
+
+      const tree = await buildMerkle(entries);
+      const root = tree[0][0];
+      const proof0 = getProof(tree, 0); // proof for first leaf
+
+      document.getElementById("output").textContent =
+        "Entries:\n" + entries.join("\n") +
+        "\n\nMerkle Root:\n" + root +
+        "\n\nProof for first entry:\n" + JSON.stringify(proof0, null, 2);
+    })();
+  </script>
+</body>
+</html>
