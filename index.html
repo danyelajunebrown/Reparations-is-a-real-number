@@ -11,9 +11,6 @@
             box-sizing: border-box;
         }
 
-        // Start when page loads
-        document.addEventListener('DOMContentLoaded', init);
-
         body {
             font-family: 'Arial', sans-serif;
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
@@ -232,5 +229,20 @@
             gap: 10px;
             margin-bottom: 15px;
         }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Your content here -->
+    </div>
 
-        .
+    <!-- Add your script here -->
+    <script>
+        // Ensure this function exists or remove the event listener if it's not needed
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page Loaded!');
+            // Call your init function or any other logic here
+        });
+    </script>
+</body>
+</html>
