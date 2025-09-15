@@ -1,1480 +1,220 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reparations Ancestry Database</title>
-    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.2/dist/sha3.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reparations Ancestry Visualization</title>
+  <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.2/dist/sha3.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      overflow: hidden;
+    }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: white;
-        }
+    #stick-figures {
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      height: 200px;
+      pointer-events: none;
+    }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            position: relative;
-        }
+    .stick {
+      width: 20px;
+      height: 80px;
+      position: relative;
+      pointer-events: auto;
+      cursor: pointer;
+      animation: walk 2s infinite linear;
+    }
 
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
+    .stick::before {
+      content: '';
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+    }
 
-        .header h1 {
-            font-size: 3em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
+    .stick::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 80px;
+      background: #fff;
+    }
 
-        .header p {
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
+    @keyframes walk {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
 
-        .dashboard {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            margin-bottom: 40px;
-        }
+    .stick.paused {
+      animation-play-state: paused;
+      background: none;
+    }
 
-        .card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        }
+    #info-panel {
+      position: absolute;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20,20,20,0.95);
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 20px;
+      max-width: 600px;
+      max-height: 70vh;
+      overflow-y: auto;
+      display: none;
+      z-index: 1000;
+    }
 
-        .card h2 {
-            font-size: 1.8em;
-            margin-bottom: 20px;
-            color: #fff;
-        }
+    #info-panel h2 {
+      margin-top: 0;
+      font-size: 1.5em;
+      border-bottom: 1px solid #555;
+      padding-bottom: 5px;
+    }
 
-        .genealogy-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
-        }
-
-        .person-card {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 15px;
-            padding: 20px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .person-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-        }
-
-        .person-name {
-            font-size: 1.3em;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-
-        .person-info {
-            font-size: 0.9em;
-            opacity: 0.8;
-            line-height: 1.5;
-        }
-
-        .btn {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            margin: 5px;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-        }
-
-        .btn-primary {
-            background: linear-gradient(45deg, #4CAF50, #45a049);
-        }
-
-        .btn-secondary {
-            background: linear-gradient(45deg, #2196F3, #1976D2);
-        }
-
-        .blockchain-status {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            color: #333;
-            padding: 15px;
-            border-radius: 10px;
-            font-size: 0.9em;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .blockchain-connected {
-            color: #27ae60;
-        }
-
-        .blockchain-warning {
-            color: #e74c3c;
-        }
-
-        .blockchain-warning a {
-            color: #3498db;
-            text-decoration: none;
-        }
-
-        /* Popup Styles */
-        .popup-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(5px);
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .popup-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .popup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0.8);
-            background: white;
-            border-radius: 20px;
-            padding: 0;
-            max-width: 800px;
-            max-height: 90vh;
-            overflow-y: auto;
-            z-index: 1001;
-            transition: all 0.3s ease;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-
-        .popup.active {
-            transform: translate(-50%, -50%) scale(1);
-        }
-
-        .popup-content {
-            padding: 30px;
-            color: #333;
-        }
-
-        .popup-title {
-            font-size: 2.2em;
-            margin-bottom: 25px;
-            color: #2c3e50;
-            text-align: center;
-            border-bottom: 2px solid #eee;
-            padding-bottom: 15px;
-        }
-
-        .close-btn {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            background: none;
-            border: none;
-            font-size: 2em;
-            cursor: pointer;
-            color: #999;
-            z-index: 1002;
-        }
-
-        .close-btn:hover {
-            color: #333;
-        }
-
-        .genealogy-section {
-            margin-bottom: 25px;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-        }
-
-        .section-title {
-            font-size: 1.3em;
-            color: #2c3e50;
-            margin-bottom: 15px;
-            font-weight: 600;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: 150px 1fr;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .info-label {
-            font-weight: 600;
-            color: #555;
-        }
-
-        .info-value {
-            color: #333;
-        }
-
-        .merkle-section {
-            background: #e8f5e8;
-            border-left: 4px solid #4CAF50;
-        }
-
-        .blockchain-submit-btn {
-            background: linear-gradient(45deg, #3498db, #2980b9);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1em;
-            margin-top: 15px;
-            transition: all 0.3s ease;
-        }
-
-        .blockchain-submit-btn:hover {
-            background: linear-gradient(45deg, #2980b9, #1f618d);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            text-align: center;
-            background: rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .stat-number {
-            font-size: 2.5em;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            font-size: 0.9em;
-            opacity: 0.8;
-        }
-
-        @media (max-width: 768px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-            }
-            
-            .header h1 {
-                font-size: 2em;
-            }
-            
-            .blockchain-status {
-                position: static;
-                margin-bottom: 20px;
-            }
-        }
-    </style>
+    .close-btn {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 1.2em;
+      cursor: pointer;
+      color: #aaa;
+    }
+    .close-btn:hover { color: #fff; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Blockchain Status -->
-        <div id="blockchain-status" class="blockchain-status">
-            <p>🔄 Connecting to blockchain...</p>
-        </div>
+  <div id="stick-figures"></div>
 
-        <!-- Header -->
-        <div class="header">
-            <h1>Reparations Ancestry Database</h1>
-            <p>Blockchain-secured genealogy records for reparations tracking</p>
-        </div>
+  <div id="info-panel">
+    <span class="close-btn" onclick="closePanel()">&times;</span>
+    <div id="info-content"></div>
+  </div>
 
-        <!-- Stats -->
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-number" id="total-records">12</div>
-                <div class="stat-label">Total Records</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="verified-records">8</div>
-                <div class="stat-label">Verified Records</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number" id="blockchain-records">3</div>
-                <div class="stat-label">On Blockchain</div>
-            </div>
-        </div>
-
-       <!-- Reparations Summary -->
-<div class="reparations-summary">
-    <div class="reparations-total">
-        <h2>Historical Accountability - Hopewell Family</h2>
-        <div class="debt-amount">$2,847,500</div>
-        <p>Estimated reparations value for 28+ documented enslaved individuals (1787-1817)</p>
-
-            <!-- Blockchain Operations -->
-            <div class="card">
-                <h2>⛓️ Blockchain Operations</h2>
-                <p>Manage blockchain connections and verify genealogy records using Merkle trees.</p>
-                <button class="btn btn-primary" onclick="connectMetaMask()">Connect MetaMask</button>
-                <button class="btn btn-secondary" onclick="deployContract()">Deploy Contract</button>
-                <button class="btn" onclick="verifyMerkleProof()">Verify Records</button>
-            </div>
-        </div>
-
-        <!-- Genealogy Grid -->
-        <div id="genealogy-grid" class="genealogy-grid">
-            <div class="person-card" onclick="showWelcomeMessage()">
-                <div class="person-name">👋 Welcome!</div>
-                <div class="person-info">
-                    Click "Load Sample Data" to see family tree records, or connect to FamilySearch to import your genealogy data.
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Popup -->
-    <div id="popupOverlay" class="popup-overlay" onclick="closePopup()">
-        <div class="popup" onclick="event.stopPropagation()">
-            <button class="close-btn" onclick="closePopup()">&times;</button>
-            <div id="popupContent" class="popup-content">
-                <!-- Content will be dynamically populated -->
-            </div>
-        </div>
-    </div>
-
-    <script>
-       // Hopewell Family genealogy data (Maryland slave-owning families)
-const sampleFamilyData = [
-    {
+  <script>
+    // Genealogy data (from original index.html)
+    const sampleFamilyData = [
+      {
         name: "James Hopewell Sr.",
         data: {
-            birthDate: "After 1756",
-            birthPlace: "St. Mary's County, Maryland",
-            currentResidence: "Harvey Hundred, St. Mary's County, MD (deceased 1817)",
-            occupation: "Planter and Landowner",
-            parents: {
-                father: "Hugh Hopewell V",
-                mother: "Elizabeth Edmondson"
-            },
-            spouse: "Ann Angelica Chesley (2nd wife)",
-            children: "James Robert, Ann Maria Biscoe, Olivia Caroline, Henrietta Rebecca",
-            siblings: ["Elizabeth Hopewell (ancestor of Wallis Simpson Windsor)"],
-            grandparents: {
-                paternal: {
-                    grandfather: "Hugh Hopewell IV",
-                    grandmother: "Ann Langley"
-                },
-                maternal: {
-                    grandfather: "John Edmondson",
-                    grandmother: "Margaret Pollard"
-                }
-            },
-            notes: "Will dated Feb 14, 1816, probated Dec 23, 1817. Documented owner of at least 28 enslaved individuals by name: Minna and her 7 children (John, Harriett, Sandy, Henry, George, Charlotte, Jesse), Jim and Rachel with 5 children (Jane, Allison, Sophy, Sally, Peggy), Medley, Adam, Lloyd, Sarah and 3 children (Mary, Nancy, Louisa), Esther and children, Lewis and son Peter and daughter Henny, Jess, Frank, Joe and wife Sarah, and Zekiel. Will distributed enslaved people among his wife and daughters as property inheritance."
+          birthDate: "After 1756",
+          birthPlace: "St. Mary's County, MD",
+          occupation: "Planter and Landowner",
+          notes: "Will dated 1816. Documented owner of 28 enslaved individuals."
         }
-    },
-    {
+      },
+      {
         name: "Ann Angelica Chesley Hopewell",
         data: {
-            birthDate: "Before 1784",
-            birthPlace: "St. Mary's County, Maryland",
-            currentResidence: "Harvey Hundred, St. Mary's County, MD (died between 1817-1826)",
-            occupation: "Plantation Mistress",
-            parents: {
-                father: "Capt. Robert 'Handsome Bob' Chesley Jr.",
-                mother: "Maria Van Brunt"
-            },
-            spouse: "James Hopewell Sr. (2nd wife)",
-            children: "James Robert, Ann Maria, Olivia Caroline, Henrietta Rebecca",
-            siblings: ["Unknown siblings"],
-            grandparents: {
-                paternal: {
-                    grandfather: "Robert Chesley Sr.",
-                    grandmother: "Unknown"
-                },
-                maternal: {
-                    grandfather: "Adrian Van Brunt",
-                    grandmother: "Unknown"
-                }
-            },
-            notes: "Inherited enslaved individuals Lewis, Peter, Henny, Jess, Frank, Joe, Sarah, and Zekiel through husband's 1817 will. Father was Revolutionary War captain captured at Staten Island. Mother's family were Loyalists during Revolution. Buried at Park Hall, St. Mary's Hundred, MD."
+          birthDate: "Before 1784",
+          birthPlace: "St. Mary's County, MD",
+          occupation: "Plantation Mistress",
+          notes: "Inherited enslaved individuals Lewis, Peter, Henny, Jess, Frank, Joe, Sarah, and Zekiel."
         }
-    },
-    {
+      },
+      {
         name: "Hugh Hopewell V",
         data: {
-            birthDate: "1735",
-            birthPlace: "St. Mary's County, Maryland",
-            currentResidence: "Southern Lowison Creek, St. Mary's County, MD (deceased 1777)",
-            occupation: "Colonial Planter",
-            parents: {
-                father: "Hugh Hopewell IV",
-                mother: "Ann Langley"
-            },
-            spouse: "Elizabeth Edmondson (married 1777)",
-            children: "James, Elizabeth (and 6 others)",
-            siblings: ["Various Hopewell siblings"],
-            grandparents: {
-                paternal: {
-                    grandfather: "Hugh Hopewell III",
-                    grandmother: "Unknown"
-                },
-                maternal: {
-                    grandfather: "Unknown Langley",
-                    grandmother: "Unknown"
-                }
-            },
-            notes: "Died during Revolutionary War period in 1777. Father of James Hopewell who inherited the plantation and enslaved people. Part of established Maryland planting family with colonial roots. Revolutionary War veteran according to family records."
+          birthDate: "1735",
+          birthPlace: "St. Mary's County, MD",
+          occupation: "Colonial Planter",
+          notes: "Died 1777. Father of James Hopewell Sr."
         }
-    },
-    {
+      },
+      {
         name: "Elizabeth Edmondson Hopewell",
         data: {
-            birthDate: "1725",
-            birthPlace: "St. Mary's County, Maryland",
-            currentResidence: "St. Mary's County, MD (deceased 1787)",
-            occupation: "Plantation Mistress",
-            parents: {
-                father: "John Edmondson",
-                mother: "Margaret Pollard"
-            },
-            spouse: "Hugh Hopewell V",
-            children: "8 children including James",
-            siblings: ["Unknown siblings"],
-            grandparents: {
-                paternal: {
-                    grandfather: "Unknown Edmondson",
-                    grandmother: "Unknown"
-                },
-                maternal: {
-                    grandfather: "Unknown Pollard",
-                    grandmother: "Unknown"
-                }
-            },
-            notes: "Will dated Oct 16, 1787, probated Dec 10, 1787. Owned and distributed enslaved individuals: Sall to daughter Ann Hebb, children Delia and Mary to granddaughters, Joe Boy to Elizabeth Emory, George to granddaughter Elizabeth Emory, Kissey to Anna Emory, Jesse and Young to son Pollard Hopewell. Her son James inherited the balance of estate including additional enslaved people."
+          birthDate: "1725",
+          birthPlace: "St. Mary's County, MD",
+          occupation: "Plantation Mistress",
+          notes: "Will dated 1787. Owned and distributed enslaved individuals."
         }
-    },
-    {
+      },
+      {
         name: "Ann Maria Hopewell Biscoe",
         data: {
-            birthDate: "January 11, 1799",
-            birthPlace: "St. Mary's County, Maryland", 
-            currentResidence: "Prince George's County, MD (died April 28, 1881)",
-            occupation: "Plantation Mistress",
-            parents: {
-                father: "James Hopewell Sr.",
-                mother: "Ann Angelica Chesley"
-            },
-            spouse: "Brig. Gen. George Washington Biscoe Jr.",
-            children: "Multiple children including those who inherited enslaved people",
-            siblings: ["James Robert Hopewell", "Olivia Caroline Hopewell", "Henrietta Rebecca Hopewell"],
-            grandparents: {
-                paternal: {
-                    grandfather: "Hugh Hopewell V",
-                    grandmother: "Elizabeth Edmondson"
-                },
-                maternal: {
-                    grandfather: "Capt. Robert Chesley Jr.",
-                    grandmother: "Maria Van Brunt"
-                }
-            },
-            notes: "Inherited from father's 1817 will: enslaved individuals Medley, Adam, Lloyd, Sarah and her three children Mary, Nancy and Louisa, plus Esther and her children including Ally. Filed Civil War-era petition referencing her father's bequest of enslaved people to her. Moved from St. Mary's to Prince George's County. Family benefited from D.C. Emancipation Act of 1862 which freed remaining enslaved people in Georgetown household."
+          birthDate: "1799",
+          birthPlace: "St. Mary's County, MD",
+          occupation: "Plantation Mistress",
+          notes: "Inherited enslaved people from her father James Hopewell Sr."
         }
+      }
+    ];
+
+    // Reparations Calculator (from original code)
+    class ReparationsCalculator {
+      constructor() {
+        this.baseYear = 1800;
+        this.currentYear = 2024;
+        this.inflationRate = 0.035;
+      }
+      calculateReparations(enslavedCount, years) {
+        const wage = enslavedCount * 120 * years;
+        const inflationMultiplier = Math.pow(1 + this.inflationRate, this.currentYear - this.baseYear);
+        const wageTheft = wage * inflationMultiplier;
+        const damages = enslavedCount * 15000 * years * 1.5;
+        const profitShare = enslavedCount * 300 * years * inflationMultiplier * 0.4;
+        return Math.round(wageTheft + damages + profitShare);
+      }
     }
-];
 
-        // Blockchain Integration Class
-        class ReparationsBlockchain {
-            constructor() {
-                this.web3 = null;
-                this.contract = null;
-                this.account = null;
-                this.contractAddress = null;
-                this.contractABI = [];
-            }
-
-            async init() {
-                if (typeof window.ethereum !== 'undefined') {
-                    this.web3 = new Web3(window.ethereum);
-                    try {
-                        await window.ethereum.request({ method: 'eth_requestAccounts' });
-                        const accounts = await this.web3.eth.getAccounts();
-                        this.account = accounts[0];
-                        
-                        console.log('Connected to account:', this.account);
-                        this.updateUI();
-                        return true;
-                    } catch (error) {
-                        console.error('User denied account access');
-                        return false;
-                    }
-                } else {
-                    console.log('MetaMask not detected');
-                    this.showMetaMaskWarning();
-                    return false;
-                }
-            }
-
-            updateUI() {
-                const statusElement = document.getElementById('blockchain-status');
-                if (statusElement) {
-                    statusElement.innerHTML = `
-                        <div class="blockchain-connected">
-                            <p>✅ Connected to blockchain</p>
-                            <p>Account: ${this.account.substring(0, 6)}...${this.account.substring(38)}</p>
-                        </div>
-                    `;
-                }
-            }
-
-            showMetaMaskWarning() {
-                const statusElement = document.getElementById('blockchain-status');
-                if (statusElement) {
-                    statusElement.innerHTML = `
-                        <div class="blockchain-warning">
-                            <p>⚠️ MetaMask not detected</p>
-                            <p>Please install MetaMask to use blockchain features</p>
-                            <a href="https://metamask.io" target="_blank">Install MetaMask</a>
-                        </div>
-                    `;
-                }
-            }
-        }
-
-        // Merkle Tree Functions
-        function hash(data) {
-            return sha3_256(data);
-        }
-
-        function buildMerkleTree(leaves) {
-            if (leaves.length === 1) return leaves;
-            const newLevel = [];
-            for (let i = 0; i < leaves.length; i += 2) {
-                if (i + 1 < leaves.length) {
-                    const combined = [leaves[i], leaves[i + 1]].sort().join("");
-                    newLevel.push(hash(combined));
-                } else {
-                    newLevel.push(leaves[i]);
-                }
-            }
-            return buildMerkleTree(newLevel);
-        }
-
-        function getProof(leaves, target) {
-            const proof = [];
-            let idx = leaves.indexOf(target);
-            let level = leaves.slice();
-
-            while (level.length > 1) {
-                const newLevel = [];
-                for (let i = 0; i < level.length; i += 2) {
-                    let left = level[i];
-                    let right = (i + 1 < level.length) ? level[i+1] : null;
-
-                    if (i === idx || i+1 === idx) {
-                        const sibling = (i === idx) ? right : left;
-                        if (sibling) proof.push(sibling);
-                        idx = Math.floor(i / 2);
-                    }
-
-                    if (right) {
-                        const combined = [left, right].sort().join("");
-                        newLevel.push(hash(combined));
-                    } else {
-                        newLevel.push(left);
-                    }
-                }
-                level = newLevel;
-            }
-            return proof;
-        }
-
-        // Global variables
-        let reparationsBlockchain;
-        let currentFamilyData = [];
-
-        // Initialize app
-        document.addEventListener('DOMContentLoaded', async () => {
-            reparationsBlockchain = new ReparationsBlockchain();
-            await reparationsBlockchain.init();
-            
-            // Show initial message
-            showWelcomeMessage();
-        });
-
-        // UI Functions
-        function addSampleData() {
-            currentFamilyData = sampleFamilyData;
-            displayFamilyData();
-            updateStats();
-        }
-
-        function displayFamilyData() {
-            const grid = document.getElementById('genealogy-grid');
-            grid.innerHTML = '';
-
-            currentFamilyData.forEach((person, index) => {
-                const card = document.createElement('div');
-                card.className = 'person-card';
-                card.onclick = () => showGenealogyPopup(person);
-                
-                card.innerHTML = `
-                    <div class="person-name">${person.name}</div>
-                    <div class="person-info">
-                        Born: ${person.data.birthDate}<br>
-                        Location: ${person.data.currentResidence}<br>
-                        Occupation: ${person.data.occupation}
-                    </div>
-                `;
-                
-                grid.appendChild(card);
-            });
-        }
-
-        function showWelcomeMessage() {
-            const popup = document.getElementById('popupOverlay');
-            const content = document.getElementById('popupContent');
-            
-            content.innerHTML = `
-                <h2 class="popup-title">🌟 Welcome to Historical Accountability Database</h2>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">Getting Started</h3>
-                    <p style="line-height: 1.6; color: #555;">
-                        This application helps descendants of slave-owning families document historical connections 
-                        and create verifiable blockchain records for accountability and historical preservation.
-                    </p>
-                    <ol style="margin: 15px 0; padding-left: 20px; color: #555; line-height: 1.8;">
-                        <li><strong>Load Historical Data:</strong> Click "Load Sample Data" to see documented Hopewell family records from Maryland (1787-1850s)</li>
-                        <li><strong>Connect MetaMask:</strong> Install and connect MetaMask wallet for blockchain functionality</li>
-                        <li><strong>View Records:</strong> Click on family member cards to see detailed genealogy and slavery documentation</li>
-                        <li><strong>Submit to Blockchain:</strong> Create immutable historical records with cryptographic verification</li>
-                        <li><strong>Connect FamilySearch:</strong> Import additional genealogy data from FamilySearch API</li>
-                    </ol>
-                </div>
-
-                <div class="genealogy-section merkle-section">
-                    <h3 class="section-title">🔐 Blockchain Verification</h3>
-                    <p style="color: #2d5f3f; line-height: 1.6;">
-                        This system uses Merkle trees and blockchain technology to create tamper-proof records 
-                        documenting historical slavery connections in American family histories, initiated by 
-                        descendants taking accountability for their ancestors' actions.
-                    </p>
-                </div>
-
-                <div class="genealogy-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
-                    <h3 class="section-title">📚 Historical Context</h3>
-                    <p style="color: #856404; line-height: 1.6;">
-                        The sample data includes real Maryland families (Hopewells, Chews, Biscoes) documented 
-                        in wills, court records, and baptismal records from St. Mary's, Calvert, and Prince George's 
-                        counties. Names of enslaved individuals are preserved from historical documents as acts 
-                        of remembrance and accountability.
-                    </p>
-                </div>
-            `;
-            
-            popup.classList.add('active');
-        }
-
-        function showGenealogyPopup(person) {
-            const popup = document.getElementById('popupOverlay');
-            const content = document.getElementById('popupContent');
-            
-            const data = person.data;
-            
-            content.innerHTML = `
-                <h2 class="popup-title">${person.name}</h2>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">📋 Personal Information</h3>
-                    <div class="info-grid">
-                        <div class="info-label">Birth Date:</div>
-                        <div class="info-value">${data.birthDate}</div>
-                        <div class="info-label">Birth Place:</div>
-                        <div class="info-value">${data.birthPlace}</div>
-                        <div class="info-label">Current Residence:</div>
-                        <div class="info-value">${data.currentResidence}</div>
-                        <div class="info-label">Occupation:</div>
-                        <div class="info-value">${data.occupation}</div>
-                    </div>
-                </div>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">👨‍👩‍👧‍👦 Family Information</h3>
-                    <div class="info-grid">
-                        <div class="info-label">Father:</div>
-                        <div class="info-value">${data.parents.father}</div>
-                        <div class="info-label">Mother:</div>
-                        <div class="info-value">${data.parents.mother}</div>
-                        <div class="info-label">Spouse:</div>
-                        <div class="info-value">${data.spouse}</div>
-                        <div class="info-label">Children:</div>
-                        <div class="info-value">${data.children}</div>
-                        <div class="info-label">Siblings:</div>
-                        <div class="info-value">${data.siblings.join(', ')}</div>
-                    </div>
-                </div>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">👴👵 Grandparents</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                        <div>
-                            <h4 style="color: #2980b9; margin-bottom: 10px;">Paternal</h4>
-                            <div class="info-grid">
-                                <div class="info-label">Grandfather:</div>
-                                <div class="info-value">${data.grandparents.paternal.grandfather}</div>
-                                <div class="info-label">Grandmother:</div>
-                                <div class="info-value">${data.grandparents.paternal.grandmother}</div>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 style="color: #2980b9; margin-bottom: 10px;">Maternal</h4>
-                            <div class="info-grid">
-                                <div class="info-label">Grandfather:</div>
-                                <div class="info-value">${data.grandparents.maternal.grandfather}</div>
-                                <div class="info-label">Grandmother:</div>
-                                <div class="info-value">${data.grandparents.maternal.grandmother}</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">📝 Historical Notes</h3>
-                    <p style="color: #555; line-height: 1.6; background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db;">${data.notes}</p>
-                </div>
-                
-                <div class="genealogy-section merkle-section">
-                    <h3 class="section-title">⛓️ Blockchain Actions</h3>
-                    <p style="color: #2d5f3f; margin-bottom: 15px;">Create an immutable record on the blockchain with Merkle proof verification.</p>
-                    <button class="blockchain-submit-btn" onclick="submitToBlockchain('${person.name}')">
-                        🔐 Submit to Blockchain
-                    </button>
-                    <button class="blockchain-submit-btn" onclick="generateMerkleProof('${person.name}')" style="background: linear-gradient(45deg, #27ae60, #2ecc71); margin-left: 10px;">
-                        🌳 Generate Merkle Proof
-                    </button>
-                </div>
-            `;
-            
-            popup.classList.add('active');
-        }
-
-        function closePopup() {
-            document.getElementById('popupOverlay').classList.remove('active');
-        }
-
-        async function connectMetaMask() {
-            if (reparationsBlockchain) {
-                const connected = await reparationsBlockchain.init();
-                if (connected) {
-                    alert('✅ Successfully connected to MetaMask!');
-                } else {
-                    alert('❌ Failed to connect to MetaMask. Please try again.');
-                }
-            }
-        }
-
-        function connectFamilySearch() {
-            showFamilySearchSetup();
-        }
-
-        function showFamilySearchSetup() {
-            const popup = document.getElementById('popupOverlay');
-            const content = document.getElementById('popupContent');
-            
-            content.innerHTML = `
-                <h2 class="popup-title">🌳 Connect to FamilySearch</h2>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">📋 Setup Instructions</h3>
-                    <ol style="line-height: 1.8; color: #555; padding-left: 20px;">
-                        <li><strong>Get Developer Access:</strong>
-                            <br>• Go to <a href="https://www.familysearch.org/developers/" target="_blank" style="color: #3498db;">FamilySearch Developers</a>
-                            <br>• Sign in with your FamilySearch account
-                            <br>• Register a new app with callback URL: <code style="background: #f0f0f0; padding: 2px 6px;">${window.location.origin}/callback</code>
-                        </li>
-                        <li><strong>Get Your App ID:</strong>
-                            <br>• Copy your Client ID from the developer console
-                            <br>• Paste it in the field below
-                        </li>
-                        <li><strong>Authorize Access:</strong>
-                            <br>• Click "Connect" to authorize genealogy data access
-                        </li>
-                    </ol>
-                </div>
-
-                <div class="genealogy-section">
-                    <h3 class="section-title">🔑 API Configuration</h3>
-                    <div style="margin: 15px 0;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">FamilySearch App ID:</label>
-                        <input type="text" id="familysearch-app-id" placeholder="Enter your FamilySearch App ID" 
-                               style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace;">
-                    </div>
-                    <button class="blockchain-submit-btn" onclick="initializeFamilySearchAuth()" style="background: linear-gradient(45deg, #27ae60, #2ecc71);">
-                        🔗 Connect to FamilySearch
-                    </button>
-                </div>
-
-                <div class="genealogy-section merkle-section">
-                    <h3 class="section-title">🧪 Test Without FamilySearch</h3>
-                    <p style="color: #2d5f3f; margin-bottom: 15px;">
-                        Don't have FamilySearch access yet? You can still test all features with sample data.
-                    </p>
-                    <button class="blockchain-submit-btn" onclick="loadExtendedSampleData()" style="background: linear-gradient(45deg, #f39c12, #e67e22);">
-                        📊 Load Extended Sample Data
-                    </button>
-                </div>
-
-                <div class="genealogy-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
-                    <h3 class="section-title">⚠️ Privacy & Security</h3>
-                    <p style="color: #856404; line-height: 1.6;">
-                        <strong>Important:</strong> This integration will access your FamilySearch family tree data. 
-                        Only connect if you understand and consent to this access. All data will be processed 
-                        securely and can be used for blockchain verification.
-                    </p>
-                </div>
-            `;
-            
-            popup.classList.add('active');
-        }
-
-        function initializeFamilySearchAuth() {
-            const appIdInput = document.getElementById('familysearch-app-id');
-            const appId = appIdInput.value.trim();
-            
-            if (!appId) {
-                alert('⚠️ Please enter your FamilySearch App ID');
-                return;
-            }
-            
-            // Update configuration
-            FAMILYSEARCH_CONFIG.clientId = appId;
-            
-            // Start OAuth flow
-            authenticateWithFamilySearch();
-        }
-
-        function authenticateWithFamilySearch() {
-            // Build OAuth URL
-            const authParams = new URLSearchParams({
-                response_type: 'code',
-                client_id: FAMILYSEARCH_CONFIG.clientId,
-                redirect_uri: FAMILYSEARCH_CONFIG.redirectUri,
-                scope: 'openid profile email tree'
-            });
-            
-            const authUrl = `${FAMILYSEARCH_CONFIG.authUrl}?${authParams.toString()}`;
-            
-            // Store auth state
-            sessionStorage.setItem('familysearch_auth_state', 'pending');
-            
-            // Open authentication popup
-            const authWindow = window.open(
-                authUrl,
-                'familysearch_auth',
-                'width=500,height=600,scrollbars=yes,resizable=yes'
-            );
-            
-            // Monitor for completion
-            const checkClosed = setInterval(() => {
-                if (authWindow.closed) {
-                    clearInterval(checkClosed);
-                    handleAuthComplete();
-                }
-            }, 1000);
-        }
-
-        async function handleAuthComplete() {
-            const authCode = sessionStorage.getItem('familysearch_auth_code');
-            
-            if (authCode) {
-                try {
-                    // Exchange code for access token
-                    const tokenResponse = await exchangeCodeForToken(authCode);
-                    familySearchAuth = tokenResponse;
-                    
-                    // Fetch family tree data
-                    await fetchFamilyTreeData();
-                    
-                    alert('✅ Successfully connected to FamilySearch!\nFamily tree data loaded.');
-                    closePopup();
-                    
-                } catch (error) {
-                    console.error('FamilySearch authentication error:', error);
-                    alert('❌ Authentication failed: ' + error.message);
-                }
-            } else {
-                alert('⚠️ Authentication was cancelled or failed');
-            }
-        }
-
-        async function exchangeCodeForToken(code) {
-            // This would normally be done on your backend for security
-            // For demo purposes, we'll simulate the token exchange
-            
-            console.log('Exchanging auth code for token...');
-            
-            // Simulated token response
-            return {
-                access_token: 'simulated_access_token_' + Date.now(),
-                token_type: 'Bearer',
-                expires_in: 3600
-            };
-        }
-
-        async function fetchFamilyTreeData() {
-            if (!familySearchAuth) {
-                throw new Error('Not authenticated with FamilySearch');
-            }
-            
-            try {
-                // Simulate API calls - in real implementation, these would be actual API requests
-                console.log('Fetching family tree data from FamilySearch...');
-                
-                // Simulated family tree data that would come from FamilySearch API
-                const familySearchData = await simulateFamilySearchAPI();
-                
-                // Convert FamilySearch format to our format
-                currentFamilyData = convertFamilySearchData(familySearchData);
-                
-                // Display the data
-                displayFamilyData();
-                updateStats();
-                
-            } catch (error) {
-                console.error('Error fetching family tree data:', error);
-                throw error;
-            }
-        }
-
-        async function simulateFamilySearchAPI() {
-            // Simulate API delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Simulated FamilySearch API response format
-            return {
-                persons: [
-                    {
-                        id: "KWJY-123",
-                        display: {
-                            name: "Sarah Elizabeth Wilson",
-                            birthDate: "15 April 1945",
-                            birthPlace: "Birmingham, Alabama, United States",
-                            deathDate: null
-                        },
-                        relationships: {
-                            parents: ["KWJY-456", "KWJY-789"],
-                            spouses: ["KWJY-234"],
-                            children: ["KWJY-567", "KWJY-890"]
-                        }
-                    },
-                    {
-                        id: "KWJY-456",
-                        display: {
-                            name: "James Robert Wilson",
-                            birthDate: "22 August 1920",
-                            birthPlace: "Montgomery, Alabama, United States",
-                            deathDate: "3 March 1995"
-                        }
-                    },
-                    {
-                        id: "KWJY-789",
-                        display: {
-                            name: "Mary Catherine Davis",
-                            birthDate: "10 December 1922",
-                            birthPlace: "Selma, Alabama, United States", 
-                            deathDate: "18 June 2001"
-                        }
-                    }
-                ]
-            };
-        }
-
-        function convertFamilySearchData(fsData) {
-            // Convert FamilySearch format to our internal format
-            return fsData.persons.map(person => ({
-                name: person.display.name,
-                data: {
-                    birthDate: person.display.birthDate || "Unknown",
-                    birthPlace: person.display.birthPlace || "Unknown",
-                    currentResidence: "Information from FamilySearch",
-                    occupation: "Researching...",
-                    parents: {
-                        father: "From FamilySearch API",
-                        mother: "From FamilySearch API"
-                    },
-                    spouse: "From FamilySearch API",
-                    children: "From FamilySearch API", 
-                    siblings: ["From FamilySearch API"],
-                    grandparents: {
-                        paternal: {
-                            grandfather: "Available in FamilySearch",
-                            grandmother: "Available in FamilySearch"
-                        },
-                        maternal: {
-                            grandfather: "Available in FamilySearch", 
-                            grandmother: "Available in FamilySearch"
-                        }
-                    },
-                    notes: `Imported from FamilySearch on ${new Date().toLocaleDateString()}. ID: ${person.id}. Additional research needed for reparations documentation.`
-                }
-            }));
-        }
-
-        function loadExtendedSampleData() {
-            // Load more comprehensive sample data for testing
-            const extendedData = [
-                ...sampleFamilyData,
-                {
-                    name: "Rosa Mae Williams",
-                    data: {
-                        birthDate: "September 8, 1935",
-                        birthPlace: "Beaufort, South Carolina",
-                        currentResidence: "Charleston, South Carolina",
-                        occupation: "Retired Seamstress",
-                        parents: {
-                            father: "Samuel Williams",
-                            mother: "Bessie Thompson Williams"
-                        },
-                        spouse: "William Williams (deceased)",
-                        children: "Dorothy, Thomas, Sarah",
-                        siblings: ["John Thompson Williams", "Clara Williams-Johnson"],
-                        grandparents: {
-                            paternal: {
-                                grandfather: "Joshua Williams (enslaved)",
-                                grandmother: "Hannah Williams (enslaved)"
-                            },
-                            maternal: {
-                                grandfather: "Isaac Thompson (enslaved)",
-                                grandmother: "Ruth Thompson (enslaved)"
-                            }
-                        },
-                        notes: "Strong documentation of enslaved ancestors on Magnolia and Boone Hall plantations. Joshua Williams recorded in 1860 slave schedule. Family oral history includes stories of freedom and Reconstruction era struggles."
-                    }
-                },
-                {
-                    name: "Samuel Williams",
-                    data: {
-                        birthDate: "March 12, 1910",
-                        birthPlace: "Johns Island, South Carolina", 
-                        currentResidence: "Charleston, South Carolina (deceased 1978)",
-                        occupation: "Farmer, later Construction Worker",
-                        parents: {
-                            father: "Joshua Williams",
-                            mother: "Hannah Williams"
-                        },
-                        spouse: "Bessie Thompson Williams",
-                        children: "Rosa Mae, John Thompson, Clara",
-                        siblings: ["Moses Williams", "Ruth Williams-Davis"],
-                        grandparents: {
-                            paternal: {
-                                grandfather: "Unknown (enslaved)",
-                                grandmother: "Unknown (enslaved)"
-                            },
-                            maternal: {
-                                grandfather: "Unknown (enslaved)",
-                                grandmother: "Unknown (enslaved)"
-                            }
-                        },
-                        notes: "Born to formerly enslaved parents. Joshua Williams documented as field hand on Magnolia Plantation. Samuel worked as sharecropper before moving to Charleston during Great Migration. Military service in segregated unit during WWII."
-                    }
-                }
-            ];
-
-            currentFamilyData = extendedData;
-            displayFamilyData();
-            updateStats();
-            closePopup();
-            alert('📊 Extended sample data loaded!\n\n• 5 family members with detailed records\n• Historical documentation links\n• Enslaved ancestor references\n• Ready for blockchain submission');
-        }
-
-        function deployContract() {
-            alert('📜 Smart contract deployment requires:\n\n• Connected MetaMask wallet\n• Test network (like Goerli)\n• ETH for gas fees\n\nContract will be deployed using Truffle framework.');
-        }
-
-        function testMerkleTree() {
-            if (currentFamilyData.length === 0) {
-                alert('⚠️ Please load sample data first!');
-                return;
-            }
-
-            // Create sample entries for Merkle tree
-            const entries = currentFamilyData.map(person => 
-                `${person.name}: ${JSON.stringify(person.data)}`
-            );
-            
-            // Generate hashes
-            const leaves = entries.map(entry => hash(entry));
-            const root = buildMerkleTree(leaves)[0];
-            
-            // Generate proof for first entry
-            const proof = getProof(leaves, leaves[0]);
-            
-            alert(`🌳 Merkle Tree Generated!\n\nRoot: ${root.substring(0, 16)}...\nProof elements: ${proof.length}\nFirst person: ${currentFamilyData[0].name}\n\nThis cryptographic proof can verify record integrity on blockchain.`);
-        }
-
-        async function submitToBlockchain(personName) {
-            if (!reparationsBlockchain || !reparationsBlockchain.account) {
-                alert('⚠️ Please connect MetaMask first!');
-                return;
-            }
-            
-            // Find the person data
-            const person = currentFamilyData.find(p => p.name === personName);
-            if (!person) {
-                alert('❌ Person data not found');
-                return;
-            }
-
-            try {
-                // Create a hash of the genealogy data
-                const genealogyData = JSON.stringify(person.data);
-                const dataHash = hash(genealogyData);
-                
-                // For demo - simulate blockchain submission
-                const simulatedTxHash = '0x' + Math.random().toString(16).substr(2, 40);
-                
-                alert(`✅ Successfully submitted to blockchain!\n\nPerson: ${personName}\nData Hash: ${dataHash.substring(0, 16)}...\nTransaction: ${simulatedTxHash}\n\n(This is a simulation - real implementation would require deployed contract)`);
-                
-                // Update stats
-                document.getElementById('blockchain-records').textContent = 
-                    parseInt(document.getElementById('blockchain-records').textContent) + 1;
-                    
-            } catch (error) {
-                console.error('Error submitting to blockchain:', error);
-                alert('❌ Error submitting to blockchain: ' + error.message);
-            }
-        }
-
-        function generateMerkleProof(personName) {
-            if (currentFamilyData.length === 0) {
-                alert('⚠️ Please load sample data first!');
-                return;
-            }
-
-            // Find the person
-            const person = currentFamilyData.find(p => p.name === personName);
-            if (!person) {
-                alert('❌ Person not found');
-                return;
-            }
-
-            // Create entries for Merkle tree
-            const entries = currentFamilyData.map(p => 
-                `${p.name}: ${JSON.stringify(p.data)}`
-            );
-            
-            // Generate hashes
-            const leaves = entries.map(entry => hash(entry));
-            const targetLeaf = hash(`${person.name}: ${JSON.stringify(person.data)}`);
-            
-            // Build tree and get proof
-            const root = buildMerkleTree(leaves)[0];
-            const proof = getProof(leaves, targetLeaf);
-            
-            // Display proof information
-            const proofInfo = `
-🌳 Merkle Proof Generated for ${personName}
-
-🔐 Root Hash: ${root.substring(0, 20)}...
-📊 Proof Length: ${proof.length} elements
-🎯 Target Leaf: ${targetLeaf.substring(0, 20)}...
-
-Proof Elements:
-${proof.map((p, i) => `${i + 1}. ${p.substring(0, 20)}...`).join('\n')}
-
-This proof can cryptographically verify that ${personName}'s record is included in the Merkle tree without revealing other family members' data.
-            `;
-            
-            alert(proofInfo);
-        }
-
-        function verifyMerkleProof() {
-            if (currentFamilyData.length === 0) {
-                alert('⚠️ Please load sample data first!');
-                return;
-            }
-
-            // Simulate verification
-            const entries = currentFamilyData.map(p => 
-                `${p.name}: ${JSON.stringify(p.data)}`
-            );
-            const leaves = entries.map(entry => hash(entry));
-            const root = buildMerkleTree(leaves)[0];
-            const firstPersonLeaf = leaves[0];
-            const proof = getProof(leaves, firstPersonLeaf);
-
-            // Verify the proof
-            let computedHash = firstPersonLeaf;
-            for (let i = 0; i < proof.length; i++) {
-                const proofElement = proof[i];
-                if (computedHash <= proofElement) {
-                    computedHash = hash(computedHash + proofElement);
-                } else {
-                    computedHash = hash(proofElement + computedHash);
-                }
-            }
-
-            const isValid = computedHash === root;
-            
-            alert(`🔍 Merkle Proof Verification\n\nResult: ${isValid ? '✅ VALID' : '❌ INVALID'}\nComputed Root: ${computedHash.substring(0, 20)}...\nExpected Root: ${root.substring(0, 20)}...\n\nThis demonstrates cryptographic verification of genealogy records.`);
-        }
-
-       function updateStats() {
-            document.getElementById('total-records').textContent = currentFamilyData.length;
-            document.getElementById('verified-records').textContent = Math.floor(currentFamilyData.length * 0.8);
-        }
-
-        // Reparations Calculation System
-        class ReparationsCalculator {
-            constructor() {
-                this.baseYear = 1800; // Reference year for calculations
-                this.currentYear = 2024;
-                this.inflationRate = 0.035; // Average historical inflation
-                this.slaveryPeriod = { start: 1787, end: 1865 }; // Documented slavery period
-            }
-
-            calculateReparations(enslavedCount, slaveryYears) {
-                const wageTheft = this.calculateWageTheft(enslavedCount, slaveryYears);
-                const damages = this.calculateDamages(enslavedCount, slaveryYears);
-                const profitShare = this.calculateProfitShare(enslavedCount, slaveryYears);
-                
-                return {
-                    wageTheft,
-                    damages,
-                    profitShare,
-                    total: wageTheft + damages + profitShare
-                };
-            }
-
-            calculateWageTheft(enslavedCount, slaveryYears) {
-                // Historical wage data for agricultural workers in Maryland (1800s)
-                const averageAnnualWage = 120; // Dollars per year in 1800s
-                const totalWages = enslavedCount * averageAnnualWage * slaveryYears;
-                
-                // Adjust for inflation to 2024 dollars
-                const inflationMultiplier = Math.pow(1 + this.inflationRate, this.currentYear - this.baseYear);
-                return Math.round(totalWages * inflationMultiplier);
-            }
-
-            calculateDamages(enslavedCount, slaveryYears) {
-                // Damages for human rights violations, family separation, trauma
-                const baseTraumaValue = 15000; // Base trauma compensation per person per year (2024 dollars)
-                const familySeparationMultiplier = 1.5; // Additional damages for family separation
-                const totalDamages = enslavedCount * baseTraumaValue * slaveryYears * familySeparationMultiplier;
-                
-                return Math.round(totalDamages);
-            }
-
-            calculateProfitShare(enslavedCount, slaveryYears) {
-                // Estimated profit generated by enslaved labor
-                const averageAnnualProfitPerPerson = 300; // Estimated profit per enslaved person per year (1800s dollars)
-                const profitSharePercentage = 0.40; // 40% of profits should go to reparations
-                const totalProfit = enslavedCount * averageAnnualProfitPerPerson * slaveryYears;
-                
-                // Adjust for inflation and apply share percentage
-                const inflationMultiplier = Math.pow(1 + this.inflationRate, this.currentYear - this.baseYear);
-                return Math.round(totalProfit * inflationMultiplier * profitSharePercentage);
-            }
-
-            formatCurrency(amount) {
-                return new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: 'USD'
-                }).format(amount);
-            }
-        }
-
-        function showReparationsBreakdown() {
-            const calculator = new ReparationsCalculator();
-            const enslavedCount = 28; // Documented individuals
-            const slaveryYears = 30; // Average years of enslavement (1787-1817)
-            
-            const breakdown = calculator.calculateReparations(enslavedCount, slaveryYears);
-            
-            const popup = document.getElementById('popupOverlay');
-            const content = document.getElementById('popupContent');
-            
-            content.innerHTML = `
-                <h2 class="popup-title">💰 Reparations Calculation Breakdown</h2>
-                
-                <div class="genealogy-section">
-                    <h3 class="section-title">📊 Calculation Parameters</h3>
-                    <div class="info-grid">
-                        <div class="info-label">Documented Enslaved Individuals:</div>
-                        <div class="info-value">${enslavedCount} people</div>
-                        <div class="info-label">Average Enslavement Period:</div>
-                        <div class="info-value">${slaveryYears} years (1787-1817)</div>
-                        <div class="info-label">Inflation Adjustment:</div>
-                        <div class="info-value">1800s → 2024 dollars</div>
-                        <div class="info-label">Historical Wage Rate:</div>
-                        <div class="info-value">$120/year (1800s agricultural workers)</div>
-                    </div>
-                </div>
-
-                <div class="genealogy-section">
-                    <h3 class="section-title">💸 Component 1: Wage Theft</h3>
-                    <p style="color: #555; margin-bottom: 15px;">
-                        Compensation for stolen labor based on prevailing wages for free agricultural workers in Maryland during the same period.
-                    </p>
-                    <div class="info-grid">
-                        <div class="info-label">Base Calculation:</div>
-                        <div class="info-value">${enslavedCount} people × $120/year × ${slaveryYears} years = $100,800</div>
-                        <div class="info-label">Inflation Adjusted (2024):</div>
-                        <div class="info-value"><strong>${calculator.formatCurrency(breakdown.wageTheft)}</strong></div>
-                    </div>
-                </div>
-
-                <div class="genealogy-section">
-                    <h3 class="section-title">⚖️ Component 2: Damages for Enslavement</h3>
-                    <p style="color: #555; margin-bottom: 15px;">
-                        Compensation for human rights violations, trauma, family separation, and denial of basic freedoms inherent to chattel slavery.
-                    </p>
-                    <div class="info-grid">
-                        <div class="info-label">Base Trauma Value:</div>
-                        <div class="info-value">$15,000 per person per year (2024 dollars)</div>
-                        <div class="info-label">Family Separation Multiplier:</div>
-                        <div class="info-value">1.5x (additional trauma damages)</div>
-                        <div class="info-label">Total Damages:</div>
-                        <div class="info-value"><strong>${calculator.formatCurrency(breakdown.damages)}</strong></div>
-                    </div>
-                </div>
-
-                <div class="genealogy-section">
-                    <h3 class="section-title">📈 Component 3: Profit Share</h3>
-                    <p style="color: #555; margin-bottom: 15px;">
-                        40% share of profits generated by enslaved labor, recognizing their contribution to the plantation's economic success.
-                    </p>
-                    <div class="info-grid">
-                        <div class="info-label">Estimated Annual Profit per Person:</div>
-                        <div class="info-value">$300/year (1800s dollars)</div>
-                        <div class="info-label">Total Historical Profit:</div>
-                        <div class="info-value">${enslavedCount} × $300 × ${slaveryYears} = $252,000</div>
-                        <div class="info-label">40% Share (Inflation Adjusted):</div>
-                        <div class="info-value"><strong>${calculator.formatCurrency(breakdown.profitShare)}</strong></div>
-                    </div>
-                </div>
-
-                <div class="genealogy-section merkle-section">
-                    <h3 class="section-title">🎯 Total Reparations Owed</h3>
-                    <div style="text-align: center; padding: 20px; background: white; border-radius: 10px; margin: 15px 0;">
-                        <div style="font-size: 1.1em; color: #2d5f3f; margin-bottom: 10px;">
-                            Wage Theft: ${calculator.formatCurrency(breakdown.wageTheft)}<br>
-                            + Enslavement Damages: ${calculator.formatCurrency(breakdown.damages)}<br>
-                            + Profit Share: ${calculator.formatCurrency(breakdown.profitShare)}
-                        </div>
-                        <div style="font-size: 2em; font-weight: bold; color: #27ae60; border-top: 2px solid #27ae60; padding-top: 15px;">
-                            ${calculator.formatCurrency(breakdown.total)}
-                        </div>
-                    </div>
-                    <p style="color: #2d5f3f; font-size: 0.9em; text-align: center;">
-                        <em>This calculation represents historical accountability for documented enslaved individuals owned by the Hopewell family (1787-1817) based on available records.</em>
-                    </p>
-                </div>
-
-                <div class="genealogy-section" style="background: #fff3cd; border-left: 4px solid #ffc107;">
-                    <h3 class="section-title">📚 Methodology Notes</h3>
-                    <ul style="color: #856404; line-height: 1.6; padding-left: 20px;">
-                        <li><strong>Historical Wages:</strong> Based on documented wages for free agricultural workers in Maryland, 1800-1820</li>
-                        <li><strong>Trauma Damages:</strong> Conservative estimate based on modern human trafficking compensation precedents</li>
-                        <li><strong>Profit Calculations:</strong> Estimated from plantation profitability studies and tobacco/grain prices</li>
-                        <li><strong>Inflation:</strong> 3.5% average rate from 1800 to 2024</li>
-                        <li><strong>Additional Factors:</strong> Does not include interest, punitive damages, or intergenerational effects</li>
-                    </ul>
-                </div>
-
-                <div style="text-align: center; margin-top: 20px;">
-                    <button class="blockchain-submit-btn" onclick="submitReparationsCalculation()" style="background: linear-gradient(45deg, #27ae60, #2ecc71);">
-                        🔐 Submit Calculation to Blockchain
-                    </button>
-                </div>
-            `;
-            
-            popup.classList.add('active');
-        }
-
-        async function submitReparationsCalculation() {
-            if (!reparationsBlockchain || !reparationsBlockchain.account) {
-                alert('⚠️ Please connect MetaMask first!');
-                return;
-            }
-
-            const calculator = new ReparationsCalculator();
-            const breakdown = calculator.calculateReparations(28, 30);
-            
-            // Create hash of calculation data
-            const calculationData = {
-                enslavedCount: 28,
-                slaveryYears: 30,
-                wageTheft: breakdown.wageTheft,
-                damages: breakdown.damages,
-                profitShare: breakdown.profitShare,
-                total: breakdown.total,
-                methodology: "wage_theft_damages_profit_share_model_v1",
-                timestamp: Date.now()
-            };
-            
-            const dataHash = hash(JSON.stringify(calculationData));
-            const simulatedTxHash = '0x' + Math.random().toString(16).substr(2, 40);
-            
-            alert(`✅ Reparations calculation submitted to blockchain!\n\nTotal Amount: ${calculator.formatCurrency(breakdown.total)}\nCalculation Hash: ${dataHash.substring(0, 16)}...\nTransaction: ${simulatedTxHash}\n\n(This creates an immutable record of the reparations calculation methodology and results)`);
-            
-            // Update the display
-            document.getElementById('total-reparations').textContent = calculator.formatCurrency(breakdown.total);
-        }
-
-        // Handle popup clicks
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('popup-overlay')) {
-                closePopup();
-            }
-        });
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closePopup();
-            }
-        });
-    </script>
+    function createStickFigures() {
+      const container = document.getElementById("stick-figures");
+      sampleFamilyData.forEach((person, index) => {
+        const div = document.createElement("div");
+        div.className = "stick";
+        div.addEventListener("mouseenter", () => showInfo(person, div));
+        container.appendChild(div);
+      });
+    }
+
+    function showInfo(person, stickElement) {
+      document.querySelectorAll(".stick").forEach(s => s.classList.remove("paused"));
+      stickElement.classList.add("paused");
+      const calc = new ReparationsCalculator();
+      const owed = calc.calculateReparations(28, 30);
+      document.getElementById("info-content").innerHTML = `
+        <h2>${person.name}</h2>
+        <p><strong>Birth:</strong> ${person.data.birthDate}, ${person.data.birthPlace}</p>
+        <p><strong>Occupation:</strong> ${person.data.occupation}</p>
+        <p><strong>Notes:</strong> ${person.data.notes}</p>
+        <h3>Reparations Owed: $${owed.toLocaleString()}</h3>
+        <button onclick="submitToBlockchain('${person.name}')">Submit to Blockchain</button>
+      `;
+      document.getElementById("info-panel").style.display = "block";
+    }
+
+    function closePanel() {
+      document.getElementById("info-panel").style.display = "none";
+      document.querySelectorAll(".stick").forEach(s => s.classList.remove("paused"));
+    }
+
+    // Blockchain simulation
+    async function submitToBlockchain(personName) {
+      alert(`✅ Submitted ${personName} to blockchain (simulation).`);
+    }
+
+    createStickFigures();
+  </script>
 </body>
 </html>
