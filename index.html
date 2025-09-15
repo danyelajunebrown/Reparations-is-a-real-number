@@ -387,90 +387,144 @@
     </div>
 
     <script>
-        // Sample genealogy data
-        const sampleFamilyData = [
-            {
-                name: "Marcus Johnson",
-                data: {
-                    birthDate: "March 15, 1985",
-                    birthPlace: "Atlanta, Georgia",
-                    currentResidence: "Washington, D.C.",
-                    occupation: "Software Engineer",
-                    parents: {
-                        father: "James Johnson Sr.",
-                        mother: "Dorothy Williams Johnson"
-                    },
-                    spouse: "Angela Marie Johnson",
-                    children: "Marcus Jr. (8), Zoe (5)",
-                    siblings: ["James Johnson Jr.", "Patricia Johnson-Smith"],
-                    grandparents: {
-                        paternal: {
-                            grandfather: "Robert Johnson",
-                            grandmother: "Mary Elizabeth Johnson"
-                        },
-                        maternal: {
-                            grandfather: "William Williams",
-                            grandmother: "Rosa Williams"
-                        }
-                    },
-                    notes: "Family traced back to enslaved ancestors in South Carolina. Robert Johnson documented as enslaved on Magnolia Plantation from 1850-1865. Seeking reparations documentation for descendants."
+       // Hopewell Family genealogy data (Maryland slave-owning families)
+const sampleFamilyData = [
+    {
+        name: "James Hopewell Sr.",
+        data: {
+            birthDate: "After 1756",
+            birthPlace: "St. Mary's County, Maryland",
+            currentResidence: "Harvey Hundred, St. Mary's County, MD (deceased 1817)",
+            occupation: "Planter and Landowner",
+            parents: {
+                father: "Hugh Hopewell V",
+                mother: "Elizabeth Edmondson"
+            },
+            spouse: "Ann Angelica Chesley (2nd wife)",
+            children: "James Robert, Ann Maria Biscoe, Olivia Caroline, Henrietta Rebecca",
+            siblings: ["Elizabeth Hopewell (ancestor of Wallis Simpson Windsor)"],
+            grandparents: {
+                paternal: {
+                    grandfather: "Hugh Hopewell IV",
+                    grandmother: "Ann Langley"
+                },
+                maternal: {
+                    grandfather: "John Edmondson",
+                    grandmother: "Margaret Pollard"
                 }
             },
-            {
-                name: "Dorothy Williams Johnson",
-                data: {
-                    birthDate: "June 22, 1960",
-                    birthPlace: "Charleston, South Carolina",
-                    currentResidence: "Atlanta, Georgia",
-                    occupation: "Retired Teacher",
-                    parents: {
-                        father: "William Williams",
-                        mother: "Rosa Mae Williams"
-                    },
-                    spouse: "James Johnson Sr.",
-                    children: "Marcus, James Jr., Patricia",
-                    siblings: ["Thomas Williams", "Sarah Williams-Davis"],
-                    grandparents: {
-                        paternal: {
-                            grandfather: "Samuel Williams",
-                            grandmother: "Bessie Williams"
-                        },
-                        maternal: {
-                            grandfather: "John Thompson",
-                            grandmother: "Clara Thompson"
-                        }
-                    },
-                    notes: "Williams family documented on rice plantations in Charleston area. Samuel Williams listed in 1870 census as formerly enslaved. Strong oral history tradition maintained."
+            notes: "Will dated Feb 14, 1816, probated Dec 23, 1817. Documented owner of at least 28 enslaved individuals by name: Minna and her 7 children (John, Harriett, Sandy, Henry, George, Charlotte, Jesse), Jim and Rachel with 5 children (Jane, Allison, Sophy, Sally, Peggy), Medley, Adam, Lloyd, Sarah and 3 children (Mary, Nancy, Louisa), Esther and children, Lewis and son Peter and daughter Henny, Jess, Frank, Joe and wife Sarah, and Zekiel. Will distributed enslaved people among his wife and daughters as property inheritance."
+        }
+    },
+    {
+        name: "Ann Angelica Chesley Hopewell",
+        data: {
+            birthDate: "Before 1784",
+            birthPlace: "St. Mary's County, Maryland",
+            currentResidence: "Harvey Hundred, St. Mary's County, MD (died between 1817-1826)",
+            occupation: "Plantation Mistress",
+            parents: {
+                father: "Capt. Robert 'Handsome Bob' Chesley Jr.",
+                mother: "Maria Van Brunt"
+            },
+            spouse: "James Hopewell Sr. (2nd wife)",
+            children: "James Robert, Ann Maria, Olivia Caroline, Henrietta Rebecca",
+            siblings: ["Unknown siblings"],
+            grandparents: {
+                paternal: {
+                    grandfather: "Robert Chesley Sr.",
+                    grandmother: "Unknown"
+                },
+                maternal: {
+                    grandfather: "Adrian Van Brunt",
+                    grandmother: "Unknown"
                 }
             },
-            {
-                name: "James Johnson Sr.",
-                data: {
-                    birthDate: "August 10, 1958",
-                    birthPlace: "Augusta, Georgia",
-                    currentResidence: "Atlanta, Georgia",
-                    occupation: "Construction Foreman",
-                    parents: {
-                        father: "Robert Johnson",
-                        mother: "Mary Elizabeth Johnson"
-                    },
-                    spouse: "Dorothy Williams Johnson",
-                    children: "Marcus, James Jr., Patricia",
-                    siblings: ["Robert Johnson Jr.", "Helen Johnson-Brown"],
-                    grandparents: {
-                        paternal: {
-                            grandfather: "Moses Johnson",
-                            grandmother: "Ruth Johnson"
-                        },
-                        maternal: {
-                            grandfather: "Charles Davis",
-                            grandmother: "Emma Davis"
-                        }
-                    },
-                    notes: "Johnson lineage traced to tobacco farms in Virginia. Moses Johnson documented in slave schedules, later sharecropper. Military service in segregated units documented."
+            notes: "Inherited enslaved individuals Lewis, Peter, Henny, Jess, Frank, Joe, Sarah, and Zekiel through husband's 1817 will. Father was Revolutionary War captain captured at Staten Island. Mother's family were Loyalists during Revolution. Buried at Park Hall, St. Mary's Hundred, MD."
+        }
+    },
+    {
+        name: "Hugh Hopewell V",
+        data: {
+            birthDate: "1735",
+            birthPlace: "St. Mary's County, Maryland",
+            currentResidence: "Southern Lowison Creek, St. Mary's County, MD (deceased 1777)",
+            occupation: "Colonial Planter",
+            parents: {
+                father: "Hugh Hopewell IV",
+                mother: "Ann Langley"
+            },
+            spouse: "Elizabeth Edmondson (married 1777)",
+            children: "James, Elizabeth (and 6 others)",
+            siblings: ["Various Hopewell siblings"],
+            grandparents: {
+                paternal: {
+                    grandfather: "Hugh Hopewell III",
+                    grandmother: "Unknown"
+                },
+                maternal: {
+                    grandfather: "Unknown Langley",
+                    grandmother: "Unknown"
                 }
-            }
-        ];
+            },
+            notes: "Died during Revolutionary War period in 1777. Father of James Hopewell who inherited the plantation and enslaved people. Part of established Maryland planting family with colonial roots. Revolutionary War veteran according to family records."
+        }
+    },
+    {
+        name: "Elizabeth Edmondson Hopewell",
+        data: {
+            birthDate: "1725",
+            birthPlace: "St. Mary's County, Maryland",
+            currentResidence: "St. Mary's County, MD (deceased 1787)",
+            occupation: "Plantation Mistress",
+            parents: {
+                father: "John Edmondson",
+                mother: "Margaret Pollard"
+            },
+            spouse: "Hugh Hopewell V",
+            children: "8 children including James",
+            siblings: ["Unknown siblings"],
+            grandparents: {
+                paternal: {
+                    grandfather: "Unknown Edmondson",
+                    grandmother: "Unknown"
+                },
+                maternal: {
+                    grandfather: "Unknown Pollard",
+                    grandmother: "Unknown"
+                }
+            },
+            notes: "Will dated Oct 16, 1787, probated Dec 10, 1787. Owned and distributed enslaved individuals: Sall to daughter Ann Hebb, children Delia and Mary to granddaughters, Joe Boy to Elizabeth Emory, George to granddaughter Elizabeth Emory, Kissey to Anna Emory, Jesse and Young to son Pollard Hopewell. Her son James inherited the balance of estate including additional enslaved people."
+        }
+    },
+    {
+        name: "Ann Maria Hopewell Biscoe",
+        data: {
+            birthDate: "January 11, 1799",
+            birthPlace: "St. Mary's County, Maryland", 
+            currentResidence: "Prince George's County, MD (died April 28, 1881)",
+            occupation: "Plantation Mistress",
+            parents: {
+                father: "James Hopewell Sr.",
+                mother: "Ann Angelica Chesley"
+            },
+            spouse: "Brig. Gen. George Washington Biscoe Jr.",
+            children: "Multiple children including those who inherited enslaved people",
+            siblings: ["James Robert Hopewell", "Olivia Caroline Hopewell", "Henrietta Rebecca Hopewell"],
+            grandparents: {
+                paternal: {
+                    grandfather: "Hugh Hopewell V",
+                    grandmother: "Elizabeth Edmondson"
+                },
+                maternal: {
+                    grandfather: "Capt. Robert Chesley Jr.",
+                    grandmother: "Maria Van Brunt"
+                }
+            },
+            notes: "Inherited from father's 1817 will: enslaved individuals Medley, Adam, Lloyd, Sarah and her three children Mary, Nancy and Louisa, plus Esther and her children including Ally. Filed Civil War-era petition referencing her father's bequest of enslaved people to her. Moved from St. Mary's to Prince George's County. Family benefited from D.C. Emancipation Act of 1862 which freed remaining enslaved people in Georgetown household."
+        }
+    }
+];
 
         // Blockchain Integration Class
         class ReparationsBlockchain {
