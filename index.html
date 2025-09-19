@@ -1,36 +1,913 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Page</title>
-  <style>
-    body {
-      background: black;
-      color: white;
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    
-    .test-box {
-      background: red;
-      width: 200px;
-      height: 200px;
-      margin: 20px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reparations Accountability Platform</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .status-bar {
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .status-item {
+            text-align: center;
+        }
+
+        .status-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .status-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .card h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(52,152,219,0.3);
+        }
+
+        .btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .results-container {
+            grid-column: 1 / -1;
+            margin-top: 20px;
+        }
+
+        .descendant-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .descendant-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+        }
+
+        .descendant-name {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .descendant-details {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            line-height: 1.4;
+        }
+
+        .payment-section {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 20px;
+        }
+
+        .payment-amount {
+            font-size: 2em;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .success {
+            background: #27ae60;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .info {
+            background: #3498db;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .wallet-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 200px;
+        }
+
+        .connected {
+            border-left: 4px solid #27ae60;
+        }
+
+        .disconnected {
+            border-left: 4px solid #e74c3c;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            .wallet-status {
+                position: relative;
+                top: auto;
+                right: auto;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
 </head>
 <body>
-  <h1>TEST - Can you see this?</h1>
-  <div class="test-box"></div>
-  <p>If you can see this text and a red box, then HTML/CSS is working.</p>
-  
-  <script>
-    console.log('JavaScript is running!');
-    alert('JavaScript is working!');
-    
-    // Add some content
-    document.body.innerHTML += '<p style="color: lime;">This text was added by JavaScript</p>';
-  </script>
+    <div class="container">
+        <div class="header">
+            <h1>Reparations Accountability Platform</h1>
+            <p>Blockchain-verified genealogy and transparent reparations distribution</p>
+        </div>
+
+        <div class="wallet-status" id="walletStatus">
+            <div id="connectionStatus">
+                🔴 Not Connected
+            </div>
+            <button class="btn" id="connectWallet" onclick="connectWallet()">Connect MetaMask</button>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-value" id="totalRecords">0</div>
+                <div class="status-label">Ancestry Records</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="totalReparations">$0</div>
+                <div class="status-label">Total Calculated</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="totalPaid">$0</div>
+                <div class="status-label">Total Distributed</div>
+            </div>
+            <div class="status-item">
+                <div class="status-value" id="descendantCount">0</div>
+                <div class="status-label">Verified Descendants</div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card">
+                <h2>🔍 FamilySearch Research</h2>
+                <div class="form-group">
+                    <label>Beta API Key</label>
+                    <input type="password" id="familySearchKey" placeholder="Enter your FamilySearch Beta API key">
+                </div>
+                <div class="form-group">
+                    <label>Ancestor Name</label>
+                    <input type="text" id="ancestorName" placeholder="e.g. John Smith">
+                </div>
+                <div class="form-group">
+                    <label>Birth Year (approximate)</label>
+                    <input type="number" id="birthYear" placeholder="e.g. 1820" min="1700" max="1900">
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="location" placeholder="e.g. Virginia, USA">
+                </div>
+                <button class="btn" onclick="searchAncestor()">
+                    <span id="searchLoading" style="display: none;" class="loading"></span>
+                    Search FamilySearch
+                </button>
+                <div id="searchResults"></div>
+            </div>
+
+            <div class="card">
+                <h2>💰 Reparations Calculator</h2>
+                <div class="form-group">
+                    <label>Number of Enslaved Individuals</label>
+                    <input type="number" id="enslavedCount" value="5" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Years of Enslavement</label>
+                    <input type="number" id="enslavementYears" value="25" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Include Compound Interest</label>
+                    <select id="includeInterest">
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="calculateReparations()">Calculate Reparations</button>
+                <div id="calculationResults"></div>
+            </div>
+        </div>
+
+        <div class="results-container">
+            <div id="descendantResults" style="display: none;">
+                <div class="card">
+                    <h2>👥 Identified Descendants</h2>
+                    <div id="descendantSummary"></div>
+                    <div id="descendantList" class="descendant-list"></div>
+                    
+                    <div class="payment-section">
+                        <h3>💳 Payment Distribution</h3>
+                        <div class="payment-amount" id="paymentAmount">$0</div>
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div>Payment Token: <select id="paymentToken">
+                                <option value="ETH">Ethereum (ETH)</option>
+                                <option value="0xA0b86a33E6441c8C55e7e39E83C4a14CA8d9D4A6">USD Coin (USDC)</option>
+                            </select></div>
+                        </div>
+                        <button class="btn btn-success" onclick="depositReparations()" id="depositBtn" disabled>
+                            Deposit Reparations to Escrow
+                        </button>
+                        <button class="btn btn-warning" onclick="verifyDescendants()" id="verifyBtn" disabled>
+                            Verify Descendants
+                        </button>
+                        <button class="btn btn-danger" onclick="distributePayments()" id="distributeBtn" disabled>
+                            Distribute Payments
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include our modules -->
+    <script src="reparations-calculator.js"></script>
+    <script>
+        // Global state
+        let web3;
+        let account;
+        let reparationsContract;
+        let familySearchAPI;
+        let reparationsCalculator;
+        let currentDescendants = [];
+        let currentCalculation = null;
+        let currentRecordId = null;
+
+        // Contract ABI (simplified for demo)
+        const contractABI = [
+            {
+                "inputs": [{"type": "string"}, {"type": "string"}, {"type": "bytes32"}, {"type": "uint256"}, {"type": "string"}],
+                "name": "submitAncestryRecord",
+                "outputs": [{"type": "uint256"}],
+                "type": "function"
+            },
+            {
+                "inputs": [{"type": "uint256"}, {"type": "address[]"}, {"type": "string[]"}, {"type": "string[]"}, {"type": "uint256[]"}],
+                "name": "addDescendants",
+                "outputs": [],
+                "type": "function"
+            },
+            {
+                "inputs": [{"type": "uint256"}, {"type": "address"}, {"type": "uint256"}],
+                "name": "depositReparations",
+                "outputs": [],
+                "type": "function"
+            },
+            {
+                "inputs": [{"type": "uint256"}, {"type": "address"}, {"type": "uint256"}],
+                "name": "distributePayments",
+                "outputs": [],
+                "type": "function"
+            }
+        ];
+
+        // Contract address (will be set after deployment)
+        const contractAddress = "0x..."; // Replace with actual deployed contract address
+
+        // Initialize application
+        async function initApp() {
+            console.log('Initializing Reparations Platform...');
+            
+            // Initialize reparations calculator
+            reparationsCalculator = new ReparationsCalculator();
+            
+            // Initialize FamilySearch integration
+            familySearchAPI = new FamilySearchIntegration({
+                sandbox: true // Start with sandbox for beta testing
+            });
+            
+            updateUI();
+        }
+
+        // Connect to MetaMask wallet
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    web3 = new Web3(window.ethereum);
+                    await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    const accounts = await web3.eth.getAccounts();
+                    account = accounts[0];
+                    
+                    // Initialize contract
+                    if (contractAddress !== "0x...") {
+                        reparationsContract = new web3.eth.Contract(contractABI, contractAddress);
+                    }
+                    
+                    updateWalletStatus();
+                    enablePaymentFeatures();
+                    
+                } catch (error) {
+                    showError('Failed to connect wallet: ' + error.message);
+                }
+            } else {
+                showError('MetaMask not detected. Please install MetaMask to use payment features.');
+            }
+        }
+
+        // Search for ancestor in FamilySearch
+        async function searchAncestor() {
+            const apiKey = document.getElementById('familySearchKey').value;
+            const name = document.getElementById('ancestorName').value;
+            const birthYear = document.getElementById('birthYear').value;
+            const location = document.getElementById('location').value;
+
+            if (!apiKey || !name) {
+                showError('Please enter API key and ancestor name');
+                return;
+            }
+
+            showLoading('searchLoading', true);
+            
+            try {
+                // Initialize FamilySearch with Beta API key
+                await familySearchAPI.initialize(apiKey);
+                
+                // Search for the ancestor
+                const nameParts = name.split(' ');
+                const givenName = nameParts[0];
+                const familyName = nameParts.slice(1).join(' ');
+                
+                const searchResults = await familySearchAPI.searchPerson(
+                    givenName, 
+                    familyName, 
+                    birthYear ? parseInt(birthYear) : null
+                );
+
+                if (searchResults.length === 0) {
+                    showError('No ancestors found with those criteria');
+                    return;
+                }
+
+                // For demo, use the first result
+                const ancestor = searchResults[0];
+                
+                // Get descendants
+                showInfo('Found ancestor! Searching for descendants...');
+                const descendants = await familySearchAPI.getDescendants(ancestor.id, 6);
+                
+                if (descendants.length === 0) {
+                    showError('No descendants found for this ancestor');
+                    return;
+                }
+
+                // Calculate descendant shares
+                const descendantShares = await familySearchAPI.calculateDescendantShares(ancestor.id);
+                
+                currentDescendants = descendantShares;
+                displayDescendants(ancestor, descendantShares);
+                
+                showSuccess(`Found ${descendants.length} descendants for ${ancestor.fullName}`);
+                
+            } catch (error) {
+                showError('FamilySearch error: ' + error.message);
+            } finally {
+                showLoading('searchLoading', false);
+            }
+        }
+
+        // Calculate reparations amount
+        function calculateReparations() {
+            const enslavedCount = parseInt(document.getElementById('enslavedCount').value);
+            const years = parseInt(document.getElementById('enslavementYears').value);
+            const includeInterest = document.getElementById('includeInterest').value === 'true';
+
+            if (!enslavedCount || !years) {
+                showError('Please enter enslaved count and years');
+                return;
+            }
+
+            try {
+                const calculation = reparationsCalculator.calculateComprehensiveReparations(
+                    enslavedCount, 
+                    years, 
+                    { includeInterest, includePenalty: includeInterest }
+                );
+
+                currentCalculation = calculation;
+                displayCalculationResults(calculation);
+                updatePaymentAmount(calculation.total);
+
+            } catch (error) {
+                showError('Calculation error: ' + error.message);
+            }
+        }
+
+        // Display calculation results
+        function displayCalculationResults(calculation) {
+            const resultsDiv = document.getElementById('calculationResults');
+            
+            resultsDiv.innerHTML = `
+                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4>Calculation Results</h4>
+                    <div style="margin: 10px 0;">
+                        <strong>Wage Theft:</strong> $${calculation.wageTheft.toLocaleString()}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <strong>Human Dignity Damages:</strong> $${calculation.damages.toLocaleString()}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <strong>Profit Share:</strong> $${calculation.profitShare.toLocaleString()}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <strong>Compound Interest:</strong> $${calculation.compoundInterest.toLocaleString()}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        <strong>Penalty:</strong> $${calculation.penalty.toLocaleString()}
+                    </div>
+                    <hr>
+                    <div style="margin: 10px 0; font-size: 1.2em; font-weight: bold;">
+                        <strong>Total Reparations:</strong> $${calculation.total.toLocaleString()}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Display descendants
+        function displayDescendants(ancestor, descendants) {
+            const resultsDiv = document.getElementById('descendantResults');
+            const summaryDiv = document.getElementById('descendantSummary');
+            const listDiv = document.getElementById('descendantList');
+
+            const livingCount = descendants.filter(d => d.isLikelyLiving).length;
+            
+            summaryDiv.innerHTML = `
+                <div class="info">
+                    <strong>Ancestor:</strong> ${ancestor.fullName}<br>
+                    <strong>Total Descendants:</strong> ${descendants.length}<br>
+                    <strong>Likely Living:</strong> ${livingCount}<br>
+                    <strong>Data Source:</strong> FamilySearch Beta API<br>
+                    <strong>Verification:</strong> Pending blockchain submission
+                </div>
+            `;
+
+            listDiv.innerHTML = descendants.map(descendant => `
+                <div class="descendant-card">
+                    <div class="descendant-name">${descendant.fullName}</div>
+                    <div class="descendant-details">
+                        Generation: ${descendant.generation}<br>
+                        Birth Year: ${descendant.birthYear || 'Unknown'}<br>
+                        Share: ${descendant.sharePercentage / 100}%<br>
+                        Status: ${descendant.isLikelyLiving ? '🟢 Likely Living' : '🔴 Deceased'}<br>
+                        FamilySearch ID: ${descendant.familySearchId}<br>
+                        Wallet: ${descendant.walletAddress || '❌ Not Connected'}
+                    </div>
+                </div>
+            `).join('');
+
+            resultsDiv.style.display = 'block';
+            
+            // Enable blockchain submission buttons
+            document.getElementById('depositBtn').disabled = false;
+            document.getElementById('verifyBtn').disabled = false;
+        }
+
+        // Update payment amount display
+        function updatePaymentAmount(amount) {
+            document.getElementById('paymentAmount').textContent = `${amount.toLocaleString()}`;
+        }
+
+        // Deposit reparations to escrow contract
+        async function depositReparations() {
+            if (!web3 || !account || !reparationsContract) {
+                showError('Please connect your wallet first');
+                return;
+            }
+
+            if (!currentCalculation) {
+                showError('Please calculate reparations first');
+                return;
+            }
+
+            try {
+                const paymentToken = document.getElementById('paymentToken').value;
+                const amount = currentCalculation.total;
+                
+                showInfo('Submitting ancestry record to blockchain...');
+                
+                // Submit ancestry record first
+                const ancestorName = document.getElementById('ancestorName').value;
+                const genealogyHash = web3.utils.keccak256(JSON.stringify({
+                    ancestor: ancestorName,
+                    descendants: currentDescendants,
+                    calculation: currentCalculation,
+                    timestamp: Date.now()
+                }));
+
+                const recordId = await reparationsContract.methods.submitAncestryRecord(
+                    ancestorName,
+                    currentDescendants[0]?.familySearchId || '',
+                    genealogyHash,
+                    web3.utils.toWei(amount.toString(), 'ether'),
+                    `FamilySearch verified record with ${currentDescendants.length} descendants`
+                ).send({ from: account });
+
+                currentRecordId = recordId.events.AncestryRecordSubmitted.returnValues.recordId;
+                
+                showInfo('Adding descendants to record...');
+                
+                // Prepare descendant data for blockchain
+                const walletAddresses = currentDescendants.map(d => 
+                    d.walletAddress || '0x0000000000000000000000000000000000000000'
+                );
+                const familySearchIds = currentDescendants.map(d => d.familySearchId);
+                const fullNames = currentDescendants.map(d => d.fullName);
+                const sharePercentages = currentDescendants.map(d => d.sharePercentage);
+
+                await reparationsContract.methods.addDescendants(
+                    currentRecordId,
+                    walletAddresses,
+                    familySearchIds,
+                    fullNames,
+                    sharePercentages
+                ).send({ from: account });
+
+                showInfo('Depositing reparations to escrow...');
+
+                // Deposit the funds
+                if (paymentToken === 'ETH') {
+                    await reparationsContract.methods.depositReparations(
+                        currentRecordId,
+                        '0x0000000000000000000000000000000000000000', // ETH
+                        0
+                    ).send({ 
+                        from: account,
+                        value: web3.utils.toWei(amount.toString(), 'ether')
+                    });
+                } else {
+                    // ERC20 token deposit (USDC)
+                    // First approve the contract to spend tokens
+                    showInfo('Please approve token spending in MetaMask...');
+                    
+                    const tokenContract = new web3.eth.Contract([
+                        {
+                            "inputs": [{"type": "address"}, {"type": "uint256"}],
+                            "name": "approve",
+                            "outputs": [{"type": "bool"}],
+                            "type": "function"
+                        }
+                    ], paymentToken);
+
+                    const tokenAmount = web3.utils.toWei(amount.toString(), 'mwei'); // USDC has 6 decimals
+                    
+                    await tokenContract.methods.approve(
+                        contractAddress,
+                        tokenAmount
+                    ).send({ from: account });
+
+                    await reparationsContract.methods.depositReparations(
+                        currentRecordId,
+                        paymentToken,
+                        tokenAmount
+                    ).send({ from: account });
+                }
+
+                showSuccess('Reparations successfully deposited to escrow! Record ID: ' + currentRecordId);
+                document.getElementById('distributeBtn').disabled = false;
+                updateTotalPaid(amount);
+
+            } catch (error) {
+                showError('Deposit failed: ' + error.message);
+            }
+        }
+
+        // Verify descendants (admin function)
+        async function verifyDescendants() {
+            if (!web3 || !account || !reparationsContract || !currentRecordId) {
+                showError('Please complete the deposit process first');
+                return;
+            }
+
+            try {
+                showInfo('Verifying ancestry record...');
+                
+                // Verify the ancestry record
+                await reparationsContract.methods.verifyAncestryRecord(
+                    currentRecordId
+                ).send({ from: account });
+
+                showInfo('Verifying descendants...');
+
+                // Verify each descendant (for demo, verify all)
+                for (const descendant of currentDescendants) {
+                    if (descendant.isLikelyLiving) {
+                        await reparationsContract.methods.verifyDescendant(
+                            currentRecordId,
+                            descendant.walletAddress || '0x0000000000000000000000000000000000000000',
+                            `FamilySearch ID: ${descendant.familySearchId}`
+                        ).send({ from: account });
+                    }
+                }
+
+                showSuccess('All descendants verified! Ready for payment distribution.');
+
+            } catch (error) {
+                showError('Verification failed: ' + error.message);
+            }
+        }
+
+        // Distribute payments to verified descendants
+        async function distributePayments() {
+            if (!web3 || !account || !reparationsContract || !currentRecordId) {
+                showError('Please complete verification first');
+                return;
+            }
+
+            try {
+                const paymentToken = document.getElementById('paymentToken').value;
+                const amount = currentCalculation.total;
+                
+                showInfo('Distributing payments to verified descendants...');
+
+                const tokenAddress = paymentToken === 'ETH' ? 
+                    '0x0000000000000000000000000000000000000000' : paymentToken;
+                    
+                const paymentAmount = paymentToken === 'ETH' ? 
+                    web3.utils.toWei(amount.toString(), 'ether') :
+                    web3.utils.toWei(amount.toString(), 'mwei');
+
+                await reparationsContract.methods.distributePayments(
+                    currentRecordId,
+                    tokenAddress,
+                    paymentAmount
+                ).send({ from: account });
+
+                showSuccess(`Successfully distributed ${amount.toLocaleString()} to ${currentDescendants.length} verified descendants!`);
+                
+                // Update UI
+                updateStats();
+
+            } catch (error) {
+                showError('Distribution failed: ' + error.message);
+            }
+        }
+
+        // Update wallet connection status
+        function updateWalletStatus() {
+            const statusDiv = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectWallet');
+            const walletDiv = document.getElementById('walletStatus');
+
+            if (account) {
+                statusDiv.innerHTML = `🟢 ${account.slice(0,6)}...${account.slice(-4)}`;
+                connectBtn.textContent = 'Connected';
+                connectBtn.disabled = true;
+                walletDiv.className = 'wallet-status connected';
+            } else {
+                statusDiv.innerHTML = '🔴 Not Connected';
+                connectBtn.textContent = 'Connect MetaMask';
+                connectBtn.disabled = false;
+                walletDiv.className = 'wallet-status disconnected';
+            }
+        }
+
+        // Enable payment features after wallet connection
+        function enablePaymentFeatures() {
+            // Enable buttons that require wallet connection
+            const buttons = ['depositBtn', 'verifyBtn', 'distributeBtn'];
+            buttons.forEach(btnId => {
+                const btn = document.getElementById(btnId);
+                if (btn) btn.style.opacity = '1';
+            });
+        }
+
+        // Update statistics display
+        function updateStats() {
+            // This would fetch real data from the blockchain in production
+            document.getElementById('totalRecords').textContent = '1';
+            document.getElementById('descendantCount').textContent = currentDescendants.length;
+            
+            if (currentCalculation) {
+                document.getElementById('totalReparations').textContent = 
+                    `${currentCalculation.total.toLocaleString()}`;
+            }
+        }
+
+        function updateTotalPaid(amount) {
+            document.getElementById('totalPaid').textContent = `${amount.toLocaleString()}`;
+        }
+
+        // Utility functions for UI feedback
+        function showError(message) {
+            showMessage(message, 'error');
+        }
+
+        function showSuccess(message) {
+            showMessage(message, 'success');
+        }
+
+        function showInfo(message) {
+            showMessage(message, 'info');
+        }
+
+        function showMessage(message, type) {
+            const existingMessage = document.querySelector(`.${type}`);
+            if (existingMessage) {
+                existingMessage.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            
+            document.querySelector('.container').appendChild(messageDiv);
+            
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000);
+        }
+
+        function showLoading(elementId, show) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.style.display = show ? 'inline-block' : 'none';
+            }
+        }
+
+        function updateUI() {
+            updateWalletStatus();
+            updateStats();
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', initApp);
+
+        // Handle wallet disconnection
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', function (accounts) {
+                if (accounts.length === 0) {
+                    account = null;
+                    updateWalletStatus();
+                } else {
+                    account = accounts[0];
+                    updateWalletStatus();
+                }
+            });
+        }
+    </script>
 </body>
 </html>
