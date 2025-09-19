@@ -1,21 +1,25 @@
 {
   "name": "reparations-blockchain",
-  "version": "1.0.0",
-  "description": "Blockchain-based reparations tracking system for ancestry and genealogy data",
+  "version": "2.0.0",
+  "description": "Blockchain-based reparations with FamilySearch integration",
   "main": "index.js",
   "scripts": {
     "test": "truffle test",
     "compile": "truffle compile",
     "migrate": "truffle migrate",
+    "migrate:goerli": "truffle migrate --network goerli",
     "dev": "truffle develop",
-    "ganache": "ganache-cli"
+    "ganache": "ganache-cli",
+    "serve": "npx http-server public -p 8080",
+    "start": "npm run serve"
   },
-  "keywords": ["blockchain", "reparations", "genealogy", "ancestry", "ethereum"],
+  "keywords": ["blockchain", "reparations", "genealogy", "familysearch", "ethereum"],
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
     "web3": "^1.10.0",
-    "@openzeppelin/contracts": "^4.9.0"
+    "@openzeppelin/contracts": "^4.9.0",
+    "http-server": "^14.1.1"
   },
   "devDependencies": {
     "truffle": "^5.11.0",
