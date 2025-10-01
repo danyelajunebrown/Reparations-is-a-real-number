@@ -338,6 +338,189 @@
                     <label>Number of Enslaved Individuals</label>
                     <input type="number" id="enslavedCount" value="5" min="1">
                 </div>
+                <!-- Add this inside the main-grid div, after the existing cards -->
+
+<div class="card">
+    <h2>📁 Import Genealogy Research</h2>
+    <div class="form-group">
+        <label>Upload CSV File</label>
+        <input type="file" id="csvFile" accept=".csv" onchange="handleCSVUpload(event)">
+    </div>
+    <button class="btn" onclick="processImportedData()" id="processBtn" disabled>
+        Process Imported Data
+    </button>
+    <div id="importResults"></div>
+</div>
+
+<!-- Add after existing script tags -->
+<script src="confidence-scorer.js"></script>
+<script src="citation-tracker.js"></script>
+<script src="review-queue.js"></script>
+<script src="csv-importer.js"></script>
+
+<script>
+// Global state additions
+let csvImporter;
+let importedData = null;
+
+// Initialize
+async function initApp() {
+    console.log('Initializing Reparations Platform...');
+    
+    reparationsCalculator = new ReparationsCalculator();
+    familySearchAPI = new FamilySearchIntegration({ sandbox: true });
+    confidenceScorer = new ConfidenceScorer();
+    citationTracker = new CitationTracker();
+    reviewQueue = new ReviewQueue();
+    csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
+    
+    updateUI();
+}
+
+// Handle CSV file upload
+async function handleCSVUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    showInfo('Reading CSV file...');
+    
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const csvText = e.target.result;
+            
+            // Import CSV
+            showInfo('Importing genealogy data...');
+            const report = await csvImporter.importCSV(csvText);
+            
+            // Display results
+            displayImportReport(report);
+            
+            // Enable processing
+            document.getElementById('processBtn').disabled = false;
+            importedData = report;
+            
+            showSuccess(`Imported ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people`);
+            
+        } catch (error) {
+            showError('CSV import failed: ' + error.message);
+            console.error(error);
+        }
+    };
+    
+    reader.readAsText(file);
+}
+
+// Display import report
+function displayImportReport(report) {
+    const resultsDiv = document.getElementById('importResults');
+    
+    resultsDiv.innerHTML = `
+        <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <h4>Import Summary</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                <div><strong>Slave Owners:</strong> ${report.summary.ownersImported}</div>
+                <div><strong>Enslaved People:</strong> ${report.summary.enslavedPeopleImported}</div>
+                <div><strong>Documents:</strong> ${report.summary.documentsImported}</div>
+                <div><strong>Research Gaps:</strong> ${report.summary.researchGapsIdentified}</div>
+            </div>
+            
+            <h4 style="margin-top: 15px;">Imported Owners:</h4>
+            <div style="max-height: 200px; overflow-y: auto;">
+                ${report.owners.map(owner => `
+                    <div style="padding: 5px; border-bottom: 1px solid #ddd;">
+                        <strong>${owner.name}</strong> - ${owner.enslaved} enslaved, 
+                        ${owner.documents} documents
+                        ${owner.needsResearch ? ' ⚠️ <em>Needs research</em>' : ''}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Process imported data with FamilySearch
+async function processImportedData() {
+    if (!importedData) {
+        showError('No data imported yet');
+        return;
+    }
+    
+    // Step 1: Check FamilySearch login
+    if (!familySearchAPI.isLoggedIn()) {
+        showInfo('Please log in to FamilySearch to find descendants...');
+        
+        try {
+            await familySearchAPI.initiateOAuthLogin();
+            showSuccess('FamilySearch login successful!');
+        } catch (error) {
+            showError('FamilySearch login failed: ' + error.message);
+            return;
+        }
+    }
+    
+    // Step 2: Submit to review queue
+    showInfo('Submitting records for review...');
+    const submissions = await csvImporter.submitForVerification('user_csv_import');
+    
+    // Step 3: For each owner, try to find in FamilySearch
+    const owners = csvImporter.getOwnersForFamilySearch();
+    
+    for (const owner of owners) {
+        try {
+            showInfo(`Searching FamilySearch for ${owner.name}...`);
+            
+            const nameParts = owner.name.split(' ');
+            const givenName = nameParts[0];
+            const familyName = nameParts.slice(1).join(' ');
+            
+            const results = await familySearchAPI.searchPerson(
+                givenName,
+                familyName,
+                owner.birthYear
+            );
+            
+            if (results.length > 0) {
+                showSuccess(`Found ${results.length} potential matches for ${owner.name}`);
+                
+                // For now, use first match
+                const match = results[0];
+                
+                // Get descendants
+                const descendants = await familySearchAPI.getDescendants(match.id, 6);
+                
+                if (descendants.length > 0) {
+                    showSuccess(`Found ${descendants.length} descendants of ${owner.name}!`);
+                    
+                    // Store for later processing
+                    currentDescendants = await familySearchAPI.calculateDescendantShares(match.id);
+                    
+                    // Calculate reparations
+                    const calculation = reparationsCalculator.calculateComprehensiveReparations(
+                        owner.enslavedCount,
+                        25 // average years
+                    );
+                    
+                    currentCalculation = calculation;
+                    
+                    // Display
+                    displayDescendants(match, currentDescendants);
+                    displayCalculationResults(calculation);
+                    updatePaymentAmount(calculation.total);
+                }
+            } else {
+                showInfo(`No FamilySearch matches found for ${owner.name}`);
+            }
+            
+        } catch (error) {
+            console.error(`Error processing ${owner.name}:`, error);
+            showError(`Error with ${owner.name}: ${error.message}`);
+        }
+    }
+    
+    showSuccess('Processing complete! Review the results above.');
+}
+</script>
                 <div class="form-group">
                     <label>Years of Enslavement</label>
                     <input type="number" id="enslavementYears" value="25" min="1">
