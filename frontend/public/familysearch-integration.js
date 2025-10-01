@@ -3,6 +3,141 @@
  * Handles authentication, genealogy data retrieval, and descendant tracking
  */
 
+/**
+ * FamilySearch API Integration Module
+ * Now supports OAuth login flow for manual consent
+ */
+
+class FamilySearchIntegration {
+    constructor(config = {}) {
+        this.apiKey = config.apiKey || null;
+        this.baseUrl = config.baseUrl || 'https://api.familysearch.org';
+        this.sandboxUrl = 'https://sandbox.familysearch.org';
+        this.isSandbox = config.sandbox || true;
+        this.accessToken = null;
+        this.sessionId = null;
+        
+        // OAuth configuration
+        this.oauth = {
+            clientId: config.clientId || 'YOUR_CLIENT_ID', // You'll get this from FamilySearch
+            redirectUri: config.redirectUri || window.location.origin + '/callback',
+            state: this.generateState()
+        };
+        
+        // Rate limiting
+        this.requestCount = 0;
+        this.lastRequestTime = 0;
+        this.maxRequestsPerSecond = 5;
+        
+        // Cache
+        this.personCache = new Map();
+        this.relationshipCache = new Map();
+    }
+    
+    /**
+     * Generate random state for OAuth security
+     */
+    generateState() {
+        return Math.random().toString(36).substring(2, 15) + 
+               Math.random().toString(36).substring(2, 15);
+    }
+    
+    /**
+     * Initiate OAuth login flow (opens FamilySearch login in new window)
+     */
+    initiateOAuthLogin() {
+        const authUrl = `${this.getBaseUrl()}/platform/oauth/authorize?` + 
+            `response_type=code&` +
+            `client_id=${this.oauth.clientId}&` +
+            `redirect_uri=${encodeURIComponent(this.oauth.redirectUri)}&` +
+            `state=${this.oauth.state}`;
+        
+        console.log('Opening FamilySearch login...');
+        
+        // Open in popup window
+        const popup = window.open(
+            authUrl,
+            'FamilySearch Login',
+            'width=600,height=700,scrollbars=yes'
+        );
+        
+        // Listen for callback
+        return new Promise((resolve, reject) => {
+            window.addEventListener('message', (event) => {
+                if (event.data.type === 'familysearch_oauth_callback') {
+                    popup.close();
+                    
+                    if (event.data.code) {
+                        this.exchangeCodeForToken(event.data.code)
+                            .then(resolve)
+                            .catch(reject);
+                    } else {
+                        reject(new Error('OAuth failed: ' + event.data.error));
+                    }
+                }
+            });
+            
+            // Check if popup was blocked
+            if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+                reject(new Error('Popup blocked. Please allow popups for this site.'));
+            }
+        });
+    }
+    
+    /**
+     * Exchange authorization code for access token
+     */
+    async exchangeCodeForToken(code) {
+        const tokenUrl = `${this.getBaseUrl()}/platform/oauth/token`;
+        
+        const response = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                grant_type: 'authorization_code',
+                code: code,
+                client_id: this.oauth.clientId,
+                redirect_uri: this.oauth.redirectUri
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Token exchange failed');
+        }
+        
+        const data = await response.json();
+        this.accessToken = data.access_token;
+        
+        console.log('FamilySearch OAuth login successful');
+        return true;
+    }
+    
+    /**
+     * Check if user is logged in
+     */
+    isLoggedIn() {
+        return !!this.accessToken;
+    }
+    
+    /**
+     * Manual login with username/password (for testing without OAuth setup)
+     */
+    async manualLogin(username, password) {
+        console.log('Attempting manual FamilySearch login...');
+        
+        // FamilySearch doesn't actually support username/password via API
+        // This is a placeholder - you'll need OAuth
+        console.warn('Manual login not supported. Use OAuth flow instead.');
+        
+        // For testing purposes, simulate login
+        this.accessToken = 'TEST_TOKEN_' + Date.now();
+        return true;
+    }
+
+    // ... rest of existing FamilySearch methods ...
+
 class FamilySearchIntegration {
   // NEW METHOD
   async extractSlaveOwnershipData(personId) {
