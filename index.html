@@ -453,18 +453,42 @@
         const contractAddress = "0x...";
 
         // Initialize application
-        async function initApp() {
-            console.log('Initializing Reparations Platform...');
-            
-            reparationsCalculator = new ReparationsCalculator();
-            familySearchAPI = new FamilySearchIntegration({ sandbox: true });
-            confidenceScorer = new ConfidenceScorer();
-            citationTracker = new CitationTracker();
-            reviewQueue = new ReviewQueue();
-            csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
-            
-            updateUI();
-        }
+async function initApp() {
+    console.log('Initializing Reparations Platform...');
+    
+    reparationsCalculator = new ReparationsCalculator();
+    familySearchAPI = new FamilySearchIntegration({ sandbox: true });
+    confidenceScorer = new ConfidenceScorer();
+    citationTracker = new CitationTracker();
+    reviewQueue = new ReviewQueue();
+    csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
+    
+    // AUTO-LOAD HOPEWELL DATA
+    await loadHopewellData();
+    
+    updateUI();
+}
+
+// AUTO-LOAD CSV FROM GITHUB
+async function loadHopewellData() {
+    try {
+        const response = await fetch('hopewell-ancestors.csv');
+        const csvText = await response.text();
+        
+        const report = await csvImporter.importCSV(csvText);
+        
+        displayImportReport(report);
+        importedData = report;
+        
+        showSuccess(`Auto-loaded ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people from your research`);
+        
+        document.getElementById('totalRecords').textContent = report.summary.ownersImported;
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showInfo('Upload your CSV file to import data');
+    }
+}
 
         // Handle CSV file upload
         async function handleCSVUpload(event) {
