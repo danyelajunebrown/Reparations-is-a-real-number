@@ -4,24 +4,106 @@
  */
 
 class FamilySearchIntegration {
-    constructor(config = {}) {
-        this.apiKey = config.apiKey || null;
-        this.baseUrl = config.baseUrl || 'https://api.familysearch.org';
-        this.sandboxUrl = 'https://sandbox.familysearch.org';
-        this.isSandbox = config.sandbox || true; // Start with sandbox for beta
-        this.accessToken = null;
-        this.sessionId = null;
-        
-        // Rate limiting
-        this.requestCount = 0;
-        this.lastRequestTime = 0;
-        this.maxRequestsPerSecond = 5; // Conservative rate limiting
-        
-        // Cache for genealogy data
-        this.personCache = new Map();
-        this.relationshipCache = new Map();
+  // NEW METHOD
+  async extractSlaveOwnershipData(personId) {
+    const person = await this.getPerson(personId);
+    const ancestors = await this.getAncestors(personId, 10);
+    
+    const potentialOwners = [];
+    
+    for (const ancestor of ancestors) {
+      const indicators = await this.checkSlaveOwnershipIndicators(ancestor);
+      
+      if (indicators.hasEvidence) {
+        potentialOwners.push({
+          person: ancestor,
+          indicators: indicators,
+          needsDocumentVerification: true,
+          confidence: this.calculateInitialConfidence(indicators)
+        });
+      }
     }
-
+    
+    return potentialOwners;
+  }
+  
+  async checkSlaveOwnershipIndicators(person) {
+    const evidence = {
+      hasEvidence: false,
+      indicators: [],
+      documents: [],
+      citations: []
+    };
+    
+    // Check location (Southern states pre-1865)
+    if (this.isSouthernState(person.birthPlace) && person.deathYear < 1865) {
+      evidence.indicators.push('southern_location_pre_emancipation');
+    }
+    
+    // Check occupation in FamilySearch
+    if (person.occupation && 
+        ['planter', 'plantation owner', 'farmer'].includes(person.occupation.toLowerCase())) {
+      evidence.indicators.push('relevant_occupation');
+    }
+    
+    // Check for attached documents mentioning slavery
+    const attachedDocs = await this.getPersonDocuments(person.id);
+    for (const doc of attachedDocs) {
+      if (this.documentMentionsSlavery(doc)) {
+        evidence.documents.push(doc);
+        evidence.indicators.push('document_evidence');
+      }
+    }
+    
+    // CRITICAL: Check for MISSING citations
+    const memories = await this.getPersonMemories(person.id);
+    if (memories.length === 0 && person.deathYear < 1865) {
+      evidence.citations.push({
+        type: 'MISSING',
+        needed: 'will_or_probate',
+        priority: 'HIGH',
+        reason: 'No attached documents for person in slavery era'
+      });
+    }
+    
+    evidence.hasEvidence = evidence.indicators.length > 0;
+    return evidence;
+  }
+  
+  // MARK EMPTY CITATIONS
+  identifyResearchGaps(person, evidence) {
+    const gaps = [];
+    
+    // No will attached but died pre-1865 in South
+    if (!evidence.documents.find(d => d.type === 'will') && 
+        person.deathYear < 1865) {
+      gaps.push({
+        type: 'MISSING_WILL',
+        person: person.fullName,
+        location: person.deathPlace,
+        expectedYear: person.deathYear,
+        priority: 'HIGH',
+        searchHints: [
+          `${person.deathPlace} probate records ${person.deathYear}`,
+          `Maryland State Archives` // etc based on location
+        ]
+      });
+    }
+    
+    // Has will but no census records
+    if (evidence.documents.find(d => d.type === 'will') &&
+        !evidence.documents.find(d => d.type === 'census')) {
+      gaps.push({
+        type: 'MISSING_CENSUS',
+        person: person.fullName,
+        neededYears: this.calculateCensusYears(person.birthYear, person.deathYear),
+        priority: 'MEDIUM'
+      });
+    }
+    
+    return gaps;
+  }
+}
     /**
      * Initialize with Beta API key received from FamilySearch
      */
