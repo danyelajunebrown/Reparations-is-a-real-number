@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reparations Accountability Platform</title>
     <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -282,7 +283,7 @@
 
         <div class="wallet-status" id="walletStatus">
             <div id="connectionStatus">
-                🔴 Not Connected
+                Not Connected
             </div>
             <button class="btn" id="connectWallet" onclick="connectWallet()">Connect MetaMask</button>
         </div>
@@ -308,7 +309,7 @@
 
         <div class="main-grid">
             <div class="card">
-                <h2>🔍 FamilySearch Research</h2>
+                <h2>FamilySearch Research</h2>
                 <div class="form-group">
                     <label>Beta API Key</label>
                     <input type="password" id="familySearchKey" placeholder="Enter your FamilySearch Beta API key">
@@ -333,194 +334,11 @@
             </div>
 
             <div class="card">
-                <h2>💰 Reparations Calculator</h2>
+                <h2>Reparations Calculator</h2>
                 <div class="form-group">
                     <label>Number of Enslaved Individuals</label>
                     <input type="number" id="enslavedCount" value="5" min="1">
                 </div>
-                <!-- Add this inside the main-grid div, after the existing cards -->
-
-<div class="card">
-    <h2>📁 Import Genealogy Research</h2>
-    <div class="form-group">
-        <label>Upload CSV File</label>
-        <input type="file" id="csvFile" accept=".csv" onchange="handleCSVUpload(event)">
-    </div>
-    <button class="btn" onclick="processImportedData()" id="processBtn" disabled>
-        Process Imported Data
-    </button>
-    <div id="importResults"></div>
-</div>
-
-<!-- Add after existing script tags -->
-<script src="confidence-scorer.js"></script>
-<script src="citation-tracker.js"></script>
-<script src="review-queue.js"></script>
-<script src="csv-importer.js"></script>
-
-<script>
-// Global state additions
-let csvImporter;
-let importedData = null;
-
-// Initialize
-async function initApp() {
-    console.log('Initializing Reparations Platform...');
-    
-    reparationsCalculator = new ReparationsCalculator();
-    familySearchAPI = new FamilySearchIntegration({ sandbox: true });
-    confidenceScorer = new ConfidenceScorer();
-    citationTracker = new CitationTracker();
-    reviewQueue = new ReviewQueue();
-    csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
-    
-    updateUI();
-}
-
-// Handle CSV file upload
-async function handleCSVUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    showInfo('Reading CSV file...');
-    
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        try {
-            const csvText = e.target.result;
-            
-            // Import CSV
-            showInfo('Importing genealogy data...');
-            const report = await csvImporter.importCSV(csvText);
-            
-            // Display results
-            displayImportReport(report);
-            
-            // Enable processing
-            document.getElementById('processBtn').disabled = false;
-            importedData = report;
-            
-            showSuccess(`Imported ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people`);
-            
-        } catch (error) {
-            showError('CSV import failed: ' + error.message);
-            console.error(error);
-        }
-    };
-    
-    reader.readAsText(file);
-}
-
-// Display import report
-function displayImportReport(report) {
-    const resultsDiv = document.getElementById('importResults');
-    
-    resultsDiv.innerHTML = `
-        <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-            <h4>Import Summary</h4>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
-                <div><strong>Slave Owners:</strong> ${report.summary.ownersImported}</div>
-                <div><strong>Enslaved People:</strong> ${report.summary.enslavedPeopleImported}</div>
-                <div><strong>Documents:</strong> ${report.summary.documentsImported}</div>
-                <div><strong>Research Gaps:</strong> ${report.summary.researchGapsIdentified}</div>
-            </div>
-            
-            <h4 style="margin-top: 15px;">Imported Owners:</h4>
-            <div style="max-height: 200px; overflow-y: auto;">
-                ${report.owners.map(owner => `
-                    <div style="padding: 5px; border-bottom: 1px solid #ddd;">
-                        <strong>${owner.name}</strong> - ${owner.enslaved} enslaved, 
-                        ${owner.documents} documents
-                        ${owner.needsResearch ? ' ⚠️ <em>Needs research</em>' : ''}
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `;
-}
-
-// Process imported data with FamilySearch
-async function processImportedData() {
-    if (!importedData) {
-        showError('No data imported yet');
-        return;
-    }
-    
-    // Step 1: Check FamilySearch login
-    if (!familySearchAPI.isLoggedIn()) {
-        showInfo('Please log in to FamilySearch to find descendants...');
-        
-        try {
-            await familySearchAPI.initiateOAuthLogin();
-            showSuccess('FamilySearch login successful!');
-        } catch (error) {
-            showError('FamilySearch login failed: ' + error.message);
-            return;
-        }
-    }
-    
-    // Step 2: Submit to review queue
-    showInfo('Submitting records for review...');
-    const submissions = await csvImporter.submitForVerification('user_csv_import');
-    
-    // Step 3: For each owner, try to find in FamilySearch
-    const owners = csvImporter.getOwnersForFamilySearch();
-    
-    for (const owner of owners) {
-        try {
-            showInfo(`Searching FamilySearch for ${owner.name}...`);
-            
-            const nameParts = owner.name.split(' ');
-            const givenName = nameParts[0];
-            const familyName = nameParts.slice(1).join(' ');
-            
-            const results = await familySearchAPI.searchPerson(
-                givenName,
-                familyName,
-                owner.birthYear
-            );
-            
-            if (results.length > 0) {
-                showSuccess(`Found ${results.length} potential matches for ${owner.name}`);
-                
-                // For now, use first match
-                const match = results[0];
-                
-                // Get descendants
-                const descendants = await familySearchAPI.getDescendants(match.id, 6);
-                
-                if (descendants.length > 0) {
-                    showSuccess(`Found ${descendants.length} descendants of ${owner.name}!`);
-                    
-                    // Store for later processing
-                    currentDescendants = await familySearchAPI.calculateDescendantShares(match.id);
-                    
-                    // Calculate reparations
-                    const calculation = reparationsCalculator.calculateComprehensiveReparations(
-                        owner.enslavedCount,
-                        25 // average years
-                    );
-                    
-                    currentCalculation = calculation;
-                    
-                    // Display
-                    displayDescendants(match, currentDescendants);
-                    displayCalculationResults(calculation);
-                    updatePaymentAmount(calculation.total);
-                }
-            } else {
-                showInfo(`No FamilySearch matches found for ${owner.name}`);
-            }
-            
-        } catch (error) {
-            console.error(`Error processing ${owner.name}:`, error);
-            showError(`Error with ${owner.name}: ${error.message}`);
-        }
-    }
-    
-    showSuccess('Processing complete! Review the results above.');
-}
-</script>
                 <div class="form-group">
                     <label>Years of Enslavement</label>
                     <input type="number" id="enslavementYears" value="25" min="1">
@@ -535,17 +353,29 @@ async function processImportedData() {
                 <button class="btn" onclick="calculateReparations()">Calculate Reparations</button>
                 <div id="calculationResults"></div>
             </div>
+
+            <div class="card">
+                <h2>Import Genealogy Research</h2>
+                <div class="form-group">
+                    <label>Upload CSV File</label>
+                    <input type="file" id="csvFile" accept=".csv" onchange="handleCSVUpload(event)">
+                </div>
+                <button class="btn" onclick="processImportedData()" id="processBtn" disabled>
+                    Process Imported Data
+                </button>
+                <div id="importResults"></div>
+            </div>
         </div>
 
         <div class="results-container">
             <div id="descendantResults" style="display: none;">
                 <div class="card">
-                    <h2>👥 Identified Descendants</h2>
+                    <h2>Identified Descendants</h2>
                     <div id="descendantSummary"></div>
                     <div id="descendantList" class="descendant-list"></div>
                     
                     <div class="payment-section">
-                        <h3>💳 Payment Distribution</h3>
+                        <h3>Payment Distribution</h3>
                         <div class="payment-amount" id="paymentAmount">$0</div>
                         <div style="text-align: center; margin-bottom: 20px;">
                             <div>Payment Token: <select id="paymentToken">
@@ -568,8 +398,14 @@ async function processImportedData() {
         </div>
     </div>
 
-    <!-- Include our modules -->
+    <!-- Include all modules -->
     <script src="reparations-calculator.js"></script>
+    <script src="familysearch-integration.js"></script>
+    <script src="confidence-scorer.js"></script>
+    <script src="citation-tracker.js"></script>
+    <script src="review-queue.js"></script>
+    <script src="csv-importer.js"></script>
+    
     <script>
         // Global state
         let web3;
@@ -577,9 +413,14 @@ async function processImportedData() {
         let reparationsContract;
         let familySearchAPI;
         let reparationsCalculator;
+        let confidenceScorer;
+        let citationTracker;
+        let reviewQueue;
+        let csvImporter;
         let currentDescendants = [];
         let currentCalculation = null;
         let currentRecordId = null;
+        let importedData = null;
 
         // Contract ABI (simplified for demo)
         const contractABI = [
@@ -609,25 +450,154 @@ async function processImportedData() {
             }
         ];
 
-        // Contract address (will be set after deployment)
-        const contractAddress = "0x..."; // Replace with actual deployed contract address
+        const contractAddress = "0x...";
 
         // Initialize application
         async function initApp() {
             console.log('Initializing Reparations Platform...');
             
-            // Initialize reparations calculator
             reparationsCalculator = new ReparationsCalculator();
-            
-            // Initialize FamilySearch integration
-            familySearchAPI = new FamilySearchIntegration({
-                sandbox: true // Start with sandbox for beta testing
-            });
+            familySearchAPI = new FamilySearchIntegration({ sandbox: true });
+            confidenceScorer = new ConfidenceScorer();
+            citationTracker = new CitationTracker();
+            reviewQueue = new ReviewQueue();
+            csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
             
             updateUI();
         }
 
-        // Connect to MetaMask wallet
+        // Handle CSV file upload
+        async function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            showInfo('Reading CSV file...');
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const csvText = e.target.result;
+                    
+                    showInfo('Importing genealogy data...');
+                    const report = await csvImporter.importCSV(csvText);
+                    
+                    displayImportReport(report);
+                    
+                    document.getElementById('processBtn').disabled = false;
+                    importedData = report;
+                    
+                    showSuccess(`Imported ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people`);
+                    
+                } catch (error) {
+                    showError('CSV import failed: ' + error.message);
+                    console.error(error);
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        // Display import report
+        function displayImportReport(report) {
+            const resultsDiv = document.getElementById('importResults');
+            
+            resultsDiv.innerHTML = `
+                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                    <h4>Import Summary</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;">
+                        <div><strong>Slave Owners:</strong> ${report.summary.ownersImported}</div>
+                        <div><strong>Enslaved People:</strong> ${report.summary.enslavedPeopleImported}</div>
+                        <div><strong>Documents:</strong> ${report.summary.documentsImported}</div>
+                        <div><strong>Research Gaps:</strong> ${report.summary.researchGapsIdentified}</div>
+                    </div>
+                    
+                    <h4 style="margin-top: 15px;">Imported Owners:</h4>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${report.owners.map(owner => `
+                            <div style="padding: 5px; border-bottom: 1px solid #ddd;">
+                                <strong>${owner.name}</strong> - ${owner.enslaved} enslaved, 
+                                ${owner.documents} documents
+                                ${owner.needsResearch ? ' Needs research' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Process imported data with FamilySearch
+        async function processImportedData() {
+            if (!importedData) {
+                showError('No data imported yet');
+                return;
+            }
+            
+            if (!familySearchAPI.isLoggedIn()) {
+                showInfo('Please log in to FamilySearch to find descendants...');
+                
+                try {
+                    await familySearchAPI.initiateOAuthLogin();
+                    showSuccess('FamilySearch login successful!');
+                } catch (error) {
+                    showError('FamilySearch login failed: ' + error.message);
+                    return;
+                }
+            }
+            
+            showInfo('Submitting records for review...');
+            const submissions = await csvImporter.submitForVerification('user_csv_import');
+            
+            const owners = csvImporter.getOwnersForFamilySearch();
+            
+            for (const owner of owners) {
+                try {
+                    showInfo(`Searching FamilySearch for ${owner.name}...`);
+                    
+                    const nameParts = owner.name.split(' ');
+                    const givenName = nameParts[0];
+                    const familyName = nameParts.slice(1).join(' ');
+                    
+                    const results = await familySearchAPI.searchPerson(
+                        givenName,
+                        familyName,
+                        owner.birthYear
+                    );
+                    
+                    if (results.length > 0) {
+                        showSuccess(`Found ${results.length} potential matches for ${owner.name}`);
+                        
+                        const match = results[0];
+                        const descendants = await familySearchAPI.getDescendants(match.id, 6);
+                        
+                        if (descendants.length > 0) {
+                            showSuccess(`Found ${descendants.length} descendants of ${owner.name}!`);
+                            
+                            currentDescendants = await familySearchAPI.calculateDescendantShares(match.id);
+                            
+                            const calculation = reparationsCalculator.calculateComprehensiveReparations(
+                                owner.enslavedCount,
+                                25
+                            );
+                            
+                            currentCalculation = calculation;
+                            
+                            displayDescendants(match, currentDescendants);
+                            displayCalculationResults(calculation);
+                            updatePaymentAmount(calculation.total);
+                        }
+                    } else {
+                        showInfo(`No FamilySearch matches found for ${owner.name}`);
+                    }
+                    
+                } catch (error) {
+                    console.error(`Error processing ${owner.name}:`, error);
+                    showError(`Error with ${owner.name}: ${error.message}`);
+                }
+            }
+            
+            showSuccess('Processing complete! Review the results above.');
+        }
+
         async function connectWallet() {
             if (typeof window.ethereum !== 'undefined') {
                 try {
@@ -636,7 +606,6 @@ async function processImportedData() {
                     const accounts = await web3.eth.getAccounts();
                     account = accounts[0];
                     
-                    // Initialize contract
                     if (contractAddress !== "0x...") {
                         reparationsContract = new web3.eth.Contract(contractABI, contractAddress);
                     }
@@ -652,7 +621,6 @@ async function processImportedData() {
             }
         }
 
-        // Search for ancestor in FamilySearch
         async function searchAncestor() {
             const apiKey = document.getElementById('familySearchKey').value;
             const name = document.getElementById('ancestorName').value;
@@ -667,10 +635,8 @@ async function processImportedData() {
             showLoading('searchLoading', true);
             
             try {
-                // Initialize FamilySearch with Beta API key
                 await familySearchAPI.initialize(apiKey);
                 
-                // Search for the ancestor
                 const nameParts = name.split(' ');
                 const givenName = nameParts[0];
                 const familyName = nameParts.slice(1).join(' ');
@@ -686,10 +652,8 @@ async function processImportedData() {
                     return;
                 }
 
-                // For demo, use the first result
                 const ancestor = searchResults[0];
                 
-                // Get descendants
                 showInfo('Found ancestor! Searching for descendants...');
                 const descendants = await familySearchAPI.getDescendants(ancestor.id, 6);
                 
@@ -698,7 +662,6 @@ async function processImportedData() {
                     return;
                 }
 
-                // Calculate descendant shares
                 const descendantShares = await familySearchAPI.calculateDescendantShares(ancestor.id);
                 
                 currentDescendants = descendantShares;
@@ -713,7 +676,6 @@ async function processImportedData() {
             }
         }
 
-        // Calculate reparations amount
         function calculateReparations() {
             const enslavedCount = parseInt(document.getElementById('enslavedCount').value);
             const years = parseInt(document.getElementById('enslavementYears').value);
@@ -740,7 +702,6 @@ async function processImportedData() {
             }
         }
 
-        // Display calculation results
         function displayCalculationResults(calculation) {
             const resultsDiv = document.getElementById('calculationResults');
             
@@ -770,7 +731,6 @@ async function processImportedData() {
             `;
         }
 
-        // Display descendants
         function displayDescendants(ancestor, descendants) {
             const resultsDiv = document.getElementById('descendantResults');
             const summaryDiv = document.getElementById('descendantSummary');
@@ -795,26 +755,23 @@ async function processImportedData() {
                         Generation: ${descendant.generation}<br>
                         Birth Year: ${descendant.birthYear || 'Unknown'}<br>
                         Share: ${descendant.sharePercentage / 100}%<br>
-                        Status: ${descendant.isLikelyLiving ? '🟢 Likely Living' : '🔴 Deceased'}<br>
+                        Status: ${descendant.isLikelyLiving ? 'Likely Living' : 'Deceased'}<br>
                         FamilySearch ID: ${descendant.familySearchId}<br>
-                        Wallet: ${descendant.walletAddress || '❌ Not Connected'}
+                        Wallet: ${descendant.walletAddress || 'Not Connected'}
                     </div>
                 </div>
             `).join('');
 
             resultsDiv.style.display = 'block';
             
-            // Enable blockchain submission buttons
             document.getElementById('depositBtn').disabled = false;
             document.getElementById('verifyBtn').disabled = false;
         }
 
-        // Update payment amount display
         function updatePaymentAmount(amount) {
-            document.getElementById('paymentAmount').textContent = `${amount.toLocaleString()}`;
+            document.getElementById('paymentAmount').textContent = `$${amount.toLocaleString()}`;
         }
 
-        // Deposit reparations to escrow contract
         async function depositReparations() {
             if (!web3 || !account || !reparationsContract) {
                 showError('Please connect your wallet first');
@@ -832,7 +789,6 @@ async function processImportedData() {
                 
                 showInfo('Submitting ancestry record to blockchain...');
                 
-                // Submit ancestry record first
                 const ancestorName = document.getElementById('ancestorName').value;
                 const genealogyHash = web3.utils.keccak256(JSON.stringify({
                     ancestor: ancestorName,
@@ -853,7 +809,6 @@ async function processImportedData() {
                 
                 showInfo('Adding descendants to record...');
                 
-                // Prepare descendant data for blockchain
                 const walletAddresses = currentDescendants.map(d => 
                     d.walletAddress || '0x0000000000000000000000000000000000000000'
                 );
@@ -871,19 +826,16 @@ async function processImportedData() {
 
                 showInfo('Depositing reparations to escrow...');
 
-                // Deposit the funds
                 if (paymentToken === 'ETH') {
                     await reparationsContract.methods.depositReparations(
                         currentRecordId,
-                        '0x0000000000000000000000000000000000000000', // ETH
+                        '0x0000000000000000000000000000000000000000',
                         0
                     ).send({ 
                         from: account,
                         value: web3.utils.toWei(amount.toString(), 'ether')
                     });
                 } else {
-                    // ERC20 token deposit (USDC)
-                    // First approve the contract to spend tokens
                     showInfo('Please approve token spending in MetaMask...');
                     
                     const tokenContract = new web3.eth.Contract([
@@ -895,7 +847,7 @@ async function processImportedData() {
                         }
                     ], paymentToken);
 
-                    const tokenAmount = web3.utils.toWei(amount.toString(), 'mwei'); // USDC has 6 decimals
+                    const tokenAmount = web3.utils.toWei(amount.toString(), 'mwei');
                     
                     await tokenContract.methods.approve(
                         contractAddress,
@@ -918,7 +870,6 @@ async function processImportedData() {
             }
         }
 
-        // Verify descendants (admin function)
         async function verifyDescendants() {
             if (!web3 || !account || !reparationsContract || !currentRecordId) {
                 showError('Please complete the deposit process first');
@@ -928,14 +879,12 @@ async function processImportedData() {
             try {
                 showInfo('Verifying ancestry record...');
                 
-                // Verify the ancestry record
                 await reparationsContract.methods.verifyAncestryRecord(
                     currentRecordId
                 ).send({ from: account });
 
                 showInfo('Verifying descendants...');
 
-                // Verify each descendant (for demo, verify all)
                 for (const descendant of currentDescendants) {
                     if (descendant.isLikelyLiving) {
                         await reparationsContract.methods.verifyDescendant(
@@ -953,7 +902,6 @@ async function processImportedData() {
             }
         }
 
-        // Distribute payments to verified descendants
         async function distributePayments() {
             if (!web3 || !account || !reparationsContract || !currentRecordId) {
                 showError('Please complete verification first');
@@ -979,9 +927,8 @@ async function processImportedData() {
                     paymentAmount
                 ).send({ from: account });
 
-                showSuccess(`Successfully distributed ${amount.toLocaleString()} to ${currentDescendants.length} verified descendants!`);
+                showSuccess(`Successfully distributed $${amount.toLocaleString()} to ${currentDescendants.length} verified descendants!`);
                 
-                // Update UI
                 updateStats();
 
             } catch (error) {
@@ -989,28 +936,25 @@ async function processImportedData() {
             }
         }
 
-        // Update wallet connection status
         function updateWalletStatus() {
             const statusDiv = document.getElementById('connectionStatus');
             const connectBtn = document.getElementById('connectWallet');
             const walletDiv = document.getElementById('walletStatus');
 
             if (account) {
-                statusDiv.innerHTML = `🟢 ${account.slice(0,6)}...${account.slice(-4)}`;
+                statusDiv.innerHTML = `${account.slice(0,6)}...${account.slice(-4)}`;
                 connectBtn.textContent = 'Connected';
                 connectBtn.disabled = true;
                 walletDiv.className = 'wallet-status connected';
             } else {
-                statusDiv.innerHTML = '🔴 Not Connected';
+                statusDiv.innerHTML = 'Not Connected';
                 connectBtn.textContent = 'Connect MetaMask';
                 connectBtn.disabled = false;
                 walletDiv.className = 'wallet-status disconnected';
             }
         }
 
-        // Enable payment features after wallet connection
         function enablePaymentFeatures() {
-            // Enable buttons that require wallet connection
             const buttons = ['depositBtn', 'verifyBtn', 'distributeBtn'];
             buttons.forEach(btnId => {
                 const btn = document.getElementById(btnId);
@@ -1018,23 +962,20 @@ async function processImportedData() {
             });
         }
 
-        // Update statistics display
         function updateStats() {
-            // This would fetch real data from the blockchain in production
             document.getElementById('totalRecords').textContent = '1';
             document.getElementById('descendantCount').textContent = currentDescendants.length;
             
             if (currentCalculation) {
                 document.getElementById('totalReparations').textContent = 
-                    `${currentCalculation.total.toLocaleString()}`;
+                    `$${currentCalculation.total.toLocaleString()}`;
             }
         }
 
         function updateTotalPaid(amount) {
-            document.getElementById('totalPaid').textContent = `${amount.toLocaleString()}`;
+            document.getElementById('totalPaid').textContent = `$${amount.toLocaleString()}`;
         }
 
-        // Utility functions for UI feedback
         function showError(message) {
             showMessage(message, 'error');
         }
@@ -1076,10 +1017,8 @@ async function processImportedData() {
             updateStats();
         }
 
-        // Initialize when page loads
         document.addEventListener('DOMContentLoaded', initApp);
 
-        // Handle wallet disconnection
         if (window.ethereum) {
             window.ethereum.on('accountsChanged', function (accounts) {
                 if (accounts.length === 0) {
