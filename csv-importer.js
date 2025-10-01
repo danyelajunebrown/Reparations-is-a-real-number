@@ -24,7 +24,7 @@ class CSVImporter {
    * Additional Research Needed
    */
   async importCSV(csvText) {
-    console.log('Starting CSV import...');
+    console.log('Starting CSV import');
     
     // Parse CSV using Papa Parse (already in your project)
     const parsed = Papa.parse(csvText, {
