@@ -57,7 +57,15 @@ class CSVImporter {
   /**
    * Process a single CSV row
    */
-  async processRow(row) {
+ async processRow(row) {
+    const ownerName = row['Owner Name']?.trim();
+    
+    // ADD THIS DEBUG LINE
+    console.log('Processing row:', ownerName, row);
+    
+    // Skip header rows or empty rows
+    if (!ownerName || ownerName === 'Owner Name' || ...
+   
     const ownerName = row['Owner Name']?.trim();
     
     // Skip header rows or empty rows
