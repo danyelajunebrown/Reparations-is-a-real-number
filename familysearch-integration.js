@@ -43,7 +43,11 @@ class FamilySearchIntegration {
     isLoggedIn() {
         return !!this.accessToken;
     }
-    
+    async initiateOAuthLogin() {
+    console.log('OAuth login not implemented - using mock login');
+    this.accessToken = 'MOCK_TOKEN_' + Date.now();
+    return true;
+}
     getBaseUrl() {
         return this.isSandbox ? this.sandboxUrl : this.baseUrl;
     }
