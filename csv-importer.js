@@ -42,10 +42,11 @@ class CSVImporter {
     const rows = parsed.data;
     console.log(`Parsed ${rows.length} rows`);
     
-    // Process each row
-    for (const row of rows) {
-      await this.processRow(row);
-    }
+   // Process each row
+for (const row of rows) {
+    console.log('Row data:', row); // DEBUG
+    await this.processRow(row);
+}
     
     // Build relationships
     this.buildRelationships();
