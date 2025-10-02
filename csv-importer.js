@@ -2,7 +2,6 @@
  * CSV Importer for Ancestor Slavery Records
  * Parses genealogical research and routes through verification system
  */
-
 class CSVImporter {
   constructor(confidenceScorer, citationTracker, reviewQueue) {
     this.confidenceScorer = confidenceScorer;
@@ -42,11 +41,11 @@ class CSVImporter {
     const rows = parsed.data;
     console.log(`Parsed ${rows.length} rows`);
     
-   // Process each row
-for (const row of rows) {
-    console.log('Row data:', row); // DEBUG
-    await this.processRow(row);
-}
+    // Process each row
+    for (const row of rows) {
+      console.log('Row data:', row);
+      await this.processRow(row);
+    }
     
     // Build relationships
     this.buildRelationships();
@@ -58,18 +57,12 @@ for (const row of rows) {
   /**
    * Process a single CSV row
    */
- async processRow(row) {
+  async processRow(row) {
     const ownerName = row['Owner Name']?.trim();
     
-    // ADD THIS DEBUG LINE
     console.log('Processing row:', ownerName, row);
     
-    // Skip header rows or empty rows
-    if (!ownerName || ownerName === 'Owner Name' || ...
-   
-    const ownerName = row['Owner Name']?.trim();
-    
-    // Skip header rows or empty rows
+    // Skip header rows or empty rows - FIXED THIS LINE
     if (!ownerName || ownerName === 'Owner Name' || 
         ownerName.startsWith('RESEARCH PRIORITIES') ||
         ownerName.startsWith('HIGH PRIORITY') ||
@@ -250,18 +243,15 @@ for (const row of rows) {
     if (this.owners.has(owner.name)) {
       // Merge data
       const existing = this.owners.get(owner.name);
-      this.owners.set(owner.name, {
-        ...existing,
-        ...owner,
+      this.owners.set(owner.name, Object.assign({}, existing, owner, {
         notes: existing.notes + (owner.notes ? '\n' + owner.notes : '')
-      });
+      }));
     } else {
-      this.owners.set(owner.name, {
-        ...owner,
+      this.owners.set(owner.name, Object.assign({}, owner, {
         enslavedPeople: [],
         documents: [],
         totalCount: 0
-      });
+      }));
     }
   }
   
