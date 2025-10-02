@@ -333,53 +333,47 @@
                 <div id="searchResults"></div>
             </div>
 
+            <div class="card" id="analysisSection" style="display: none;">
+                <h2>Imported Data Analysis</h2>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">Total Reparations Summary</h3>
+                    <div id="reparationsSummary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                        <div>
+                            <div style="font-size: 2em; font-weight: bold; color: #e74c3c;" id="totalOwed">$0</div>
+                            <div style="color: #7f8c8d;">Total Owed</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2em; font-weight: bold; color: #3498db;" id="totalOwners">0</div>
+                            <div style="color: #7f8c8d;">Slave Owners</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 2em; font-weight: bold; color: #9b59b6;" id="totalEnslaved">0</div>
+                            <div style="color: #7f8c8d;">Enslaved People</div>
+                        </div>
+                    </div>
+                </div>
 
-<!-- NEW SECTION: Data Analysis Dashboard -->
-<div class="card" style="margin-bottom: 30px;" id="analysisSection" style="display: none;">
-    <h2>Imported Data Analysis</h2>
-    
-    <!-- B: Reparations Summary -->
-    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-        <h3 style="margin-top: 0;">Total Reparations Summary</h3>
-        <div id="reparationsSummary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
-            <div>
-                <div style="font-size: 2em; font-weight: bold; color: #e74c3c;" id="totalOwed">$0</div>
-                <div style="color: #7f8c8d;">Total Owed</div>
-            </div>
-            <div>
-                <div style="font-size: 2em; font-weight: bold; color: #3498db;" id="totalOwners">0</div>
-                <div style="color: #7f8c8d;">Slave Owners</div>
-            </div>
-            <div>
-                <div style="font-size: 2em; font-weight: bold; color: #9b59b6;" id="totalEnslaved">0</div>
-                <div style="color: #7f8c8d;">Enslaved People</div>
-            </div>
-        </div>
-    </div>
+                <div style="margin-bottom: 30px;">
+                    <h3>Review Queue</h3>
+                    <div id="reviewDashboard"></div>
+                </div>
 
-    <!-- A: Review Dashboard -->
-    <div style="margin-bottom: 30px;">
-        <h3>Review Queue</h3>
-        <div id="reviewDashboard"></div>
-    </div>
+                <div style="margin-bottom: 30px;">
+                    <h3>Ownership Network</h3>
+                    <div id="networkGraph" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 400px;">
+                        <div style="text-align: center; padding: 50px;">
+                            Network visualization loading...
+                        </div>
+                    </div>
+                </div>
 
-    <!-- C: Network Graph Placeholder -->
-    <div style="margin-bottom: 30px;">
-        <h3>Ownership Network</h3>
-        <div id="networkGraph" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 400px;">
-            <div style="text-align: center; padding: 50px;">
-                Network visualization loading...
+                <div style="text-align: center;">
+                    <button class="btn btn-success" onclick="exportReport()">
+                        Download Complete Report (PDF)
+                    </button>
+                </div>
             </div>
-        </div>
-    </div>
-
-    <!-- D: Export Report -->
-    <div style="text-align: center;">
-        <button class="btn btn-success" onclick="exportReport()">
-            Download Complete Report (PDF)
-        </button>
-    </div>
-</div>
 
             <div class="card">
                 <h2>Reparations Calculator</h2>
@@ -470,7 +464,6 @@
         let currentRecordId = null;
         let importedData = null;
 
-        // Contract ABI (simplified for demo)
         const contractABI = [
             {
                 "inputs": [{"type": "string"}, {"type": "string"}, {"type": "bytes32"}, {"type": "uint256"}, {"type": "string"}],
@@ -500,58 +493,144 @@
 
         const contractAddress = "0x...";
 
-        // Initialize application
-async function initApp() {
-    console.log('Initializing Reparations Platform...');
-    
-    reparationsCalculator = new ReparationsCalculator();
-    familySearchAPI = new FamilySearchIntegration({ sandbox: true });
-    confidenceScorer = new ConfidenceScorer();
-    citationTracker = new CitationTracker();
-    reviewQueue = new ReviewQueue();
-    csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
-    
-    // AUTO-LOAD HOPEWELL DATA
-    await loadHopewellData();
-    
-    updateUI();
-}
+        // Initialize application with detailed diagnostics
+        async function initApp() {
+            console.log('=== INITIALIZATION START ===');
+            console.log('Checking which classes are available...');
+            
+            // Check if classes exist
+            console.log('ReparationsCalculator exists?', typeof ReparationsCalculator !== 'undefined');
+            console.log('FamilySearchIntegration exists?', typeof FamilySearchIntegration !== 'undefined');
+            console.log('ConfidenceScorer exists?', typeof ConfidenceScorer !== 'undefined');
+            console.log('CitationTracker exists?', typeof CitationTracker !== 'undefined');
+            console.log('ReviewQueue exists?', typeof ReviewQueue !== 'undefined');
+            console.log('CSVImporter exists?', typeof CSVImporter !== 'undefined');
+            
+            let initSuccess = true;
+            
+            try {
+                console.log('Attempting to create ReparationsCalculator...');
+                reparationsCalculator = new ReparationsCalculator();
+                console.log('✓ ReparationsCalculator created');
+            } catch (e) {
+                console.error('✗ ReparationsCalculator failed:', e.message);
+                showError('ReparationsCalculator failed to load: ' + e.message);
+                initSuccess = false;
+            }
+            
+            try {
+                console.log('Attempting to create FamilySearchIntegration...');
+                familySearchAPI = new FamilySearchIntegration({ sandbox: true });
+                console.log('✓ FamilySearchIntegration created');
+            } catch (e) {
+                console.error('✗ FamilySearchIntegration failed:', e.message);
+                showError('FamilySearchIntegration failed to load: ' + e.message);
+                initSuccess = false;
+            }
+            
+            try {
+                console.log('Attempting to create ConfidenceScorer...');
+                confidenceScorer = new ConfidenceScorer();
+                console.log('✓ ConfidenceScorer created');
+            } catch (e) {
+                console.error('✗ ConfidenceScorer failed:', e.message);
+                showError('ConfidenceScorer failed to load: ' + e.message);
+                initSuccess = false;
+            }
+            
+            try {
+                console.log('Attempting to create CitationTracker...');
+                citationTracker = new CitationTracker();
+                console.log('✓ CitationTracker created');
+            } catch (e) {
+                console.error('✗ CitationTracker failed:', e.message);
+                showError('CitationTracker failed to load: ' + e.message);
+                initSuccess = false;
+            }
+            
+            try {
+                console.log('Attempting to create ReviewQueue...');
+                reviewQueue = new ReviewQueue();
+                console.log('✓ ReviewQueue created');
+            } catch (e) {
+                console.error('✗ ReviewQueue failed:', e.message);
+                showError('ReviewQueue failed to load: ' + e.message);
+                initSuccess = false;
+            }
+            
+            try {
+                console.log('Attempting to create CSVImporter...');
+                csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
+                console.log('✓ CSVImporter created');
+            } catch (e) {
+                console.error('✗ CSVImporter failed:', e.message);
+                showError('CSVImporter failed to load. Check csv-importer.js line 68 for syntax errors: ' + e.message);
+                initSuccess = false;
+            }
+            
+            console.log('=== INITIALIZATION COMPLETE ===');
+            console.log('Success:', initSuccess);
+            
+            if (csvImporter) {
+                console.log('Attempting to load Hopewell data...');
+                try {
+                    await loadHopewellData();
+                } catch (e) {
+                    console.error('Error loading Hopewell data:', e);
+                    showInfo('Upload your CSV file to import data');
+                }
+            } else {
+                showError('Cannot load data - CSVImporter not initialized. Check console for details.');
+            }
+            
+            updateUI();
+        }
 
-// AUTO-LOAD CSV FROM GITHUB
-async function loadHopewellData() {
-    try {
-        const response = await fetch('hopewell-ancestors.csv');
-        const csvText = await response.text();
-        
-        const report = await csvImporter.importCSV(csvText);
-        
-        displayImportReport(report);
-        importedData = report;
-        
-        showSuccess(`Auto-loaded ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people from your research`);
-        
-        document.getElementById('totalRecords').textContent = report.summary.ownersImported;
-        
-    } catch (error) {
-        console.error('Error loading data:', error);
-        showInfo('Upload your CSV file to import data');
-    }
-}
+        async function loadHopewellData() {
+            console.log('Loading Hopewell CSV...');
+            try {
+                const response = await fetch('hopewell-ancestors.csv');
+                console.log('Fetch response status:', response.status);
+                
+                const csvText = await response.text();
+                console.log('CSV loaded, length:', csvText.length);
+                
+                const report = await csvImporter.importCSV(csvText);
+                console.log('Import complete:', report);
+                
+                displayImportReport(report);
+                importedData = report;
+                
+                displayReparationsSummary();
+                displayReviewDashboard();
+                displayNetworkGraph();
+                
+                showSuccess(`Auto-loaded ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people from your research`);
+                
+                document.getElementById('totalRecords').textContent = report.summary.ownersImported;
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showInfo('Upload your CSV file to import data');
+            }
+        }
 
-        // Handle CSV file upload
         async function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
             
+            console.log('File selected:', file.name);
             showInfo('Reading CSV file...');
             
             const reader = new FileReader();
             reader.onload = async function(e) {
                 try {
                     const csvText = e.target.result;
+                    console.log('CSV text loaded, length:', csvText.length);
                     
                     showInfo('Importing genealogy data...');
                     const report = await csvImporter.importCSV(csvText);
+                    console.log('Import report:', report);
                     
                     displayImportReport(report);
                     
@@ -569,7 +648,6 @@ async function loadHopewellData() {
             reader.readAsText(file);
         }
 
-        // Display import report
         function displayImportReport(report) {
             const resultsDiv = document.getElementById('importResults');
             
@@ -589,7 +667,7 @@ async function loadHopewellData() {
                             <div style="padding: 5px; border-bottom: 1px solid #ddd;">
                                 <strong>${owner.name}</strong> - ${owner.enslaved} enslaved, 
                                 ${owner.documents} documents
-                                ${owner.needsResearch ? ' Needs research' : ''}
+                                ${owner.needsResearch ? ' ⚠️ Needs research' : ''}
                             </div>
                         `).join('')}
                     </div>
@@ -597,8 +675,8 @@ async function loadHopewellData() {
             `;
         }
 
-        // Process imported data with FamilySearch
         async function processImportedData() {
+            console.log('Processing imported data...');
             if (!importedData) {
                 showError('No data imported yet');
                 return;
@@ -618,8 +696,10 @@ async function loadHopewellData() {
             
             showInfo('Submitting records for review...');
             const submissions = await csvImporter.submitForVerification('user_csv_import');
+            console.log('Submissions:', submissions);
             
             const owners = csvImporter.getOwnersForFamilySearch();
+            console.log('Processing', owners.length, 'owners...');
             
             for (const owner of owners) {
                 try {
@@ -745,619 +825,3 @@ async function loadHopewellData() {
                 showError('FamilySearch error: ' + error.message);
             } finally {
                 showLoading('searchLoading', false);
-            }
-        }
-
-        function calculateReparations() {
-            const enslavedCount = parseInt(document.getElementById('enslavedCount').value);
-            const years = parseInt(document.getElementById('enslavementYears').value);
-            const includeInterest = document.getElementById('includeInterest').value === 'true';
-
-            if (!enslavedCount || !years) {
-                showError('Please enter enslaved count and years');
-                return;
-            }
-
-            try {
-                const calculation = reparationsCalculator.calculateComprehensiveReparations(
-                    enslavedCount, 
-                    years, 
-                    { includeInterest, includePenalty: includeInterest }
-                );
-
-                currentCalculation = calculation;
-                displayCalculationResults(calculation);
-                updatePaymentAmount(calculation.total);
-
-            } catch (error) {
-                showError('Calculation error: ' + error.message);
-            }
-        }
-
-        function displayCalculationResults(calculation) {
-            const resultsDiv = document.getElementById('calculationResults');
-            
-            resultsDiv.innerHTML = `
-                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                    <h4>Calculation Results</h4>
-                    <div style="margin: 10px 0;">
-                        <strong>Wage Theft:</strong> $${calculation.wageTheft.toLocaleString()}
-                    </div>
-                    <div style="margin: 10px 0;">
-                        <strong>Human Dignity Damages:</strong> $${calculation.damages.toLocaleString()}
-                    </div>
-                    <div style="margin: 10px 0;">
-                        <strong>Profit Share:</strong> $${calculation.profitShare.toLocaleString()}
-                    </div>
-                    <div style="margin: 10px 0;">
-                        <strong>Compound Interest:</strong> $${calculation.compoundInterest.toLocaleString()}
-                    </div>
-                    <div style="margin: 10px 0;">
-                        <strong>Penalty:</strong> $${calculation.penalty.toLocaleString()}
-                    </div>
-                    <hr>
-                    <div style="margin: 10px 0; font-size: 1.2em; font-weight: bold;">
-                        <strong>Total Reparations:</strong> $${calculation.total.toLocaleString()}
-                    </div>
-                </div>
-            `;
-        }
-
-        function displayDescendants(ancestor, descendants) {
-            const resultsDiv = document.getElementById('descendantResults');
-            const summaryDiv = document.getElementById('descendantSummary');
-            const listDiv = document.getElementById('descendantList');
-
-            const livingCount = descendants.filter(d => d.isLikelyLiving).length;
-            
-            summaryDiv.innerHTML = `
-                <div class="info">
-                    <strong>Ancestor:</strong> ${ancestor.fullName}<br>
-                    <strong>Total Descendants:</strong> ${descendants.length}<br>
-                    <strong>Likely Living:</strong> ${livingCount}<br>
-                    <strong>Data Source:</strong> FamilySearch Beta API<br>
-                    <strong>Verification:</strong> Pending blockchain submission
-                </div>
-            `;
-
-            listDiv.innerHTML = descendants.map(descendant => `
-                <div class="descendant-card">
-                    <div class="descendant-name">${descendant.fullName}</div>
-                    <div class="descendant-details">
-                        Generation: ${descendant.generation}<br>
-                        Birth Year: ${descendant.birthYear || 'Unknown'}<br>
-                        Share: ${descendant.sharePercentage / 100}%<br>
-                        Status: ${descendant.isLikelyLiving ? 'Likely Living' : 'Deceased'}<br>
-                        FamilySearch ID: ${descendant.familySearchId}<br>
-                        Wallet: ${descendant.walletAddress || 'Not Connected'}
-                    </div>
-                </div>
-            `).join('');
-
-            resultsDiv.style.display = 'block';
-            
-            document.getElementById('depositBtn').disabled = false;
-            document.getElementById('verifyBtn').disabled = false;
-        }
-
-        function updatePaymentAmount(amount) {
-            document.getElementById('paymentAmount').textContent = `$${amount.toLocaleString()}`;
-        }
-
-        async function depositReparations() {
-            if (!web3 || !account || !reparationsContract) {
-                showError('Please connect your wallet first');
-                return;
-            }
-
-            if (!currentCalculation) {
-                showError('Please calculate reparations first');
-                return;
-            }
-
-            try {
-                const paymentToken = document.getElementById('paymentToken').value;
-                const amount = currentCalculation.total;
-                
-                showInfo('Submitting ancestry record to blockchain...');
-                
-                const ancestorName = document.getElementById('ancestorName').value;
-                const genealogyHash = web3.utils.keccak256(JSON.stringify({
-                    ancestor: ancestorName,
-                    descendants: currentDescendants,
-                    calculation: currentCalculation,
-                    timestamp: Date.now()
-                }));
-
-                const recordId = await reparationsContract.methods.submitAncestryRecord(
-                    ancestorName,
-                    currentDescendants[0]?.familySearchId || '',
-                    genealogyHash,
-                    web3.utils.toWei(amount.toString(), 'ether'),
-                    `FamilySearch verified record with ${currentDescendants.length} descendants`
-                ).send({ from: account });
-
-                currentRecordId = recordId.events.AncestryRecordSubmitted.returnValues.recordId;
-                
-                showInfo('Adding descendants to record...');
-                
-                const walletAddresses = currentDescendants.map(d => 
-                    d.walletAddress || '0x0000000000000000000000000000000000000000'
-                );
-                const familySearchIds = currentDescendants.map(d => d.familySearchId);
-                const fullNames = currentDescendants.map(d => d.fullName);
-                const sharePercentages = currentDescendants.map(d => d.sharePercentage);
-
-                await reparationsContract.methods.addDescendants(
-                    currentRecordId,
-                    walletAddresses,
-                    familySearchIds,
-                    fullNames,
-                    sharePercentages
-                ).send({ from: account });
-
-                showInfo('Depositing reparations to escrow...');
-
-                if (paymentToken === 'ETH') {
-                    await reparationsContract.methods.depositReparations(
-                        currentRecordId,
-                        '0x0000000000000000000000000000000000000000',
-                        0
-                    ).send({ 
-                        from: account,
-                        value: web3.utils.toWei(amount.toString(), 'ether')
-                    });
-                } else {
-                    showInfo('Please approve token spending in MetaMask...');
-                    
-                    const tokenContract = new web3.eth.Contract([
-                        {
-                            "inputs": [{"type": "address"}, {"type": "uint256"}],
-                            "name": "approve",
-                            "outputs": [{"type": "bool"}],
-                            "type": "function"
-                        }
-                    ], paymentToken);
-
-                    const tokenAmount = web3.utils.toWei(amount.toString(), 'mwei');
-                    
-                    await tokenContract.methods.approve(
-                        contractAddress,
-                        tokenAmount
-                    ).send({ from: account });
-
-                    await reparationsContract.methods.depositReparations(
-                        currentRecordId,
-                        paymentToken,
-                        tokenAmount
-                    ).send({ from: account });
-                }
-
-                showSuccess('Reparations successfully deposited to escrow! Record ID: ' + currentRecordId);
-                document.getElementById('distributeBtn').disabled = false;
-                updateTotalPaid(amount);
-
-            } catch (error) {
-                showError('Deposit failed: ' + error.message);
-            }
-        }
-
-        async function verifyDescendants() {
-            if (!web3 || !account || !reparationsContract || !currentRecordId) {
-                showError('Please complete the deposit process first');
-                return;
-            }
-
-            try {
-                showInfo('Verifying ancestry record...');
-                
-                await reparationsContract.methods.verifyAncestryRecord(
-                    currentRecordId
-                ).send({ from: account });
-
-                showInfo('Verifying descendants...');
-
-                for (const descendant of currentDescendants) {
-                    if (descendant.isLikelyLiving) {
-                        await reparationsContract.methods.verifyDescendant(
-                            currentRecordId,
-                            descendant.walletAddress || '0x0000000000000000000000000000000000000000',
-                            `FamilySearch ID: ${descendant.familySearchId}`
-                        ).send({ from: account });
-                    }
-                }
-
-                showSuccess('All descendants verified! Ready for payment distribution.');
-
-            } catch (error) {
-                showError('Verification failed: ' + error.message);
-            }
-        }
-
-        async function distributePayments() {
-            if (!web3 || !account || !reparationsContract || !currentRecordId) {
-                showError('Please complete verification first');
-                return;
-            }
-
-            try {
-                const paymentToken = document.getElementById('paymentToken').value;
-                const amount = currentCalculation.total;
-                
-                showInfo('Distributing payments to verified descendants...');
-
-                const tokenAddress = paymentToken === 'ETH' ? 
-                    '0x0000000000000000000000000000000000000000' : paymentToken;
-                    
-                const paymentAmount = paymentToken === 'ETH' ? 
-                    web3.utils.toWei(amount.toString(), 'ether') :
-                    web3.utils.toWei(amount.toString(), 'mwei');
-
-                await reparationsContract.methods.distributePayments(
-                    currentRecordId,
-                    tokenAddress,
-                    paymentAmount
-                ).send({ from: account });
-
-                showSuccess(`Successfully distributed $${amount.toLocaleString()} to ${currentDescendants.length} verified descendants!`);
-                
-                updateStats();
-
-            } catch (error) {
-                showError('Distribution failed: ' + error.message);
-            }
-        }
-
-        function updateWalletStatus() {
-            const statusDiv = document.getElementById('connectionStatus');
-            const connectBtn = document.getElementById('connectWallet');
-            const walletDiv = document.getElementById('walletStatus');
-
-            if (account) {
-                statusDiv.innerHTML = `${account.slice(0,6)}...${account.slice(-4)}`;
-                connectBtn.textContent = 'Connected';
-                connectBtn.disabled = true;
-                walletDiv.className = 'wallet-status connected';
-            } else {
-                statusDiv.innerHTML = 'Not Connected';
-                connectBtn.textContent = 'Connect MetaMask';
-                connectBtn.disabled = false;
-                walletDiv.className = 'wallet-status disconnected';
-            }
-        }
-
-        function enablePaymentFeatures() {
-            const buttons = ['depositBtn', 'verifyBtn', 'distributeBtn'];
-            buttons.forEach(btnId => {
-                const btn = document.getElementById(btnId);
-                if (btn) btn.style.opacity = '1';
-            });
-        }
-
-        function updateStats() {
-            document.getElementById('totalRecords').textContent = '1';
-            document.getElementById('descendantCount').textContent = currentDescendants.length;
-            
-            if (currentCalculation) {
-                document.getElementById('totalReparations').textContent = 
-                    `$${currentCalculation.total.toLocaleString()}`;
-            }
-        }
-
-        function updateTotalPaid(amount) {
-            document.getElementById('totalPaid').textContent = `$${amount.toLocaleString()}`;
-        }
-
-        function showError(message) {
-            showMessage(message, 'error');
-        }
-
-        function showSuccess(message) {
-            showMessage(message, 'success');
-        }
-
-        function showInfo(message) {
-            showMessage(message, 'info');
-        }
-
-        function showMessage(message, type) {
-            const existingMessage = document.querySelector(`.${type}`);
-            if (existingMessage) {
-                existingMessage.remove();
-            }
-
-            const messageDiv = document.createElement('div');
-            messageDiv.className = type;
-            messageDiv.textContent = message;
-            
-            document.querySelector('.container').appendChild(messageDiv);
-            
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 5000);
-        }
-
-        function showLoading(elementId, show) {
-            const element = document.getElementById(elementId);
-            if (element) {
-                element.style.display = show ? 'inline-block' : 'none';
-            }
-        }
-
-        function updateUI() {
-            updateWalletStatus();
-            updateStats();
-        }
-
-        document.addEventListener('DOMContentLoaded', initApp);
-
-        if (window.ethereum) {
-            window.ethereum.on('accountsChanged', function (accounts) {
-                if (accounts.length === 0) {
-                    account = null;
-                    updateWalletStatus();
-                } else {
-                    account = accounts[0];
-                    updateWalletStatus();
-                }
-            });
-        }
-        // NEW FUNCTIONS FOR A, B, C, D
-
-// B: Calculate and display reparations summary
-function displayReparationsSummary() {
-    if (!csvImporter || csvImporter.owners.size === 0) return;
-    
-    let totalOwed = 0;
-    const owners = Array.from(csvImporter.owners.values());
-    
-    owners.forEach(owner => {
-        const calc = reparationsCalculator.calculateComprehensiveReparations(
-            owner.totalCount,
-            25 // average years
-        );
-        totalOwed += calc.total;
-    });
-    
-    document.getElementById('totalOwed').textContent = '$' + totalOwed.toLocaleString();
-    document.getElementById('totalOwners').textContent = csvImporter.owners.size;
-    document.getElementById('totalEnslaved').textContent = csvImporter.enslavedPeople.size;
-    
-    document.getElementById('analysisSection').style.display = 'block';
-}
-
-// A: Display review dashboard
-function displayReviewDashboard() {
-    const dashboardDiv = document.getElementById('reviewDashboard');
-    const stats = reviewQueue.getStatistics();
-    
-    if (stats.total === 0) {
-        dashboardDiv.innerHTML = '<p>No records to review yet.</p>';
-        return;
-    }
-    
-    const pendingReviews = reviewQueue.getPendingReviewsForReviewer('admin');
-    
-    dashboardDiv.innerHTML = `
-        <div style="background: #ecf0f1; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <strong>Queue Status:</strong> 
-            ${stats.pending} pending, 
-            ${stats.disputed} disputed, 
-            ${stats.approved} approved, 
-            ${stats.rejected} rejected
-        </div>
-        
-        ${pendingReviews.map(review => `
-            <div style="background: white; border: 2px solid #bdc3c7; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
-                <h4 style="margin-top: 0;">${review.ownerData.name}</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                    <div>
-                        <strong>Location:</strong> ${review.ownerData.location}<br>
-                        <strong>Enslaved:</strong> ${review.ownerData.totalCount} people<br>
-                        <strong>Documents:</strong> ${review.ownerData.documents.length}
-                    </div>
-                    <div>
-                        <strong>Confidence:</strong> <span style="color: ${
-                            review.confidence.level === 'HIGH' ? '#27ae60' :
-                            review.confidence.level === 'MEDIUM' ? '#f39c12' : '#e74c3c'
-                        };">${review.confidence.level}</span><br>
-                        <strong>Score:</strong> ${review.confidence.score}/100<br>
-                        <strong>Status:</strong> ${review.status}
-                    </div>
-                </div>
-                
-                ${review.flags && review.flags.length > 0 ? `
-                    <div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-                        <strong>Flags:</strong><br>
-                        ${review.flags.map(flag => `⚠️ ${flag.message}`).join('<br>')}
-                    </div>
-                ` : ''}
-                
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-success" style="width: auto; padding: 8px 16px;" 
-                            onclick="approveReview('${review.id}')">
-                        Approve
-                    </button>
-                    <button class="btn btn-warning" style="width: auto; padding: 8px 16px;"
-                            onclick="requestMoreResearch('${review.id}')">
-                        Request More Research
-                    </button>
-                    <button class="btn btn-danger" style="width: auto; padding: 8px 16px;"
-                            onclick="rejectReview('${review.id}')">
-                        Reject
-                    </button>
-                </div>
-            </div>
-        `).join('')}
-    `;
-}
-
-// A: Approve review
-async function approveReview(reviewId) {
-    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'APPROVE', 'Manually approved');
-    showSuccess('Record approved!');
-    displayReviewDashboard();
-}
-
-// A: Request more research
-async function requestMoreResearch(reviewId) {
-    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'REQUEST_MORE_RESEARCH', 'Needs additional documentation');
-    showInfo('More research requested');
-    displayReviewDashboard();
-}
-
-// A: Reject review
-async function rejectReview(reviewId) {
-    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'REJECT', 'Insufficient evidence');
-    showError('Record rejected');
-    displayReviewDashboard();
-}
-
-// C: Display network graph (simplified version)
-function displayNetworkGraph() {
-    const graphDiv = document.getElementById('networkGraph');
-    const owners = Array.from(csvImporter.owners.values());
-    
-    let html = '<div style="font-family: monospace; line-height: 1.8;">';
-    
-    owners.forEach(owner => {
-        html += `<div style="margin-bottom: 30px;">
-            <strong style="color: #e74c3c; font-size: 1.2em;">⬤ ${owner.name}</strong> 
-            <span style="color: #7f8c8d;">(${owner.location})</span><br>`;
-        
-        owner.enslavedPeople.slice(0, 5).forEach(person => {
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color: #3498db;">⬤ ${person.name}</span>`;
-            if (person.familyRelationship) {
-                html += ` <span style="color: #95a5a6; font-size: 0.9em;">(${person.familyRelationship})</span>`;
-            }
-            html += '<br>';
-        });
-        
-        if (owner.enslavedPeople.length > 5) {
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color: #95a5a6;">... and ${owner.enslavedPeople.length - 5} more</span><br>`;
-        }
-        
-        html += '</div>';
-    });
-    
-    html += '</div>';
-    graphDiv.innerHTML = html;
-}
-
-// D: Export report
-function exportReport() {
-    if (!csvImporter || csvImporter.owners.size === 0) {
-        showError('No data to export');
-        return;
-    }
-    
-    const owners = Array.from(csvImporter.owners.values());
-    let report = `REPARATIONS ACCOUNTABILITY REPORT
-Generated: ${new Date().toLocaleDateString()}
-===============================================
-
-SUMMARY
--------
-Total Slave Owners Documented: ${csvImporter.owners.size}
-Total Enslaved People: ${csvImporter.enslavedPeople.size}
-Total Documents: ${csvImporter.documents.size}
-
-CALCULATED REPARATIONS
-----------------------
-`;
-    
-    let grandTotal = 0;
-    owners.forEach(owner => {
-        const calc = reparationsCalculator.calculateComprehensiveReparations(owner.totalCount, 25);
-        grandTotal += calc.total;
-        
-        report += `
-${owner.name} (${owner.location})
-  Enslaved: ${owner.totalCount} people
-  Reparations Owed: $${calc.total.toLocaleString()}
-  Confidence: ${confidenceScorer.calculateConfidence(owner).level}
-  Documents: ${owner.documents.length}
-`;
-    });
-    
-    report += `
--------
-GRAND TOTAL OWED: $${grandTotal.toLocaleString()}
-
-DETAILED BREAKDOWN BY OWNER
-============================
-`;
-    
-    owners.forEach(owner => {
-        report += `
-${owner.name}
-${'='.repeat(owner.name.length)}
-Location: ${owner.location}
-Death Year: ${owner.deathYear || 'Unknown'}
-
-Enslaved People (${owner.totalCount}):
-`;
-        owner.enslavedPeople.forEach(person => {
-            report += `  - ${person.name}`;
-            if (person.familyRelationship) report += ` (${person.familyRelationship})`;
-            if (person.bequeathedTo) report += ` → inherited by ${person.bequeathedTo}`;
-            report += '\n';
-        });
-        
-        report += `
-Documents:
-`;
-        owner.documents.forEach(doc => {
-            report += `  - ${doc.type}: ${doc.description}\n`;
-            if (doc.url) report += `    URL: ${doc.url}\n`;
-        });
-        
-        if (owner.notes) {
-            report += `
-Research Needed:
-  ${owner.notes}
-`;
-        }
-        
-        report += '\n---\n';
-    });
-    
-    // Download as text file
-    const blob = new Blob([report], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `reparations-report-${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    
-    showSuccess('Report downloaded!');
-}
-
-// Update the loadHopewellData function to trigger dashboard
-async function loadHopewellData() {
-    try {
-        const response = await fetch('hopewell-ancestors.csv');
-        const csvText = await response.text();
-        
-        const report = await csvImporter.importCSV(csvText);
-        
-        displayImportReport(report);
-        importedData = report;
-        
-        // NEW: Display all dashboard components
-        displayReparationsSummary();
-        displayReviewDashboard();
-        displayNetworkGraph();
-        
-        showSuccess(`Auto-loaded ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people from your research`);
-        
-        document.getElementById('totalRecords').textContent = report.summary.ownersImported;
-        
-    } catch (error) {
-        console.error('Error loading data:', error);
-        showInfo('Upload your CSV file to import data');
-    }
-}
-    </script>
-</body>
-</html>
