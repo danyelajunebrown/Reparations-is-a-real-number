@@ -333,6 +333,55 @@
                 <div id="searchResults"></div>
             </div>
 
+            </div> <!-- Close main-grid -->
+
+<!-- NEW SECTION: Data Analysis Dashboard -->
+<div class="card" style="margin-bottom: 30px;" id="analysisSection" style="display: none;">
+    <h2>Imported Data Analysis</h2>
+    
+    <!-- B: Reparations Summary -->
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0;">Total Reparations Summary</h3>
+        <div id="reparationsSummary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+            <div>
+                <div style="font-size: 2em; font-weight: bold; color: #e74c3c;" id="totalOwed">$0</div>
+                <div style="color: #7f8c8d;">Total Owed</div>
+            </div>
+            <div>
+                <div style="font-size: 2em; font-weight: bold; color: #3498db;" id="totalOwners">0</div>
+                <div style="color: #7f8c8d;">Slave Owners</div>
+            </div>
+            <div>
+                <div style="font-size: 2em; font-weight: bold; color: #9b59b6;" id="totalEnslaved">0</div>
+                <div style="color: #7f8c8d;">Enslaved People</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- A: Review Dashboard -->
+    <div style="margin-bottom: 30px;">
+        <h3>Review Queue</h3>
+        <div id="reviewDashboard"></div>
+    </div>
+
+    <!-- C: Network Graph Placeholder -->
+    <div style="margin-bottom: 30px;">
+        <h3>Ownership Network</h3>
+        <div id="networkGraph" style="background: #f8f9fa; padding: 20px; border-radius: 10px; min-height: 400px;">
+            <div style="text-align: center; padding: 50px;">
+                Network visualization loading...
+            </div>
+        </div>
+    </div>
+
+    <!-- D: Export Report -->
+    <div style="text-align: center;">
+        <button class="btn btn-success" onclick="exportReport()">
+            Download Complete Report (PDF)
+        </button>
+    </div>
+</div>
+
             <div class="card">
                 <h2>Reparations Calculator</h2>
                 <div class="form-group">
@@ -1054,6 +1103,262 @@ async function loadHopewellData() {
                 }
             });
         }
+        // NEW FUNCTIONS FOR A, B, C, D
+
+// B: Calculate and display reparations summary
+function displayReparationsSummary() {
+    if (!csvImporter || csvImporter.owners.size === 0) return;
+    
+    let totalOwed = 0;
+    const owners = Array.from(csvImporter.owners.values());
+    
+    owners.forEach(owner => {
+        const calc = reparationsCalculator.calculateComprehensiveReparations(
+            owner.totalCount,
+            25 // average years
+        );
+        totalOwed += calc.total;
+    });
+    
+    document.getElementById('totalOwed').textContent = '$' + totalOwed.toLocaleString();
+    document.getElementById('totalOwners').textContent = csvImporter.owners.size;
+    document.getElementById('totalEnslaved').textContent = csvImporter.enslavedPeople.size;
+    
+    document.getElementById('analysisSection').style.display = 'block';
+}
+
+// A: Display review dashboard
+function displayReviewDashboard() {
+    const dashboardDiv = document.getElementById('reviewDashboard');
+    const stats = reviewQueue.getStatistics();
+    
+    if (stats.total === 0) {
+        dashboardDiv.innerHTML = '<p>No records to review yet.</p>';
+        return;
+    }
+    
+    const pendingReviews = reviewQueue.getPendingReviewsForReviewer('admin');
+    
+    dashboardDiv.innerHTML = `
+        <div style="background: #ecf0f1; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <strong>Queue Status:</strong> 
+            ${stats.pending} pending, 
+            ${stats.disputed} disputed, 
+            ${stats.approved} approved, 
+            ${stats.rejected} rejected
+        </div>
+        
+        ${pendingReviews.map(review => `
+            <div style="background: white; border: 2px solid #bdc3c7; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
+                <h4 style="margin-top: 0;">${review.ownerData.name}</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <strong>Location:</strong> ${review.ownerData.location}<br>
+                        <strong>Enslaved:</strong> ${review.ownerData.totalCount} people<br>
+                        <strong>Documents:</strong> ${review.ownerData.documents.length}
+                    </div>
+                    <div>
+                        <strong>Confidence:</strong> <span style="color: ${
+                            review.confidence.level === 'HIGH' ? '#27ae60' :
+                            review.confidence.level === 'MEDIUM' ? '#f39c12' : '#e74c3c'
+                        };">${review.confidence.level}</span><br>
+                        <strong>Score:</strong> ${review.confidence.score}/100<br>
+                        <strong>Status:</strong> ${review.status}
+                    </div>
+                </div>
+                
+                ${review.flags && review.flags.length > 0 ? `
+                    <div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+                        <strong>Flags:</strong><br>
+                        ${review.flags.map(flag => `⚠️ ${flag.message}`).join('<br>')}
+                    </div>
+                ` : ''}
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-success" style="width: auto; padding: 8px 16px;" 
+                            onclick="approveReview('${review.id}')">
+                        Approve
+                    </button>
+                    <button class="btn btn-warning" style="width: auto; padding: 8px 16px;"
+                            onclick="requestMoreResearch('${review.id}')">
+                        Request More Research
+                    </button>
+                    <button class="btn btn-danger" style="width: auto; padding: 8px 16px;"
+                            onclick="rejectReview('${review.id}')">
+                        Reject
+                    </button>
+                </div>
+            </div>
+        `).join('')}
+    `;
+}
+
+// A: Approve review
+async function approveReview(reviewId) {
+    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'APPROVE', 'Manually approved');
+    showSuccess('Record approved!');
+    displayReviewDashboard();
+}
+
+// A: Request more research
+async function requestMoreResearch(reviewId) {
+    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'REQUEST_MORE_RESEARCH', 'Needs additional documentation');
+    showInfo('More research requested');
+    displayReviewDashboard();
+}
+
+// A: Reject review
+async function rejectReview(reviewId) {
+    const result = await reviewQueue.humanApprove(reviewId, 'admin', 'REJECT', 'Insufficient evidence');
+    showError('Record rejected');
+    displayReviewDashboard();
+}
+
+// C: Display network graph (simplified version)
+function displayNetworkGraph() {
+    const graphDiv = document.getElementById('networkGraph');
+    const owners = Array.from(csvImporter.owners.values());
+    
+    let html = '<div style="font-family: monospace; line-height: 1.8;">';
+    
+    owners.forEach(owner => {
+        html += `<div style="margin-bottom: 30px;">
+            <strong style="color: #e74c3c; font-size: 1.2em;">⬤ ${owner.name}</strong> 
+            <span style="color: #7f8c8d;">(${owner.location})</span><br>`;
+        
+        owner.enslavedPeople.slice(0, 5).forEach(person => {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color: #3498db;">⬤ ${person.name}</span>`;
+            if (person.familyRelationship) {
+                html += ` <span style="color: #95a5a6; font-size: 0.9em;">(${person.familyRelationship})</span>`;
+            }
+            html += '<br>';
+        });
+        
+        if (owner.enslavedPeople.length > 5) {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;└─ <span style="color: #95a5a6;">... and ${owner.enslavedPeople.length - 5} more</span><br>`;
+        }
+        
+        html += '</div>';
+    });
+    
+    html += '</div>';
+    graphDiv.innerHTML = html;
+}
+
+// D: Export report
+function exportReport() {
+    if (!csvImporter || csvImporter.owners.size === 0) {
+        showError('No data to export');
+        return;
+    }
+    
+    const owners = Array.from(csvImporter.owners.values());
+    let report = `REPARATIONS ACCOUNTABILITY REPORT
+Generated: ${new Date().toLocaleDateString()}
+===============================================
+
+SUMMARY
+-------
+Total Slave Owners Documented: ${csvImporter.owners.size}
+Total Enslaved People: ${csvImporter.enslavedPeople.size}
+Total Documents: ${csvImporter.documents.size}
+
+CALCULATED REPARATIONS
+----------------------
+`;
+    
+    let grandTotal = 0;
+    owners.forEach(owner => {
+        const calc = reparationsCalculator.calculateComprehensiveReparations(owner.totalCount, 25);
+        grandTotal += calc.total;
+        
+        report += `
+${owner.name} (${owner.location})
+  Enslaved: ${owner.totalCount} people
+  Reparations Owed: $${calc.total.toLocaleString()}
+  Confidence: ${confidenceScorer.calculateConfidence(owner).level}
+  Documents: ${owner.documents.length}
+`;
+    });
+    
+    report += `
+-------
+GRAND TOTAL OWED: $${grandTotal.toLocaleString()}
+
+DETAILED BREAKDOWN BY OWNER
+============================
+`;
+    
+    owners.forEach(owner => {
+        report += `
+${owner.name}
+${'='.repeat(owner.name.length)}
+Location: ${owner.location}
+Death Year: ${owner.deathYear || 'Unknown'}
+
+Enslaved People (${owner.totalCount}):
+`;
+        owner.enslavedPeople.forEach(person => {
+            report += `  - ${person.name}`;
+            if (person.familyRelationship) report += ` (${person.familyRelationship})`;
+            if (person.bequeathedTo) report += ` → inherited by ${person.bequeathedTo}`;
+            report += '\n';
+        });
+        
+        report += `
+Documents:
+`;
+        owner.documents.forEach(doc => {
+            report += `  - ${doc.type}: ${doc.description}\n`;
+            if (doc.url) report += `    URL: ${doc.url}\n`;
+        });
+        
+        if (owner.notes) {
+            report += `
+Research Needed:
+  ${owner.notes}
+`;
+        }
+        
+        report += '\n---\n';
+    });
+    
+    // Download as text file
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reparations-report-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    
+    showSuccess('Report downloaded!');
+}
+
+// Update the loadHopewellData function to trigger dashboard
+async function loadHopewellData() {
+    try {
+        const response = await fetch('hopewell-ancestors.csv');
+        const csvText = await response.text();
+        
+        const report = await csvImporter.importCSV(csvText);
+        
+        displayImportReport(report);
+        importedData = report;
+        
+        // NEW: Display all dashboard components
+        displayReparationsSummary();
+        displayReviewDashboard();
+        displayNetworkGraph();
+        
+        showSuccess(`Auto-loaded ${report.summary.ownersImported} slave owners and ${report.summary.enslavedPeopleImported} enslaved people from your research`);
+        
+        document.getElementById('totalRecords').textContent = report.summary.ownersImported;
+        
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showInfo('Upload your CSV file to import data');
+    }
+}
     </script>
 </body>
 </html>
