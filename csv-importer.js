@@ -62,7 +62,7 @@ class CSVImporter {
     
     console.log('Processing row:', ownerName, row);
     
-    // Skip header rows or empty rows - FIXED THIS LINE
+    // Skip header rows or empty rows
     if (!ownerName || ownerName === 'Owner Name' || 
         ownerName.startsWith('RESEARCH PRIORITIES') ||
         ownerName.startsWith('HIGH PRIORITY') ||
