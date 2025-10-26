@@ -15,6 +15,7 @@
     <script src="citation-tracker.js"></script>
     <script src="review-queue.js"></script>
     <script src="csv-importer.js"></script>
+    <script src="enhanced-document-processor.js"></script>
     
     <style>
         * {
@@ -668,6 +669,27 @@
                 
                 addConsoleMessage('✓ Core systems initialized', 'success');
                 
+                // Initialize REAL document processor with Google Vision API
+                if (typeof EnhancedDocumentProcessor !== 'undefined') {
+                    documentProcessor = new EnhancedDocumentProcessor({
+                        storageRoot: './storage',
+                        reparationsCalculator: reparationsCalculator,
+                        generateIPFSHash: true,
+                        performOCR: true,  // REAL OCR enabled!
+                        saveToDatabase: false, // Set to true when DB is connected
+                        ocrProvider: 'google',
+                        // Google Vision API credentials loaded from external file
+                        googleVisionCredentials: './google-vision-credentials.json'
+                    });
+                    addConsoleMessage('✓ REAL Document Processor initialized with Google Vision API', 'success');
+                    addConsoleMessage('✓ OCR: ENABLED', 'success');
+                    addConsoleMessage('✓ IPFS: ENABLED', 'success');
+                    document.getElementById('systemStatus').textContent = 'Real Processing Active';
+                } else {
+                    addConsoleMessage('⚠️ Enhanced Document Processor not loaded', 'error');
+                    document.getElementById('systemStatus').textContent = 'Processor Not Found';
+                }
+                
                 // Load sample data
                 await loadSampleData();
                 
@@ -677,8 +699,7 @@
                 updateStatsDisplay();
                 startAutoRotate();
                 
-                document.getElementById('systemStatus').textContent = 'All Systems Operational';
-                addConsoleMessage('✓ Ready for document processing', 'success');
+                addConsoleMessage('✓ Ready for REAL document processing', 'success');
                 
             } catch (error) {
                 console.error('Initialization error:', error);
@@ -772,50 +793,52 @@
         }
 
         async function processUploadedDocument(file, metadata) {
-            addConsoleMessage('⚙️ Starting 7-stage processing pipeline...', 'info');
-            
-            // Simulate processing stages
-            const stages = ['Storage', 'IPFS Hash', 'OCR', 'Parsing', 'Reparations', 'Database', 'Blockchain'];
-            
-            for (let i = 0; i < stages.length; i++) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                addConsoleMessage(`▶ Stage ${i + 1}/7: ${stages[i]}...`, 'info');
+            if (!documentProcessor) {
+                addConsoleMessage('❌ Document processor not initialized', 'error');
+                return;
             }
+
+            addConsoleMessage('⚙️ Starting REAL 7-stage processing pipeline...', 'info');
             
-            // Mock results
-            const mockResult = {
-                success: true,
-                documentId: 'doc_' + Date.now(),
-                stages: {
-                    storage: { filePath: `./storage/${metadata.ownerName}/will/${file.name}` },
-                    ipfsHash: { hash: 'Qm' + Math.random().toString(36).substring(7) },
-                    ocr: { wordCount: 1200, confidence: 85 },
-                    parsing: {
-                        totalCount: 15,
-                        namedCount: 12,
-                        unnamedCount: 3,
-                        people: Array(15).fill().map((_, i) => ({
-                            name: `Person ${i + 1}`,
-                            familyRelationship: i < 3 ? 'Child' : ''
-                        })),
-                        families: []
-                    },
-                    reparations: { total: 15 * 2200000 },
-                    database: { saved: true },
-                    blockchain: { ready: true }
-                },
-                metadata: metadata
-            };
-            
-            // Update display
-            addConsoleMessage('✓ Processing complete!', 'success');
-            addConsoleMessage(`  Storage: ${mockResult.stages.storage.filePath}`, 'success');
-            addConsoleMessage(`  IPFS: ${mockResult.stages.ipfsHash.hash}`, 'success');
-            addConsoleMessage(`  Enslaved People: ${mockResult.stages.parsing.totalCount}`, 'success');
-            addConsoleMessage(`  Reparations: $${mockResult.stages.reparations.total.toLocaleString()}`, 'success');
-            
-            updateOwnerData(mockResult);
-            refreshUI();
+            try {
+                // REAL PROCESSING - No more simulation!
+                const result = await documentProcessor.processDocument(file, metadata);
+                
+                if (result.success) {
+                    // Extract results from each stage
+                    const { storage, ipfsHash, ocr, parsing, reparations, database, blockchain } = result.stages;
+                    
+                    addConsoleMessage('✓ Document processed successfully!', 'success');
+                    addConsoleMessage(`  ▶ Storage: ${storage.filePath}`, 'success');
+                    addConsoleMessage(`  ▶ IPFS Hash: ${ipfsHash.hash.substring(0, 30)}...`, 'success');
+                    addConsoleMessage(`  ▶ OCR: ${ocr.wordCount} words extracted (${ocr.confidence}% confidence)`, 'success');
+                    addConsoleMessage(`  ▶ Enslaved People: ${parsing.totalCount} identified`, 'success');
+                    addConsoleMessage(`  ▶ Named: ${parsing.namedCount} | Unnamed: ${parsing.unnamedCount}`, 'success');
+                    addConsoleMessage(`  ▶ Families: ${parsing.families.length} family units`, 'success');
+                    addConsoleMessage(`  ▶ Reparations: $${reparations.total.toLocaleString()}`, 'success');
+                    addConsoleMessage(`  ▶ Per Person: $${Math.round(reparations.total / parsing.totalCount).toLocaleString()}`, 'success');
+                    
+                    // Add to our data structures
+                    processedDocuments.push(result);
+                    
+                    // Create or update owner record
+                    updateOwnerData(result);
+                    
+                    // Refresh UI
+                    refreshUI();
+                    
+                    // Show blockchain payload
+                    addConsoleMessage('✓ Ready for blockchain submission', 'success');
+                    addConsoleMessage(`  Document ID: ${result.documentId}`, 'info');
+                    
+                } else {
+                    addConsoleMessage('❌ Processing failed: ' + result.error, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Document processing error:', error);
+                addConsoleMessage('❌ Error: ' + error.message, 'error');
+            }
         }
 
         async function handleCSVImport(file) {
