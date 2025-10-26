@@ -1,0 +1,75 @@
+# Environment Variables - NEVER COMMIT THESE!
+.env
+.env.local
+.env.production
+.env.test
+
+# API Keys and Secrets
+*.key
+*.pem
+secrets.json
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Storage and Uploads
+storage/
+uploads/
+temp/
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Editor Files
+.vscode/
+.idea/
+*.swp
+
+# Build Output
+dist/
+build/
+```
+
+---
+
+### 2. **.env.example** (Safe template)
+```
+# Environment Variables Template
+# Copy this file to .env and fill in your actual values
+# NEVER commit the .env file to git!
+
+# Google Cloud Vision API
+GOOGLE_VISION_API_KEY=your_google_vision_api_key_here
+
+# PostgreSQL Database
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=reparations
+POSTGRES_USER=reparations_user
+POSTGRES_PASSWORD=your_secure_password_here
+
+# File Storage
+STORAGE_ROOT=./storage
+
+# Server Configuration
+PORT=3000
+HOST=localhost
+
+# IPFS (Optional)
+IPFS_ENABLED=false
+IPFS_GATEWAY=https://ipfs.io/ipfs/
+
+# Blockchain (Optional)
+BLOCKCHAIN_NETWORK_ID=5
+CONTRACT_ADDRESS=
+BLOCKCHAIN_RPC_URL=
