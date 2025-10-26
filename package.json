@@ -15,7 +15,8 @@
   "dependencies": {
     "web3": "^1.10.0",
     "@openzeppelin/contracts": "^4.9.0",
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "truffle": "^5.11.0",
