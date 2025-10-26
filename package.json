@@ -2,25 +2,35 @@
   "name": "reparations-blockchain",
   "version": "2.0.0",
   "description": "Blockchain-based reparations with FamilySearch integration",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "init-db": "node init-database.js",
     "dev": "nodemon server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "migrate": "truffle migrate --network development",
+    "test": "echo \"No tests specified\" && exit 0"
   },
-  "keywords": ["blockchain", "reparations", "genealogy", "familysearch", "ethereum"],
-  "author": "Your Name",
+  "keywords": [
+    "blockchain",
+    "reparations",
+    "genealogy",
+    "familysearch",
+    "ethereum"
+  ],
+  "author": "danyelajunebrown <your-email@example.com>",
   "license": "MIT",
+  "engines": {
+    "node": ">=14 <=20"
+  },
   "dependencies": {
     "web3": "^1.10.0",
-    "@openzeppelin/contracts": "^4.9.0",
-    "http-server": "^14.1.1",
     "dotenv": "^16.0.0"
   },
   "devDependencies": {
+    "@openzeppelin/contracts": "^4.9.0",
     "truffle": "^5.11.0",
-    "ganache-cli": "^6.12.2",
-    "@truffle/hdwallet-provider": "^2.1.0"
+    "ganache": "^7.8.0",
+    "@truffle/hdwallet-provider": "^2.1.0",
+    "nodemon": "^2.0.22"
   }
 }
