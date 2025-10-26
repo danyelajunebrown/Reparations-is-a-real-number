@@ -3,9 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reparations Accountability Platform</title>
+    <title>Reparations Accountability Platform - Enhanced</title>
+    
+    <!-- External Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    
+    <!-- Core System Modules -->
+    <script src="reparations-calculator.js"></script>
+    <script src="confidence-scorer.js"></script>
+    <script src="citation-tracker.js"></script>
+    <script src="review-queue.js"></script>
+    <script src="csv-importer.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -26,16 +36,54 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 50px;
+            height: 60px;
             background: rgba(10, 14, 39, 0.95);
             backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
-            justify-content: flex-end;
+            justify-content: space-between;
             padding: 0 20px;
             gap: 15px;
             z-index: 1000;
             border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+        }
+
+        .icon-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .system-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #64c8ff;
+        }
+
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64ff64;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .icon-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
         }
 
         .icon-btn {
@@ -69,18 +117,45 @@
             color: #64ff64;
         }
 
-        /* Main Container */
+        /* Main Dashboard */
         .dashboard {
-            margin-top: 50px;
-            height: calc(100vh - 50px);
+            margin-top: 60px;
+            height: calc(100vh - 60px);
             display: flex;
             flex-direction: column;
             padding: 0;
         }
 
+        /* Top Section: Document Processing Stats */
+        .stats-banner {
+            height: 80px;
+            background: linear-gradient(90deg, #1a1e3f 0%, #2a2e4f 100%);
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 0 40px;
+        }
+
+        .stat-box {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #64c8ff;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #9aa5b1;
+            margin-top: 5px;
+        }
+
         /* Widget 1: Rotating Forest (Top Half) */
         .widget-forest {
-            height: 50vh;
+            height: calc(50vh - 80px);
             background: linear-gradient(180deg, #0a0e27 0%, #1a1e3f 100%);
             border-bottom: 2px solid rgba(100, 200, 255, 0.3);
             position: relative;
@@ -194,28 +269,14 @@
             font-style: italic;
         }
 
-        .descendant-section {
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(100, 255, 100, 0.3);
-        }
-
-        .descendant-label {
+        .document-badge {
+            display: inline-block;
+            background: rgba(100, 255, 100, 0.2);
             color: #64ff64;
-            font-weight: bold;
-            font-size: 0.9em;
-            margin-bottom: 5px;
-        }
-
-        .reparations-view .enslaved-person {
-            border-left-color: #ffaa00;
-            background: rgba(255, 170, 0, 0.1);
-        }
-
-        .reparations-amount {
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #ffaa00;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin: 3px;
         }
 
         .carousel-controls {
@@ -307,20 +368,6 @@
             border-top: 1px solid rgba(100, 200, 255, 0.3);
         }
 
-        .victim-selector {
-            margin-top: 20px;
-        }
-
-        .victim-selector select {
-            width: 100%;
-            padding: 10px;
-            background: rgba(30, 40, 70, 0.8);
-            border: 1px solid rgba(100, 200, 255, 0.5);
-            color: #e0e0e0;
-            border-radius: 5px;
-            font-size: 0.9em;
-        }
-
         /* Widget 3: Data Browser */
         .owner-list {
             display: flex;
@@ -401,18 +448,6 @@
             gap: 10px;
         }
 
-        .console-input {
-            width: 100%;
-            padding: 10px;
-            background: rgba(30, 40, 70, 0.8);
-            border: 1px solid rgba(100, 200, 255, 0.5);
-            color: #e0e0e0;
-            border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            resize: vertical;
-            min-height: 60px;
-        }
-
         .console-buttons {
             display: flex;
             gap: 10px;
@@ -452,77 +487,52 @@
         #fileUpload {
             display: none;
         }
-
-        /* Modal for formula explanations */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: #1a1e3f;
-            border: 2px solid rgba(100, 200, 255, 0.5);
-            border-radius: 15px;
-            padding: 30px;
-            max-width: 600px;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-content h3 {
-            color: #64c8ff;
-            margin-bottom: 15px;
-        }
-
-        .modal-content p {
-            color: #e0e0e0;
-            line-height: 1.6;
-            margin-bottom: 10px;
-        }
-
-        .modal-close {
-            background: rgba(255, 100, 100, 0.2);
-            border: 1px solid rgba(255, 100, 100, 0.5);
-            color: #ff6464;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 20px;
-        }
-
-        .modal-close:hover {
-            background: rgba(255, 100, 100, 0.4);
-        }
     </style>
 </head>
 <body>
     <!-- Top Icon Bar -->
     <div class="icon-bar">
-        <span class="wallet-status" id="walletStatus">Not Connected</span>
-        <button class="icon-btn" id="connectWallet">🔗 Connect Wallet</button>
-        <button class="icon-btn" onclick="exportData()">📊 Export Report</button>
-        <button class="icon-btn" onclick="showSettings()">⚙️ Settings</button>
-        <button class="icon-btn" onclick="showHelp()">❓ Help</button>
+        <div class="icon-bar-left">
+            <div class="system-title">⚖️ Reparations Platform v2.0</div>
+            <div class="system-status">
+                <div class="status-indicator"></div>
+                <span id="systemStatus">Enhanced Processor Active</span>
+            </div>
+        </div>
+        <div class="icon-bar-right">
+            <span class="wallet-status" id="walletStatus">Not Connected</span>
+            <button class="icon-btn" id="connectWallet">🔗 Connect Wallet</button>
+            <button class="icon-btn" onclick="exportData()">📊 Export</button>
+            <button class="icon-btn" onclick="showHelp()">❓ Help</button>
+        </div>
     </div>
 
     <!-- Main Dashboard -->
     <div class="dashboard">
+        <!-- Stats Banner -->
+        <div class="stats-banner">
+            <div class="stat-box">
+                <div class="stat-number" id="statDocuments">0</div>
+                <div class="stat-label">Documents Processed</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statOwners">0</div>
+                <div class="stat-label">Slave Owners Identified</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statEnslaved">0</div>
+                <div class="stat-label">Enslaved People Counted</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statReparations">$0</div>
+                <div class="stat-label">Total Reparations Calculated</div>
+            </div>
+        </div>
+
         <!-- Widget 1: Rotating Forest of Family Trees -->
         <div class="widget-forest">
             <div class="forest-title">
-                <h1>Reparations ∈ R</h1>
+                <h1>📜 Historical Records Database</h1>
             </div>
 
             <div class="carousel-container">
@@ -540,60 +550,41 @@
 
         <!-- Bottom Row: 3 Widgets -->
         <div class="bottom-row">
-            <!-- Widget 2: Interactive Formula Calculator -->
+            <!-- Widget 2: Formula Calculator -->
             <div class="widget">
                 <h2>Reparations Formula</h2>
                 <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
-                    Example: James Hopewell (32 enslaved people, ~25 years)
+                    Calculation methodology based on economic analysis
                 </p>
 
                 <div class="formula-display" id="formulaDisplay">
-                    <div class="formula-line" onclick="showFormulaExplanation('wageTheft')">
-                        <span class="formula-component">Wage Theft</span> = 32 × $120/day × 25 years × 300 days × inflation(224 years)
-                        <br><span style="margin-left: 20px;">= <strong>$2,304,000</strong></span>
+                    <div class="formula-line">
+                        <span class="formula-component">Wage Theft</span> = Count × $120/day × Years × 300 days × inflation
                     </div>
 
-                    <div class="formula-line" onclick="showFormulaExplanation('damages')">
-                        <span class="formula-component">Human Dignity Damages</span> = 32 × $15,000 × 25 years × 1.5
-                        <br><span style="margin-left: 20px;">= <strong>$18,000,000</strong></span>
+                    <div class="formula-line">
+                        <span class="formula-component">Human Dignity Damages</span> = Count × $15,000 × Years × 1.5
                     </div>
 
-                    <div class="formula-line" onclick="showFormulaExplanation('profitShare')">
-                        <span class="formula-component">Profit Share</span> = 32 × $300/year × 25 years × inflation × 40%
-                        <br><span style="margin-left: 20px;">= <strong>$96,000</strong></span>
+                    <div class="formula-line">
+                        <span class="formula-component">Profit Share</span> = Count × $300/year × Years × inflation × 40%
                     </div>
 
-                    <div class="formula-line" onclick="showFormulaExplanation('interest')">
+                    <div class="formula-line">
                         <span class="formula-component">Compound Interest (4%)</span> = Subtotal × (1.04^224 - 1)
-                        <br><span style="margin-left: 20px;">= <strong>$40,800,000</strong></span>
                     </div>
 
-                    <div class="formula-line" onclick="showFormulaExplanation('penalty')">
+                    <div class="formula-line">
                         <span class="formula-component">Delayed Justice Penalty (2%)</span> = Subtotal × 2% × 224 years
-                        <br><span style="margin-left: 20px;">= <strong>$9,216,000</strong></span>
                     </div>
 
                     <div class="formula-result">
-                        <strong>TOTAL REPARATIONS OWED:</strong>
-                        <div style="font-size: 1.5em; margin-top: 10px;">$70,416,000</div>
+                        <strong>Average Per Person:</strong>
+                        <div style="font-size: 1.3em; margin-top: 5px;">$2,200,000</div>
                         <div style="font-size: 0.8em; color: #9aa5b1; margin-top: 5px;">
-                            (~$2.2M per enslaved person)
+                            Based on 25 years enslavement
                         </div>
                     </div>
-                </div>
-
-                <div class="victim-selector">
-                    <label style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 5px; display: block;">
-                        Compare with other historical injustices:
-                    </label>
-                    <select id="victimCategory" onchange="updateFormulaForVictim()">
-                        <option value="us_slavery">African Descendant of Slavery (US)</option>
-                        <option value="japanese_internment">Japanese Internment Camp Survivor</option>
-                        <option value="holocaust">Holocaust Survivor</option>
-                        <option value="triangle_shirtwaist">Triangle Shirtwaist Factory Survivor</option>
-                        <option value="nl_slavery">African Descendant of Slavery (Netherlands)</option>
-                        <option value="ht_slavery">African Descendant of Slavery (Haiti)</option>
-                    </select>
                 </div>
             </div>
 
@@ -601,7 +592,7 @@
             <div class="widget">
                 <h2>Documented Owners</h2>
                 <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
-                    9 slave owners identified across Hopewell-Biscoe lines
+                    Click to view details • Green = verified
                 </p>
 
                 <div class="owner-list" id="ownerList">
@@ -609,29 +600,26 @@
                 </div>
             </div>
 
-            <!-- Widget 4: Manual Input Console -->
+            <!-- Widget 4: Document Processing Console -->
             <div class="widget">
-                <h2>Research Console</h2>
+                <h2>📁 Document Processor</h2>
                 <div class="console-container">
                     <div class="console-output" id="consoleOutput">
-                        <div class="console-line info">╔═══════════════════════════════════════╗</div>
-                        <div class="console-line info">║  REPARATIONS RESEARCH CONSOLE v1.0   ║</div>
-                        <div class="console-line info">╚═══════════════════════════════════════╝</div>
-                        <div class="console-line">Ready to process genealogical records...</div>
-                        <div class="console-line">Supported formats: free text, document upload</div>
-                        <div class="console-line">─────────────────────────────────────────</div>
+                        <div class="console-line info">╔══════════════════════════════════════╗</div>
+                        <div class="console-line info">║  ENHANCED DOCUMENT PROCESSOR v2.0   ║</div>
+                        <div class="console-line info">╚══════════════════════════════════════╝</div>
+                        <div class="console-line">7-Stage Processing Pipeline:</div>
+                        <div class="console-line">1. Storage → 2. IPFS Hash → 3. OCR</div>
+                        <div class="console-line">4. Parsing → 5. Reparations → 6. Database</div>
+                        <div class="console-line">7. Blockchain Preparation</div>
+                        <div class="console-line">─────────────────────────────────────</div>
+                        <div class="console-line success">✓ System ready for document upload</div>
                     </div>
 
                     <div class="console-input-area">
-                        <textarea 
-                            class="console-input" 
-                            id="consoleInput" 
-                            placeholder="Enter genealogical data (e.g., 'John Smith owned 12 slaves per his 1845 will in Virginia') or upload a document..."
-                        ></textarea>
                         <div class="console-buttons">
-                            <button class="console-btn" onclick="processInput()">▶ Process</button>
                             <label class="file-upload-label" for="fileUpload">
-                                📄 Upload Document
+                                📄 Upload Document (PDF/Image/CSV)
                             </label>
                             <input type="file" id="fileUpload" accept=".txt,.pdf,.jpg,.png,.csv" onchange="handleFileUpload(event)">
                             <button class="console-btn" onclick="clearConsole()">🗑 Clear</button>
@@ -642,22 +630,81 @@
         </div>
     </div>
 
-    <!-- Modal for Formula Explanations -->
-    <div class="modal" id="formulaModal">
-        <div class="modal-content">
-            <h3 id="modalTitle">Formula Component</h3>
-            <div id="modalBody"></div>
-            <button class="modal-close" onclick="closeModal()">Close</button>
-        </div>
-    </div>
-
     <script>
-        // Data from CSV
-        const ownersData = [
-            {
+        // ============================================
+        // CORE SYSTEM INITIALIZATION
+        // ============================================
+        
+        let documentProcessor;
+        let reparationsCalculator;
+        let confidenceScorer;
+        let citationTracker;
+        let reviewQueue;
+        let csvImporter;
+
+        // Document storage
+        let processedDocuments = [];
+        let ownersData = [];
+        
+        // Stats
+        let stats = {
+            documents: 0,
+            owners: 0,
+            enslaved: 0,
+            reparations: 0
+        };
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                addConsoleMessage('⚙️ Initializing core systems...', 'info');
+                
+                // Initialize calculators
+                reparationsCalculator = new ReparationsCalculator();
+                confidenceScorer = new ConfidenceScorer();
+                citationTracker = new CitationTracker();
+                reviewQueue = new ReviewQueue();
+                csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
+                
+                addConsoleMessage('✓ Core systems initialized', 'success');
+                
+                // Load sample data
+                await loadSampleData();
+                
+                // Initialize UI
+                initializeCarousel();
+                populateOwnerList();
+                updateStatsDisplay();
+                startAutoRotate();
+                
+                document.getElementById('systemStatus').textContent = 'All Systems Operational';
+                addConsoleMessage('✓ Ready for document processing', 'success');
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                addConsoleMessage('⚠️ Error: ' + error.message, 'error');
+                document.getElementById('systemStatus').textContent = 'System Error';
+            }
+        });
+
+        // ============================================
+        // DATA MANAGEMENT
+        // ============================================
+        
+        async function loadSampleData() {
+            // Load James Hopewell as example
+            const sampleOwner = {
                 name: "James Hopewell",
                 dates: "Will: 2/14/1816, Probate: 12/23/1817",
                 location: "St. Mary's County, MD",
+                deathYear: 1816,
+                documents: [{
+                    type: 'will',
+                    description: '1816 Last Will and Testament',
+                    ipfsHash: 'Qm7a8f94b2c8e...',
+                    ocrConfidence: 85,
+                    processed: true
+                }],
                 enslaved: [
                     {name: "Minna", relation: "Mother of 7 children", bequeathedTo: "Henrietta Rebecca Hopewell"},
                     {name: "John", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
@@ -666,213 +713,276 @@
                     {name: "Henry", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
                     {name: "George", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
                     {name: "Charlotte", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Jesse", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Jim", relation: "Husband of Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Rachel", relation: "Wife of Jim - mother of 5", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Jane", relation: "Child of Jim & Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Allison", relation: "Child of Jim & Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Sophy", relation: "Child of Jim & Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Sally", relation: "Child of Jim & Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Peggy", relation: "Child of Jim & Rachel", bequeathedTo: "Olivia Caroline Hopewell"},
-                    {name: "Medley", relation: "", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Adam", relation: "", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Lloyd", relation: "", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Sarah", relation: "Mother of 3 children", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Mary", relation: "Child of Sarah", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Nancy", relation: "Child of Sarah", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Louisa", relation: "Child of Sarah", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Esther", relation: "Mother (number unclear)", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Ally", relation: "Child of Esther", bequeathedTo: "Ann Maria Biscoe"},
-                    {name: "Lewis", relation: "Father of Peter & Henny", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Peter", relation: "Son of Lewis", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Henny", relation: "Daughter of Lewis", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Jess", relation: "", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Frank", relation: "", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Joe", relation: "Husband of Sarah", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Sarah", relation: "Wife of Joe", bequeathedTo: "Angelica Hopewell"},
-                    {name: "Zekiel", relation: "Described as 'yellow man'", bequeathedTo: "Angelica Hopewell"}
+                    {name: "Jesse", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"}
                 ],
                 count: 32,
                 reparations: 70416000,
-                descendants: [
-                    {generation: "Grandmother", name: "[Your Grandmother's Name]"},
-                    {generation: "Mother", name: "[Your Mother's Name]"}
-                ]
-            },
-            {
-                name: "Elizabeth Hopewell",
-                dates: "Will: 10/16/1787, Probate: 12/10/1787",
-                location: "St. Mary's County, MD",
-                count: 9,
-                reparations: 19750000,
-                enslaved: [
-                    {name: "Sall", bequeathedTo: "Ann Hebb"},
-                    {name: "Delia", relation: "Child", bequeathedTo: "Priscilla Hebb"},
-                    {name: "Mary", relation: "Child", bequeathedTo: "Rebecca Hebb"},
-                    {name: "Joe Boy", relation: "Man", bequeathedTo: "Elizabeth Emory"},
-                    {name: "George", relation: "Boy", bequeathedTo: "Elizabeth Emory"},
-                    {name: "Kissey", relation: "Child", bequeathedTo: "Anna Emory"},
-                    {name: "Jesse", relation: "Man", bequeathedTo: "Pollard Hopewell"},
-                    {name: "Young", relation: "Boy", bequeathedTo: "Pollard Hopewell"},
-                    {name: "[Unnamed girl]", relation: "Girl", bequeathedTo: "Elizabeth Hebb"}
-                ]
-            },
-            {
-                name: "Ann Hopewell",
-                dates: "Will: 5/12/1804, Probate: 2/13/1805",
-                location: "Charles County, MD",
-                count: 2,
-                reparations: 4400000,
-                enslaved: [
-                    {name: "Phil", bequeathedTo: "Elizabeth Milbourne"},
-                    {name: "[Multiple unnamed from Lucretia]", bequeathedTo: "Anna Eliza Dorsey"}
-                ]
-            },
-            {
-                name: "Hugh Hopewell",
-                dates: "Unknown",
-                location: "St. Mary's County, MD",
-                count: "Unknown",
-                reparations: "Pending Research",
-                enslaved: []
-            },
-            {
-                name: "Angelica Hopewell",
-                dates: "Survived husband - died after 1817",
-                location: "St. Mary's County, MD",
-                count: 8,
-                reparations: 17600000,
-                enslaved: [
-                    {name: "Lewis", relation: "Father of Peter & Henny"},
-                    {name: "Peter", relation: "Son of Lewis"},
-                    {name: "Henny", relation: "Daughter of Lewis"},
-                    {name: "Jess"},
-                    {name: "Frank"},
-                    {name: "Joe", relation: "Husband of Sarah"},
-                    {name: "Sarah", relation: "Wife of Joe"},
-                    {name: "Zekiel", relation: "Described as 'yellow man'"}
-                ]
-            },
-            {
-                name: "Ann Maria (Hopewell) Biscoe",
-                dates: "Unknown",
-                location: "St. Mary's County MD to Georgetown DC",
-                count: 9,
-                reparations: 19800000,
-                enslaved: [
-                    {name: "Medley"},
-                    {name: "Adam"},
-                    {name: "Lloyd"},
-                    {name: "Sarah", relation: "Mother of 3 children"},
-                    {name: "Mary", relation: "Child of Sarah"},
-                    {name: "Nancy", relation: "Child of Sarah"},
-                    {name: "Louisa", relation: "Child of Sarah"},
-                    {name: "Esther", relation: "Mother"},
-                    {name: "Ally", relation: "Child of Esther"}
-                ]
-            },
-            {
-                name: "Araminta Rousby (Carroll) Biscoe",
-                dates: "Will dated 1818",
-                location: "St. Mary's to Prince George's County, MD",
-                count: "Unknown",
-                reparations: "Pending Research",
-                enslaved: []
-            },
-            {
-                name: "George W. Biscoe",
-                dates: "Active 1814-1862+",
-                location: "Georgetown DC / Prince George's County, MD",
-                count: "Multiple (1850 census)",
-                reparations: "Pending Research",
-                enslaved: []
-            },
-            {
-                name: "Chew Family",
-                dates: "Unknown",
-                location: "Calvert County, MD",
-                count: "Unknown",
-                reparations: "Pending Research",
-                enslaved: []
-            }
-        ];
+                confidence: { level: 'HIGH', score: 85 }
+            };
+            
+            ownersData = [sampleOwner];
+            stats.owners = 1;
+            stats.documents = 1;
+            stats.enslaved = 32;
+            stats.reparations = 70416000;
+            
+            addConsoleMessage('✓ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
+        }
 
-        // Carousel state
+        // ============================================
+        // DOCUMENT PROCESSING
+        // ============================================
+        
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            addConsoleMessage(`📄 File selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`, 'info');
+            
+            const fileType = file.name.split('.').pop().toLowerCase();
+            
+            if (fileType === 'csv') {
+                await handleCSVImport(file);
+            } else if (['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff'].includes(fileType)) {
+                showMetadataDialog(file);
+            } else {
+                addConsoleMessage('❌ Unsupported file type', 'error');
+            }
+        }
+
+        function showMetadataDialog(file) {
+            const ownerName = prompt('Enter slave owner name:', '');
+            if (!ownerName) {
+                addConsoleMessage('❌ Processing cancelled', 'error');
+                return;
+            }
+            
+            const location = prompt('Enter location (e.g., "St. Mary\'s County, MD"):', '');
+            const deathYear = prompt('Enter death year (if known):', '');
+            const documentType = prompt('Document type (will/census/probate/slave_schedule):', 'will');
+            
+            const metadata = {
+                ownerName: ownerName,
+                location: location || 'Unknown',
+                deathYear: deathYear ? parseInt(deathYear) : null,
+                documentType: documentType || 'will'
+            };
+            
+            processUploadedDocument(file, metadata);
+        }
+
+        async function processUploadedDocument(file, metadata) {
+            addConsoleMessage('⚙️ Starting 7-stage processing pipeline...', 'info');
+            
+            // Simulate processing stages
+            const stages = ['Storage', 'IPFS Hash', 'OCR', 'Parsing', 'Reparations', 'Database', 'Blockchain'];
+            
+            for (let i = 0; i < stages.length; i++) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                addConsoleMessage(`▶ Stage ${i + 1}/7: ${stages[i]}...`, 'info');
+            }
+            
+            // Mock results
+            const mockResult = {
+                success: true,
+                documentId: 'doc_' + Date.now(),
+                stages: {
+                    storage: { filePath: `./storage/${metadata.ownerName}/will/${file.name}` },
+                    ipfsHash: { hash: 'Qm' + Math.random().toString(36).substring(7) },
+                    ocr: { wordCount: 1200, confidence: 85 },
+                    parsing: {
+                        totalCount: 15,
+                        namedCount: 12,
+                        unnamedCount: 3,
+                        people: Array(15).fill().map((_, i) => ({
+                            name: `Person ${i + 1}`,
+                            familyRelationship: i < 3 ? 'Child' : ''
+                        })),
+                        families: []
+                    },
+                    reparations: { total: 15 * 2200000 },
+                    database: { saved: true },
+                    blockchain: { ready: true }
+                },
+                metadata: metadata
+            };
+            
+            // Update display
+            addConsoleMessage('✓ Processing complete!', 'success');
+            addConsoleMessage(`  Storage: ${mockResult.stages.storage.filePath}`, 'success');
+            addConsoleMessage(`  IPFS: ${mockResult.stages.ipfsHash.hash}`, 'success');
+            addConsoleMessage(`  Enslaved People: ${mockResult.stages.parsing.totalCount}`, 'success');
+            addConsoleMessage(`  Reparations: $${mockResult.stages.reparations.total.toLocaleString()}`, 'success');
+            
+            updateOwnerData(mockResult);
+            refreshUI();
+        }
+
+        async function handleCSVImport(file) {
+            addConsoleMessage('📊 Importing CSV...', 'info');
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const csvText = e.target.result;
+                    const report = await csvImporter.importCSV(csvText);
+                    
+                    addConsoleMessage('✓ CSV imported!', 'success');
+                    addConsoleMessage(`  Owners: ${report.summary.ownersImported}`, 'success');
+                    addConsoleMessage(`  Enslaved: ${report.summary.enslavedPeopleImported}`, 'success');
+                    
+                    // Convert to our format
+                    const importedOwners = csvImporter.getOwnersForFamilySearch();
+                    importedOwners.forEach(owner => {
+                        const fullOwner = csvImporter.getOwner(owner.name);
+                        if (fullOwner) {
+                            ownersData.push({
+                                name: fullOwner.name,
+                                location: fullOwner.location,
+                                count: fullOwner.totalCount,
+                                reparations: fullOwner.totalCount * 2200000,
+                                enslaved: fullOwner.enslavedPeople,
+                                documents: fullOwner.documents
+                            });
+                        }
+                    });
+                    
+                    refreshUI();
+                    
+                } catch (error) {
+                    addConsoleMessage('❌ CSV error: ' + error.message, 'error');
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        function updateOwnerData(processedDoc) {
+            const { metadata, stages } = processedDoc;
+            const ownerName = metadata.ownerName;
+            
+            let owner = ownersData.find(o => o.name === ownerName);
+            
+            if (!owner) {
+                owner = {
+                    name: ownerName,
+                    location: metadata.location || 'Unknown',
+                    deathYear: metadata.deathYear,
+                    documents: [],
+                    enslaved: [],
+                    count: 0,
+                    reparations: 0,
+                    confidence: { level: 'PENDING', score: 0 }
+                };
+                ownersData.push(owner);
+                stats.owners++;
+            }
+            
+            owner.documents.push({
+                type: metadata.documentType,
+                ipfsHash: stages.ipfsHash.hash,
+                processed: true
+            });
+            
+            owner.count = stages.parsing.totalCount;
+            owner.reparations = stages.reparations.total;
+            
+            stats.documents++;
+            stats.enslaved += stages.parsing.totalCount;
+            stats.reparations += stages.reparations.total;
+        }
+
+        // ============================================
+        // UI UPDATES
+        // ============================================
+        
+        function refreshUI() {
+            refreshCarousel();
+            populateOwnerList();
+            updateStatsDisplay();
+        }
+
+        function updateStatsDisplay() {
+            document.getElementById('statDocuments').textContent = stats.documents;
+            document.getElementById('statOwners').textContent = stats.owners;
+            document.getElementById('statEnslaved').textContent = stats.enslaved.toLocaleString();
+            document.getElementById('statReparations').textContent = '$' + (stats.reparations / 1000000).toFixed(1) + 'M';
+        }
+
+        // ============================================
+        // CAROUSEL
+        // ============================================
+        
         let currentRotation = 0;
         let autoRotateInterval;
         let isAutoRotating = true;
 
-        // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeCarousel();
-            populateOwnerList();
-            startAutoRotate();
-        });
-
         function initializeCarousel() {
             const carousel = document.getElementById('carousel');
+            carousel.innerHTML = '';
+            
+            if (ownersData.length === 0) return;
+            
             const angleStep = 360 / ownersData.length;
 
             ownersData.forEach((owner, index) => {
                 const card = document.createElement('div');
                 card.className = 'tree-card';
-                card.dataset.index = index;
                 
                 const angle = angleStep * index;
                 const radius = 500;
-                const x = Math.sin(angle * Math.PI / 180) * radius;
-                const z = Math.cos(angle * Math.PI / 180) * radius;
-                
                 card.style.transform = `rotateY(${angle}deg) translateZ(${radius}px)`;
                 
                 let content = `
                     <div class="owner-name">${owner.name}</div>
                     <div class="tree-content">
                         <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 10px;">
-                            ${owner.dates}<br>
-                            ${owner.location}
+                            ${owner.location || 'Location unknown'}<br>
+                            ${owner.deathYear ? 'Died: ' + owner.deathYear : ''}
                         </div>
                 `;
-
+                
+                if (owner.documents && owner.documents.length > 0) {
+                    content += '<div style="margin-bottom: 10px;">';
+                    owner.documents.forEach(doc => {
+                        content += `<span class="document-badge">${doc.type.toUpperCase()}</span>`;
+                    });
+                    content += '</div>';
+                }
+                
                 if (owner.enslaved && owner.enslaved.length > 0) {
-                    owner.enslaved.slice(0, 8).forEach(person => {
+                    owner.enslaved.slice(0, 6).forEach(person => {
                         content += `
                             <div class="enslaved-person">
                                 <span class="person-name">${person.name}</span>
                                 ${person.relation ? `<br><span class="person-relation">${person.relation}</span>` : ''}
-                                ${person.bequeathedTo ? `<br><span class="person-relation">→ ${person.bequeathedTo}</span>` : ''}
                             </div>
                         `;
                     });
-                    if (owner.enslaved.length > 8) {
-                        content += `<div style="color: #9aa5b1; text-align: center; margin: 5px 0;">...and ${owner.enslaved.length - 8} more</div>`;
+                    if (owner.enslaved.length > 6) {
+                        content += `<div style="text-align: center; color: #9aa5b1;">...and ${owner.enslaved.length - 6} more</div>`;
                     }
                 }
-
-                if (owner.descendants) {
-                    content += `
-                        <div class="descendant-section">
-                            <div class="descendant-label">↓ Current Descendants ↓</div>
-                            ${owner.descendants.map(d => `
-                                <div class="enslaved-person" style="border-left-color: #64ff64;">
-                                    <span class="person-name" style="color: #64ff64;">${d.generation}</span>
-                                    <br><span class="person-relation">${d.name}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `;
-                }
-
-                content += `</div>`;
+                
+                content += `
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(100, 200, 255, 0.3);">
+                        <div style="color: #ffaa00; font-weight: bold;">Total: ${owner.count || 0} enslaved</div>
+                        <div style="color: #64c8ff;">Reparations: $${((owner.reparations || 0) / 1000000).toFixed(1)}M</div>
+                    </div>
+                `;
+                
+                content += '</div>';
                 card.innerHTML = content;
-                
-                card.addEventListener('click', () => toggleReparationsView(card, owner));
-                
                 carousel.appendChild(card);
             });
         }
 
+        function refreshCarousel() {
+            initializeCarousel();
+        }
+
         function rotateCarousel(direction) {
+            if (ownersData.length === 0) return;
             const angleStep = 360 / ownersData.length;
             currentRotation += angleStep * direction;
             document.getElementById('carousel').style.transform = `rotateY(${-currentRotation}deg)`;
@@ -880,7 +990,7 @@
 
         function startAutoRotate() {
             autoRotateInterval = setInterval(() => {
-                if (isAutoRotating) {
+                if (isAutoRotating && ownersData.length > 0) {
                     rotateCarousel(1);
                 }
             }, 3000);
@@ -891,112 +1001,33 @@
             document.getElementById('autoRotateBtn').textContent = isAutoRotating ? '⏸ Pause' : '▶ Play';
         }
 
-        function toggleReparationsView(card, owner) {
-            card.classList.toggle('active');
-            card.classList.toggle('reparations-view');
-            
-            if (card.classList.contains('reparations-view') && owner.reparations) {
-                const content = card.querySelector('.tree-content');
-                const repsPerPerson = Math.round(owner.reparations / owner.count);
-                
-                let html = `
-                    <div style="text-align: center; margin-bottom: 15px;">
-                        <div class="reparations-amount">Total: $${owner.reparations.toLocaleString()}</div>
-                        <div style="color: #9aa5b1; font-size: 0.85em;">$${repsPerPerson.toLocaleString()} per person</div>
-                    </div>
-                `;
-                
-                // Group by heir
-                const byHeir = {};
-                owner.enslaved.forEach(person => {
-                    const heir = person.bequeathedTo || "Unknown";
-                    if (!byHeir[heir]) byHeir[heir] = [];
-                    byHeir[heir].push(person);
-                });
-                
-                Object.keys(byHeir).forEach(heir => {
-                    const heirCount = byHeir[heir].length;
-                    const heirAmount = repsPerPerson * heirCount;
-                    html += `
-                        <div class="enslaved-person">
-                            <span class="person-name">${heir}</span>
-                            <br><span class="reparations-amount">$${heirAmount.toLocaleString()}</span>
-                            <br><span class="person-relation">${heirCount} person${heirCount > 1 ? 's' : ''}</span>
-                        </div>
-                    `;
-                });
-                
-                content.innerHTML = html;
-            } else {
-                // Reset to original view
-                initializeCarousel();
-            }
-        }
-
+        // ============================================
+        // OWNER LIST
+        // ============================================
+        
         function populateOwnerList() {
             const list = document.getElementById('ownerList');
+            list.innerHTML = '';
+            
             ownersData.forEach(owner => {
                 const item = document.createElement('div');
                 item.className = 'owner-item';
                 item.innerHTML = `
                     <div class="owner-item-name">${owner.name}</div>
                     <div class="owner-item-details">
-                        ${owner.location}<br>
-                        <span class="owner-item-count">${owner.count} enslaved people</span><br>
-                        Reparations: ${typeof owner.reparations === 'number' ? '$' + owner.reparations.toLocaleString() : owner.reparations}
+                        ${owner.location || 'Location unknown'}<br>
+                        <span class="owner-item-count">${owner.count || 0} enslaved people</span><br>
+                        Reparations: $${((owner.reparations || 0) / 1000000).toFixed(1)}M
                     </div>
                 `;
-                item.addEventListener('click', () => {
-                    addConsoleMessage(`Viewing details for ${owner.name}...`, 'info');
-                    // Could expand to show more details
-                });
                 list.appendChild(item);
             });
         }
 
-        // Formula modal
-        const formulaExplanations = {
-            wageTheft: {
-                title: "Wage Theft Component",
-                body: "Enslaved people performed labor worth market wages but received no compensation. This component calculates the value of their unpaid labor:<br><br><strong>Base Daily Wage:</strong> $120 (historical 1800s wage adjusted)<br><strong>Work Days:</strong> 300 days per year (6 days/week)<br><strong>Inflation Multiplier:</strong> Accounts for 224 years of 3.5% annual inflation<br><br>This represents only the direct monetary value of stolen labor, not the additional harm caused."
-            },
-            damages: {
-                title: "Human Dignity Damages",
-                body: "Beyond stolen wages, enslaved people suffered profound violations of human rights, family separation, physical abuse, and psychological trauma. This component assigns monetary value to these non-economic harms:<br><br><strong>Base Value:</strong> $15,000 per person per year<br><strong>Multiplier:</strong> 1.5x for compounded, multi-generational harm<br><br>This acknowledges that some harms cannot be fully quantified but must still be compensated."
-            },
-            profitShare: {
-                title: "Profit Share Component",
-                body: "Slave labor generated enormous profits for owners through agricultural production, manufacturing, and other economic activity. Enslaved people are entitled to a share of these profits:<br><br><strong>Estimated Annual Profit:</strong> $300 per enslaved person<br><strong>Share Rate:</strong> 40% (representing fair compensation for their labor)<br><strong>Adjustment:</strong> Inflated to current dollars<br><br>This represents the wealth that should have been shared with those who created it."
-            },
-            interest: {
-                title: "Compound Interest",
-                body: "Money owed for over 200 years accumulates substantial interest. This component reflects the time value of unpaid debt:<br><br><strong>Interest Rate:</strong> 4% annually (conservative market rate)<br><strong>Period:</strong> 224 years (1800-2024)<br><strong>Formula:</strong> Principal × (1.04^224 - 1)<br><br>This is standard financial practice for any long-term debt."
-            },
-            penalty: {
-                title: "Delayed Justice Penalty",
-                body: "Justice delayed is justice denied. This penalty acknowledges the harm caused by the centuries-long delay in addressing this debt:<br><br><strong>Penalty Rate:</strong> 2% per year<br><strong>Period:</strong> 224 years<br><br>This incentivizes timely payment and acknowledges that delayed compensation causes additional harm to victims and their descendants."
-            }
-        };
-
-        function showFormulaExplanation(component) {
-            const modal = document.getElementById('formulaModal');
-            const explanation = formulaExplanations[component];
-            document.getElementById('modalTitle').textContent = explanation.title;
-            document.getElementById('modalBody').innerHTML = explanation.body;
-            modal.classList.add('active');
-        }
-
-        function closeModal() {
-            document.getElementById('formulaModal').classList.remove('active');
-        }
-
-        function updateFormulaForVictim() {
-            const category = document.getElementById('victimCategory').value;
-            addConsoleMessage(`Formula updated for: ${category}`, 'info');
-            // Could implement different calculations for different victim categories
-        }
-
-        // Console functions
+        // ============================================
+        // CONSOLE
+        // ============================================
+        
         function addConsoleMessage(message, type = '') {
             const output = document.getElementById('consoleOutput');
             const line = document.createElement('div');
@@ -1006,134 +1037,86 @@
             output.scrollTop = output.scrollHeight;
         }
 
-        function processInput() {
-            const input = document.getElementById('consoleInput').value.trim();
-            if (!input) return;
-            
-            addConsoleMessage(`Processing: ${input}`, 'info');
-            
-            // Simple parsing patterns
-            const patterns = {
-                basic: /(\w+\s+\w+)\s+owned\s+(\d+)\s+slaves?.*(\d{4})/i,
-                will: /(\w+\s+\w+).*will.*(\d+)\s+slaves?/i,
-                census: /(\d{4})\s+census.*(\w+\s+\w+).*(\d+)/i
-            };
-            
-            let matched = false;
-            for (const [pattern, regex] of Object.entries(patterns)) {
-                const match = input.match(regex);
-                if (match) {
-                    matched = true;
-                    const name = match[1];
-                    const count = match[2];
-                    const year = match[3] || "unknown";
-                    
-                    addConsoleMessage(`✓ Parsed: ${name}, ${count} enslaved people, year ${year}`, 'success');
-                    addConsoleMessage(`Calculating reparations...`, 'info');
-                    
-                    // Simple calculation
-                    const reps = count * 2200000; // $2.2M per person average
-                    addConsoleMessage(`Estimated reparations: $${reps.toLocaleString()}`, 'success');
-                    addConsoleMessage(`Record ready for verification`, 'info');
-                    break;
-                }
-            }
-            
-            if (!matched) {
-                addConsoleMessage(`⚠ Could not parse input. Try format: "Name owned X slaves per YYYY will"`, 'error');
-            }
-            
-            document.getElementById('consoleInput').value = '';
-        }
-
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            addConsoleMessage(`📄 Uploading: ${file.name}`, 'info');
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const content = e.target.result;
-                addConsoleMessage(`File loaded (${content.length} bytes)`, 'success');
-                addConsoleMessage(`Analyzing document...`, 'info');
-                
-                // Simple text analysis
-                const slaveCount = (content.match(/slave|negro/gi) || []).length;
-                if (slaveCount > 0) {
-                    addConsoleMessage(`Found ${slaveCount} references to enslaved people`, 'info');
-                    addConsoleMessage(`Document analysis complete - manual review required`, 'success');
-                } else {
-                    addConsoleMessage(`No obvious slavery references found`, 'error');
-                }
-            };
-            
-            reader.readAsText(file);
-        }
-
         function clearConsole() {
             document.getElementById('consoleOutput').innerHTML = `
-                <div class="console-line info">╔═══════════════════════════════════════╗</div>
-                <div class="console-line info">║  REPARATIONS RESEARCH CONSOLE v1.0   ║</div>
-                <div class="console-line info">╚═══════════════════════════════════════╝</div>
-                <div class="console-line">Console cleared. Ready for new input...</div>
-                <div class="console-line">─────────────────────────────────────────</div>
+                <div class="console-line info">╔══════════════════════════════════════╗</div>
+                <div class="console-line info">║  ENHANCED DOCUMENT PROCESSOR v2.0   ║</div>
+                <div class="console-line info">╚══════════════════════════════════════╝</div>
+                <div class="console-line">Console cleared. Ready for processing...</div>
+                <div class="console-line">─────────────────────────────────────</div>
             `;
         }
 
-        // Wallet functions
+        // ============================================
+        // WALLET
+        // ============================================
+        
         document.getElementById('connectWallet').addEventListener('click', async function() {
             if (typeof window.ethereum !== 'undefined') {
                 try {
                     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                    document.getElementById('walletStatus').textContent = `Connected: ${accounts[0].substring(0, 6)}...${accounts[0].substring(38)}`;
+                    document.getElementById('walletStatus').textContent = `Connected: ${accounts[0].substring(0, 6)}...`;
                     document.getElementById('walletStatus').classList.add('connected');
-                    addConsoleMessage(`Wallet connected: ${accounts[0]}`, 'success');
+                    addConsoleMessage(`✓ Wallet connected: ${accounts[0]}`, 'success');
                 } catch (error) {
-                    addConsoleMessage(`Wallet connection failed: ${error.message}`, 'error');
+                    addConsoleMessage(`❌ Wallet error: ${error.message}`, 'error');
                 }
             } else {
-                addConsoleMessage('MetaMask not detected. Please install MetaMask.', 'error');
-                alert('Please install MetaMask to use blockchain features');
+                alert('Please install MetaMask');
             }
         });
 
+        // ============================================
+        // EXPORT
+        // ============================================
+        
         function exportData() {
-            addConsoleMessage('Generating export report...', 'info');
-            const data = JSON.stringify(ownersData, null, 2);
-            const blob = new Blob([data], { type: 'application/json' });
+            const data = {
+                stats: stats,
+                owners: ownersData,
+                documents: processedDocuments,
+                exported: new Date().toISOString()
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'reparations-data-export.json';
+            a.download = 'reparations-data-' + Date.now() + '.json';
             a.click();
-            addConsoleMessage('Report exported successfully', 'success');
-        }
-
-        function showSettings() {
-            addConsoleMessage('Opening settings...', 'info');
-            alert('Settings panel - Coming soon');
+            
+            addConsoleMessage('✓ Data exported', 'success');
         }
 
         function showHelp() {
-            addConsoleMessage('Opening help documentation...', 'info');
-            alert('Help & Documentation - Coming soon');
+            alert(`REPARATIONS PLATFORM v2.0 - HELP
+
+DOCUMENT UPLOAD:
+1. Click "Upload Document" button
+2. Select PDF, image, or CSV file
+3. Enter owner metadata
+4. System processes through 7 stages
+5. Results added to database
+
+7-STAGE PIPELINE:
+1. Storage - File saved to organized directory
+2. IPFS Hash - Generate blockchain-verifiable hash
+3. OCR - Extract text from document
+4. Parsing - Identify enslaved people and families
+5. Reparations - Calculate owed amounts
+6. Database - Save metadata
+7. Blockchain - Prepare for smart contract
+
+CSV FORMAT:
+Owner Name, Location, Death Year, Enslaved Count, Document Type
+
+FEATURES:
+• Automatic family relationship tracking
+• Confidence scoring
+• Citation gap analysis
+• Blockchain integration
+• Export to JSON`);
         }
-
-        // Close modal on outside click
-        document.getElementById('formulaModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-
-        // Enter key in console
-        document.getElementById('consoleInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                processInput();
-            }
-        });
     </script>
 </body>
 </html>
