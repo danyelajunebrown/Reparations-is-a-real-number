@@ -601,35 +601,36 @@
                 </div>
             </div>
 
-            <!-- Widget 4: Document Processing Console -->
-            <div class="widget">
-                <h2>📁 Document Processor</h2>
-                <div class="console-container">
-                    <div class="console-output" id="consoleOutput">
-                        <div class="console-line info">╔══════════════════════════════════════╗</div>
-                        <div class="console-line info">║  ENHANCED DOCUMENT PROCESSOR v2.0   ║</div>
-                        <div class="console-line info">╚══════════════════════════════════════╝</div>
-                        <div class="console-line">7-Stage Processing Pipeline:</div>
-                        <div class="console-line">1. Storage → 2. IPFS Hash → 3. OCR</div>
-                        <div class="console-line">4. Parsing → 5. Reparations → 6. Database</div>
-                        <div class="console-line">7. Blockchain Preparation</div>
-                        <div class="console-line">─────────────────────────────────────</div>
-                        <div class="console-line success">✓ System ready for document upload</div>
-                    </div>
-
-                    <div class="console-input-area">
-                        <div class="console-buttons">
-                            <label class="file-upload-label" for="fileUpload">
-                                📄 Upload Document(s) (PDF/Image/CSV) — you can select multiple
-                            </label>
-                            <input type="file" id="fileUpload" accept=".txt,.pdf,.jpg,.png,.csv" multiple onchange="handleFileUpload(event)">
-                            <button class="console-btn" onclick="clearConsole()">🗑 Clear</button>
-                        </div>
-                    </div>
-                </div>
+          <!-- Widget 4: LLM Chat Interface -->
+<div class="widget">
+    <h2>🤖 Research Assistant</h2>
+    <div style="display: flex; flex-direction: column; height: calc(100% - 60px);">
+        <!-- Chat Messages -->
+        <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(10, 14, 39, 0.8); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px; margin-bottom: 15px;">
+            <div style="color: #64c8ff; margin-bottom: 10px;">
+                💬 Ask me about the database: owners, documents, enslaved people, families, or statistics.
             </div>
         </div>
+        
+        <!-- Chat Input -->
+        <div style="display: flex; gap: 10px;">
+            <input 
+                type="text" 
+                id="chatInput" 
+                placeholder="Ask about James Hopewell, family structures, statistics..."
+                style="flex: 1; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;"
+                onkeypress="if(event.key === 'Enter') sendChatMessage()"
+            />
+            <button 
+                onclick="sendChatMessage()" 
+                class="console-btn"
+                style="padding: 10px 20px;"
+            >
+                Send
+            </button>
+        </div>
     </div>
+</div>
 
     <script>
         // ============================================
@@ -1266,6 +1267,94 @@
         function showHelp() {
             alert('Upload documents (PDF / images / CSV). For multiple files you can apply the same metadata to all or enter metadata per file. The system will attempt to use a real document processor if available; otherwise it runs a mock for testing.');
         }
+        // ============================================
+// LLM CHAT INTERFACE
+// ============================================
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const messagesDiv = document.getElementById('chatMessages');
+    const query = input.value.trim();
+    
+    if (!query) return;
+    
+    // Add user message
+    addChatMessage('user', query);
+    input.value = '';
+    
+    // Add loading indicator
+    const loadingId = 'loading-' + Date.now();
+    addChatMessage('assistant', '🔄 Searching database...', loadingId);
+    
+    try {
+        // Call your backend
+        const response = await fetch('/api/llm-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                query: query,
+                context: { currentDatabase: 'reparations' }
+            })
+        });
+        
+        const data = await response.json();
+        
+        // Remove loading message
+        const loadingMsg = document.getElementById(loadingId);
+        if (loadingMsg) loadingMsg.remove();
+        
+        if (data.success) {
+            addChatMessage('assistant', data.response);
+            
+            // Update the big window with evidence if provided
+            if (data.evidence) {
+                updateEvidenceDisplay(data.evidence);
+            }
+        } else {
+            addChatMessage('assistant', '❌ Error: ' + data.error);
+        }
+        
+    } catch (error) {
+        // Remove loading message
+        const loadingMsg = document.getElementById(loadingId);
+        if (loadingMsg) loadingMsg.remove();
+        
+        addChatMessage('assistant', '❌ Connection error. Make sure the backend server is running on port 3000.');
+    }
+}
+
+function addChatMessage(role, content, id) {
+    const messagesDiv = document.getElementById('chatMessages');
+    const msgDiv = document.createElement('div');
+    if (id) msgDiv.id = id;
+    
+    msgDiv.style.marginBottom = '10px';
+    msgDiv.style.padding = '8px 12px';
+    msgDiv.style.borderRadius = '8px';
+    msgDiv.style.maxWidth = '90%';
+    
+    if (role === 'user') {
+        msgDiv.style.background = 'rgba(100, 200, 255, 0.2)';
+        msgDiv.style.marginLeft = 'auto';
+        msgDiv.style.textAlign = 'right';
+        msgDiv.style.color = '#64c8ff';
+    } else {
+        msgDiv.style.background = 'rgba(30, 40, 70, 0.6)';
+        msgDiv.style.marginRight = 'auto';
+        msgDiv.style.color = '#e0e0e0';
+    }
+    
+    msgDiv.textContent = content;
+    messagesDiv.appendChild(msgDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function updateEvidenceDisplay(evidence) {
+    // This will update the top carousel/forest area to show evidence
+    // For now, just log it - you can expand this later
+    console.log('Evidence to display:', evidence);
+    addConsoleMessage('📋 Evidence displayed in main window', 'info');
+}
     </script>
 </body>
 </html>
