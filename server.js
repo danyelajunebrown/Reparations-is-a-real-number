@@ -1,5 +1,4 @@
-// Snippet changes for server.js â€” initialize StorageAdapter and pass s3 config into EnhancedDocumentProcessor
-// Merge into your server.js. Assumes config.js exports storage.s3.*.
+// server.js - Complete corrected version
 
 const express = require('express');
 const multer = require('multer');
@@ -37,7 +36,7 @@ const processor = new EnhancedDocumentProcessor({
   performOCR: true
 });
 
-// example upload route unchanged, processor.processDocument will use storage adapter internally
+// Upload document endpoint
 app.post('/api/upload-document', upload.single('document'), async (req, res) => {
   try {
     if (!req.file) {
@@ -62,116 +61,7 @@ app.post('/api/upload-document', upload.single('document'), async (req, res) => 
   }
 });
 
-// Add this to your existing server.js
-
-// LLM Database Query endpoint
-app.post('/api/llm-query', async (req, res) => {
-  const { query, context } = req.body;
-  
-  try {
-    // Parse user intent and build SQL
-    const intent = parseUserIntent(query);
-    let dbResults = {};
-    
-    // Query based on intent
-    if (intent.type === 'owner_lookup') {
-      dbResults.owners = await database.query(`
-        SELECT d.*, 
-               array_agg(json_build_object(
-                 'name', ep.name,
-                 'gender', ep.gender,
-                 'family_relationship', ep.family_relationship,
-                 'bequeathed_to', ep.bequeathed_to
-               )) as enslaved_people
-        FROM documents d
-        LEFT JOIN enslaved_people ep ON d.document_id = ep.document_id
-        WHERE d.owner_name ILIKE $1
-        GROUP BY d.document_id
-      `, [`%${intent.ownerName}%`]);
-      
-    } else if (intent.type === 'person_lookup') {
-      dbResults.people = await database.query(`
-        SELECT ep.*, d.owner_name, d.doc_type, d.ipfs_hash
-        FROM enslaved_people ep
-        JOIN documents d ON ep.document_id = d.document_id
-        WHERE ep.name ILIKE $1
-      `, [`%${intent.personName}%`]);
-      
-    } else if (intent.type === 'statistics') {
-      const stats = await database.getStats();
-      dbResults.stats = stats;
-      
-    } else if (intent.type === 'family_structure') {
-      dbResults.families = await database.query(`
-        SELECT f.*, 
-               array_agg(fc.child_name) as children,
-               d.owner_name, d.document_id
-        FROM families f
-        LEFT JOIN family_children fc ON f.id = fc.family_id
-        JOIN documents d ON f.document_id = d.document_id
-        WHERE f.parent1 ILIKE $1 OR f.parent2 ILIKE $1
-        GROUP BY f.id, d.document_id, d.owner_name
-      `, [`%${intent.personName}%`]);
-    }
-    
-    // Call LLM with database context
-    const llmResponse = await callLLM(query, dbResults);
-    
-    res.json({
-      success: true,
-      response: llmResponse.text,
-      evidence: llmResponse.evidence,
-      dbResults: dbResults
-    });
-    
-  } catch (error) {
-    console.error('LLM query error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Parse user intent from natural language
-function parseUserIntent(query) {
-  const lower = query.toLowerCase();
-  
-  // Owner lookup patterns
-  if (lower.match(/about|tell me|who (was|is)|hopewell|biscoe/)) {
-    const nameMatch = query.match(/about ([A-Z][a-z]+ [A-Z][a-z]+)|hopewell|biscoe/i);
-    return {
-      type: 'owner_lookup',
-      ownerName: nameMatch ? nameMatch[1] || nameMatch[0] : ''
-    };
-  }
-  
-  // Person lookup (enslaved individuals)
-  if (lower.match(/minna|enslaved person|slave named/)) {
-    const nameMatch = query.match(/minna|([A-Z][a-z]+)(?= was enslaved)/i);
-    return {
-      type: 'person_lookup',
-      personName: nameMatch ? nameMatch[0] : ''
-    };
-  }
-  
-  // Statistics
-  if (lower.match(/how many|total|statistics|count/)) {
-    return { type: 'statistics' };
-  }
-  
-  // Family structures
-  if (lower.match(/family|children|mother|father|parent/)) {
-    const nameMatch = query.match(/([A-Z][a-z]+)(?='s| had)/i);
-    return {
-      type: 'family_structure',
-      personName: nameMatch ? nameMatch[1] : ''
-    };
-  }
-  
-  return { type: 'general', query };
-}
-
-// Replace everything from "app.post('/api/llm-query'..." down to the end of callLLM/parseUserIntent/generateEvidenceFromContext
-
-// Simple database query endpoint - NO LLM, just raw SQL
+// Simple database query endpoint - NO LLM, NO API KEYS
 app.post('/api/llm-query', async (req, res) => {
   const { query } = req.body;
   
@@ -198,7 +88,7 @@ app.post('/api/llm-query', async (req, res) => {
       
       if (ownerData.rows && ownerData.rows.length > 0) {
         const owner = ownerData.rows[0];
-        response = `Found: ${owner.owner_name}\nLocation: ${owner.owner_location}\nDeath: ${owner.owner_death_year}\nEnslaved: ${owner.total_enslaved}\nReparations: $${(owner.total_reparations / 1000000).toFixed(1)}M`;
+        response = `${owner.owner_name}\n${owner.owner_location}\nDied: ${owner.owner_death_year}\n${owner.total_enslaved} enslaved\n$${(owner.total_reparations / 1000000).toFixed(1)}M reparations`;
         evidence = { type: 'owner_profile', data: owner };
       } else {
         response = 'No records found for Hopewell';
@@ -214,7 +104,7 @@ app.post('/api/llm-query', async (req, res) => {
       
       if (personData.rows && personData.rows.length > 0) {
         const person = personData.rows[0];
-        response = `Found: ${person.name}\nOwner: ${person.owner_name}\nRelationship: ${person.family_relationship}\nBequeathed to: ${person.bequeathed_to}`;
+        response = `${person.name}\nOwner: ${person.owner_name}\n${person.family_relationship}\nBequeathed to: ${person.bequeathed_to}`;
         evidence = { type: 'person_detail', data: person };
       } else {
         response = 'No records found for Minna';
@@ -236,55 +126,6 @@ app.post('/api/llm-query', async (req, res) => {
     res.json({ success: false, error: error.message });
   }
 });
-  
-  const data = await response.json();
-  const text = data.content[0].text;
-  
-  // Extract evidence JSON if present
-  let evidence = null;
-  const jsonMatch = text.match(/\{[\s\S]*"evidence_type"[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      evidence = JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error('Failed to parse evidence JSON');
-    }
-  }
-  
-  return {
-    text: text.replace(/\{[\s\S]*"evidence_type"[\s\S]*\}/, '').trim(),
-    evidence: evidence || generateEvidenceFromContext(dbContext)
-  };
-}
-
-// Fallback: generate evidence structure from DB results
-function generateEvidenceFromContext(dbContext) {
-  if (dbContext.owners && dbContext.owners.rows && dbContext.owners.rows.length > 0) {
-    const owner = dbContext.owners.rows[0];
-    return {
-      evidence_type: 'owner_profile',
-      evidence_data: {
-        name: owner.owner_name,
-        location: owner.owner_location,
-        documents: [{
-          type: owner.doc_type,
-          ipfsHash: owner.ipfs_hash,
-          totalEnslaved: owner.total_enslaved
-        }],
-        enslaved: owner.enslaved_people || []
-      }
-    };
-  }
-  
-  if (dbContext.stats) {
-    return {
-      evidence_type: 'statistics',
-      evidence_data: dbContext.stats
-    };
-  }
-  
-  return null;
-}
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -296,7 +137,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Health check endpoint for Render
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -308,6 +149,7 @@ app.get('/', (req, res) => {
     version: '2.0.0',
     endpoints: {
       upload: 'POST /api/upload-document',
+      query: 'POST /api/llm-query',
       health: 'GET /health'
     }
   });
