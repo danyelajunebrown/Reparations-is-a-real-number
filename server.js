@@ -169,42 +169,73 @@ function parseUserIntent(query) {
   return { type: 'general', query };
 }
 
-// Call actual LLM (Claude or OpenAI)
-async function callLLM(userQuery, dbContext) {
-  // Using Anthropic Claude
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `You are a reparations research assistant with access to a genealogical database.
+// Replace everything from "app.post('/api/llm-query'..." down to the end of callLLM/parseUserIntent/generateEvidenceFromContext
 
-DATABASE CONTEXT:
-${JSON.stringify(dbContext, null, 2)}
-
-USER QUERY: ${userQuery}
-
-Respond naturally and cite specific evidence from the database. If documents mention enslaved people, show their names and relationships. Format your response to include:
-1. Direct answer to the query
-2. Evidence from documents (with IPFS hashes if available)
-3. Any family relationships found
-
-IMPORTANT: Your response will be parsed. Include a JSON block at the end with:
-{
-  "evidence_type": "owner_profile|family_structure|statistics|document",
-  "evidence_data": {...}
-}
-`
-      }]
-    })
-  });
+// Simple database query endpoint - NO LLM, just raw SQL
+app.post('/api/llm-query', async (req, res) => {
+  const { query } = req.body;
+  
+  try {
+    const lower = query.toLowerCase();
+    let response = '';
+    let evidence = null;
+    
+    // Direct database queries based on keywords
+    if (lower.includes('hopewell') || lower.includes('james')) {
+      const ownerData = await database.query(`
+        SELECT d.*, 
+               json_agg(json_build_object(
+                 'name', ep.name,
+                 'gender', ep.gender,
+                 'family_relationship', ep.family_relationship,
+                 'bequeathed_to', ep.bequeathed_to
+               )) as enslaved_people
+        FROM documents d
+        LEFT JOIN enslaved_people ep ON d.document_id = ep.document_id
+        WHERE d.owner_name ILIKE '%Hopewell%'
+        GROUP BY d.document_id
+      `);
+      
+      if (ownerData.rows && ownerData.rows.length > 0) {
+        const owner = ownerData.rows[0];
+        response = `Found: ${owner.owner_name}\nLocation: ${owner.owner_location}\nDeath: ${owner.owner_death_year}\nEnslaved: ${owner.total_enslaved}\nReparations: $${(owner.total_reparations / 1000000).toFixed(1)}M`;
+        evidence = { type: 'owner_profile', data: owner };
+      } else {
+        response = 'No records found for Hopewell';
+      }
+      
+    } else if (lower.includes('minna')) {
+      const personData = await database.query(`
+        SELECT ep.*, d.owner_name, d.doc_type
+        FROM enslaved_people ep
+        JOIN documents d ON ep.document_id = d.document_id
+        WHERE ep.name ILIKE '%Minna%'
+      `);
+      
+      if (personData.rows && personData.rows.length > 0) {
+        const person = personData.rows[0];
+        response = `Found: ${person.name}\nOwner: ${person.owner_name}\nRelationship: ${person.family_relationship}\nBequeathed to: ${person.bequeathed_to}`;
+        evidence = { type: 'person_detail', data: person };
+      } else {
+        response = 'No records found for Minna';
+      }
+      
+    } else if (lower.includes('stats') || lower.includes('how many') || lower.includes('total')) {
+      const stats = await database.getStats();
+      response = `Database Stats:\nDocuments: ${stats.total_documents}\nOwners: ${stats.unique_owners}\nEnslaved: ${stats.total_enslaved_counted}\nTotal Reparations: $${(stats.total_reparations_calculated / 1000000).toFixed(1)}M`;
+      evidence = { type: 'statistics', data: stats };
+      
+    } else {
+      response = 'Try asking about:\n- "James Hopewell"\n- "Minna"\n- "statistics"';
+    }
+    
+    res.json({ success: true, response, evidence });
+    
+  } catch (error) {
+    console.error('Query error:', error);
+    res.json({ success: false, error: error.message });
+  }
+});
   
   const data = await response.json();
   const text = data.content[0].text;
