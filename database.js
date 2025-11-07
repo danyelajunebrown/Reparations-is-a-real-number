@@ -1,17 +1,15 @@
-// database.js
-// PostgreSQL database connection and helper functions
+// database.js - COMPLETE VERSION
 require('dotenv').config();
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    host: process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_PORT) || 5432,
-    database: process.env.POSTGRES_DB || 'reparations',
-    user: process.env.POSTGRES_USER,
-    password: process.env.POSTGRES_PASSWORD,
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? {
+        rejectUnauthorized: false
+    } : false,
     max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    connectionTimeoutMillis: 10000,
 });
 
 pool.on('connect', () => {
@@ -94,50 +92,8 @@ async function saveDocumentMetadata(metadata) {
             }
         }
         
-        if (metadata.enslaved?.families) {
-            for (const family of metadata.enslaved.families) {
-                const result = await client.query(`
-                    INSERT INTO families (document_id, parent1, parent2)
-                    VALUES ($1, $2, $3)
-                    RETURNING id
-                `, [
-                    metadata.documentId,
-                    family.parents[0] || null,
-                    family.parents[1] || null
-                ]);
-                
-                const familyId = result.rows[0].id;
-                
-                if (family.children) {
-                    for (const child of family.children) {
-                        await client.query(`
-                            INSERT INTO family_children (family_id, child_name)
-                            VALUES ($1, $2)
-                        `, [familyId, child]);
-                    }
-                }
-            }
-        }
-        
-        if (metadata.reparations?.breakdown) {
-            const b = metadata.reparations.breakdown;
-            await client.query(`
-                INSERT INTO reparations_breakdown (
-                    document_id, wage_theft, damages, profit_share,
-                    compound_interest, penalty
-                ) VALUES ($1, $2, $3, $4, $5, $6)
-            `, [
-                metadata.documentId,
-                b.wageTheft || 0,
-                b.damages || 0,
-                b.profitShare || 0,
-                b.compoundInterest || 0,
-                b.penalty || 0
-            ]);
-        }
-        
         await client.query('COMMIT');
-        console.log(`✓ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
+        console.log(`✓ Saved metadata for document ${metadata.documentId}`);
         
         return { success: true, documentId: metadata.documentId };
         
@@ -175,8 +131,18 @@ async function getEnslavedPeopleByDocument(documentId) {
 }
 
 async function getStats() {
-    const result = await pool.query('SELECT * FROM stats_dashboard');
-    return result.rows[0];
+    try {
+        const result = await pool.query('SELECT * FROM stats_dashboard');
+        return result.rows[0];
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        return {
+            total_documents: 0,
+            total_enslaved_counted: 0,
+            total_reparations_calculated: 0,
+            unique_owners: 0
+        };
+    }
 }
 
 async function getVerificationQueue() {
@@ -185,4 +151,18 @@ async function getVerificationQueue() {
 }
 
 async function getBlockchainQueue() {
-    const result = await
+    const result = await pool.query('SELECT * FROM blockchain_queue');
+    return result.rows;
+}
+
+module.exports = {
+    pool,
+    saveDocumentMetadata,
+    getDocumentById,
+    getDocumentsByOwner,
+    getEnslavedPeopleByDocument,
+    getStats,
+    getVerificationQueue,
+    getBlockchainQueue,
+    query: (text, params) => pool.query(text, params)
+};
