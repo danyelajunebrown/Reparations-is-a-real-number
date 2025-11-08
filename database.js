@@ -1,16 +1,23 @@
-// database.js - COMPLETE VERSION
+// database.js - FIXED FOR RENDER
+// This version works with both DATABASE_URL (Render) and individual variables (local dev)
 require('dotenv').config();
 const { Pool } = require('pg');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? {
-        rejectUnauthorized: false
-    } : false,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-});
+// Create pool connection - handles both Render and local development
+const pool = process.env.DATABASE_URL 
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false // Required for Render's managed PostgreSQL
+      }
+    })
+  : new Pool({
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.POSTGRES_PORT) || 5432,
+      database: process.env.POSTGRES_DB || 'reparations',
+      user: process.env.POSTGRES_USER,
+      password: process.env.POSTGRES_PASSWORD
+    });
 
 pool.on('connect', () => {
     console.log('✓ Connected to PostgreSQL database');
@@ -20,6 +27,20 @@ pool.on('error', (err) => {
     console.error('Unexpected error on idle client', err);
     process.exit(-1);
 });
+
+// Helper function to execute queries
+async function query(text, params) {
+    const start = Date.now();
+    try {
+        const res = await pool.query(text, params);
+        const duration = Date.now() - start;
+        console.log('Executed query', { text: text.substring(0, 50), duration, rows: res.rowCount });
+        return res;
+    } catch (error) {
+        console.error('Database query error:', error);
+        throw error;
+    }
+}
 
 async function saveDocumentMetadata(metadata) {
     const client = await pool.connect();
@@ -92,8 +113,50 @@ async function saveDocumentMetadata(metadata) {
             }
         }
         
+        if (metadata.enslaved?.families) {
+            for (const family of metadata.enslaved.families) {
+                const result = await client.query(`
+                    INSERT INTO families (document_id, parent1, parent2)
+                    VALUES ($1, $2, $3)
+                    RETURNING id
+                `, [
+                    metadata.documentId,
+                    family.parents[0] || null,
+                    family.parents[1] || null
+                ]);
+                
+                const familyId = result.rows[0].id;
+                
+                if (family.children) {
+                    for (const child of family.children) {
+                        await client.query(`
+                            INSERT INTO family_children (family_id, child_name)
+                            VALUES ($1, $2)
+                        `, [familyId, child]);
+                    }
+                }
+            }
+        }
+        
+        if (metadata.reparations?.breakdown) {
+            const b = metadata.reparations.breakdown;
+            await client.query(`
+                INSERT INTO reparations_breakdown (
+                    document_id, wage_theft, damages, profit_share,
+                    compound_interest, penalty
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+            `, [
+                metadata.documentId,
+                b.wageTheft || 0,
+                b.damages || 0,
+                b.profitShare || 0,
+                b.compoundInterest || 0,
+                b.penalty || 0
+            ]);
+        }
+        
         await client.query('COMMIT');
-        console.log(`✓ Saved metadata for document ${metadata.documentId}`);
+        console.log(`✓ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
         
         return { success: true, documentId: metadata.documentId };
         
@@ -131,18 +194,8 @@ async function getEnslavedPeopleByDocument(documentId) {
 }
 
 async function getStats() {
-    try {
-        const result = await pool.query('SELECT * FROM stats_dashboard');
-        return result.rows[0];
-    } catch (error) {
-        console.error('Error fetching stats:', error);
-        return {
-            total_documents: 0,
-            total_enslaved_counted: 0,
-            total_reparations_calculated: 0,
-            unique_owners: 0
-        };
-    }
+    const result = await pool.query('SELECT * FROM stats_dashboard');
+    return result.rows[0];
 }
 
 async function getVerificationQueue() {
@@ -155,14 +208,15 @@ async function getBlockchainQueue() {
     return result.rows;
 }
 
+// Export functions
 module.exports = {
     pool,
+    query,
     saveDocumentMetadata,
     getDocumentById,
     getDocumentsByOwner,
     getEnslavedPeopleByDocument,
     getStats,
     getVerificationQueue,
-    getBlockchainQueue,
-    query: (text, params) => pool.query(text, params)
+    getBlockchainQueue
 };
