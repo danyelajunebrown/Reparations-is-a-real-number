@@ -8,6 +8,8 @@ const config = require('./config');
 const database = require('./database');
 const EnhancedDocumentProcessor = require('./enhanced-document-processor');
 const StorageAdapter = require('./storage-adapter');
+const IndividualEntityManager = require('./individual-entity-manager');
+const DescendantCalculator = require('./descendant-calculator');
 
 const app = express();
 
@@ -35,6 +37,12 @@ const processor = new EnhancedDocumentProcessor({
   generateIPFSHash: true,
   performOCR: true
 });
+
+// Initialize individual entity manager
+const entityManager = new IndividualEntityManager(database);
+
+// Initialize descendant calculator
+const descendantCalc = new DescendantCalculator(database);
 
 // Upload document endpoint
 app.post('/api/upload-document', upload.single('document'), async (req, res) => {
@@ -127,6 +135,387 @@ app.post('/api/llm-query', async (req, res) => {
   }
 });
 
+// Process individual metadata and extract relationships
+app.post('/api/process-individual-metadata', async (req, res) => {
+  try {
+    const {
+      documentId,
+      fileName,
+      fullName,
+      birthYear,
+      deathYear,
+      gender,
+      locations,
+      spouses,
+      children,
+      parents,
+      notes
+    } = req.body;
+
+    if (!fullName) {
+      return res.status(400).json({ success: false, error: 'Full name is required' });
+    }
+
+    console.log(`Processing individual metadata: ${fullName}`);
+
+    // Parse comma-separated lists
+    const spousesList = spouses ? spouses.split(',').map(s => s.trim()).filter(s => s) : [];
+    const childrenList = children ? children.split(',').map(s => s.trim()).filter(s => s) : [];
+    const parentsList = parents ? parents.split(',').map(s => s.trim()).filter(s => s) : [];
+
+    // Create or update the main individual
+    const individualId = await entityManager.findOrCreateIndividual({
+      fullName,
+      birthYear,
+      deathYear,
+      gender,
+      locations,
+      notes
+    });
+
+    console.log(`Individual created/found: ${individualId}`);
+
+    // Link this individual to the document as the owner
+    if (documentId && documentId !== 'N/A') {
+      await entityManager.linkIndividualToDocument(individualId, documentId, 'owner');
+    }
+
+    // Create or find related individuals and establish relationships
+    const relatedIndividuals = [];
+
+    // Process spouses
+    for (const spouseName of spousesList) {
+      const spouseId = await entityManager.findOrCreateIndividual({
+        fullName: spouseName
+      });
+      await entityManager.createRelationship(individualId, spouseId, 'spouse', {
+        isDirected: false,
+        sourceType: 'user-input',
+        confidence: 1.0,
+        verified: true
+      });
+      relatedIndividuals.push({ name: spouseName, relationship: 'spouse', id: spouseId });
+    }
+
+    // Process children
+    for (const childName of childrenList) {
+      const childId = await entityManager.findOrCreateIndividual({
+        fullName: childName
+      });
+      await entityManager.createRelationship(individualId, childId, 'parent-child', {
+        isDirected: true,
+        sourceType: 'user-input',
+        confidence: 1.0,
+        verified: true
+      });
+      relatedIndividuals.push({ name: childName, relationship: 'child', id: childId });
+    }
+
+    // Process parents
+    for (const parentName of parentsList) {
+      const parentId = await entityManager.findOrCreateIndividual({
+        fullName: parentName
+      });
+      await entityManager.createRelationship(parentId, individualId, 'parent-child', {
+        isDirected: true,
+        sourceType: 'user-input',
+        confidence: 1.0,
+        verified: true
+      });
+      relatedIndividuals.push({ name: parentName, relationship: 'parent', id: parentId });
+    }
+
+    // Background: Extract additional individuals from document OCR text
+    let extractedIndividuals = [];
+    if (documentId && documentId !== 'N/A') {
+      try {
+        // Get document OCR text
+        const docResult = await database.query(
+          `SELECT ocr_text, doc_type FROM documents WHERE document_id = $1`,
+          [documentId]
+        );
+
+        if (docResult.rows && docResult.rows.length > 0) {
+          const { ocr_text, doc_type } = docResult.rows[0];
+
+          if (ocr_text) {
+            // Extract related individuals from OCR
+            extractedIndividuals = await entityManager.extractRelatedIndividuals(
+              ocr_text,
+              doc_type,
+              documentId
+            );
+
+            console.log(`Extracted ${extractedIndividuals.length} individuals from document`);
+
+            // Create individuals and relationships for extracted names
+            for (const extracted of extractedIndividuals) {
+              const extractedId = await entityManager.findOrCreateIndividual({
+                fullName: extracted.name
+              });
+
+              // Link to document
+              await entityManager.linkIndividualToDocument(
+                extractedId,
+                documentId,
+                extracted.role
+              );
+
+              // Create relationship with main owner
+              let relationshipType = 'associated';
+              if (extracted.role === 'heir') {
+                relationshipType = 'parent-child'; // Heirs are typically children
+              } else if (extracted.role === 'neighbor') {
+                relationshipType = 'neighbor';
+              }
+
+              await entityManager.createRelationship(individualId, extractedId, relationshipType, {
+                isDirected: extracted.role === 'heir',
+                sourceDocumentId: documentId,
+                sourceType: doc_type,
+                confidence: extracted.confidence,
+                verified: false
+              });
+
+              relatedIndividuals.push({
+                name: extracted.name,
+                relationship: extracted.role,
+                id: extractedId,
+                confidence: extracted.confidence
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error extracting individuals from document:', error);
+        // Continue even if extraction fails
+      }
+    }
+
+    // Update individual statistics
+    await entityManager.updateIndividualStats(individualId);
+
+    res.json({
+      success: true,
+      individualId,
+      relatedIndividuals,
+      extractedCount: extractedIndividuals.length
+    });
+
+  } catch (error) {
+    console.error('Error processing individual metadata:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add enslaved person descendant
+app.post('/api/add-enslaved-descendant', async (req, res) => {
+  try {
+    const {
+      fullName,
+      birthYear,
+      deathYear,
+      gender,
+      enslavedBy,
+      freedomYear,
+      directReparations,
+      parentIds,
+      notes
+    } = req.body;
+
+    if (!fullName) {
+      return res.status(400).json({ success: false, error: 'Full name is required' });
+    }
+
+    console.log(`Adding enslaved individual: ${fullName}`);
+
+    // Create enslaved individual
+    const enslavedId = await descendantCalc.findOrCreateEnslavedIndividual({
+      fullName,
+      birthYear,
+      deathYear,
+      gender,
+      enslavedBy,
+      freedomYear,
+      directReparations,
+      notes
+    });
+
+    // Create parent-child relationships if provided
+    if (parentIds && Array.isArray(parentIds)) {
+      for (const parentId of parentIds) {
+        await database.query(
+          `INSERT INTO enslaved_relationships (
+            enslaved_id_1, enslaved_id_2, relationship_type, is_directed,
+            source_type, confidence, verified
+          ) VALUES ($1, $2, 'parent-child', true, 'user-input', 1.0, true)
+          ON CONFLICT DO NOTHING`,
+          [parentId, enslavedId]
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      enslavedId,
+      message: 'Enslaved individual created successfully'
+    });
+
+  } catch (error) {
+    console.error('Error adding enslaved descendant:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Calculate descendant debt for slaveowner
+app.post('/api/calculate-descendant-debt', async (req, res) => {
+  try {
+    const { perpetratorId, originalDebt } = req.body;
+
+    if (!perpetratorId || !originalDebt) {
+      return res.status(400).json({ success: false, error: 'perpetratorId and originalDebt are required' });
+    }
+
+    console.log(`Calculating descendant debt for ${perpetratorId}, debt: $${originalDebt}`);
+
+    const debtRecords = await descendantCalc.calculateDescendantDebt(
+      perpetratorId,
+      parseFloat(originalDebt)
+    );
+
+    res.json({
+      success: true,
+      totalDescendants: debtRecords.length,
+      debtRecords,
+      message: `Debt calculated for ${debtRecords.length} descendants`
+    });
+
+  } catch (error) {
+    console.error('Error calculating descendant debt:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Calculate reparations credit for enslaved person descendants
+app.post('/api/calculate-reparations-credit', async (req, res) => {
+  try {
+    const { ancestorId, originalCredit } = req.body;
+
+    if (!ancestorId || !originalCredit) {
+      return res.status(400).json({ success: false, error: 'ancestorId and originalCredit are required' });
+    }
+
+    console.log(`Calculating reparations credit for ${ancestorId}, credit: $${originalCredit}`);
+
+    const creditRecords = await descendantCalc.calculateReparationsCredit(
+      ancestorId,
+      parseFloat(originalCredit)
+    );
+
+    res.json({
+      success: true,
+      totalDescendants: creditRecords.length,
+      creditRecords,
+      message: `Credit calculated for ${creditRecords.length} descendants`
+    });
+
+  } catch (error) {
+    console.error('Error calculating reparations credit:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get debt status for an individual
+app.get('/api/debt-status/:individualId', async (req, res) => {
+  try {
+    const { individualId } = req.params;
+
+    const totalDebt = await descendantCalc.getTotalDebt(individualId);
+
+    const debtDetails = await database.query(
+      `SELECT * FROM descendant_debt
+       WHERE descendant_individual_id = $1
+       ORDER BY generation_distance, amount_outstanding DESC`,
+      [individualId]
+    );
+
+    res.json({
+      success: true,
+      individualId,
+      totalDebt,
+      debtRecords: debtDetails.rows || []
+    });
+
+  } catch (error) {
+    console.error('Error getting debt status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get credit status for an enslaved descendant
+app.get('/api/credit-status/:enslavedId', async (req, res) => {
+  try {
+    const { enslavedId } = req.params;
+
+    const totalCredit = await descendantCalc.getTotalCredit(enslavedId);
+
+    const creditDetails = await database.query(
+      `SELECT * FROM reparations_credit
+       WHERE descendant_enslaved_id = $1
+       ORDER BY generation_distance, amount_outstanding DESC`,
+      [enslavedId]
+    );
+
+    res.json({
+      success: true,
+      enslavedId,
+      totalCredit,
+      creditRecords: creditDetails.rows || []
+    });
+
+  } catch (error) {
+    console.error('Error getting credit status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Record a blockchain payment
+app.post('/api/record-payment', async (req, res) => {
+  try {
+    const {
+      payerId,
+      recipientId,
+      amount,
+      txHash,
+      blockNumber,
+      networkId
+    } = req.body;
+
+    if (!payerId || !recipientId || !amount) {
+      return res.status(400).json({ success: false, error: 'payerId, recipientId, and amount are required' });
+    }
+
+    const paymentId = await descendantCalc.recordPayment(
+      payerId,
+      recipientId,
+      parseFloat(amount),
+      txHash,
+      blockNumber || null,
+      networkId || 1
+    );
+
+    res.json({
+      success: true,
+      paymentId,
+      message: 'Payment recorded successfully'
+    });
+
+  } catch (error) {
+    console.error('Error recording payment:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
@@ -144,12 +533,13 @@ app.get('/health', (req, res) => {
 
 // Root endpoint
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Reparations Platform API',
     version: '2.0.0',
     endpoints: {
       upload: 'POST /api/upload-document',
       query: 'POST /api/llm-query',
+      metadata: 'POST /api/process-individual-metadata',
       health: 'GET /health'
     }
   });

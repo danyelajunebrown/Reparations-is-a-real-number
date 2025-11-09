@@ -53,16 +53,26 @@ async function initializeDatabase() {
         console.log('   ✓ family_children');
         console.log('   ✓ verification_reviews');
         console.log('   ✓ reparations_breakdown');
+        console.log('   ✓ heir_shares');
         console.log('   ✓ citations');
         console.log('   ✓ research_gaps');
         console.log('   ✓ document_tags');
+        console.log('   ✓ individuals (slaveowner entity tracking)');
+        console.log('   ✓ individual_relationships');
+        console.log('   ✓ document_individuals');
+        console.log('   ✓ enslaved_individuals (enslaved person tracking)');
+        console.log('   ✓ enslaved_relationships');
+        console.log('   ✓ descendant_debt (slaveowner descendant debt)');
+        console.log('   ✓ reparations_credit (enslaved descendant credit)');
+        console.log('   ✓ payment_ledger (blockchain payments)');
         console.log('   ✓ audit_log\n');
-        
+
         console.log('📈 Created Views:');
         console.log('   ✓ owner_summary');
         console.log('   ✓ verification_queue');
         console.log('   ✓ blockchain_queue');
-        console.log('   ✓ stats_dashboard\n');
+        console.log('   ✓ stats_dashboard');
+        console.log('   ✓ individual_network\n');
         
         console.log('🔍 Testing database views...');
         const statsResult = await client.query('SELECT * FROM stats_dashboard');

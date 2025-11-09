@@ -614,29 +614,84 @@
         
         <!-- Chat Input -->
         <div style="display: flex; gap: 10px;">
-            <input 
-                type="text" 
-                id="chatInput" 
+            <input
+                type="text"
+                id="chatInput"
                 placeholder="Ask about James Hopewell, family structures, statistics..."
                 style="flex: 1; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;"
                 onkeypress="if(event.key === 'Enter') sendChatMessage()"
             />
-            <button 
-                onclick="sendChatMessage()" 
+            <button
+                onclick="sendChatMessage()"
                 class="console-btn"
                 style="padding: 10px 20px;"
             >
                 Send
             </button>
         </div>
+
+        <!-- Multi-File Upload Ribbon -->
+        <div style="margin-top: 15px; padding: 15px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <span style="color: #64c8ff; font-size: 0.9em;">📄 Upload Will Documents (PDF, JPG, PNG, HEIC)</span>
+                <input
+                    type="file"
+                    id="multiFileInput"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png,.heic"
+                    style="display: none;"
+                    onchange="handleMultiFileSelection()"
+                />
+                <button
+                    onclick="document.getElementById('multiFileInput').click()"
+                    class="console-btn"
+                    style="padding: 6px 12px; font-size: 0.85em;"
+                >
+                    Select Files
+                </button>
+                <button
+                    onclick="uploadSelectedFiles()"
+                    class="console-btn"
+                    style="padding: 6px 12px; font-size: 0.85em; background: rgba(100, 255, 100, 0.2); border-color: rgba(100, 255, 100, 0.5);"
+                    id="uploadFilesBtn"
+                    disabled
+                >
+                    Upload (<span id="fileCount">0</span>)
+                </button>
+            </div>
+
+            <!-- Selected Files Display -->
+            <div id="selectedFilesList" style="max-height: 100px; overflow-y: auto; font-size: 0.8em; color: #9aa5b1;">
+                <div style="font-style: italic;">No files selected</div>
+            </div>
+
+            <!-- Upload Progress -->
+            <div id="uploadProgress" style="display: none; margin-top: 10px;">
+                <div style="background: rgba(100, 200, 255, 0.2); height: 20px; border-radius: 10px; overflow: hidden;">
+                    <div id="uploadProgressBar" style="background: #64c8ff; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div id="uploadStatus" style="color: #64c8ff; font-size: 0.8em; margin-top: 5px;"></div>
+            </div>
+        </div>
     </div>
 </div>
 
     <script>
         // ============================================
+        // API CONFIGURATION
+        // ============================================
+
+        // Determine API base URL based on environment
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        console.log('API Base URL:', API_BASE_URL);
+
+        // ============================================
         // CORE SYSTEM INITIALIZATION (Robust + Fallbacks)
         // ============================================
-        
+
         let documentProcessor;
         let reparationsCalculator;
         let confidenceScorer;
@@ -1288,10 +1343,10 @@ async function sendChatMessage() {
     
     try {
         // Call your backend
-        const response = await fetch('/api/llm-query', {
+        const response = await fetch(`${API_BASE_URL}/api/llm-query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 query: query,
                 context: { currentDatabase: 'reparations' }
             })
@@ -1319,7 +1374,7 @@ async function sendChatMessage() {
         const loadingMsg = document.getElementById(loadingId);
         if (loadingMsg) loadingMsg.remove();
         
-        addChatMessage('assistant', '❌ Connection error. Make sure the backend server is running on port 3000.');
+        addChatMessage('assistant', `❌ Connection error. Unable to reach backend at ${API_BASE_URL}`);
     }
 }
 
@@ -1355,6 +1410,330 @@ function updateEvidenceDisplay(evidence) {
     console.log('Evidence to display:', evidence);
     addConsoleMessage('📋 Evidence displayed in main window', 'info');
 }
+
+// ============================================
+// MULTI-FILE UPLOAD FUNCTIONALITY
+// ============================================
+
+let selectedFiles = [];
+
+function handleMultiFileSelection() {
+    const fileInput = document.getElementById('multiFileInput');
+    const filesList = document.getElementById('selectedFilesList');
+    const fileCount = document.getElementById('fileCount');
+    const uploadBtn = document.getElementById('uploadFilesBtn');
+
+    selectedFiles = Array.from(fileInput.files);
+
+    if (selectedFiles.length === 0) {
+        filesList.innerHTML = '<div style="font-style: italic;">No files selected</div>';
+        fileCount.textContent = '0';
+        uploadBtn.disabled = true;
+        return;
+    }
+
+    // Display selected files
+    filesList.innerHTML = selectedFiles.map((file, index) => `
+        <div style="padding: 4px 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(100, 200, 255, 0.1);">
+            <span>📄 ${file.name} (${formatFileSize(file.size)})</span>
+            <button onclick="removeFile(${index})" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); color: #ff6464; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;">Remove</button>
+        </div>
+    `).join('');
+
+    fileCount.textContent = selectedFiles.length;
+    uploadBtn.disabled = false;
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+
+    // Update the file input
+    const fileInput = document.getElementById('multiFileInput');
+    const dt = new DataTransfer();
+    selectedFiles.forEach(file => dt.items.add(file));
+    fileInput.files = dt.files;
+
+    handleMultiFileSelection();
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+async function uploadSelectedFiles() {
+    if (selectedFiles.length === 0) {
+        addChatMessage('assistant', '❌ No files selected for upload.');
+        return;
+    }
+
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const uploadBtn = document.getElementById('uploadFilesBtn');
+
+    uploadProgress.style.display = 'block';
+    uploadBtn.disabled = true;
+
+    let successCount = 0;
+    let failCount = 0;
+    const uploadedDocs = []; // Track successfully uploaded documents
+
+    addChatMessage('assistant', `📤 Starting upload of ${selectedFiles.length} file(s)...`);
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const progress = Math.round(((i + 1) / selectedFiles.length) * 100);
+
+        uploadProgressBar.style.width = progress + '%';
+        uploadStatus.textContent = `Uploading ${i + 1} of ${selectedFiles.length}: ${file.name}`;
+
+        try {
+            const formData = new FormData();
+            formData.append('document', file);
+
+            // Add default metadata for will documents
+            formData.append('documentType', 'will');
+            formData.append('ownerName', 'Unknown Owner'); // Can be updated later
+            formData.append('location', 'United States');
+
+            const response = await fetch(`${API_BASE_URL}/api/upload-document`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                successCount++;
+                const docId = result.result?.documentId || 'N/A';
+                addChatMessage('assistant', `✅ ${file.name} uploaded successfully (ID: ${docId})`);
+
+                // Track for metadata collection
+                uploadedDocs.push({
+                    documentId: docId,
+                    fileName: file.name,
+                    ocrText: result.result?.stages?.ocr?.text || '',
+                    documentType: 'will'
+                });
+            } else {
+                failCount++;
+                addChatMessage('assistant', `❌ ${file.name} failed: ${result.message || 'Unknown error'}`);
+            }
+
+        } catch (error) {
+            failCount++;
+            addChatMessage('assistant', `❌ ${file.name} failed: ${error.message}`);
+        }
+
+        // Small delay between uploads to avoid overwhelming the server
+        if (i < selectedFiles.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+
+    // Final status
+    uploadProgressBar.style.width = '100%';
+    uploadStatus.textContent = `Upload complete: ${successCount} succeeded, ${failCount} failed`;
+
+    addChatMessage('assistant', `🎉 Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
+
+    // Reset after 3 seconds
+    setTimeout(() => {
+        uploadProgress.style.display = 'none';
+        uploadProgressBar.style.width = '0%';
+        selectedFiles = [];
+        document.getElementById('multiFileInput').value = '';
+        handleMultiFileSelection();
+    }, 3000);
+
+    // Refresh stats
+    if (successCount > 0) {
+        addConsoleMessage(`${successCount} document(s) added to the American dataset`, 'success');
+
+        // Trigger metadata collection dialogue
+        if (uploadedDocs.length > 0) {
+            setTimeout(() => {
+                showMetadataDialogue(uploadedDocs);
+            }, 3000);
+        }
+    }
+}
+
+// ============================================
+// METADATA COLLECTION DIALOGUE
+// ============================================
+
+let pendingDocuments = []; // Documents waiting for metadata
+let currentMetadataIndex = 0;
+
+function showMetadataDialogue(uploadedDocuments) {
+    pendingDocuments = uploadedDocuments;
+    currentMetadataIndex = 0;
+
+    if (pendingDocuments.length === 0) return;
+
+    // Show the modal
+    document.getElementById('metadataModal').style.display = 'flex';
+    loadNextMetadataForm();
+}
+
+function loadNextMetadataForm() {
+    if (currentMetadataIndex >= pendingDocuments.length) {
+        closeMetadataDialogue();
+        addChatMessage('assistant', '✅ All metadata collected! Processing relationships in background...');
+        return;
+    }
+
+    const doc = pendingDocuments[currentMetadataIndex];
+    document.getElementById('metadataDocumentName').textContent = doc.fileName;
+    document.getElementById('metadataProgress').textContent = `Document ${currentMetadataIndex + 1} of ${pendingDocuments.length}`;
+
+    // Clear form
+    document.getElementById('ownerFullName').value = '';
+    document.getElementById('ownerBirthYear').value = '';
+    document.getElementById('ownerDeathYear').value = '';
+    document.getElementById('ownerGender').value = '';
+    document.getElementById('ownerLocations').value = '';
+    document.getElementById('ownerSpouses').value = '';
+    document.getElementById('ownerChildren').value = '';
+    document.getElementById('ownerParents').value = '';
+    document.getElementById('ownerNotes').value = '';
+}
+
+function closeMetadataDialogue() {
+    document.getElementById('metadataModal').style.display = 'none';
+    pendingDocuments = [];
+    currentMetadataIndex = 0;
+}
+
+async function submitMetadata() {
+    const doc = pendingDocuments[currentMetadataIndex];
+
+    const metadata = {
+        documentId: doc.documentId,
+        fileName: doc.fileName,
+        fullName: document.getElementById('ownerFullName').value.trim(),
+        birthYear: parseInt(document.getElementById('ownerBirthYear').value) || null,
+        deathYear: parseInt(document.getElementById('ownerDeathYear').value) || null,
+        gender: document.getElementById('ownerGender').value || null,
+        locations: document.getElementById('ownerLocations').value.trim(),
+        spouses: document.getElementById('ownerSpouses').value.trim(),
+        children: document.getElementById('ownerChildren').value.trim(),
+        parents: document.getElementById('ownerParents').value.trim(),
+        notes: document.getElementById('ownerNotes').value.trim()
+    };
+
+    if (!metadata.fullName) {
+        alert('Please enter the owner\'s full name');
+        return;
+    }
+
+    try {
+        // Send metadata to backend
+        const response = await fetch(`${API_BASE_URL}/api/process-individual-metadata`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(metadata)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            addChatMessage('assistant', `✅ Metadata saved for ${metadata.fullName} (ID: ${result.individualId})`);
+
+            // Show related individuals found
+            if (result.relatedIndividuals && result.relatedIndividuals.length > 0) {
+                const names = result.relatedIndividuals.map(r => r.name).join(', ');
+                addChatMessage('assistant', `🔍 Found ${result.relatedIndividuals.length} related individual(s): ${names}`);
+            }
+
+            currentMetadataIndex++;
+            loadNextMetadataForm();
+        } else {
+            addChatMessage('assistant', `❌ Failed to save metadata: ${result.error}`);
+        }
+    } catch (error) {
+        addChatMessage('assistant', `❌ Error saving metadata: ${error.message}`);
+    }
+}
+
+function skipMetadata() {
+    currentMetadataIndex++;
+    loadNextMetadataForm();
+}
     </script>
+
+    <!-- Metadata Collection Modal -->
+    <div id="metadataModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: linear-gradient(180deg, #1a1e3f 0%, #2a2e4f 100%); border: 2px solid rgba(100, 200, 255, 0.5); border-radius: 15px; padding: 30px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <h2 style="color: #64c8ff; margin-bottom: 10px;">📝 Slaveowner Metadata Collection</h2>
+            <p id="metadataProgress" style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 20px;">Document 1 of 1</p>
+            <p style="color: #e0e0e0; margin-bottom: 20px;">Document: <span id="metadataDocumentName" style="color: #64c8ff; font-weight: bold;">filename.pdf</span></p>
+
+            <div style="display: grid; gap: 15px;">
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Full Name *</label>
+                    <input id="ownerFullName" type="text" placeholder="James Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Birth Year</label>
+                        <input id="ownerBirthYear" type="number" placeholder="1780" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                    </div>
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Death Year</label>
+                        <input id="ownerDeathYear" type="number" placeholder="1850" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                    </div>
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Gender</label>
+                        <select id="ownerGender" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;">
+                            <option value="">-</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Locations (comma-separated)</label>
+                    <input id="ownerLocations" type="text" placeholder="Richmond, VA; Charleston, SC" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Spouses (comma-separated)</label>
+                    <input id="ownerSpouses" type="text" placeholder="Mary Smith, Elizabeth Jones" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Children (comma-separated)</label>
+                    <input id="ownerChildren" type="text" placeholder="John Hopewell, Sarah Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Parents (comma-separated)</label>
+                    <input id="ownerParents" type="text" placeholder="William Hopewell, Margaret Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Additional Notes</label>
+                    <textarea id="ownerNotes" rows="3" placeholder="Additional information..." style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px; resize: vertical;"></textarea>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 25px; justify-content: flex-end;">
+                <button onclick="skipMetadata()" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                    Skip
+                </button>
+                <button onclick="submitMetadata()" style="background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                    Submit & Continue
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -214,15 +214,14 @@ CREATE TABLE documents (
     -- Metadata
     uploaded_by VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Indexes
-    INDEX idx_owner_name (owner_name),
-    INDEX idx_doc_type (doc_type),
-    INDEX idx_verification_status (verification_status),
-    INDEX idx_blockchain_submitted (blockchain_submitted),
-    INDEX idx_created_at (created_at)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_owner_name ON documents(owner_name);
+CREATE INDEX idx_doc_type ON documents(doc_type);
+CREATE INDEX idx_verification_status ON documents(verification_status);
+CREATE INDEX idx_blockchain_submitted ON documents(blockchain_submitted);
+CREATE INDEX idx_created_at ON documents(created_at);
 
 -- Enslaved people table (normalized)
 CREATE TABLE enslaved_people (
@@ -238,15 +237,15 @@ CREATE TABLE enslaved_people (
     parent VARCHAR(500),
     bequeathed_to VARCHAR(500),
     notes TEXT,
-    
+
     individual_reparations NUMERIC(20,2),
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id),
-    INDEX idx_name (name),
-    INDEX idx_bequeathed_to (bequeathed_to)
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_enslaved_people_document_id ON enslaved_people(document_id);
+CREATE INDEX idx_enslaved_people_name ON enslaved_people(name);
+CREATE INDEX idx_enslaved_people_bequeathed_to ON enslaved_people(bequeathed_to);
 
 -- Family relationships table
 CREATE TABLE families (
@@ -255,11 +254,11 @@ CREATE TABLE families (
     
     parent1 VARCHAR(500),
     parent2 VARCHAR(500),
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id)
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_families_document_id ON families(document_id);
 
 -- Family children junction table
 CREATE TABLE family_children (
@@ -277,11 +276,11 @@ CREATE TABLE verification_reviews (
     reviewer VARCHAR(255) NOT NULL,
     decision VARCHAR(50) NOT NULL,
     notes TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id),
-    INDEX idx_reviewer (reviewer)
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_verification_reviews_document_id ON verification_reviews(document_id);
+CREATE INDEX idx_verification_reviews_reviewer ON verification_reviews(reviewer);
 
 -- Research gaps table
 CREATE TABLE research_gaps (
@@ -291,12 +290,12 @@ CREATE TABLE research_gaps (
     gap_type VARCHAR(100) NOT NULL,
     description TEXT,
     priority VARCHAR(20),
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id),
-    INDEX idx_priority (priority)
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_research_gaps_document_id ON research_gaps(document_id);
+CREATE INDEX idx_research_gaps_priority ON research_gaps(priority);
 
 -- Citations table
 CREATE TABLE citations (
@@ -306,11 +305,11 @@ CREATE TABLE citations (
     citation_text TEXT NOT NULL,
     source_type VARCHAR(100),
     url TEXT,
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id)
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_citations_document_id ON citations(document_id);
 
 -- Reparations breakdown table
 CREATE TABLE reparations_breakdown (
@@ -332,20 +331,278 @@ CREATE TABLE heir_shares (
     
     heir_name VARCHAR(500) NOT NULL,
     enslaved_count INTEGER,
-    total_reparations NUMERIC(20,2),
-    
-    INDEX idx_document_id (document_id),
-    INDEX idx_heir_name (heir_name)
+    total_reparations NUMERIC(20,2)
 );
+
+CREATE INDEX idx_heir_shares_document_id ON heir_shares(document_id);
+CREATE INDEX idx_heir_shares_heir_name ON heir_shares(heir_name);
 
 -- Document tags
 CREATE TABLE document_tags (
     document_id VARCHAR(255) REFERENCES documents(document_id) ON DELETE CASCADE,
     tag VARCHAR(100) NOT NULL,
-    
-    PRIMARY KEY (document_id, tag),
-    INDEX idx_tag (tag)
+
+    PRIMARY KEY (document_id, tag)
 );
+
+CREATE INDEX idx_document_tags_tag ON document_tags(tag);
+
+-- ==================== INDIVIDUAL ENTITY TRACKING ====================
+
+-- Individual slaveowners table (unified entity tracking)
+CREATE TABLE individuals (
+    individual_id VARCHAR(255) PRIMARY KEY,
+
+    -- Personal information
+    full_name VARCHAR(500) NOT NULL,
+    birth_year INTEGER,
+    death_year INTEGER,
+    gender VARCHAR(20),
+
+    -- Locations (can be multiple, comma-separated or JSON array)
+    locations TEXT,
+
+    -- Family connections
+    spouse_ids TEXT[], -- Array of individual_ids
+    parent_ids TEXT[], -- Array of individual_ids
+    child_ids TEXT[], -- Array of individual_ids
+
+    -- External IDs
+    familysearch_id VARCHAR(255),
+    ancestry_id VARCHAR(255),
+
+    -- Aggregated stats
+    total_documents INTEGER DEFAULT 0,
+    total_enslaved INTEGER DEFAULT 0,
+    total_reparations NUMERIC(20,2) DEFAULT 0,
+
+    -- Metadata
+    verified BOOLEAN DEFAULT FALSE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_individuals_full_name ON individuals(full_name);
+CREATE INDEX idx_individuals_birth_year ON individuals(birth_year);
+CREATE INDEX idx_individuals_death_year ON individuals(death_year);
+CREATE INDEX idx_individuals_verified ON individuals(verified);
+
+-- Relationships between individuals (more detailed than arrays)
+CREATE TABLE individual_relationships (
+    id SERIAL PRIMARY KEY,
+
+    individual_id_1 VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE CASCADE,
+    individual_id_2 VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE CASCADE,
+
+    -- Relationship type: 'parent-child', 'spouse', 'sibling', 'heir-benefactor', 'neighbor', 'business-partner'
+    relationship_type VARCHAR(50) NOT NULL,
+
+    -- For directed relationships (e.g., parent->child, benefactor->heir)
+    -- individual_id_1 is the source, individual_id_2 is the target
+    is_directed BOOLEAN DEFAULT FALSE,
+
+    -- Source of this relationship information
+    source_document_id VARCHAR(255) REFERENCES documents(document_id) ON DELETE SET NULL,
+    source_type VARCHAR(100), -- 'will', 'census', 'deed', 'inference'
+
+    -- Confidence and verification
+    confidence DECIMAL(3,2) DEFAULT 1.00,
+    verified BOOLEAN DEFAULT FALSE,
+
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_individual_relationships_individual_1 ON individual_relationships(individual_id_1);
+CREATE INDEX idx_individual_relationships_individual_2 ON individual_relationships(individual_id_2);
+CREATE INDEX idx_individual_relationships_type ON individual_relationships(relationship_type);
+CREATE INDEX idx_individual_relationships_source_doc ON individual_relationships(source_document_id);
+
+-- Junction table: which individuals are mentioned in which documents
+CREATE TABLE document_individuals (
+    document_id VARCHAR(255) REFERENCES documents(document_id) ON DELETE CASCADE,
+    individual_id VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE CASCADE,
+
+    -- Role in this document: 'owner', 'heir', 'witness', 'neighbor', 'executor'
+    role_in_document VARCHAR(50) NOT NULL,
+
+    -- For heirs: how many enslaved people they inherited
+    inherited_enslaved_count INTEGER,
+    inherited_reparations NUMERIC(20,2),
+
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (document_id, individual_id, role_in_document)
+);
+
+CREATE INDEX idx_document_individuals_document_id ON document_individuals(document_id);
+CREATE INDEX idx_document_individuals_individual_id ON document_individuals(individual_id);
+CREATE INDEX idx_document_individuals_role ON document_individuals(role_in_document);
+
+-- ==================== ENSLAVED PERSON DESCENDANT TRACKING ====================
+
+-- Enslaved person entities (similar to individuals but for enslaved people)
+CREATE TABLE enslaved_individuals (
+    enslaved_id VARCHAR(255) PRIMARY KEY,
+
+    -- Personal information
+    full_name VARCHAR(500) NOT NULL,
+    birth_year INTEGER,
+    death_year INTEGER,
+    gender VARCHAR(20),
+
+    -- Original enslavement info
+    enslaved_by_individual_id VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE SET NULL,
+    freedom_year INTEGER,
+
+    -- Family connections (descendant tracking)
+    spouse_ids TEXT[],
+    parent_ids TEXT[],
+    child_ids TEXT[],
+
+    -- External IDs
+    familysearch_id VARCHAR(255),
+    ancestry_id VARCHAR(255),
+
+    -- Reparations owed to this individual
+    direct_reparations NUMERIC(20,2) DEFAULT 0,
+    inherited_reparations NUMERIC(20,2) DEFAULT 0, -- From ancestors
+    total_reparations_owed NUMERIC(20,2) DEFAULT 0,
+
+    -- Payment tracking
+    amount_paid NUMERIC(20,2) DEFAULT 0,
+    amount_outstanding NUMERIC(20,2) DEFAULT 0,
+
+    -- Metadata
+    verified BOOLEAN DEFAULT FALSE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_enslaved_individuals_full_name ON enslaved_individuals(full_name);
+CREATE INDEX idx_enslaved_individuals_enslaved_by ON enslaved_individuals(enslaved_by_individual_id);
+CREATE INDEX idx_enslaved_individuals_verified ON enslaved_individuals(verified);
+
+-- Relationships between enslaved individuals
+CREATE TABLE enslaved_relationships (
+    id SERIAL PRIMARY KEY,
+
+    enslaved_id_1 VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE CASCADE,
+    enslaved_id_2 VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE CASCADE,
+
+    relationship_type VARCHAR(50) NOT NULL, -- 'parent-child', 'spouse', 'sibling'
+    is_directed BOOLEAN DEFAULT FALSE,
+
+    source_document_id VARCHAR(255) REFERENCES documents(document_id) ON DELETE SET NULL,
+    source_type VARCHAR(100),
+
+    confidence DECIMAL(3,2) DEFAULT 1.00,
+    verified BOOLEAN DEFAULT FALSE,
+
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_enslaved_relationships_id_1 ON enslaved_relationships(enslaved_id_1);
+CREATE INDEX idx_enslaved_relationships_id_2 ON enslaved_relationships(enslaved_id_2);
+CREATE INDEX idx_enslaved_relationships_type ON enslaved_relationships(relationship_type);
+
+-- Descendant debt tracking (for slaveowner descendants)
+CREATE TABLE descendant_debt (
+    id SERIAL PRIMARY KEY,
+
+    -- The descendant who inherited the debt
+    descendant_individual_id VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE CASCADE,
+
+    -- The original perpetrator
+    perpetrator_individual_id VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE CASCADE,
+
+    -- Generational distance (1 = child, 2 = grandchild, etc.)
+    generation_distance INTEGER NOT NULL,
+
+    -- Debt calculations
+    original_debt NUMERIC(20,2) NOT NULL, -- Debt from perpetrator
+    inherited_portion NUMERIC(20,2) NOT NULL, -- This descendant's share
+    inheritance_factor DECIMAL(5,4) DEFAULT 1.0, -- Multiplier based on distance/siblings
+
+    -- Payment tracking
+    amount_paid NUMERIC(20,2) DEFAULT 0,
+    amount_outstanding NUMERIC(20,2) NOT NULL,
+
+    -- Metadata
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_descendant_debt_descendant ON descendant_debt(descendant_individual_id);
+CREATE INDEX idx_descendant_debt_perpetrator ON descendant_debt(perpetrator_individual_id);
+CREATE INDEX idx_descendant_debt_outstanding ON descendant_debt(amount_outstanding);
+
+-- Reparations credit tracking (for enslaved person descendants)
+CREATE TABLE reparations_credit (
+    id SERIAL PRIMARY KEY,
+
+    -- The descendant who inherited the credit
+    descendant_enslaved_id VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE CASCADE,
+
+    -- The original enslaved ancestor
+    ancestor_enslaved_id VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE CASCADE,
+
+    -- Generational distance
+    generation_distance INTEGER NOT NULL,
+
+    -- Credit calculations
+    original_credit NUMERIC(20,2) NOT NULL, -- Reparations owed to ancestor
+    inherited_portion NUMERIC(20,2) NOT NULL, -- This descendant's share
+    inheritance_factor DECIMAL(5,4) DEFAULT 1.0,
+
+    -- Payment tracking
+    amount_received NUMERIC(20,2) DEFAULT 0,
+    amount_outstanding NUMERIC(20,2) NOT NULL,
+
+    -- Metadata
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_reparations_credit_descendant ON reparations_credit(descendant_enslaved_id);
+CREATE INDEX idx_reparations_credit_ancestor ON reparations_credit(ancestor_enslaved_id);
+CREATE INDEX idx_reparations_credit_outstanding ON reparations_credit(amount_outstanding);
+
+-- Blockchain payment ledger
+CREATE TABLE payment_ledger (
+    id SERIAL PRIMARY KEY,
+
+    -- Payment details
+    payment_type VARCHAR(50) NOT NULL, -- 'debt_payment', 'reparations_payment'
+    amount NUMERIC(20,2) NOT NULL,
+
+    -- Payer (slaveowner descendant)
+    payer_individual_id VARCHAR(255) REFERENCES individuals(individual_id) ON DELETE SET NULL,
+
+    -- Recipient (enslaved person descendant)
+    recipient_enslaved_id VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE SET NULL,
+
+    -- Links to debt/credit records
+    descendant_debt_id INTEGER REFERENCES descendant_debt(id) ON DELETE SET NULL,
+    reparations_credit_id INTEGER REFERENCES reparations_credit(id) ON DELETE SET NULL,
+
+    -- Blockchain info
+    blockchain_tx_hash VARCHAR(66),
+    blockchain_block_number BIGINT,
+    blockchain_network_id INTEGER,
+
+    -- Metadata
+    payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT
+);
+
+CREATE INDEX idx_payment_ledger_payer ON payment_ledger(payer_individual_id);
+CREATE INDEX idx_payment_ledger_recipient ON payment_ledger(recipient_enslaved_id);
+CREATE INDEX idx_payment_ledger_tx_hash ON payment_ledger(blockchain_tx_hash);
 
 -- Audit log for all changes
 CREATE TABLE audit_log (
@@ -354,11 +611,11 @@ CREATE TABLE audit_log (
     action VARCHAR(100) NOT NULL,
     performed_by VARCHAR(255),
     details JSONB,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    INDEX idx_document_id (document_id),
-    INDEX idx_timestamp (timestamp)
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_audit_log_document_id ON audit_log(document_id);
+CREATE INDEX idx_audit_log_timestamp ON audit_log(timestamp);
 
 -- Views for common queries
 
@@ -409,7 +666,7 @@ ORDER BY created_at;
 
 -- View: Statistics dashboard
 CREATE VIEW stats_dashboard AS
-SELECT 
+SELECT
     COUNT(*) as total_documents,
     SUM(total_enslaved) as total_enslaved_counted,
     SUM(total_reparations) as total_reparations_calculated,
@@ -419,6 +676,27 @@ SELECT
     SUM(CASE WHEN blockchain_submitted THEN 1 ELSE 0 END) as blockchain_submitted_count,
     SUM(file_size) as total_storage_bytes
 FROM documents;
+
+-- View: Individual entity network
+CREATE VIEW individual_network AS
+SELECT
+    i.individual_id,
+    i.full_name,
+    i.birth_year,
+    i.death_year,
+    i.locations,
+    i.total_documents,
+    i.total_enslaved,
+    i.total_reparations,
+    COUNT(DISTINCT ir.id) as relationship_count,
+    STRING_AGG(DISTINCT di.role_in_document, ', ') as document_roles
+FROM individuals i
+LEFT JOIN individual_relationships ir
+    ON i.individual_id = ir.individual_id_1
+    OR i.individual_id = ir.individual_id_2
+LEFT JOIN document_individuals di
+    ON i.individual_id = di.individual_id
+GROUP BY i.individual_id;
 `;
 
 // ==================== DATABASE CONNECTION HELPERS ====================
