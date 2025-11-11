@@ -20,7 +20,7 @@ const pool = process.env.DATABASE_URL
     });
 
 pool.on('connect', () => {
-    console.log('✓ Connected to PostgreSQL database');
+    console.log('âœ“ Connected to PostgreSQL database');
 });
 
 pool.on('error', (err) => {
@@ -156,7 +156,7 @@ async function saveDocumentMetadata(metadata) {
         }
         
         await client.query('COMMIT');
-        console.log(`✓ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
+        console.log(`âœ“ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
         
         return { success: true, documentId: metadata.documentId };
         
@@ -213,6 +213,7 @@ module.exports = {
     pool,
     query,
     saveDocumentMetadata,
+    saveDocument: saveDocumentMetadata, // Alias for compatibility with processor
     getDocumentById,
     getDocumentsByOwner,
     getEnslavedPeopleByDocument,
