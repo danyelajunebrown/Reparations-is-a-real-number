@@ -141,7 +141,6 @@ app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (re
     totalSlaveCount = enslavedPeople.length;
     
     // Generate placeholder hashes (required by database)
-    const crypto = require('crypto');
     const placeholderHash = 'multipage-' + documentId;
     const sha256Hash = crypto.createHash('sha256').update(placeholderHash).digest('hex');
     
