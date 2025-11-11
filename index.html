@@ -937,230 +937,211 @@
             addConsoleMessage('✓ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
         }
 
-        // ============================================
-        // DOCUMENT PROCESSING (multi-file updates)
-        // ============================================
+       // ============================================
+// MULTI-PAGE DOCUMENT UPLOAD (FIXED VERSION)
+// ============================================
+
+let selectedDocumentFiles = [];
+
+const DOCUMENT_TYPES = [
+    { value: 'will', label: 'Will' },
+    { value: 'probate', label: 'Probate Record' },
+    { value: 'census', label: 'Census Record' },
+    { value: 'slave_schedule', label: 'Slave Schedule' },
+    { value: 'estate_inventory', label: 'Estate Inventory' },
+    { value: 'correspondence', label: 'Correspondence/Letter' },
+    { value: 'deed', label: 'Property Deed' },
+    { value: 'other', label: 'Other' }
+];
+
+function handleMultiPageFileSelection() {
+    const fileInput = document.getElementById('multiPageFileInput');
+    
+    if (!fileInput || !fileInput.files) {
+        console.error('File input not found');
+        return;
+    }
+    
+    const files = Array.from(fileInput.files);
+    
+    if (files.length === 0) {
+        console.log('No files selected');
+        return;
+    }
+    
+    console.log('Selected ' + files.length + ' files');
+    selectedDocumentFiles = files;
+    showDocumentMetadataForm(files);
+}
+
+function showDocumentMetadataForm(files) {
+    // Remove any existing modal
+    const existingModal = document.getElementById('documentMetadataModal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    const modal = document.createElement('div');
+    modal.id = 'documentMetadataModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+    
+    modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
+        '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
+        '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
+        files.map((f, i) => '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>').join('') +
+        '</div>' +
+        '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 15px;">' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Document Type *</label>' +
+        '<select id="docType" required style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;">' +
+        '<option value="">Select type...</option>' +
+        DOCUMENT_TYPES.map(t => '<option value="' + t.value + '">' + t.label + '</option>').join('') +
+        '</select>' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Slave Owner Name *</label>' +
+        '<input type="text" id="ownerName" required placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Birth Year</label>' +
+        '<input type="number" id="birthYear" placeholder="e.g., 1780" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Death Year</label>' +
+        '<input type="number" id="deathYear" placeholder="e.g., 1825" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Location</label>' +
+        '<input type="text" id="location" placeholder="e.g., Prince George\'s County, Maryland" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div style="display: flex; gap: 10px; margin-top: 10px;">' +
+        '<button type="submit" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;">Upload Document</button>' +
+        '<button type="button" onclick="closeDocumentMetadataForm()" style="flex: 1; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; border-radius: 5px; cursor: pointer;">Cancel</button>' +
+        '</div>' +
+        '</form>' +
+        '</div>';
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('documentMetadataForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        uploadMultiPageDocument();
+    });
+}
+
+function closeDocumentMetadataForm() {
+    const modal = document.getElementById('documentMetadataModal');
+    if (modal) {
+        modal.remove();
+    }
+    selectedDocumentFiles = [];
+    const fileInput = document.getElementById('multiPageFileInput');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+}
+
+async function uploadMultiPageDocument() {
+    // Validation
+    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', '❌ No files selected. Please select files first.');
+        closeDocumentMetadataForm();
+        return;
+    }
+    
+    const metadata = {
+        documentType: document.getElementById('docType').value,
+        ownerName: document.getElementById('ownerName').value,
+        birthYear: document.getElementById('birthYear').value,
+        deathYear: document.getElementById('deathYear').value,
+        location: document.getElementById('location').value
+    };
+    
+    // Validate required fields
+    if (!metadata.documentType) {
+        alert('Please select a document type');
+        return;
+    }
+    
+    if (!metadata.ownerName || metadata.ownerName.trim() === '') {
+        alert('Please enter the slave owner name');
+        return;
+    }
+    
+    closeDocumentMetadataForm();
+    
+    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
+    
+    try {
+        const formData = new FormData();
         
-        async function handleFileUpload(event) {
-            const files = Array.from(event.target.files || []);
-            if (files.length === 0) return;
-
-            addConsoleMessage(`📄 ${files.length} file(s) selected.`, 'info');
-
-            if (files.length > 1) {
-                const applyToAll = confirm('Apply the same metadata (owner, location, year, type) to all selected files? Click OK for YES, Cancel for NO (you will be prompted per file).');
-                if (applyToAll) {
-                    // Prompt once and apply same metadata to all
-                    const ownerName = prompt('Enter slave owner name for all files:', '');
-                    if (!ownerName) {
-                        addConsoleMessage('❌ Processing cancelled by user', 'error');
-                        return;
+        // Add all files
+        for (let i = 0; i < selectedDocumentFiles.length; i++) {
+            formData.append('pages', selectedDocumentFiles[i]);
+            console.log('Adding file ' + (i + 1) + ': ' + selectedDocumentFiles[i].name);
+        }
+        
+        // Add metadata
+        formData.append('documentType', metadata.documentType);
+        formData.append('ownerName', metadata.ownerName);
+        formData.append('birthYear', metadata.birthYear || '');
+        formData.append('deathYear', metadata.deathYear || '');
+        formData.append('location', metadata.location || '');
+        formData.append('pageCount', selectedDocumentFiles.length);
+        
+        console.log('Sending upload request...');
+        
+        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        
+        const result = await response.json();
+        console.log('Response data:', result);
+        
+        if (result.success) {
+            addChatMessage('assistant', '✅ Document uploaded!\n\n📄 ID: ' + result.documentId + '\n📑 Pages: ' + result.pageCount + '\n⛓️ Enslaved: ' + (result.totalEnslaved || 0));
+            
+            // Optionally trigger metadata collection
+            if (result.documentId && result.documentId !== 'N/A') {
+                setTimeout(function() {
+                    if (typeof openMetadataModal === 'function') {
+                        openMetadataModal(result.documentId, '', metadata.ownerName);
                     }
-                    const location = prompt('Enter location (e.g., "St. Mary\'s County, MD"):', '');
-                    const deathYear = prompt('Enter death year (if known):', '');
-                    const documentType = prompt('Document type (will/census/probate/slave_schedule):', 'will');
-
-                    const metadata = {
-                        ownerName: ownerName,
-                        location: location || 'Unknown',
-                        deathYear: deathYear ? parseInt(deathYear) : null,
-                        documentType: documentType || 'will'
-                    };
-
-                    for (const file of files) {
-                        const fileType = (file.name.split('.').pop() || '').toLowerCase();
-                        if (fileType === 'csv') {
-                            await handleCSVImport(file);
-                        } else if (['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'txt'].includes(fileType)) {
-                            await processUploadedDocument(file, metadata);
-                        } else {
-                            addConsoleMessage(`❌ Unsupported file type for file ${file.name}`, 'error');
-                        }
-                    }
-
-                } else {
-                    // Prompt per-file
-                    for (const file of files) {
-                        const fileType = (file.name.split('.').pop() || '').toLowerCase();
-                        if (fileType === 'csv') {
-                            await handleCSVImport(file);
-                        } else if (['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'txt'].includes(fileType)) {
-                            await showMetadataDialog(file); // prompts per-file
-                        } else {
-                            addConsoleMessage(`❌ Unsupported file type for file ${file.name}`, 'error');
-                        }
-                    }
-                }
-            } else {
-                // Single file selected
-                const file = files[0];
-                const fileType = (file.name.split('.').pop() || '').toLowerCase();
-                if (fileType === 'csv') {
-                    await handleCSVImport(file);
-                } else if (['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'txt'].includes(fileType)) {
-                    await showMetadataDialog(file);
-                } else {
-                    addConsoleMessage('❌ Unsupported file type', 'error');
-                }
+                }, 1000);
             }
-
-            // reset the input so same files can be re-selected if needed
-            event.target.value = '';
+        } else {
+            addChatMessage('assistant', '❌ Upload failed: ' + (result.message || result.error));
         }
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        addChatMessage('assistant', '❌ Upload error: ' + error.message);
+    } finally {
+        selectedDocumentFiles = [];
+    }
+}
 
-        async function showMetadataDialog(file) {
-            // Prompt user for metadata for a single file
-            const ownerName = prompt('Enter slave owner name for ' + file.name + ':', '');
-            if (!ownerName) {
-                addConsoleMessage('❌ Processing cancelled for ' + file.name, 'error');
-                return;
-            }
-            
-            const location = prompt('Enter location (e.g., "St. Mary\'s County, MD"):', '');
-            const deathYear = prompt('Enter death year (if known):', '');
-            const documentType = prompt('Document type (will/census/probate/slave_schedule):', 'will');
-            
-            const metadata = {
-                ownerName: ownerName,
-                location: location || 'Unknown',
-                deathYear: deathYear ? parseInt(deathYear) : null,
-                documentType: documentType || 'will'
-            };
-            
-            await processUploadedDocument(file, metadata);
+// Helper function to add chat messages (if not already defined)
+if (typeof addChatMessage === 'undefined') {
+    function addChatMessage(role, message) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) {
+            console.log(role + ': ' + message);
+            return;
         }
-
-        async function processUploadedDocument(file, metadata) {
-            if (!documentProcessor) {
-                addConsoleMessage('❌ Document processor not initialized — attempting to initialize now...', 'error');
-                // Try to ensure dependencies and initialize processor
-                try {
-                    await ensureDependencies();
-                    documentProcessor = new EnhancedDocumentProcessor({
-                        storageRoot: './storage',
-                        reparationsCalculator: reparationsCalculator,
-                        generateIPFSHash: true,
-                        performOCR: true,
-                        saveToDatabase: false,
-                        ocrProvider: 'google',
-                        googleVisionCredentials: './google-vision-credentials.json'
-                    });
-                    addConsoleMessage('✓ Document processor initialized dynamically', 'success');
-                } catch (err) {
-                    addConsoleMessage('❌ Could not initialize document processor: ' + err.message, 'error');
-                    return;
-                }
-            }
-
-            addConsoleMessage(`⚙️ Starting processing pipeline for ${file.name}...`, 'info');
-            
-            try {
-                const result = await documentProcessor.processDocument(file, metadata);
-                
-                if (result && result.success) {
-                    const { storage, ipfsHash, ocr, parsing, reparations, database, blockchain } = result.stages || {};
-                    
-                    addConsoleMessage(`✓ Document processed successfully: ${file.name}`, 'success');
-                    if (storage && storage.filePath) addConsoleMessage(`  ▶ Storage: ${storage.filePath}`, 'success');
-                    if (ipfsHash && ipfsHash.hash) addConsoleMessage(`  ▶ IPFS Hash: ${ipfsHash.hash.substring(0, 30)}...`, 'success');
-                    if (ocr) addConsoleMessage(`  ▶ OCR: ${ocr.wordCount || 0} words extracted (${ocr.confidence || 0}% confidence)`, 'success');
-                    if (parsing) addConsoleMessage(`  ▶ Enslaved People: ${parsing.totalCount || 0} identified`, 'success');
-                    if (parsing) addConsoleMessage(`  ▶ Named: ${parsing.namedCount || 0} | Unnamed: ${parsing.unnamedCount || 0}`, 'success');
-                    if (parsing && parsing.families) addConsoleMessage(`  ▶ Families: ${parsing.families.length || 0} family units`, 'success');
-                    if (reparations) addConsoleMessage(`  ▶ Reparations: $${(reparations.total || 0).toLocaleString()}`, 'success');
-                    if (parsing && parsing.totalCount) addConsoleMessage(`  ▶ Per Person: $${Math.round((reparations.total || 0) / (parsing.totalCount || 1)).toLocaleString()}`, 'success');
-
-                    processedDocuments.push(result);
-                    updateOwnerData(result);
-                    refreshUI();
-
-                    addConsoleMessage('✓ Ready for blockchain submission', 'success');
-                    addConsoleMessage(`  Document ID: ${result.documentId}`, 'info');
-                } else {
-                    addConsoleMessage('❌ Processing failed: ' + (result && result.error ? result.error : 'Unknown error'), 'error');
-                }
-            } catch (error) {
-                console.error('Document processing error:', error);
-                addConsoleMessage('❌ Error: ' + (error && error.message ? error.message : error), 'error');
-            }
-        }
-
-        async function handleCSVImport(file) {
-            addConsoleMessage(`📊 Importing CSV: ${file.name}`, 'info');
-            
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    const csvText = e.target.result;
-                    const report = await csvImporter.importCSV(csvText);
-                    
-                    addConsoleMessage('✓ CSV imported!', 'success');
-                    addConsoleMessage(`  Owners: ${report.summary.ownersImported}`, 'success');
-                    addConsoleMessage(`  Enslaved: ${report.summary.enslavedPeopleImported}`, 'success');
-                    
-                    // Convert to our format if csvImporter supports it
-                    const importedOwners = csvImporter.getOwnersForFamilySearch ? csvImporter.getOwnersForFamilySearch() : [];
-                    importedOwners.forEach(owner => {
-                        const fullOwner = csvImporter.getOwner ? csvImporter.getOwner(owner.name) : null;
-                        if (fullOwner) {
-                            ownersData.push({
-                                name: fullOwner.name,
-                                location: fullOwner.location,
-                                count: fullOwner.totalCount,
-                                reparations: fullOwner.totalCount * 2200000,
-                                enslaved: fullOwner.enslavedPeople,
-                                documents: fullOwner.documents
-                            });
-                        }
-                    });
-                    
-                    refreshUI();
-                    
-                } catch (error) {
-                    addConsoleMessage('❌ CSV error: ' + (error && error.message ? error.message : error), 'error');
-                }
-            };
-            
-            reader.readAsText(file);
-        }
-
-        function updateOwnerData(processedDoc) {
-            const { metadata, stages } = processedDoc;
-            if (!metadata || !stages) return;
-            const ownerName = metadata.ownerName;
-            
-            let owner = ownersData.find(o => o.name === ownerName);
-            
-            if (!owner) {
-                owner = {
-                    name: ownerName,
-                    location: metadata.location || 'Unknown',
-                    deathYear: metadata.deathYear,
-                    documents: [],
-                    enslaved: [],
-                    count: 0,
-                    reparations: 0,
-                    confidence: { level: 'PENDING', score: 0 }
-                };
-                ownersData.push(owner);
-                stats.owners++;
-            }
-            
-            owner.documents.push({
-                type: metadata.documentType,
-                ipfsHash: stages.ipfsHash ? stages.ipfsHash.hash : null,
-                processed: true
-            });
-            
-            const parsed = stages.parsing || {};
-            owner.count = parsed.totalCount || owner.count;
-            owner.reparations = (stages.reparations && stages.reparations.total) ? stages.reparations.total : owner.reparations;
-            
-            stats.documents++;
-            stats.enslaved += parsed.totalCount || 0;
-            stats.reparations += (stages.reparations && stages.reparations.total) ? stages.reparations.total : 0;
-        }
-
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.style.cssText = 'padding: 10px; margin-bottom: 10px; border-radius: 5px; ' +
+            (role === 'user' ? 'background: rgba(100, 200, 255, 0.1); text-align: right;' : 'background: rgba(30, 40, 70, 0.6);') +
+            ' color: #e0e0e0; white-space: pre-wrap;';
+        messageDiv.textContent = message;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+}
         // ============================================
         // UI UPDATES
         // ============================================
