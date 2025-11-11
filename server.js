@@ -10,6 +10,7 @@ const EnhancedDocumentProcessor = require('./enhanced-document-processor');
 const StorageAdapter = require('./storage-adapter');
 const IndividualEntityManager = require('./individual-entity-manager');
 const DescendantCalculator = require('./descendant-calculator');
+const FreeNLPResearchAssistant = require('./free-nlp-assistant');
 
 const app = express();
 
@@ -44,6 +45,9 @@ const entityManager = new IndividualEntityManager(database);
 // Initialize descendant calculator
 const descendantCalc = new DescendantCalculator(database);
 
+// Initialize FREE NLP Research Assistant (no API keys needed!)
+const researchAssistant = new FreeNLPResearchAssistant(database);
+
 // Upload document endpoint
 app.post('/api/upload-document', upload.single('document'), async (req, res) => {
   try {
@@ -69,69 +73,39 @@ app.post('/api/upload-document', upload.single('document'), async (req, res) => 
   }
 });
 
-// Simple database query endpoint - NO LLM, NO API KEYS
+// FREE Natural Language Research Assistant (no API keys needed!)
 app.post('/api/llm-query', async (req, res) => {
-  const { query } = req.body;
+  const { query, sessionId } = req.body;
+  
+  if (!query) {
+    return res.status(400).json({ success: false, error: 'Query is required' });
+  }
   
   try {
-    const lower = query.toLowerCase();
-    let response = '';
-    let evidence = null;
+    console.log('Research Assistant query: ' + query);
     
-    // Direct database queries based on keywords
-    if (lower.includes('hopewell') || lower.includes('james')) {
-      const ownerData = await database.query(`
-        SELECT d.*, 
-               json_agg(json_build_object(
-                 'name', ep.name,
-                 'gender', ep.gender,
-                 'family_relationship', ep.family_relationship,
-                 'bequeathed_to', ep.bequeathed_to
-               )) as enslaved_people
-        FROM documents d
-        LEFT JOIN enslaved_people ep ON d.document_id = ep.document_id
-        WHERE d.owner_name ILIKE '%Hopewell%'
-        GROUP BY d.document_id
-      `);
-      
-      if (ownerData.rows && ownerData.rows.length > 0) {
-        const owner = ownerData.rows[0];
-        response = `${owner.owner_name}\n${owner.owner_location}\nDied: ${owner.owner_death_year}\n${owner.total_enslaved} enslaved\n$${(owner.total_reparations / 1000000).toFixed(1)}M reparations`;
-        evidence = { type: 'owner_profile', data: owner };
-      } else {
-        response = 'No records found for Hopewell';
-      }
-      
-    } else if (lower.includes('minna')) {
-      const personData = await database.query(`
-        SELECT ep.*, d.owner_name, d.doc_type
-        FROM enslaved_people ep
-        JOIN documents d ON ep.document_id = d.document_id
-        WHERE ep.name ILIKE '%Minna%'
-      `);
-      
-      if (personData.rows && personData.rows.length > 0) {
-        const person = personData.rows[0];
-        response = `${person.name}\nOwner: ${person.owner_name}\n${person.family_relationship}\nBequeathed to: ${person.bequeathed_to}`;
-        evidence = { type: 'person_detail', data: person };
-      } else {
-        response = 'No records found for Minna';
-      }
-      
-    } else if (lower.includes('stats') || lower.includes('how many') || lower.includes('total')) {
-      const stats = await database.getStats();
-      response = `Database Stats:\nDocuments: ${stats.total_documents}\nOwners: ${stats.unique_owners}\nEnslaved: ${stats.total_enslaved_counted}\nTotal Reparations: $${(stats.total_reparations_calculated / 1000000).toFixed(1)}M`;
-      evidence = { type: 'statistics', data: stats };
-      
-    } else {
-      response = 'Try asking about:\n- "James Hopewell"\n- "Minna"\n- "statistics"';
-    }
+    // Use FREE NLP system for intelligent responses
+    const result = await researchAssistant.query(query, sessionId || 'default');
     
-    res.json({ success: true, response, evidence });
+    res.json(result);
     
   } catch (error) {
-    console.error('Query error:', error);
-    res.json({ success: false, error: error.message });
+    console.error('Research Assistant error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message
+    });
+  }
+});
+
+// Clear Research Assistant conversation history
+app.post('/api/clear-chat', async (req, res) => {
+  const { sessionId } = req.body;
+  try {
+    researchAssistant.clearSession(sessionId || 'default');
+    res.json({ success: true, message: 'Chat history cleared' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

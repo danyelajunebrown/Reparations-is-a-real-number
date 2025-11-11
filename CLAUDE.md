@@ -96,20 +96,107 @@ GET /health
   - Health check: { status: 'ok', timestamp }
 ```
 
-### Research Assistant (Frontend Feature)
+### Research Assistant (FREE Natural Language Processing)
 
-**Important:** The "Research Assistant" in the UI is NOT powered by AI/LLM. It uses simple keyword matching:
-- Searches `documents` table for keywords like "Hopewell", "Minna", "stats"
-- Returns formatted database query results
-- Does NOT have natural language understanding
-- Does NOT have context of previous questions
+**NO API KEYS NEEDED!** The Research Assistant uses a custom-built NLP system for intelligent queries.
 
-**For the Research Assistant to work:**
-1. Documents must be saved to the `documents` table (not just `individuals`)
-2. The upload process must complete successfully
-3. OCR must extract text for searchable content
+**Features:**
+- ✅ Natural language understanding
+- ✅ Entity extraction (person names, numbers)
+- ✅ Intent classification (search/count/lineage)
+- ✅ Context awareness (remembers previous questions)
+- ✅ Pronoun resolution ("How many did he own?" knows who "he" is)
+- ✅ Follow-up question handling
+- ✅ 100% free - no external APIs
 
-**Known limitation:** Metadata-only uploads (via process-individual-metadata) save to `individuals` table but won't appear in Research Assistant queries which search `documents` table.
+**How it works:**
+1. **Pattern Matching**: Uses regex patterns to identify question types
+2. **Entity Extraction**: Finds person names using capitalization patterns
+3. **Intent Classification**: Determines what the user wants (search/count/stats)
+4. **Context Memory**: Tracks last person mentioned for follow-ups
+5. **Pronoun Resolution**: Replaces "he/she/they" with actual person name
+6. **Database Query**: Searches relevant tables based on intent
+7. **Natural Response**: Formats results in conversational language
+
+**Supported Question Types:**
+
+*Find Person:*
+- "Do you have James Hopewell?"
+- "Tell me about James Hopewell"
+- "Who is James Hopewell?"
+- "Search for Hopewell"
+
+*Count Enslaved:*
+- "How many enslaved people did James Hopewell own?"
+- "How many did he own?" (follow-up)
+- "Slave count for Hopewell"
+
+*Reparations Amount:*
+- "How much does James Hopewell owe?"
+- "What reparations does he owe?" (follow-up)
+- "Reparations for Hopewell"
+
+*Statistics:*
+- "Show me statistics"
+- "How many total owners?"
+- "What's in the database?"
+
+*Follow-ups:*
+- After asking about a person, you can say:
+- "How many did he own?"
+- "What does he owe?"
+- "Tell me more about them"
+
+**API Endpoints:**
+
+`POST /api/llm-query`
+- Body: `{ query: string, sessionId?: string }`
+- Uses pattern-matching NLP to answer questions
+- Maintains conversation context per sessionId
+- Returns formatted natural language response
+
+`POST /api/clear-chat`
+- Body: `{ sessionId?: string }`
+- Clears conversation history for the given session
+
+**Session Management:**
+- Each session maintains:
+  - Last person mentioned
+  - Last person type (owner/enslaved)
+  - Conversation history
+  - Last intent executed
+- Sessions persist until cleared or server restart
+
+**Database Queries:**
+The NLP system queries:
+- `documents` table → slave owners
+- `enslaved_people` table → enslaved individuals
+- `individuals` table → verified genealogical records
+- Database statistics and aggregations
+
+**Example Conversation:**
+```
+User: "Do you have James Hopewell?"
+Bot: "Yes, I found James Hopewell in the records. 
+      Location: Maryland
+      Life: 1780-1825
+      Enslaved: 32 people
+      Reparations: $70.4M"
+
+User: "How many did he own?"
+Bot: "James Hopewell enslaved 32 people according to the documents we have."
+
+User: "What does he owe?"
+Bot: "James Hopewell owes $70.4 million in reparations."
+```
+
+**No External Dependencies:**
+- No API keys required
+- No subscription costs
+- Works offline (except database)
+- Pure JavaScript/Node.js
+- Regex-based pattern matching
+- In-memory session storage
 
 ## Environment Setup
 
@@ -125,7 +212,7 @@ POSTGRES_DB=reparations
 POSTGRES_USER=reparations_user
 POSTGRES_PASSWORD=secure_password
 
-# Google Vision API
+# Google Vision API (for OCR)
 GOOGLE_VISION_API_KEY=your_key_here
 
 # Storage (optional)
