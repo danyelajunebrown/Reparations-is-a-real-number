@@ -937,22 +937,28 @@
             addConsoleMessage('✓ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
         }
 
-       // ============================================
-// MULTI-PAGE DOCUMENT UPLOAD (FIXED VERSION)
+// ============================================
+// MULTI-PAGE DOCUMENT UPLOAD (CLEAN VERSION)
 // ============================================
 
-let selectedDocumentFiles = [];
+// Check if already declared, if not declare it
+if (typeof selectedDocumentFiles === 'undefined') {
+    var selectedDocumentFiles = [];
+}
 
-const DOCUMENT_TYPES = [
-    { value: 'will', label: 'Will' },
-    { value: 'probate', label: 'Probate Record' },
-    { value: 'census', label: 'Census Record' },
-    { value: 'slave_schedule', label: 'Slave Schedule' },
-    { value: 'estate_inventory', label: 'Estate Inventory' },
-    { value: 'correspondence', label: 'Correspondence/Letter' },
-    { value: 'deed', label: 'Property Deed' },
-    { value: 'other', label: 'Other' }
-];
+// Check if DOCUMENT_TYPES already exists
+if (typeof DOCUMENT_TYPES === 'undefined') {
+    var DOCUMENT_TYPES = [
+        { value: 'will', label: 'Will' },
+        { value: 'probate', label: 'Probate Record' },
+        { value: 'census', label: 'Census Record' },
+        { value: 'slave_schedule', label: 'Slave Schedule' },
+        { value: 'estate_inventory', label: 'Estate Inventory' },
+        { value: 'correspondence', label: 'Correspondence/Letter' },
+        { value: 'deed', label: 'Property Deed' },
+        { value: 'other', label: 'Other' }
+    ];
+}
 
 function handleMultiPageFileSelection() {
     const fileInput = document.getElementById('multiPageFileInput');
@@ -988,14 +994,14 @@ function showDocumentMetadataForm(files) {
     modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
         '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
         '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
-        files.map((f, i) => '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>').join('') +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
         '</div>' +
         '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 15px;">' +
         '<div>' +
         '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Document Type *</label>' +
         '<select id="docType" required style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;">' +
         '<option value="">Select type...</option>' +
-        DOCUMENT_TYPES.map(t => '<option value="' + t.value + '">' + t.label + '</option>').join('') +
+        DOCUMENT_TYPES.map(function(t) { return '<option value="' + t.value + '">' + t.label + '</option>'; }).join('') +
         '</select>' +
         '</div>' +
         '<div>' +
@@ -1104,7 +1110,7 @@ async function uploadMultiPageDocument() {
         if (result.success) {
             addChatMessage('assistant', '✅ Document uploaded!\n\n📄 ID: ' + result.documentId + '\n📑 Pages: ' + result.pageCount + '\n⛓️ Enslaved: ' + (result.totalEnslaved || 0));
             
-            // Optionally trigger metadata collection
+            // Trigger metadata collection if function exists
             if (result.documentId && result.documentId !== 'N/A') {
                 setTimeout(function() {
                     if (typeof openMetadataModal === 'function') {
@@ -1121,25 +1127,6 @@ async function uploadMultiPageDocument() {
         addChatMessage('assistant', '❌ Upload error: ' + error.message);
     } finally {
         selectedDocumentFiles = [];
-    }
-}
-
-// Helper function to add chat messages (if not already defined)
-if (typeof addChatMessage === 'undefined') {
-    function addChatMessage(role, message) {
-        const chatMessages = document.getElementById('chatMessages');
-        if (!chatMessages) {
-            console.log(role + ': ' + message);
-            return;
-        }
-        
-        const messageDiv = document.createElement('div');
-        messageDiv.style.cssText = 'padding: 10px; margin-bottom: 10px; border-radius: 5px; ' +
-            (role === 'user' ? 'background: rgba(100, 200, 255, 0.1); text-align: right;' : 'background: rgba(30, 40, 70, 0.6);') +
-            ' color: #e0e0e0; white-space: pre-wrap;';
-        messageDiv.textContent = message;
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 }
         // ============================================
