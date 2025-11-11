@@ -29,20 +29,20 @@ truffle migrate          # Deploy contracts to configured network
 ### Layered Architecture
 ```
 Frontend (HTML/JS + Web3.js)
-    ↓
+    â†“
 Express API Server (server.js)
-    ↓
-├─ Document Processor Pipeline
-├─ Storage Adapter (Local/S3/IPFS)
-├─ PostgreSQL Database
-└─ Ethereum Smart Contracts
+    â†“
+â”œâ”€ Document Processor Pipeline
+â”œâ”€ Storage Adapter (Local/S3/IPFS)
+â”œâ”€ PostgreSQL Database
+â””â”€ Ethereum Smart Contracts
 ```
 
 ### Core Processing Pipeline
 
 **Document Upload Flow** (`enhanced-document-processor.js`):
-1. File upload via Multer → temp storage
-2. StorageAdapter → permanent storage (`./storage/owners/{name}/{type}/`)
+1. File upload via Multer â†’ temp storage
+2. StorageAdapter â†’ permanent storage (`./storage/owners/{name}/{type}/`)
 3. IPFS hash generation (optional, for immutability)
 4. OCR processing (Google Vision API preferred, Tesseract.js fallback)
 5. Data extraction (enslaved names, relationships, metadata)
@@ -203,23 +203,23 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 
 ```
 /
-├── server.js                    # Express server entry point
-├── app.js                       # Web3 frontend integration
-├── config.js                    # Central configuration
-├── database.js                  # PostgreSQL client
-├── database-schemas.js          # Schema definitions
-├── enhanced-document-processor.js  # Main document pipeline
-├── storage-adapter.js           # Storage abstraction
-├── reparations-calculator.js    # Economic calculations
-├── familysearch-reparations-integration.js  # Genealogy integration
-├── init-database.js             # Database initialization script
-├── contracts/
-│   ├── contracts/*.sol          # Solidity smart contracts
-│   └── migrations/              # Truffle deployment scripts
-└── frontend/
-    └── public/
-        ├── index.html           # Main UI
-        └── app.js               # Blockchain integration
+â”œâ”€â”€ server.js                    # Express server entry point
+â”œâ”€â”€ app.js                       # Web3 frontend integration
+â”œâ”€â”€ config.js                    # Central configuration
+â”œâ”€â”€ database.js                  # PostgreSQL client
+â”œâ”€â”€ database-schemas.js          # Schema definitions
+â”œâ”€â”€ enhanced-document-processor.js  # Main document pipeline
+â”œâ”€â”€ storage-adapter.js           # Storage abstraction
+â”œâ”€â”€ reparations-calculator.js    # Economic calculations
+â”œâ”€â”€ familysearch-reparations-integration.js  # Genealogy integration
+â”œâ”€â”€ init-database.js             # Database initialization script
+â”œâ”€â”€ contracts/
+â”‚   â”œâ”€â”€ contracts/*.sol          # Solidity smart contracts
+â”‚   â””â”€â”€ migrations/              # Truffle deployment scripts
+â””â”€â”€ frontend/
+    â””â”€â”€ public/
+        â”œâ”€â”€ index.html           # Main UI
+        â””â”€â”€ app.js               # Blockchain integration
 ```
 
 ## Development Notes
@@ -255,6 +255,8 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 - SSL cert handling for managed PostgreSQL included
 - Set environment variables in Render dashboard
 - Run `npm run init-db` on first deployment
+- Backend at: `https://reparations-platform.onrender.com`
+- Frontend at: GitHub Pages (must configure API_BASE_URL)
 
 **Production Checklist**:
 1. Set all required environment variables
@@ -263,3 +265,22 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 4. Configure contract addresses
 5. Enable HTTPS/TLS
 6. Consider rate limiting on upload endpoints
+
+## Common Issues & Solutions
+
+**Database Foreign Key Errors (`document_individuals_document_id_fkey`)**:
+- **Symptom**: Error "Failed to save metadata: insert or update on table document_individuals violates foreign key constraint"
+- **Cause**: Trying to link individuals to documents before the document record exists in the `documents` table
+- **Solution**: The `/api/process-individual-metadata` endpoint now checks if document exists before linking
+- **Prevention**: Always ensure document upload completes and returns valid `document_id` before processing individual metadata
+
+**Document Upload Order**:
+1. Upload file via `/api/upload-document` → returns `documentId`
+2. Use returned `documentId` when calling `/api/process-individual-metadata`
+3. Document must be in `documents` table before linking individuals
+
+**Frontend-Backend Connection**:
+- Frontend (GitHub Pages) must call backend (Render) API endpoints
+- CORS is enabled in server.js for cross-origin requests
+- Check browser console for API connection errors
+- Verify API_BASE_URL points to: `https://reparations-platform.onrender.com`
