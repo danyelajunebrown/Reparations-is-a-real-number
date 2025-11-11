@@ -185,9 +185,9 @@ app.post('/api/process-individual-metadata', async (req, res) => {
       
       if (docExists.rows && docExists.rows.length > 0) {
         await entityManager.linkIndividualToDocument(individualId, documentId, 'owner');
-        console.log(`✓ Linked ${fullName} to document ${documentId}`);
+        console.log('Linked ' + fullName + ' to document ' + documentId);
       } else {
-        console.warn(`⚠ Document ${documentId} not found in database - skipping link`);
+        console.warn('Document ' + documentId + ' not found in database - skipping link');
       }
     }
 
@@ -561,9 +561,9 @@ const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`ðŸš€ Reparations server running on port ${PORT}`);
-    console.log(`ðŸ“ Storage root: ${config.storage.root}`);
-    console.log(`ðŸ” OCR enabled: ${processor.performOCR}`);
+    console.log('Reparations server running on port ' + PORT);
+    console.log('Storage root: ' + config.storage.root);
+    console.log('OCR enabled: ' + processor.performOCR);
   });
 }
 
