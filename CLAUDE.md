@@ -84,10 +84,32 @@ POST /api/llm-query
   - Body: { query: string }
   - Query types: "hopewell", "minna", "stats"
   - Returns: { success, response, evidence }
+  - NOTE: This is NOT an LLM/AI endpoint - it's keyword-based database queries
+  - Searches the `documents` table for records
+
+POST /api/process-individual-metadata
+  - Saves individual metadata to `individuals` table
+  - Links individuals to documents via `document_individuals` table
+  - Body: documentId, fileName, fullName, birthYear, deathYear, gender, locations, spouses, children, parents, notes
 
 GET /health
   - Health check: { status: 'ok', timestamp }
 ```
+
+### Research Assistant (Frontend Feature)
+
+**Important:** The "Research Assistant" in the UI is NOT powered by AI/LLM. It uses simple keyword matching:
+- Searches `documents` table for keywords like "Hopewell", "Minna", "stats"
+- Returns formatted database query results
+- Does NOT have natural language understanding
+- Does NOT have context of previous questions
+
+**For the Research Assistant to work:**
+1. Documents must be saved to the `documents` table (not just `individuals`)
+2. The upload process must complete successfully
+3. OCR must extract text for searchable content
+
+**Known limitation:** Metadata-only uploads (via process-individual-metadata) save to `individuals` table but won't appear in Research Assistant queries which search `documents` table.
 
 ## Environment Setup
 
