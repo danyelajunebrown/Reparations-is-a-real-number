@@ -54,6 +54,124 @@ app.post('/api/upload-document', upload.single('document'), async (req, res) => 
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
+
+    // Multi-page document upload endpoint
+app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'No files uploaded' });
+    }
+    
+    console.log('Received multi-page upload: ' + req.files.length + ' pages');
+    
+    // Extract shared metadata
+    const sharedMetadata = {
+      ownerName: req.body.ownerName,
+      documentType: req.body.documentType,
+      birthYear: parseInt(req.body.birthYear) || null,
+      deathYear: parseInt(req.body.deathYear) || null,
+      location: req.body.location || null
+    };
+    
+    // Generate single document ID
+    const crypto = require('crypto');
+    const documentId = crypto.randomBytes(12).toString('hex');
+    
+    console.log('Processing ' + req.files.length + '-page document for ' + sharedMetadata.ownerName);
+    
+    // Process each page
+    const pageResults = [];
+    let combinedOCRText = '';
+    let totalSlaveCount = 0;
+    let enslavedPeople = [];
+    
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      const pageNumber = i + 1;
+      
+      try {
+        const pageResult = await processor.processDocument(file, {
+          ...sharedMetadata,
+          pageNumber,
+          totalPages: req.files.length,
+          isMultiPage: true,
+          parentDocumentId: documentId
+        });
+        
+        pageResults.push(pageResult);
+        
+        if (pageResult.stages && pageResult.stages.ocr && pageResult.stages.ocr.text) {
+          combinedOCRText += '\n--- Page ' + pageNumber + ' ---\n' + pageResult.stages.ocr.text;
+        }
+        
+      } catch (pageError) {
+        console.error('Error processing page ' + pageNumber + ':', pageError);
+        pageResults.push({ 
+          success: false, 
+          error: pageError.message,
+          pageNumber 
+        });
+      }
+    }
+    
+    // Save consolidated document
+    if (database && database.saveDocument) {
+      const consolidatedDoc = {
+        documentId: documentId,
+        owner: sharedMetadata.ownerName,
+        ownerBirthYear: sharedMetadata.birthYear,
+        ownerDeathYear: sharedMetadata.deathYear,
+        ownerLocation: sharedMetadata.location,
+        
+        storage: {
+          documentType: sharedMetadata.documentType,
+          filename: sharedMetadata.ownerName + '_' + sharedMetadata.documentType + '_' + req.files.length + 'pages',
+          filePath: pageResults[0] && pageResults[0].stages && pageResults[0].stages.storage ? pageResults[0].stages.storage.filePath : null,
+          fileSize: req.files.reduce((sum, f) => sum + f.size, 0)
+        },
+        
+        ocr: {
+          text: combinedOCRText,
+          pageCount: req.files.length
+        },
+        
+        enslaved: {
+          totalCount: totalSlaveCount
+        },
+        
+        reparations: {
+          total: 0
+        },
+        
+        createdAt: new Date()
+      };
+      
+      await database.saveDocument(consolidatedDoc);
+      console.log('Saved multi-page document: ' + documentId);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Multi-page document uploaded successfully',
+      documentId: documentId,
+      pageCount: req.files.length,
+      pages: pageResults.map((p, i) => ({
+        page: i + 1,
+        filename: req.files[i].originalname,
+        success: p.success
+      })),
+      status: 'processed'
+    });
+    
+  } catch (error) {
+    console.error('Multi-page upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message, 
+      error: error.stack 
+    });
+  }
+});
     
     console.log(`Received upload: ${req.file.originalname}`);
     const metadata = {
