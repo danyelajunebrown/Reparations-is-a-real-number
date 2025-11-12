@@ -22,6 +22,16 @@ class FreeNLPResearchAssistant {
                 /search (?:for )?([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
             ],
             
+            // Update person metadata
+            update_person: [
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) married ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:child|children|son|daughter) (?:was|were|is|are) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:parent|parents|father|mother) (?:was|were|is|are) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /update ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (spouse|wife|husband|child|children|parent|parents) to ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+            ],
+            
             // Count enslaved people
             count_enslaved: [
                 /how many (?:slaves?|enslaved(?: people)?)(?: did| )?([A-Z][a-z]+(?: [A-Z][a-z]+)*)?/i,
