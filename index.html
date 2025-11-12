@@ -9,14 +9,6 @@
     <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     
-    <!-- Core System Modules (kept as static includes if available) -->
-    <script src="reparations-calculator.js"></script>
-    <script src="confidence-scorer.js"></script>
-    <script src="citation-tracker.js"></script>
-    <script src="review-queue.js"></script>
-    <script src="csv-importer.js"></script>
-    <script src="enhanced-document-processor.js"></script>
-    
     <style>
         * {
             margin: 0;
@@ -494,7 +486,7 @@
     <!-- Top Icon Bar -->
     <div class="icon-bar">
         <div class="icon-bar-left">
-            <div class="system-title">⚖️ Reparations Platform v2.0</div>
+            <div class="system-title">âš–ï¸ Reparations Platform v2.0</div>
             <div class="system-status">
                 <div class="status-indicator"></div>
                 <span id="systemStatus">Enhanced Processor Active</span>
@@ -502,9 +494,9 @@
         </div>
         <div class="icon-bar-right">
             <span class="wallet-status" id="walletStatus">Not Connected</span>
-            <button class="icon-btn" id="connectWallet">🔗 Connect Wallet</button>
-            <button class="icon-btn" onclick="exportData()">📊 Export</button>
-            <button class="icon-btn" onclick="showHelp()">❓ Help</button>
+            <button class="icon-btn" id="connectWallet">ðŸ”— Connect Wallet</button>
+            <button class="icon-btn" onclick="exportData()">ðŸ“Š Export</button>
+            <button class="icon-btn" onclick="showHelp()">â“ Help</button>
         </div>
     </div>
 
@@ -533,7 +525,7 @@
         <!-- Widget 1: Rotating Forest of Family Trees -->
         <div class="widget-forest">
             <div class="forest-title">
-                <h1>📜 Historical Records Database</h1>
+                <h1>ðŸ“œ Historical Records Database</h1>
             </div>
 
             <div class="carousel-container">
@@ -543,9 +535,9 @@
             </div>
 
             <div class="carousel-controls">
-                <button class="control-btn" onclick="rotateCarousel(-1)">← Previous</button>
-                <button class="control-btn" id="autoRotateBtn" onclick="toggleAutoRotate()">⏸ Pause</button>
-                <button class="control-btn" onclick="rotateCarousel(1)">Next →</button>
+                <button class="control-btn" onclick="rotateCarousel(-1)">â† Previous</button>
+                <button class="control-btn" id="autoRotateBtn" onclick="toggleAutoRotate()">â¸ Pause</button>
+                <button class="control-btn" onclick="rotateCarousel(1)">Next â†’</button>
             </div>
         </div>
 
@@ -560,23 +552,23 @@
 
                 <div class="formula-display" id="formulaDisplay">
                     <div class="formula-line">
-                        <span class="formula-component">Wage Theft</span> = Count × $120/day × Years × 300 days × inflation
+                        <span class="formula-component">Wage Theft</span> = Count Ã— $120/day Ã— Years Ã— 300 days Ã— inflation
                     </div>
 
                     <div class="formula-line">
-                        <span class="formula-component">Human Dignity Damages</span> = Count × $15,000 × Years × 1.5
+                        <span class="formula-component">Human Dignity Damages</span> = Count Ã— $15,000 Ã— Years Ã— 1.5
                     </div>
 
                     <div class="formula-line">
-                        <span class="formula-component">Profit Share</span> = Count × $300/year × Years × inflation × 40%
+                        <span class="formula-component">Profit Share</span> = Count Ã— $300/year Ã— Years Ã— inflation Ã— 40%
                     </div>
 
                     <div class="formula-line">
-                        <span class="formula-component">Compound Interest (4%)</span> = Subtotal × (1.04^224 - 1)
+                        <span class="formula-component">Compound Interest (4%)</span> = Subtotal Ã— (1.04^224 - 1)
                     </div>
 
                     <div class="formula-line">
-                        <span class="formula-component">Delayed Justice Penalty (2%)</span> = Subtotal × 2% × 224 years
+                        <span class="formula-component">Delayed Justice Penalty (2%)</span> = Subtotal Ã— 2% Ã— 224 years
                     </div>
 
                     <div class="formula-result">
@@ -593,7 +585,7 @@
             <div class="widget">
                 <h2>Documented Owners</h2>
                 <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
-                    Click to view details • Green = verified
+                    Click to view details â€¢ Green = verified
                 </p>
 
                 <div class="owner-list" id="ownerList">
@@ -603,12 +595,12 @@
 
           <!-- Widget 4: LLM Chat Interface -->
 <div class="widget">
-    <h2>🤖 Research Assistant</h2>
+    <h2>ðŸ¤– Research Assistant</h2>
     <div style="display: flex; flex-direction: column; height: calc(100% - 60px);">
         <!-- Chat Messages -->
         <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(10, 14, 39, 0.8); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px; margin-bottom: 15px;">
             <div style="color: #64c8ff; margin-bottom: 10px;">
-                💬 Ask me about the database: owners, documents, enslaved people, families, or statistics.
+                ðŸ’¬ Ask me about the database: owners, documents, enslaved people, families, or statistics.
             </div>
         </div>
         
@@ -633,7 +625,7 @@
        <!-- Multi-Page Upload Ribbon -->
 <div style="margin-top: 15px; padding: 15px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px;">
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-        <span style="color: #64c8ff; font-size: 0.9em;">📄 Upload Multi-Page Document</span>
+        <span style="color: #64c8ff; font-size: 0.9em;">ðŸ“„ Upload Multi-Page Document</span>
         <input
             type="file"
             id="multiPageFileInput"
@@ -760,17 +752,17 @@
             for (const d of deps) {
                 if (typeof window[d.symbol] === 'undefined') {
                     try {
-                        addConsoleMessage(`⚙️ Attempting to load ${d.file}…`, 'info');
+                        addConsoleMessage(`âš™ï¸ Attempting to load ${d.file}â€¦`, 'info');
                         await loadScript(d.file);
                     } catch (err) {
-                        addConsoleMessage(`⚠️ Could not dynamically load ${d.file}: ${err.message}`, 'error');
+                        addConsoleMessage(`âš ï¸ Could not dynamically load ${d.file}: ${err.message}`, 'error');
                     }
                 }
             }
 
             // If any are still missing, provide lightweight mocks so app continues to function for UI/testing
             if (typeof window.ReparationsCalculator === 'undefined') {
-                addConsoleMessage('⚠️ ReparationsCalculator missing — using mock', 'error');
+                addConsoleMessage('âš ï¸ ReparationsCalculator missing â€” using mock', 'error');
                 window.ReparationsCalculator = class {
                     constructor() {}
                     calculate(parsed) {
@@ -807,7 +799,7 @@
 
             if (typeof window.EnhancedDocumentProcessor === 'undefined') {
                 // Provide a mock that simulates the 7-stage processing pipeline
-                addConsoleMessage('⚠️ EnhancedDocumentProcessor missing — using MOCK processor (simulation mode).', 'error');
+                addConsoleMessage('âš ï¸ EnhancedDocumentProcessor missing â€” using MOCK processor (simulation mode).', 'error');
                 window.EnhancedDocumentProcessor = class {
                     constructor(opts = {}) {
                         this.opts = opts;
@@ -840,7 +832,7 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', async function() {
             try {
-                addConsoleMessage('⚙️ Initializing core systems...', 'info');
+                addConsoleMessage('âš™ï¸ Initializing core systems...', 'info');
 
                 // Ensure dependencies (attempt to dynamically load missing scripts and provide mocks if necessary)
                 await ensureDependencies();
@@ -852,7 +844,7 @@
                 reviewQueue = new ReviewQueue();
                 csvImporter = new CSVImporter(confidenceScorer, citationTracker, reviewQueue);
 
-                addConsoleMessage('✓ Core systems initialized', 'success');
+                addConsoleMessage('âœ“ Core systems initialized', 'success');
                 
                 // Initialize REAL document processor with Google Vision API if available,
                 // otherwise the ensureDependencies() above will have provided a MOCK.
@@ -867,14 +859,14 @@
                         googleVisionCredentials: './google-vision-credentials.json'
                     });
                     const modeLabel = (documentProcessor && documentProcessor.constructor && documentProcessor.constructor.name && documentProcessor.constructor.name.toLowerCase().includes('mock')) ? 'MOCK' : 'REAL';
-                    addConsoleMessage(`✓ Document Processor initialized (${modeLabel} mode)`, 'success');
+                    addConsoleMessage(`âœ“ Document Processor initialized (${modeLabel} mode)`, 'success');
                     if (modeLabel === 'MOCK') {
                         document.getElementById('systemStatus').textContent = 'Processor (MOCK) Active';
                     } else {
                         document.getElementById('systemStatus').textContent = 'Real Processing Active';
                     }
                 } catch (err) {
-                    addConsoleMessage('⚠️ Failed to initialize Document Processor: ' + err.message, 'error');
+                    addConsoleMessage('âš ï¸ Failed to initialize Document Processor: ' + err.message, 'error');
                     document.getElementById('systemStatus').textContent = 'Processor Not Found';
                 }
 
@@ -887,11 +879,11 @@
                 updateStatsDisplay();
                 startAutoRotate();
                 
-                addConsoleMessage('✓ Ready for document processing', 'success');
+                addConsoleMessage('âœ“ Ready for document processing', 'success');
                 
             } catch (error) {
                 console.error('Initialization error:', error);
-                addConsoleMessage('⚠️ Error: ' + (error && error.message ? error.message : error), 'error');
+                addConsoleMessage('âš ï¸ Error: ' + (error && error.message ? error.message : error), 'error');
                 document.getElementById('systemStatus').textContent = 'System Error';
             }
         });
@@ -934,7 +926,7 @@
             stats.enslaved = 32;
             stats.reparations = 70416000;
             
-            addConsoleMessage('✓ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
+            addConsoleMessage('âœ“ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
         }
 
 // ============================================
@@ -990,7 +982,7 @@ function showDocumentMetadataForm(files) {
     modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
         '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
         '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
-        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">ðŸ“„ Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
         '</div>' +
         '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 12px;">' +
         
@@ -1127,7 +1119,7 @@ function updateFieldsBasedOnDocType() {
 // Collect metadata based on document type
 async function uploadMultiPageDocument() {
     if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
-        addChatMessage('assistant', '❌ No files selected.');
+        addChatMessage('assistant', 'âŒ No files selected.');
         closeDocumentMetadataForm();
         return;
     }
@@ -1168,7 +1160,7 @@ async function uploadMultiPageDocument() {
     
     closeDocumentMetadataForm();
     
-    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document...');
+    addChatMessage('assistant', 'ðŸ“¤ Uploading ' + selectedDocumentFiles.length + '-page document...');
     
     try {
         const formData = new FormData();
@@ -1192,13 +1184,13 @@ async function uploadMultiPageDocument() {
         const result = await response.json();
         
         if (result.success) {
-            addChatMessage('assistant', '✅ Document uploaded! ID: ' + result.documentId);
+            addChatMessage('assistant', 'âœ… Document uploaded! ID: ' + result.documentId);
         } else {
-            addChatMessage('assistant', '❌ Upload failed: ' + (result.message || result.error));
+            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
         }
         
     } catch (error) {
-        addChatMessage('assistant', '❌ Error: ' + error.message);
+        addChatMessage('assistant', 'âŒ Error: ' + error.message);
     } finally {
         selectedDocumentFiles = [];
     }
@@ -1211,7 +1203,7 @@ async function uploadMultiPageDocument() {
     modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
         '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
         '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
-        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">ðŸ“„ Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
         '</div>' +
         '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 15px;">' +
         '<div>' +
@@ -1267,7 +1259,7 @@ function closeDocumentMetadataForm() {
 async function uploadMultiPageDocument() {
     // Validation
     if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
-        addChatMessage('assistant', '❌ No files selected. Please select files first.');
+        addChatMessage('assistant', 'âŒ No files selected. Please select files first.');
         closeDocumentMetadataForm();
         return;
     }
@@ -1293,7 +1285,7 @@ async function uploadMultiPageDocument() {
     
     closeDocumentMetadataForm();
     
-    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
+    addChatMessage('assistant', 'ðŸ“¤ Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
     
     try {
         const formData = new FormData();
@@ -1325,7 +1317,7 @@ async function uploadMultiPageDocument() {
         console.log('Response data:', result);
         
         if (result.success) {
-            addChatMessage('assistant', '✅ Document uploaded!\n\n📄 ID: ' + result.documentId + '\n📑 Pages: ' + result.pageCount + '\n⛓️ Enslaved: ' + (result.totalEnslaved || 0));
+            addChatMessage('assistant', 'âœ… Document uploaded!\n\nðŸ“„ ID: ' + result.documentId + '\nðŸ“‘ Pages: ' + result.pageCount + '\nâ›“ï¸ Enslaved: ' + (result.totalEnslaved || 0));
             
             // Trigger metadata collection if function exists
             if (result.documentId && result.documentId !== 'N/A') {
@@ -1336,12 +1328,12 @@ async function uploadMultiPageDocument() {
                 }, 1000);
             }
         } else {
-            addChatMessage('assistant', '❌ Upload failed: ' + (result.message || result.error));
+            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
         }
         
     } catch (error) {
         console.error('Upload error:', error);
-        addChatMessage('assistant', '❌ Upload error: ' + error.message);
+        addChatMessage('assistant', 'âŒ Upload error: ' + error.message);
     } finally {
         selectedDocumentFiles = [];
     }
@@ -1448,12 +1440,12 @@ async function uploadMultiPageDocument() {
                 if (isAutoRotating) rotateCarousel(1);
             }, 4000);
             isAutoRotating = true;
-            document.getElementById('autoRotateBtn').textContent = '⏸ Pause';
+            document.getElementById('autoRotateBtn').textContent = 'â¸ Pause';
         }
 
         function toggleAutoRotate() {
             isAutoRotating = !isAutoRotating;
-            document.getElementById('autoRotateBtn').textContent = isAutoRotating ? '⏸ Pause' : '▶ Play';
+            document.getElementById('autoRotateBtn').textContent = isAutoRotating ? 'â¸ Pause' : 'â–¶ Play';
         }
 
         // ============================================
@@ -1471,7 +1463,7 @@ async function uploadMultiPageDocument() {
                 item.className = 'owner-item';
                 item.innerHTML = `
                     <div class="owner-item-name">${owner.name}</div>
-                    <div class="owner-item-details">${owner.location || 'Location unknown'} • <span class="owner-item-count">${owner.count || 0}</span> enslaved</div>
+                    <div class="owner-item-details">${owner.location || 'Location unknown'} â€¢ <span class="owner-item-count">${owner.count || 0}</span> enslaved</div>
                 `;
                 item.onclick = () => {
                     alert(`${owner.name}\nLocation: ${owner.location}\nCount: ${owner.count || 0}`);
@@ -1496,7 +1488,7 @@ async function uploadMultiPageDocument() {
             a.download = 'reparations-export-' + Date.now() + '.json';
             a.click();
             URL.revokeObjectURL(url);
-            addConsoleMessage('✓ Export started', 'success');
+            addConsoleMessage('âœ“ Export started', 'success');
         }
 
         function showHelp() {
@@ -1519,7 +1511,7 @@ async function sendChatMessage() {
     
     // Add loading indicator
     const loadingId = 'loading-' + Date.now();
-    addChatMessage('assistant', '🔄 Searching database...', loadingId);
+    addChatMessage('assistant', 'ðŸ”„ Searching database...', loadingId);
     
     try {
         // Call your backend
@@ -1546,7 +1538,7 @@ async function sendChatMessage() {
                 updateEvidenceDisplay(data.evidence);
             }
         } else {
-            addChatMessage('assistant', '❌ Error: ' + data.error);
+            addChatMessage('assistant', 'âŒ Error: ' + data.error);
         }
         
     } catch (error) {
@@ -1554,7 +1546,7 @@ async function sendChatMessage() {
         const loadingMsg = document.getElementById(loadingId);
         if (loadingMsg) loadingMsg.remove();
         
-        addChatMessage('assistant', `❌ Connection error. Unable to reach backend at ${API_BASE_URL}`);
+        addChatMessage('assistant', `âŒ Connection error. Unable to reach backend at ${API_BASE_URL}`);
     }
 }
 
@@ -1588,7 +1580,7 @@ function updateEvidenceDisplay(evidence) {
     // This will update the top carousel/forest area to show evidence
     // For now, just log it - you can expand this later
     console.log('Evidence to display:', evidence);
-    addConsoleMessage('📋 Evidence displayed in main window', 'info');
+    addConsoleMessage('ðŸ“‹ Evidence displayed in main window', 'info');
 }
 
 // ============================================
@@ -1615,7 +1607,7 @@ function handleMultiFileSelection() {
     // Display selected files
     filesList.innerHTML = selectedFiles.map((file, index) => `
         <div style="padding: 4px 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(100, 200, 255, 0.1);">
-            <span>📄 ${file.name} (${formatFileSize(file.size)})</span>
+            <span>ðŸ“„ ${file.name} (${formatFileSize(file.size)})</span>
             <button onclick="removeFile(${index})" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); color: #ff6464; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;">Remove</button>
         </div>
     `).join('');
@@ -1646,7 +1638,7 @@ function formatFileSize(bytes) {
 
 async function uploadSelectedFiles() {
     if (selectedFiles.length === 0) {
-        addChatMessage('assistant', '❌ No files selected for upload.');
+        addChatMessage('assistant', 'âŒ No files selected for upload.');
         return;
     }
 
@@ -1662,7 +1654,7 @@ async function uploadSelectedFiles() {
     let failCount = 0;
     const uploadedDocs = []; // Track successfully uploaded documents
 
-    addChatMessage('assistant', `📤 Starting upload of ${selectedFiles.length} file(s)...`);
+    addChatMessage('assistant', `ðŸ“¤ Starting upload of ${selectedFiles.length} file(s)...`);
 
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
@@ -1690,7 +1682,7 @@ async function uploadSelectedFiles() {
             if (result.success) {
                 successCount++;
                 const docId = result.result?.documentId || 'N/A';
-                addChatMessage('assistant', `✅ ${file.name} uploaded successfully (ID: ${docId})`);
+                addChatMessage('assistant', `âœ… ${file.name} uploaded successfully (ID: ${docId})`);
 
                 // Track for metadata collection
                 uploadedDocs.push({
@@ -1701,12 +1693,12 @@ async function uploadSelectedFiles() {
                 });
             } else {
                 failCount++;
-                addChatMessage('assistant', `❌ ${file.name} failed: ${result.message || 'Unknown error'}`);
+                addChatMessage('assistant', `âŒ ${file.name} failed: ${result.message || 'Unknown error'}`);
             }
 
         } catch (error) {
             failCount++;
-            addChatMessage('assistant', `❌ ${file.name} failed: ${error.message}`);
+            addChatMessage('assistant', `âŒ ${file.name} failed: ${error.message}`);
         }
 
         // Small delay between uploads to avoid overwhelming the server
@@ -1719,7 +1711,7 @@ async function uploadSelectedFiles() {
     uploadProgressBar.style.width = '100%';
     uploadStatus.textContent = `Upload complete: ${successCount} succeeded, ${failCount} failed`;
 
-    addChatMessage('assistant', `🎉 Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
+    addChatMessage('assistant', `ðŸŽ‰ Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
 
     // Reset after 3 seconds
     setTimeout(() => {
@@ -1764,7 +1756,7 @@ function showMetadataDialogue(uploadedDocuments) {
 function loadNextMetadataForm() {
     if (currentMetadataIndex >= pendingDocuments.length) {
         closeMetadataDialogue();
-        addChatMessage('assistant', '✅ All metadata collected! Processing relationships in background...');
+        addChatMessage('assistant', 'âœ… All metadata collected! Processing relationships in background...');
         return;
     }
 
@@ -1823,21 +1815,21 @@ async function submitMetadata() {
         const result = await response.json();
 
         if (result.success) {
-            addChatMessage('assistant', `✅ Metadata saved for ${metadata.fullName} (ID: ${result.individualId})`);
+            addChatMessage('assistant', `âœ… Metadata saved for ${metadata.fullName} (ID: ${result.individualId})`);
 
             // Show related individuals found
             if (result.relatedIndividuals && result.relatedIndividuals.length > 0) {
                 const names = result.relatedIndividuals.map(r => r.name).join(', ');
-                addChatMessage('assistant', `🔍 Found ${result.relatedIndividuals.length} related individual(s): ${names}`);
+                addChatMessage('assistant', `ðŸ” Found ${result.relatedIndividuals.length} related individual(s): ${names}`);
             }
 
             currentMetadataIndex++;
             loadNextMetadataForm();
         } else {
-            addChatMessage('assistant', `❌ Failed to save metadata: ${result.error}`);
+            addChatMessage('assistant', `âŒ Failed to save metadata: ${result.error}`);
         }
     } catch (error) {
-        addChatMessage('assistant', `❌ Error saving metadata: ${error.message}`);
+        addChatMessage('assistant', `âŒ Error saving metadata: ${error.message}`);
     }
 }
 
@@ -1851,7 +1843,7 @@ function skipMetadata() {
     <!-- Metadata Collection Modal -->
     <div id="metadataModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); z-index: 2000; align-items: center; justify-content: center;">
         <div style="background: linear-gradient(180deg, #1a1e3f 0%, #2a2e4f 100%); border: 2px solid rgba(100, 200, 255, 0.5); border-radius: 15px; padding: 30px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
-            <h2 style="color: #64c8ff; margin-bottom: 10px;">📝 Slaveowner Metadata Collection</h2>
+            <h2 style="color: #64c8ff; margin-bottom: 10px;">ðŸ“ Slaveowner Metadata Collection</h2>
             <p id="metadataProgress" style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 20px;">Document 1 of 1</p>
             <p style="color: #e0e0e0; margin-bottom: 20px;">Document: <span id="metadataDocumentName" style="color: #64c8ff; font-weight: bold;">filename.pdf</span></p>
 
