@@ -7,8 +7,9 @@
 const crypto = require('crypto');
 
 class DescendantCalculator {
-    constructor(database) {
+    constructor(database, maxDepth = 10) {
         this.db = database;
+        this.MAX_RECURSION_DEPTH = maxDepth; // FIXED: Prevent stack overflow
     }
 
     /**
@@ -130,6 +131,12 @@ class DescendantCalculator {
         }
 
         const childCount = children.rows.length;
+
+        // FIXED: Check for division by zero
+        if (childCount === 0) {
+            return [];
+        }
+
         const debtPerChild = originalDebt / childCount;
 
         const debtRecords = [];
@@ -166,15 +173,20 @@ class DescendantCalculator {
                 debt: debtPerChild
             });
 
-            // Recursively calculate for grandchildren
-            const grandchildrenDebt = await this.calculateDescendantDebtRecursive(
-                childId,
-                perpetratorId,
-                debtPerChild,
-                2
-            );
+            // FIXED: Check depth limit before recursing
+            if (1 < this.MAX_RECURSION_DEPTH) {
+                // Recursively calculate for grandchildren
+                const grandchildrenDebt = await this.calculateDescendantDebtRecursive(
+                    childId,
+                    perpetratorId,
+                    debtPerChild,
+                    2
+                );
 
-            debtRecords.push(...grandchildrenDebt);
+                debtRecords.push(...grandchildrenDebt);
+            } else {
+                console.warn(`Max recursion depth reached at generation 1 for ${childId}`);
+            }
         }
 
         return debtRecords;
@@ -184,6 +196,12 @@ class DescendantCalculator {
      * Recursive helper for calculating descendant debt
      */
     async calculateDescendantDebtRecursive(parentId, originalPerpetratorId, parentDebt, generation) {
+        // FIXED: Check depth limit
+        if (generation > this.MAX_RECURSION_DEPTH) {
+            console.warn(`Max recursion depth ${this.MAX_RECURSION_DEPTH} reached, stopping at generation ${generation}`);
+            return [];
+        }
+
         // Get children of this parent
         const children = await this.db.query(
             `SELECT individual_id_2 as child_id
@@ -199,6 +217,12 @@ class DescendantCalculator {
         }
 
         const childCount = children.rows.length;
+
+        // FIXED: Check for division by zero
+        if (childCount === 0) {
+            return [];
+        }
+
         const debtPerChild = parentDebt / childCount;
         const debtRecords = [];
 
@@ -234,15 +258,18 @@ class DescendantCalculator {
                 debt: debtPerChild
             });
 
-            // Continue recursively
-            const nextGenDebt = await this.calculateDescendantDebtRecursive(
-                childId,
-                originalPerpetratorId,
-                debtPerChild,
-                generation + 1
-            );
+            // FIXED: Check depth before continuing
+            if (generation < this.MAX_RECURSION_DEPTH) {
+                // Continue recursively
+                const nextGenDebt = await this.calculateDescendantDebtRecursive(
+                    childId,
+                    originalPerpetratorId,
+                    debtPerChild,
+                    generation + 1
+                );
 
-            debtRecords.push(...nextGenDebt);
+                debtRecords.push(...nextGenDebt);
+            }
         }
 
         return debtRecords;
@@ -270,6 +297,12 @@ class DescendantCalculator {
         }
 
         const childCount = children.rows.length;
+
+        // FIXED: Check for division by zero
+        if (childCount === 0) {
+            return [];
+        }
+
         const creditPerChild = originalCredit / childCount;
         const creditRecords = [];
 
@@ -305,15 +338,20 @@ class DescendantCalculator {
                 credit: creditPerChild
             });
 
-            // Recursively calculate for grandchildren
-            const grandchildrenCredit = await this.calculateReparationsCreditRecursive(
-                childId,
-                ancestorId,
-                creditPerChild,
-                2
-            );
+            // FIXED: Check depth limit before recursing
+            if (1 < this.MAX_RECURSION_DEPTH) {
+                // Recursively calculate for grandchildren
+                const grandchildrenCredit = await this.calculateReparationsCreditRecursive(
+                    childId,
+                    ancestorId,
+                    creditPerChild,
+                    2
+                );
 
-            creditRecords.push(...grandchildrenCredit);
+                creditRecords.push(...grandchildrenCredit);
+            } else {
+                console.warn(`Max recursion depth reached at generation 1 for ${childId}`);
+            }
         }
 
         return creditRecords;
@@ -323,6 +361,12 @@ class DescendantCalculator {
      * Recursive helper for calculating reparations credit
      */
     async calculateReparationsCreditRecursive(parentId, originalAncestorId, parentCredit, generation) {
+        // FIXED: Check depth limit
+        if (generation > this.MAX_RECURSION_DEPTH) {
+            console.warn(`Max recursion depth ${this.MAX_RECURSION_DEPTH} reached, stopping at generation ${generation}`);
+            return [];
+        }
+
         const children = await this.db.query(
             `SELECT enslaved_id_2 as child_id
              FROM enslaved_relationships
@@ -337,6 +381,12 @@ class DescendantCalculator {
         }
 
         const childCount = children.rows.length;
+
+        // FIXED: Check for division by zero
+        if (childCount === 0) {
+            return [];
+        }
+
         const creditPerChild = parentCredit / childCount;
         const creditRecords = [];
 
@@ -371,14 +421,17 @@ class DescendantCalculator {
                 credit: creditPerChild
             });
 
-            const nextGenCredit = await this.calculateReparationsCreditRecursive(
-                childId,
-                originalAncestorId,
-                creditPerChild,
-                generation + 1
-            );
+            // FIXED: Check depth before continuing
+            if (generation < this.MAX_RECURSION_DEPTH) {
+                const nextGenCredit = await this.calculateReparationsCreditRecursive(
+                    childId,
+                    originalAncestorId,
+                    creditPerChild,
+                    generation + 1
+                );
 
-            creditRecords.push(...nextGenCredit);
+                creditRecords.push(...nextGenCredit);
+            }
         }
 
         return creditRecords;

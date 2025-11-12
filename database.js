@@ -4,19 +4,27 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 // Create pool connection - handles both Render and local development
-const pool = process.env.DATABASE_URL 
+const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false // Required for Render's managed PostgreSQL
-      }
+      ssl: process.env.NODE_ENV === 'production'
+        ? {
+            rejectUnauthorized: true, // SECURE: Verify certificates in production
+            ca: process.env.DB_SSL_CA || undefined // Optional: custom CA certificate
+          }
+        : process.env.DB_SSL_REQUIRED === 'true'
+          ? { rejectUnauthorized: false } // Only for local dev with self-signed certs
+          : false
     })
   : new Pool({
       host: process.env.POSTGRES_HOST || 'localhost',
       port: parseInt(process.env.POSTGRES_PORT) || 5432,
       database: process.env.POSTGRES_DB || 'reparations',
       user: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD
+      password: process.env.POSTGRES_PASSWORD,
+      ssl: process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: true }
+        : false
     });
 
 pool.on('connect', () => {
@@ -24,8 +32,16 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-    console.error('Unexpected error on idle client', err);
-    process.exit(-1);
+    console.error('Unexpected database error on idle client:', err);
+
+    // Log to error tracking service if configured
+    if (process.env.SENTRY_DSN) {
+        // Sentry.captureException(err);
+    }
+
+    // FIXED: Don't exit process - allow app to recover
+    // The pool will attempt to reconnect automatically
+    // Optionally implement circuit breaker pattern for repeated failures
 });
 
 // Helper function to execute queries
@@ -208,6 +224,17 @@ async function getBlockchainQueue() {
     return result.rows;
 }
 
+// Health check function
+async function checkHealth() {
+    try {
+        const result = await pool.query('SELECT 1 as health');
+        return { healthy: true, timestamp: new Date().toISOString() };
+    } catch (err) {
+        console.error('Database health check failed:', err);
+        return { healthy: false, error: err.message, timestamp: new Date().toISOString() };
+    }
+}
+
 // Export functions
 module.exports = {
     pool,
@@ -219,5 +246,6 @@ module.exports = {
     getEnslavedPeopleByDocument,
     getStats,
     getVerificationQueue,
-    getBlockchainQueue
+    getBlockchainQueue,
+    checkHealth
 };

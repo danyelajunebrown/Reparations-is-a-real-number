@@ -66,14 +66,17 @@ class StorageAdapter {
     const filename = `${ownerName}-${docType}-${timestamp}${ext}`;
     const key = `owners/${ownerName}/${docType}/${filename}`;
 
-    // Read file buffer (small-to-medium files). For very large files prefer streaming or multipart.
-    const fileBuffer = await fs.readFile(uploadedFile.path);
+    // FIXED: Use streaming for large files instead of loading into memory
+    const fsSync = require('fs');
+    const fileStream = fsSync.createReadStream(uploadedFile.path);
+    const fileStats = await fs.stat(uploadedFile.path);
 
     const putParams = {
       Bucket: this.s3Bucket,
       Key: key,
-      Body: fileBuffer,
-      ContentType: uploadedFile.mimetype || 'application/octet-stream'
+      Body: fileStream, // Stream instead of buffer
+      ContentType: uploadedFile.mimetype || 'application/octet-stream',
+      ContentLength: fileStats.size
       // You can add ServerSideEncryption: 'AES256' or SSE-KMS with appropriate KMS key
     };
 
@@ -89,7 +92,7 @@ class StorageAdapter {
       url,
       filename,
       originalName: uploadedFile.originalname || uploadedFile.name,
-      fileSize: fileBuffer.length,
+      fileSize: fileStats.size,
       mimeType: uploadedFile.mimetype || 'application/octet-stream',
       storedAt: new Date().toISOString(),
       ownerDirectory: ownerName,

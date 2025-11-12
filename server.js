@@ -1,4 +1,4 @@
-// server.js - Complete corrected version
+// server.js - SECURED VERSION with authentication, validation, and rate limiting
 
 const express = require('express');
 const multer = require('multer');
@@ -12,13 +12,37 @@ const IndividualEntityManager = require('./individual-entity-manager');
 const DescendantCalculator = require('./descendant-calculator');
 const FreeNLPResearchAssistant = require('./free-nlp-assistant');
 
+// SECURITY: Import middleware
+const { authenticate, optionalAuth } = require('./middleware/auth');
+const { validate } = require('./middleware/validation');
+const { validateFile, validateFiles } = require('./middleware/file-validation');
+const { uploadLimiter, queryLimiter, strictLimiter, generalLimiter } = require('./middleware/rate-limit');
+const { errorHandler, asyncHandler } = require('./middleware/error-handler');
+
 const app = express();
 
+// SECURITY: Configure CORS with restrictions
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : process.env.NODE_ENV === 'production'
+      ? [] // Must specify in production
+      : ['http://localhost:3000', 'http://localhost:8080'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  credentials: true,
+  maxAge: 86400 // 24 hours
+};
+
+app.use(cors(corsOptions));
+
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // Limit JSON payload size
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static('frontend/public'));
+
+// SECURITY: Apply general rate limiting to all routes
+app.use('/api', generalLimiter);
 
 const upload = multer({
   dest: 'uploads/',
@@ -48,48 +72,40 @@ const descendantCalc = new DescendantCalculator(database);
 // Initialize FREE NLP Research Assistant (no API keys needed!)
 const researchAssistant = new FreeNLPResearchAssistant(database);
 
-// Upload document endpoint
-app.post('/api/upload-document', upload.single('document'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
-    }
-    
-    console.log(`Received upload: ${req.file.originalname}`);
-    const metadata = {
-      ownerName: req.body.ownerName,
-      documentType: req.body.documentType,
-      birthYear: parseInt(req.body.birthYear) || null,
-      deathYear: parseInt(req.body.deathYear) || null,
-      location: req.body.location || null
-    };
+// SECURED: Upload document endpoint with auth, validation, and rate limiting
+app.post('/api/upload-document',
+  uploadLimiter,
+  authenticate,
+  upload.single('document'),
+  validateFile,
+  validate('uploadDocument'),
+  asyncHandler(async (req, res) => {
+    const metadata = req.validatedBody; // Use validated data
+
+    console.log(`Received upload from ${req.user.type || 'user'}: ${req.file.originalname}`);
 
     const result = await processor.processDocument(req.file, metadata);
 
-    res.json({ success: true, message: 'Document processed successfully', result });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ success: false, message: error.message, error: error.stack });
-  }
-});
+    res.json({
+      success: true,
+      message: 'Document processed successfully',
+      documentId: result.documentId,
+      result
+    });
+  })
+);
 
-// Multi-page document upload endpoint
-app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ success: false, message: 'No files uploaded' });
-    }
+// SECURED: Multi-page document upload endpoint
+app.post('/api/upload-multi-page-document',
+  uploadLimiter,
+  authenticate,
+  upload.array('pages', 20),
+  validateFiles,
+  validate('uploadDocument'),
+  asyncHandler(async (req, res) => {
+    const sharedMetadata = req.validatedBody;
     
-    console.log('Received multi-page upload: ' + req.files.length + ' pages');
-    
-    // Extract shared metadata
-    const sharedMetadata = {
-      ownerName: req.body.ownerName,
-      documentType: req.body.documentType,
-      birthYear: parseInt(req.body.birthYear) || null,
-      deathYear: parseInt(req.body.deathYear) || null,
-      location: req.body.location || null
-    };
+    console.log(`Received multi-page upload from ${req.user.type || 'user'}: ${req.files.length} pages`);
     
     // Generate single document ID
     const crypto = require('crypto');
@@ -208,56 +224,41 @@ app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (re
       })),
       status: 'processed'
     });
-    
-  } catch (error) {
-    console.error('Multi-page upload error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message, 
-      error: error.stack 
-    });
-  }
-});
+  })
+);
 
-// FREE Natural Language Research Assistant (no API keys needed!)
-app.post('/api/llm-query', async (req, res) => {
-  const { query, sessionId } = req.body;
-  
-  if (!query) {
-    return res.status(400).json({ success: false, error: 'Query is required' });
-  }
-  
-  try {
+// SECURED: FREE Natural Language Research Assistant (public with rate limiting)
+app.post('/api/llm-query',
+  queryLimiter,
+  validate('llmQuery'),
+  asyncHandler(async (req, res) => {
+    const { query, sessionId } = req.validatedBody;
+
     console.log('Research Assistant query: ' + query);
-    
+
     // Use FREE NLP system for intelligent responses
     const result = await researchAssistant.query(query, sessionId || 'default');
-    
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Research Assistant error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message
-    });
-  }
-});
 
-// Clear Research Assistant conversation history
-app.post('/api/clear-chat', async (req, res) => {
-  const { sessionId } = req.body;
-  try {
+    res.json(result);
+  })
+);
+
+// SECURED: Clear Research Assistant conversation history
+app.post('/api/clear-chat',
+  validate('clearChat'),
+  asyncHandler(async (req, res) => {
+    const { sessionId } = req.validatedBody;
+
     researchAssistant.clearSession(sessionId || 'default');
     res.json({ success: true, message: 'Chat history cleared' });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+  })
+);
 
-// Process individual metadata and extract relationships
-app.post('/api/process-individual-metadata', async (req, res) => {
-  try {
+// SECURED: Process individual metadata and extract relationships
+app.post('/api/process-individual-metadata',
+  authenticate,
+  validate('processMetadata'),
+  asyncHandler(async (req, res) => {
     const {
       documentId,
       fileName,
@@ -270,11 +271,7 @@ app.post('/api/process-individual-metadata', async (req, res) => {
       children,
       parents,
       notes
-    } = req.body;
-
-    if (!fullName) {
-      return res.status(400).json({ success: false, error: 'Full name is required' });
-    }
+    } = req.validatedBody;
 
     // Check if document exists before proceeding
     if (documentId) {
@@ -441,16 +438,14 @@ app.post('/api/process-individual-metadata', async (req, res) => {
       relatedIndividuals,
       extractedCount: extractedIndividuals.length
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error processing individual metadata:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Add enslaved person descendant
-app.post('/api/add-enslaved-descendant', async (req, res) => {
-  try {
+// SECURED: Add enslaved person descendant
+app.post('/api/add-enslaved-descendant',
+  authenticate,
+  validate('addEnslavedDescendant'),
+  asyncHandler(async (req, res) => {
     const {
       fullName,
       birthYear,
@@ -461,11 +456,7 @@ app.post('/api/add-enslaved-descendant', async (req, res) => {
       directReparations,
       parentIds,
       notes
-    } = req.body;
-
-    if (!fullName) {
-      return res.status(400).json({ success: false, error: 'Full name is required' });
-    }
+    } = req.validatedBody;
 
     console.log(`Adding enslaved individual: ${fullName}`);
 
@@ -500,21 +491,16 @@ app.post('/api/add-enslaved-descendant', async (req, res) => {
       enslavedId,
       message: 'Enslaved individual created successfully'
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error adding enslaved descendant:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Calculate descendant debt for slaveowner
-app.post('/api/calculate-descendant-debt', async (req, res) => {
-  try {
-    const { perpetratorId, originalDebt } = req.body;
-
-    if (!perpetratorId || !originalDebt) {
-      return res.status(400).json({ success: false, error: 'perpetratorId and originalDebt are required' });
-    }
+// SECURED: Calculate descendant debt for slaveowner
+app.post('/api/calculate-descendant-debt',
+  strictLimiter,
+  authenticate,
+  validate('calculateDebt'),
+  asyncHandler(async (req, res) => {
+    const { perpetratorId, originalDebt } = req.validatedBody;
 
     console.log(`Calculating descendant debt for ${perpetratorId}, debt: $${originalDebt}`);
 
@@ -529,21 +515,16 @@ app.post('/api/calculate-descendant-debt', async (req, res) => {
       debtRecords,
       message: `Debt calculated for ${debtRecords.length} descendants`
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error calculating descendant debt:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Calculate reparations credit for enslaved person descendants
-app.post('/api/calculate-reparations-credit', async (req, res) => {
-  try {
-    const { ancestorId, originalCredit } = req.body;
-
-    if (!ancestorId || !originalCredit) {
-      return res.status(400).json({ success: false, error: 'ancestorId and originalCredit are required' });
-    }
+// SECURED: Calculate reparations credit for enslaved person descendants
+app.post('/api/calculate-reparations-credit',
+  strictLimiter,
+  authenticate,
+  validate('calculateCredit'),
+  asyncHandler(async (req, res) => {
+    const { ancestorId, originalCredit } = req.validatedBody;
 
     console.log(`Calculating reparations credit for ${ancestorId}, credit: $${originalCredit}`);
 
@@ -558,16 +539,13 @@ app.post('/api/calculate-reparations-credit', async (req, res) => {
       creditRecords,
       message: `Credit calculated for ${creditRecords.length} descendants`
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error calculating reparations credit:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Get debt status for an individual
-app.get('/api/debt-status/:individualId', async (req, res) => {
-  try {
+// SECURED: Get debt status for an individual
+app.get('/api/debt-status/:individualId',
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { individualId } = req.params;
 
     const totalDebt = await descendantCalc.getTotalDebt(individualId);
@@ -585,16 +563,13 @@ app.get('/api/debt-status/:individualId', async (req, res) => {
       totalDebt,
       debtRecords: debtDetails.rows || []
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error getting debt status:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Get credit status for an enslaved descendant
-app.get('/api/credit-status/:enslavedId', async (req, res) => {
-  try {
+// SECURED: Get credit status for an enslaved descendant
+app.get('/api/credit-status/:enslavedId',
+  authenticate,
+  asyncHandler(async (req, res) => {
     const { enslavedId } = req.params;
 
     const totalCredit = await descendantCalc.getTotalCredit(enslavedId);
@@ -612,16 +587,15 @@ app.get('/api/credit-status/:enslavedId', async (req, res) => {
       totalCredit,
       creditRecords: creditDetails.rows || []
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error getting credit status:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Record a blockchain payment
-app.post('/api/record-payment', async (req, res) => {
-  try {
+// SECURED: Record a blockchain payment
+app.post('/api/record-payment',
+  strictLimiter,
+  authenticate,
+  validate('recordPayment'),
+  asyncHandler(async (req, res) => {
     const {
       payerId,
       recipientId,
@@ -629,11 +603,7 @@ app.post('/api/record-payment', async (req, res) => {
       txHash,
       blockNumber,
       networkId
-    } = req.body;
-
-    if (!payerId || !recipientId || !amount) {
-      return res.status(400).json({ success: false, error: 'payerId, recipientId, and amount are required' });
-    }
+    } = req.validatedBody;
 
     const paymentId = await descendantCalc.recordPayment(
       payerId,
@@ -649,27 +619,23 @@ app.post('/api/record-payment', async (req, res) => {
       paymentId,
       message: 'Payment recorded successfully'
     });
+  })
+);
 
-  } catch (error) {
-    console.error('Error recording payment:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+// SECURITY: Use error handler middleware (must be last)
+app.use(errorHandler);
 
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ 
-    success: false, 
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+// Health check endpoint (with database check)
+app.get('/health', asyncHandler(async (req, res) => {
+  const dbHealth = await database.checkHealth();
+
+  res.json({
+    status: dbHealth.healthy ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    database: dbHealth.healthy ? 'connected' : 'disconnected',
+    environment: process.env.NODE_ENV || 'development'
   });
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+}));
 
 // Root endpoint
 app.get('/', (req, res) => {
