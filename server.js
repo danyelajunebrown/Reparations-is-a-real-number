@@ -1,3 +1,13 @@
+app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (req, res) => {
+  console.log('FILES RECEIVED:', req.files ? req.files.length : 0);
+  console.log('BODY:', req.body);
+  
+  if (!req.files || req.files.length === 0) {
+    console.error('NO FILES IN REQUEST');
+    return res.status(400).json({ success: false, message: 'No files uploaded' });
+  }
+  // ... rest of code
+});
 // server.js - Complete corrected version
 
 const express = require('express');
