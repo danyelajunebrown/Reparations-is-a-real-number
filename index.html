@@ -979,13 +979,230 @@ function handleMultiPageFileSelection() {
     selectedDocumentFiles = files;
     showDocumentMetadataForm(files);
 }
+// Enhanced Multi-Page Upload with Dynamic Fields    const existingModal = document.getElementById('documentMetadataModal');
 
 function showDocumentMetadataForm(files) {
-    // Remove any existing modal
-    const existingModal = document.getElementById('documentMetadataModal');
-    if (existingModal) {
-        existingModal.remove();
+    if (existingModal) existingModal.remove();
+    const modal = document.createElement('div');
+    modal.id = 'documentMetadataModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+    
+    modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
+        '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
+        '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
+        '</div>' +
+        '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 12px;">' +
+        
+        // Document Type (determines which fields show)
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Document Type *</label>' +
+        '<select id="docType" required onchange="updateFieldsBasedOnDocType()" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;">' +
+        '<option value="">Select type...</option>' +
+        '<option value="will">Will</option>' +
+        '<option value="probate">Probate Record</option>' +
+        '<option value="census">Census Record</option>' +
+        '<option value="slave_schedule">Slave Schedule</option>' +
+        '<option value="estate_inventory">Estate Inventory</option>' +
+        '<option value="correspondence">Correspondence/Letter</option>' +
+        '<option value="deed">Property Deed</option>' +
+        '<option value="other">Other</option>' +
+        '</select>' +
+        '</div>' +
+        
+        // SECTION 1: Always visible fields
+        '<div id="alwaysVisibleFields">' +
+        
+        // Owner Name
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Slave Owner Name *</label>' +
+        '<input type="text" id="ownerName" required placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        // SECTION 2: Census/Slave Schedule fields (hidden by default)
+        '<div id="censusFields" style="display: none;">' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Census Year *</label>' +
+        '<input type="number" id="censusYear" placeholder="e.g., 1850" min="1790" max="1870" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">City</label>' +
+        '<input type="text" id="censusCity" placeholder="e.g., Richmond" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">County *</label>' +
+        '<input type="text" id="censusCounty" placeholder="e.g., Henrico County" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">State *</label>' +
+        '<input type="text" id="censusState" placeholder="e.g., Virginia" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        // SECTION 3: Will/Probate fields (hidden by default)
+        '<div id="genealogyFields" style="display: none;">' +
+        
+        '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Birth Year</label>' +
+        '<input type="number" id="birthYear" placeholder="e.g., 1780" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Death Year</label>' +
+        '<input type="number" id="deathYear" placeholder="e.g., 1825" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Location (Full)</label>' +
+        '<input type="text" id="location" placeholder="e.g., Prince George\'s County, Maryland" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Spouse(s) <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="spouses" placeholder="e.g., Angelica Chesley, Mary Smith" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Children <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="children" placeholder="e.g., John Hopewell, Sarah Hopewell, Thomas Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Parents <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="parents" placeholder="e.g., William Hopewell, Margaret Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        '<div style="display: flex; gap: 10px; margin-top: 15px;">' +
+        '<button type="submit" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;">Upload Document</button>' +
+        '<button type="button" onclick="closeDocumentMetadataForm()" style="flex: 1; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; border-radius: 5px; cursor: pointer;">Cancel</button>' +
+        '</div>' +
+        '</form>' +
+        '</div>';
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('documentMetadataForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        uploadMultiPageDocument();
+    });
+}
+
+// Show/hide fields based on document type
+function updateFieldsBasedOnDocType() {
+    const docType = document.getElementById('docType').value;
+    const censusFields = document.getElementById('censusFields');
+    const genealogyFields = document.getElementById('genealogyFields');
+    
+    if (docType === 'census' || docType === 'slave_schedule') {
+        // Show census fields, hide genealogy
+        censusFields.style.display = 'block';
+        genealogyFields.style.display = 'none';
+        
+        // Make census fields required
+        document.getElementById('censusYear').required = true;
+        document.getElementById('censusCounty').required = true;
+        document.getElementById('censusState').required = true;
+    } else {
+        // Show genealogy fields, hide census
+        censusFields.style.display = 'none';
+        genealogyFields.style.display = 'block';
+        
+        // Remove census required
+        document.getElementById('censusYear').required = false;
+        document.getElementById('censusCounty').required = false;
+        document.getElementById('censusState').required = false;
     }
+}
+
+// Collect metadata based on document type
+async function uploadMultiPageDocument() {
+    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', '❌ No files selected.');
+        closeDocumentMetadataForm();
+        return;
+    }
+    
+    const docType = document.getElementById('docType').value;
+    const ownerName = document.getElementById('ownerName').value;
+    
+    if (!docType) {
+        alert('Please select a document type');
+        return;
+    }
+    
+    if (!ownerName || ownerName.trim() === '') {
+        alert('Please enter the slave owner name');
+        return;
+    }
+    
+    let metadata = {
+        documentType: docType,
+        ownerName: ownerName
+    };
+    
+    // Add type-specific fields
+    if (docType === 'census' || docType === 'slave_schedule') {
+        metadata.censusYear = document.getElementById('censusYear').value;
+        metadata.city = document.getElementById('censusCity').value;
+        metadata.county = document.getElementById('censusCounty').value;
+        metadata.state = document.getElementById('censusState').value;
+        metadata.location = (metadata.city ? metadata.city + ', ' : '') + metadata.county + ', ' + metadata.state;
+    } else {
+        metadata.birthYear = document.getElementById('birthYear').value;
+        metadata.deathYear = document.getElementById('deathYear').value;
+        metadata.location = document.getElementById('location').value;
+        metadata.spouses = document.getElementById('spouses').value;
+        metadata.children = document.getElementById('children').value;
+        metadata.parents = document.getElementById('parents').value;
+    }
+    
+    closeDocumentMetadataForm();
+    
+    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document...');
+    
+    try {
+        const formData = new FormData();
+        
+        for (let i = 0; i < selectedDocumentFiles.length; i++) {
+            formData.append('pages', selectedDocumentFiles[i]);
+        }
+        
+        // Add all metadata
+        Object.keys(metadata).forEach(key => {
+            formData.append(key, metadata[key] || '');
+        });
+        
+        formData.append('pageCount', selectedDocumentFiles.length);
+        
+        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            addChatMessage('assistant', '✅ Document uploaded! ID: ' + result.documentId);
+        } else {
+            addChatMessage('assistant', '❌ Upload failed: ' + (result.message || result.error));
+        }
+        
+    } catch (error) {
+        addChatMessage('assistant', '❌ Error: ' + error.message);
+    } finally {
+        selectedDocumentFiles = [];
+    }
+}
     
     const modal = document.createElement('div');
     modal.id = 'documentMetadataModal';
