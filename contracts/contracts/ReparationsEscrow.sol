@@ -62,7 +62,20 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
     // Verification settings
     mapping(address => bool) public verifiers;
     uint256 public verificationRequirement = 1; // Number of verifiers needed
-    
+
+    // SECURITY: Timelock for emergency withdrawals
+    uint256 public constant WITHDRAWAL_DELAY = 7 days;
+
+    struct WithdrawalRequest {
+        address token;
+        uint256 amount;
+        uint256 requestTime;
+        bool executed;
+    }
+
+    mapping(uint256 => WithdrawalRequest) public withdrawalRequests;
+    uint256 public nextWithdrawalId;
+
     // Events
     event AncestryRecordSubmitted(uint256 indexed recordId, string ancestorName, address submitter);
     event DescendantAdded(uint256 indexed recordId, address descendant, string familySearchId);
@@ -70,6 +83,9 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
     event PaymentDistributed(uint256 indexed recordId, address recipient, uint256 amount, address token);
     event RecordVerified(uint256 indexed recordId, address verifier);
     event DescendantVerified(uint256 indexed recordId, address descendant, address verifier);
+    event WithdrawalRequested(uint256 indexed id, address token, uint256 amount, uint256 executeAfter);
+    event WithdrawalExecuted(uint256 indexed id);
+    event WithdrawalCancelled(uint256 indexed id);
     
     constructor(address _defaultToken) {
         defaultToken = _defaultToken;
@@ -190,39 +206,38 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
     
     /**
      * @dev Distribute payments to verified descendants
+     * FIXED: Follows Checks-Effects-Interactions pattern
      */
-    function distributePayments(uint256 _recordId, address _token, uint256 _amount) 
-        external 
-        onlyVerifier 
-        nonReentrant 
-        whenNotPaused 
+    function distributePayments(uint256 _recordId, address _token, uint256 _amount)
+        external
+        onlyVerifier
+        nonReentrant
+        whenNotPaused
     {
+        // CHECKS
         require(ancestryRecords[_recordId].verified, "Record not verified");
-        
+
         Descendant[] storage descendants = recordDescendants[_recordId];
         require(descendants.length > 0, "No descendants registered");
-        
+
         uint256 availableBalance;
         if (_token == address(0)) {
             availableBalance = address(this).balance;
         } else {
             availableBalance = IERC20(_token).balanceOf(address(this));
         }
-        
+
         require(availableBalance >= _amount, "Insufficient contract balance");
-        
+
+        // EFFECTS - Update state BEFORE external calls
+        uint256 totalDistributed = 0;
+
         for (uint i = 0; i < descendants.length; i++) {
             if (descendants[i].verified && descendants[i].walletAddress != address(0)) {
                 uint256 paymentAmount = (_amount * descendants[i].sharePercentage) / 10000;
-                
+
                 if (paymentAmount > 0) {
-                    if (_token == address(0)) {
-                        payable(descendants[i].walletAddress).transfer(paymentAmount);
-                    } else {
-                        IERC20(_token).transfer(descendants[i].walletAddress, paymentAmount);
-                    }
-                    
-                    // Record the payment
+                    // Record the payment BEFORE transfer
                     recordPayments[_recordId].push(Payment({
                         recordId: _recordId,
                         recipient: descendants[i].walletAddress,
@@ -231,9 +246,28 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
                         timestamp: block.timestamp,
                         transactionType: "reparation"
                     }));
-                    
-                    ancestryRecords[_recordId].totalPaid += paymentAmount;
-                    
+
+                    totalDistributed += paymentAmount;
+                }
+            }
+        }
+
+        // Update total paid BEFORE transfers
+        ancestryRecords[_recordId].totalPaid += totalDistributed;
+
+        // INTERACTIONS - External calls last
+        for (uint i = 0; i < descendants.length; i++) {
+            if (descendants[i].verified && descendants[i].walletAddress != address(0)) {
+                uint256 paymentAmount = (_amount * descendants[i].sharePercentage) / 10000;
+
+                if (paymentAmount > 0) {
+                    if (_token == address(0)) {
+                        (bool success, ) = payable(descendants[i].walletAddress).call{value: paymentAmount}("");
+                        require(success, "ETH transfer failed");
+                    } else {
+                        require(IERC20(_token).transfer(descendants[i].walletAddress, paymentAmount), "Token transfer failed");
+                    }
+
                     emit PaymentDistributed(_recordId, descendants[i].walletAddress, paymentAmount, _token);
                 }
             }
@@ -338,13 +372,76 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
     }
     
     /**
-     * @dev Emergency withdraw function (only owner)
+     * @dev Request emergency withdrawal (requires 7-day waiting period)
+     * SECURITY: Timelock protects against malicious withdrawals
      */
-    function emergencyWithdraw(address _token, uint256 _amount) external onlyOwner {
-        if (_token == address(0)) {
-            payable(owner()).transfer(_amount);
+    function requestWithdrawal(address _token, uint256 _amount) external onlyOwner returns (uint256) {
+        require(_amount > 0, "Amount must be positive");
+
+        uint256 id = nextWithdrawalId++;
+
+        withdrawalRequests[id] = WithdrawalRequest({
+            token: _token,
+            amount: _amount,
+            requestTime: block.timestamp,
+            executed: false
+        });
+
+        emit WithdrawalRequested(id, _token, _amount, block.timestamp + WITHDRAWAL_DELAY);
+        return id;
+    }
+
+    /**
+     * @dev Execute withdrawal after delay period
+     * SECURITY: Can only execute after WITHDRAWAL_DELAY has passed
+     */
+    function executeWithdrawal(uint256 _id) external onlyOwner {
+        WithdrawalRequest storage request = withdrawalRequests[_id];
+
+        require(!request.executed, "Already executed");
+        require(block.timestamp >= request.requestTime + WITHDRAWAL_DELAY, "Withdrawal delay not passed");
+
+        request.executed = true;
+
+        if (request.token == address(0)) {
+            require(address(this).balance >= request.amount, "Insufficient ETH balance");
+            payable(owner()).transfer(request.amount);
         } else {
-            IERC20(_token).transfer(owner(), _amount);
+            require(IERC20(request.token).balanceOf(address(this)) >= request.amount, "Insufficient token balance");
+            IERC20(request.token).transfer(owner(), request.amount);
         }
+
+        emit WithdrawalExecuted(_id);
+    }
+
+    /**
+     * @dev Cancel pending withdrawal request
+     */
+    function cancelWithdrawal(uint256 _id) external onlyOwner {
+        WithdrawalRequest storage request = withdrawalRequests[_id];
+        require(!request.executed, "Already executed");
+
+        request.executed = true; // Mark as executed to prevent reuse
+        emit WithdrawalCancelled(_id);
+    }
+
+    /**
+     * @dev Get withdrawal request details
+     */
+    function getWithdrawalRequest(uint256 _id) external view returns (
+        address token,
+        uint256 amount,
+        uint256 requestTime,
+        uint256 executeAfter,
+        bool executed
+    ) {
+        WithdrawalRequest memory request = withdrawalRequests[_id];
+        return (
+            request.token,
+            request.amount,
+            request.requestTime,
+            request.requestTime + WITHDRAWAL_DELAY,
+            request.executed
+        );
     }
 }
