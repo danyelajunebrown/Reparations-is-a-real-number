@@ -1,13 +1,3 @@
-app.post('/api/upload-multi-page-document', upload.array('pages', 20), async (req, res) => {
-  console.log('FILES RECEIVED:', req.files ? req.files.length : 0);
-  console.log('BODY:', req.body);
-  
-  if (!req.files || req.files.length === 0) {
-    console.error('NO FILES IN REQUEST');
-    return res.status(400).json({ success: false, message: 'No files uploaded' });
-  }
-  // ... rest of code
-});
 // server.js - Complete corrected version
 
 const express = require('express');
@@ -286,143 +276,152 @@ app.post('/api/process-individual-metadata', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Full name is required' });
     }
 
-    console.log(`Processing individual metadata: ${fullName}`);
+    // Check if document exists before proceeding
+    if (documentId) {
+      const docCheck = await database.query(
+        'SELECT document_id FROM documents WHERE document_id = $1',
+        [documentId]
+      );
+      
+      if (!docCheck.rows || docCheck.rows.length === 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Document ${documentId} not found. Upload the document first before linking individuals.` 
+        });
+      }
+    }
 
-    // Parse comma-separated lists
-    const spousesList = spouses ? spouses.split(',').map(s => s.trim()).filter(s => s) : [];
-    const childrenList = children ? children.split(',').map(s => s.trim()).filter(s => s) : [];
-    const parentsList = parents ? parents.split(',').map(s => s.trim()).filter(s => s) : [];
+    console.log(`Processing metadata for: ${fullName}`);
 
-    // Create or update the main individual
+    // Create or find the main individual
     const individualId = await entityManager.findOrCreateIndividual({
       fullName,
       birthYear,
       deathYear,
       gender,
-      locations,
+      locations: locations ? (Array.isArray(locations) ? locations : [locations]) : [],
       notes
     });
 
-    console.log(`Individual created/found: ${individualId}`);
-
-    // Link this individual to the document as the owner
-    if (documentId && documentId !== 'N/A') {
-      // First verify the document exists
-      const docExists = await database.query(
-        'SELECT document_id FROM documents WHERE document_id = $1',
-        [documentId]
+    // Link to document if provided
+    if (documentId) {
+      await database.query(
+        `INSERT INTO document_individuals (document_id, individual_id, role, mentioned_as)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (document_id, individual_id) DO NOTHING`,
+        [documentId, individualId, 'mentioned', fullName]
       );
-      
-      if (docExists.rows && docExists.rows.length > 0) {
-        await entityManager.linkIndividualToDocument(individualId, documentId, 'owner');
-        console.log('Linked ' + fullName + ' to document ' + documentId);
-      } else {
-        console.warn('Document ' + documentId + ' not found in database - skipping link');
+      console.log(`Linked ${fullName} to document ${documentId}`);
+    }
+
+    // Process relationships
+    const relatedIndividuals = {
+      spouses: [],
+      children: [],
+      parents: []
+    };
+
+    // Process spouses
+    if (spouses && Array.isArray(spouses)) {
+      for (const spouse of spouses) {
+        if (spouse.name) {
+          const spouseId = await entityManager.findOrCreateIndividual({
+            fullName: spouse.name,
+            birthYear: spouse.birthYear,
+            deathYear: spouse.deathYear,
+            gender: spouse.gender
+          });
+
+          await entityManager.addRelationship(
+            individualId,
+            spouseId,
+            'spouse',
+            fileName || documentId,
+            'document',
+            1.0
+          );
+
+          relatedIndividuals.spouses.push({ id: spouseId, name: spouse.name });
+        }
       }
     }
 
-    // Create or find related individuals and establish relationships
-    const relatedIndividuals = [];
-
-    // Process spouses
-    for (const spouseName of spousesList) {
-      const spouseId = await entityManager.findOrCreateIndividual({
-        fullName: spouseName
-      });
-      await entityManager.createRelationship(individualId, spouseId, 'spouse', {
-        isDirected: false,
-        sourceType: 'user-input',
-        confidence: 1.0,
-        verified: true
-      });
-      relatedIndividuals.push({ name: spouseName, relationship: 'spouse', id: spouseId });
-    }
-
     // Process children
-    for (const childName of childrenList) {
-      const childId = await entityManager.findOrCreateIndividual({
-        fullName: childName
-      });
-      await entityManager.createRelationship(individualId, childId, 'parent-child', {
-        isDirected: true,
-        sourceType: 'user-input',
-        confidence: 1.0,
-        verified: true
-      });
-      relatedIndividuals.push({ name: childName, relationship: 'child', id: childId });
+    if (children && Array.isArray(children)) {
+      for (const child of children) {
+        if (child.name) {
+          const childId = await entityManager.findOrCreateIndividual({
+            fullName: child.name,
+            birthYear: child.birthYear,
+            deathYear: child.deathYear,
+            gender: child.gender
+          });
+
+          await entityManager.addRelationship(
+            individualId,
+            childId,
+            'parent-child',
+            fileName || documentId,
+            'document',
+            1.0,
+            true
+          );
+
+          relatedIndividuals.children.push({ id: childId, name: child.name });
+        }
+      }
     }
 
     // Process parents
-    for (const parentName of parentsList) {
-      const parentId = await entityManager.findOrCreateIndividual({
-        fullName: parentName
-      });
-      await entityManager.createRelationship(parentId, individualId, 'parent-child', {
-        isDirected: true,
-        sourceType: 'user-input',
-        confidence: 1.0,
-        verified: true
-      });
-      relatedIndividuals.push({ name: parentName, relationship: 'parent', id: parentId });
+    if (parents && Array.isArray(parents)) {
+      for (const parent of parents) {
+        if (parent.name) {
+          const parentId = await entityManager.findOrCreateIndividual({
+            fullName: parent.name,
+            birthYear: parent.birthYear,
+            deathYear: parent.deathYear,
+            gender: parent.gender
+          });
+
+          await entityManager.addRelationship(
+            parentId,
+            individualId,
+            'parent-child',
+            fileName || documentId,
+            'document',
+            1.0,
+            true
+          );
+
+          relatedIndividuals.parents.push({ id: parentId, name: parent.name });
+        }
+      }
     }
 
-    // Background: Extract additional individuals from document OCR text
-    let extractedIndividuals = [];
-    if (documentId && documentId !== 'N/A') {
+    // Extract additional individuals mentioned in notes if document is linked
+    const extractedIndividuals = [];
+    if (documentId && notes) {
       try {
-        // Get document OCR text
-        const docResult = await database.query(
-          `SELECT ocr_text, doc_type FROM documents WHERE document_id = $1`,
-          [documentId]
-        );
-
-        if (docResult.rows && docResult.rows.length > 0) {
-          const { ocr_text, doc_type } = docResult.rows[0];
-
-          if (ocr_text) {
-            // Extract related individuals from OCR
-            extractedIndividuals = await entityManager.extractRelatedIndividuals(
-              ocr_text,
-              doc_type,
-              documentId
-            );
-
-            console.log(`Extracted ${extractedIndividuals.length} individuals from document`);
-
-            // Create individuals and relationships for extracted names
-            for (const extracted of extractedIndividuals) {
-              const extractedId = await entityManager.findOrCreateIndividual({
-                fullName: extracted.name
+        const namePattern = /\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\b/g;
+        const matches = notes.match(namePattern);
+        
+        if (matches) {
+          for (const name of matches) {
+            if (name !== fullName) {
+              const mentionedId = await entityManager.findOrCreateIndividual({
+                fullName: name
               });
 
-              // Link to document
-              await entityManager.linkIndividualToDocument(
-                extractedId,
-                documentId,
-                extracted.role
+              await database.query(
+                `INSERT INTO document_individuals (document_id, individual_id, role, mentioned_as)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (document_id, individual_id) DO NOTHING`,
+                [documentId, mentionedId, 'mentioned', name]
               );
 
-              // Create relationship with main owner
-              let relationshipType = 'associated';
-              if (extracted.role === 'heir') {
-                relationshipType = 'parent-child'; // Heirs are typically children
-              } else if (extracted.role === 'neighbor') {
-                relationshipType = 'neighbor';
-              }
-
-              await entityManager.createRelationship(individualId, extractedId, relationshipType, {
-                isDirected: extracted.role === 'heir',
-                sourceDocumentId: documentId,
-                sourceType: doc_type,
-                confidence: extracted.confidence,
-                verified: false
-              });
-
-              relatedIndividuals.push({
-                name: extracted.name,
-                relationship: extracted.role,
-                id: extractedId,
-                confidence: extracted.confidence
+              extractedIndividuals.push({
+                id: mentionedId,
+                name
               });
             }
           }
