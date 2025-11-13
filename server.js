@@ -26,8 +26,8 @@ const corsOptions = {
   origin: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : process.env.NODE_ENV === 'production'
-      ? [] // Must specify in production
-      : ['http://localhost:3000', 'http://localhost:8080'],
+      ? ['https://danyelajunebrown.github.io'] // GitHub Pages domain
+      : ['http://localhost:3000', 'http://localhost:8080', 'https://danyelajunebrown.github.io'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
   credentials: true,
