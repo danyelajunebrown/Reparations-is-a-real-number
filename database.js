@@ -9,8 +9,7 @@ const pool = process.env.DATABASE_URL
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production'
         ? {
-            rejectUnauthorized: true, // SECURE: Verify certificates in production
-            ca: process.env.DB_SSL_CA || undefined // Optional: custom CA certificate
+            rejectUnauthorized: false // Render's PostgreSQL uses internal SSL certs
           }
         : process.env.DB_SSL_REQUIRED === 'true'
           ? { rejectUnauthorized: false } // Only for local dev with self-signed certs
@@ -28,7 +27,7 @@ const pool = process.env.DATABASE_URL
     });
 
 pool.on('connect', () => {
-    console.log('âœ“ Connected to PostgreSQL database');
+    console.log('Ã¢Å“â€œ Connected to PostgreSQL database');
 });
 
 pool.on('error', (err) => {
@@ -172,7 +171,7 @@ async function saveDocumentMetadata(metadata) {
         }
         
         await client.query('COMMIT');
-        console.log(`âœ“ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
+        console.log(`Ã¢Å“â€œ Saved metadata for document ${metadata.documentId} to PostgreSQL`);
         
         return { success: true, documentId: metadata.documentId };
         
