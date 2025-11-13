@@ -9,6 +9,7 @@ A blockchain-based reparations platform that processes historical documents to i
 **Tech Stack**: Node.js/Express, PostgreSQL, Ethereum/Solidity, Web3.js, IPFS
 
 ## Common Commands
+
 ```bash
 # Development
 npm run dev              # Start server with auto-reload (nodemon)
@@ -28,20 +29,20 @@ truffle migrate          # Deploy contracts to configured network
 ### Layered Architecture
 ```
 Frontend (HTML/JS + Web3.js)
-    ↓
+    Ã¢â€ â€œ
 Express API Server (server.js)
-    ↓
-├─ Document Processor Pipeline
-├─ Storage Adapter (Local/S3/IPFS)
-├─ PostgreSQL Database
-└─ Ethereum Smart Contracts
+    Ã¢â€ â€œ
+Ã¢â€Å“Ã¢â€â‚¬ Document Processor Pipeline
+Ã¢â€Å“Ã¢â€â‚¬ Storage Adapter (Local/S3/IPFS)
+Ã¢â€Å“Ã¢â€â‚¬ PostgreSQL Database
+Ã¢â€â€Ã¢â€â‚¬ Ethereum Smart Contracts
 ```
 
 ### Core Processing Pipeline
 
 **Document Upload Flow** (`enhanced-document-processor.js`):
-1. File upload via Multer → temp storage
-2. StorageAdapter → permanent storage (`./storage/owners/{name}/{type}/`)
+1. File upload via Multer Ã¢â€ â€™ temp storage
+2. StorageAdapter Ã¢â€ â€™ permanent storage (`./storage/owners/{name}/{type}/`)
 3. IPFS hash generation (optional, for immutability)
 4. OCR processing (Google Vision API preferred, Tesseract.js fallback)
 5. Data extraction (enslaved names, relationships, metadata)
@@ -73,6 +74,7 @@ Express API Server (server.js)
 - Frontend: `frontend/public/app.js` - Web3.js integration (requires MetaMask)
 
 ### API Endpoints
+
 ```
 POST /api/upload-document
   - multipart/form-data with: document (file), ownerName, documentType, birthYear, deathYear, location
@@ -99,13 +101,13 @@ GET /health
 **NO API KEYS NEEDED!** The Research Assistant uses a custom-built NLP system for intelligent queries.
 
 **Features:**
-- ✅ Natural language understanding
-- ✅ Entity extraction (person names, numbers)
-- ✅ Intent classification (search/count/lineage)
-- ✅ Context awareness (remembers previous questions)
-- ✅ Pronoun resolution ("How many did he own?" knows who "he" is)
-- ✅ Follow-up question handling
-- ✅ 100% free - no external APIs
+- âœ… Natural language understanding
+- âœ… Entity extraction (person names, numbers)
+- âœ… Intent classification (search/count/lineage)
+- âœ… Context awareness (remembers previous questions)
+- âœ… Pronoun resolution ("How many did he own?" knows who "he" is)
+- âœ… Follow-up question handling
+- âœ… 100% free - no external APIs
 
 **How it works:**
 1. **Pattern Matching**: Uses regex patterns to identify question types
@@ -167,9 +169,9 @@ GET /health
 
 **Database Queries:**
 The NLP system queries:
-- `documents` table → slave owners
-- `enslaved_people` table → enslaved individuals
-- `individuals` table → verified genealogical records
+- `documents` table â†’ slave owners
+- `enslaved_people` table â†’ enslaved individuals
+- `individuals` table â†’ verified genealogical records
 - Database statistics and aggregations
 
 **Example Conversation:**
@@ -199,6 +201,7 @@ Bot: "James Hopewell owes $70.4 million in reparations."
 ## Environment Setup
 
 Required environment variables (create `.env` file):
+
 ```bash
 # PostgreSQL - Use either DATABASE_URL OR individual variables
 DATABASE_URL=postgresql://user:pass@host:port/dbname  # Render.com style
@@ -306,25 +309,26 @@ Global error middleware in `server.js` catches unhandled errors. Individual modu
 Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 
 ## File Organization
+
 ```
 /
-├─ server.js                    # Express server entry point
-├─ app.js                       # Web3 frontend integration
-├─ config.js                    # Central configuration
-├─ database.js                  # PostgreSQL client
-├─ database-schemas.js          # Schema definitions
-├─ enhanced-document-processor.js  # Main document pipeline
-├─ storage-adapter.js           # Storage abstraction
-├─ reparations-calculator.js    # Economic calculations
-├─ familysearch-reparations-integration.js  # Genealogy integration
-├─ init-database.js             # Database initialization script
-├─ contracts/
-│   ├─ contracts/*.sol          # Solidity smart contracts
-│   └─ migrations/              # Truffle deployment scripts
-└─ frontend/
-    └─ public/
-        ├─ index.html           # Main UI
-        └─ app.js               # Blockchain integration
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ server.js                    # Express server entry point
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ app.js                       # Web3 frontend integration
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ config.js                    # Central configuration
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ database.js                  # PostgreSQL client
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ database-schemas.js          # Schema definitions
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ enhanced-document-processor.js  # Main document pipeline
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ storage-adapter.js           # Storage abstraction
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ reparations-calculator.js    # Economic calculations
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ familysearch-reparations-integration.js  # Genealogy integration
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ init-database.js             # Database initialization script
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ contracts/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ contracts/*.sol          # Solidity smart contracts
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ migrations/              # Truffle deployment scripts
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ frontend/
+    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ public/
+        Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ index.html           # Main UI
+        Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ app.js               # Blockchain integration
 ```
 
 ## Development Notes
@@ -373,6 +377,37 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 
 ## Common Issues & Solutions
 
+**JavaScript Parser Errors Breaking Frontend**:
+- **Symptom**: Browser console shows "SyntaxError: Parser error" and "ReferenceError: Can't find variable: sendChatMessage"
+- **Root Causes**:
+  1. **Node.js modules loaded in browser**: Script tags trying to load backend files like `reparations-calculator.js`, `enhanced-document-processor.js` that contain `require()` statements
+  2. **Duplicate function definitions**: Multiple definitions of the same function (e.g., `uploadMultiPageDocument`) causing brace mismatches
+  3. **Orphaned code blocks**: When removing duplicate functions, leftover code fragments (lines 1200-1247 in the corrupted version) created extra closing braces without matching opens
+  4. **Malformed comments**: Comment and code on same line (e.g., `// comment    const variable = ...`) causing parsing issues
+- **Solution Steps**:
+  1. **Remove all backend module script tags** from `<head>` section
+  2. **Fix malformed comment + const declaration**: Separate onto different lines
+  3. **Remove orphaned modal creation code**: Delete any code blocks that exist outside of function definitions
+  4. **Validate syntax**: Extract JavaScript and run `node --check script.js`
+  5. **Verify brace balance**: Use Python script to count `{` and `}` outside of strings
+- **Diagnostic Commands**:
+  ```bash
+  # Find duplicate functions
+  grep -n "^function \|^async function " index.html | sort | uniq -d
+  
+  # Extract and validate JavaScript
+  awk '/<script>/{p=1;next}/<\/script>/{p=0}p' index.html > script.js
+  node --check script.js
+  
+  # Count braces (use Python script with proper string handling)
+  ```
+- **Prevention**: 
+  - Frontend (GitHub Pages) only needs HTML, CSS, and browser JavaScript
+  - Backend modules stay in repo root for Render deployment but are NEVER loaded with `<script>` tags
+  - All backend functionality accessed via fetch() API calls
+  - When removing duplicate functions, check for orphaned code blocks after the closing brace
+- **Fixed**: 2025-11-12 - Removed Node.js backend module imports, fixed malformed comment/const, removed orphaned modal code (lines 1200-1247), eliminated duplicate functions
+
 **Server Startup Error: "Cannot access 'app' before initialization"**:
 - **Symptom**: Render deployment fails with `ReferenceError: Cannot access 'app' before initialization at /opt/render/project/src/server.js:1`
 - **Cause**: Route definitions were placed before Express app initialization (duplicate code at top of file)
@@ -392,7 +427,7 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 - **Prevention**: Always ensure document upload completes and returns valid `document_id` before processing individual metadata
 
 **Document Upload Order**:
-1. Upload file via `/api/upload-document` → returns `documentId`
+1. Upload file via `/api/upload-document` â†’ returns `documentId`
 2. Use returned `documentId` when calling `/api/process-individual-metadata`
 3. Document must be in `documents` table before linking individuals
 
