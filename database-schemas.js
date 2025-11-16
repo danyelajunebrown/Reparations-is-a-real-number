@@ -175,7 +175,7 @@ CREATE TABLE documents (
     stored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- IPFS and blockchain
-    ipfs_hash VARCHAR(255) UNIQUE NOT NULL,
+    ipfs_hash VARCHAR(255) UNIQUE,  -- FIXED: Made nullable for dev environments without IPFS
     sha256_hash VARCHAR(64) NOT NULL,
     ipfs_gateway_url TEXT,
     ipfs_pinned BOOLEAN DEFAULT FALSE,

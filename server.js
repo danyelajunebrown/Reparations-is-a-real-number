@@ -211,8 +211,22 @@ app.post('/api/upload-multi-page-document',
       console.log('Saved multi-page document: ' + documentId);
     }
     
-    res.json({ 
-      success: true, 
+    // CRITICAL FIX: Clean up multer temp files to prevent disk space exhaustion
+    const fs = require('fs');
+    for (const file of req.files) {
+      try {
+        if (fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+          console.log(`Cleaned up temp file: ${file.path}`);
+        }
+      } catch (cleanupError) {
+        console.error(`Failed to cleanup temp file ${file.path}:`, cleanupError);
+        // Don't fail the request if cleanup fails
+      }
+    }
+
+    res.json({
+      success: true,
       message: 'Multi-page document uploaded successfully',
       documentId: documentId,
       pageCount: req.files.length,

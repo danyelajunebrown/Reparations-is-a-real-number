@@ -78,10 +78,10 @@ async function saveDocumentMetadata(metadata) {
             )
         `, [
             metadata.documentId,
-            metadata.owner,
-            metadata.ownerBirthYear || null,
-            metadata.ownerDeathYear || null,
-            metadata.ownerLocation || null,
+            metadata.ownerName || metadata.owner,  // FIXED: Accept both ownerName and owner
+            metadata.ownerBirthYear || metadata.birthYear || null,
+            metadata.ownerDeathYear || metadata.deathYear || null,
+            metadata.ownerLocation || metadata.location || null,
             metadata.storage?.documentType || 'unknown',
             metadata.storage?.filename,
             metadata.storage?.filePath,

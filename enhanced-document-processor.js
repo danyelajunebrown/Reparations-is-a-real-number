@@ -77,10 +77,10 @@ class EnhancedDocumentProcessor {
       if (this.db && this.db.saveDocument) {
         const docRecord = {
           documentId: result.documentId,
-          owner: metadata.ownerName,  // FIXED: database expects 'owner', not 'ownerName'
-          ownerBirthYear: metadata.birthYear,
-          ownerDeathYear: metadata.deathYear,
-          ownerLocation: metadata.location,
+          ownerName: metadata.ownerName,  // FIXED: Standardized on ownerName
+          birthYear: metadata.birthYear,
+          deathYear: metadata.deathYear,
+          location: metadata.location,
           storage: result.stages.storage,
           ipfs: result.stages.ipfs || null,
           ocr: result.stages.ocr || null,

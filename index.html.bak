@@ -994,6 +994,109 @@ function updateFieldsBasedOnDocType() {
 }
 
 // Collect metadata based on document type
+async function uploadMultiPageDocument() {
+    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ No files selected.');
+        closeDocumentMetadataForm();
+        return;
+    }
+    
+    const docType = document.getElementById('docType').value;
+    const ownerName = document.getElementById('ownerName').value;
+    
+    if (!docType) {
+        alert('Please select a document type');
+        return;
+    }
+    
+    if (!ownerName || ownerName.trim() === '') {
+        alert('Please enter the slave owner name');
+        return;
+    }
+    
+    let metadata = {
+        documentType: docType,
+        ownerName: ownerName
+    };
+    
+    // Add type-specific fields
+    if (docType === 'census' || docType === 'slave_schedule') {
+        metadata.censusYear = document.getElementById('censusYear').value;
+        metadata.city = document.getElementById('censusCity').value;
+        metadata.county = document.getElementById('censusCounty').value;
+        metadata.state = document.getElementById('censusState').value;
+        metadata.location = (metadata.city ? metadata.city + ', ' : '') + metadata.county + ', ' + metadata.state;
+    } else {
+        metadata.birthYear = document.getElementById('birthYear').value;
+        metadata.deathYear = document.getElementById('deathYear').value;
+        metadata.location = document.getElementById('location').value;
+        metadata.spouses = document.getElementById('spouses').value;
+        metadata.children = document.getElementById('children').value;
+        metadata.parents = document.getElementById('parents').value;
+    }
+    
+    // Close modal but DON'T clear files yet (we need them for upload!)
+    closeDocumentMetadataForm(false);
+
+    console.log('DEBUG: selectedDocumentFiles at upload time:', selectedDocumentFiles);
+    console.log('DEBUG: selectedDocumentFiles.length:', selectedDocumentFiles.length);
+
+    addChatMessage('assistant', 'ðŸ"¤ Uploading ' + selectedDocumentFiles.length + '-page document...');
+
+    if (selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ Error: No files selected. Please select files first.');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+
+        for (let i = 0; i < selectedDocumentFiles.length; i++) {
+            console.log('DEBUG: Appending file', i, ':', selectedDocumentFiles[i].name);
+            formData.append('pages', selectedDocumentFiles[i]);
+        }
+        
+        // Add all metadata
+        Object.keys(metadata).forEach(key => {
+            formData.append(key, metadata[key] || '');
+        });
+        
+        formData.append('pageCount', selectedDocumentFiles.length);
+        
+        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            addChatMessage('assistant', 'âœ… Document uploaded! ID: ' + result.documentId);
+        } else {
+            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
+        }
+        
+    } catch (error) {
+        addChatMessage('assistant', 'âŒ Error: ' + error.message);
+    } finally {
+        selectedDocumentFiles = [];
+    }
+}
+
+function closeDocumentMetadataForm(clearFiles = true) {
+    const modal = document.getElementById('documentMetadataModal');
+    if (modal) {
+        modal.remove();
+    }
+    // Only clear files if explicitly requested (when canceling, not when submitting)
+    if (clearFiles) {
+        selectedDocumentFiles = [];
+        const fileInput = document.getElementById('multiPageFileInput');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+    }
+}
 
 async function uploadMultiPageDocument() {
     // Validation
