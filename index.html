@@ -1124,10 +1124,10 @@ async function uploadMultiPageDocument() {
         alert('Please enter the slave owner name');
         return;
     }
-    
-    closeDocumentMetadataForm();
-    
-    addChatMessage('assistant', 'ðŸ“¤ Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
+
+    closeDocumentMetadataForm(false);  // CRITICAL: Don't clear files yet!
+
+    addChatMessage('assistant', 'ðŸ"¤ Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
     
     try {
         const formData = new FormData();
