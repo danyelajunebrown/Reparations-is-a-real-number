@@ -767,43 +767,6 @@
         // SAMPLE DATA
         // ============================================
         async function loadSampleData() {
-            // Load James Hopewell as example
-            const sampleOwner = {
-                name: "James Hopewell",
-                dates: "Will: 2/14/1816, Probate: 12/23/1817",
-                location: "St. Mary's County, MD",
-                deathYear: 1816,
-                documents: [{
-                    type: 'will',
-                    description: '1816 Last Will and Testament',
-                    ipfsHash: 'Qm7a8f94b2c8e...',
-                    ocrConfidence: 85,
-                    processed: true
-                }],
-                enslaved: [
-                    {name: "Minna", relation: "Mother of 7 children", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "John", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Harriett", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Sandy", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Henry", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "George", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Charlotte", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Jesse", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"}
-                ],
-                count: 32,
-                reparations: 70416000,
-                confidence: { level: 'HIGH', score: 85 }
-            };
-            
-            ownersData = [sampleOwner];
-            stats.owners = 1;
-            stats.documents = 1;
-            stats.enslaved = 32;
-            stats.reparations = 70416000;
-            
-            addConsoleMessage('âœ“ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
-        }
-
 // ============================================
 // MULTI-PAGE DOCUMENT UPLOAD (CLEAN VERSION)
 // ============================================
