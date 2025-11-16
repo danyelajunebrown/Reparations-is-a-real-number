@@ -746,9 +746,8 @@
                 addConsoleMessage('✅ Frontend initialized', 'success');
                 document.getElementById('systemStatus').textContent = 'API Connected';
 
-                // Load sample data
-                await loadSampleData();
-                
+                // REMOVED FAKE SAMPLE DATA - Real data will load from API
+
                 // Initialize UI
                 initializeCarousel();
                 populateOwnerList();
