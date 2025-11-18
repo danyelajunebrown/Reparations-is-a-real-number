@@ -924,6 +924,22 @@ function showDocumentMetadataForm(files) {
     });
 }
 
+function closeDocumentMetadataForm(clearFiles = true) {
+    const modal = document.getElementById('documentMetadataModal');
+    if (modal) {
+        modal.remove();
+    }
+
+    // Clear selected files unless explicitly told not to
+    if (clearFiles) {
+        selectedDocumentFiles = [];
+        const fileInput = document.getElementById('multiPageFileInput');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+    }
+}
+
 // Show/hide fields based on document type
 function updateFieldsBasedOnDocType() {
     const docType = document.getElementById('docType').value;
