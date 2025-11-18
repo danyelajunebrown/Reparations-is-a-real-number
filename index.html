@@ -1427,7 +1427,7 @@ async function uploadSelectedFiles() {
     uploadProgressBar.style.width = '100%';
     uploadStatus.textContent = `Upload complete: ${successCount} succeeded, ${failCount} failed`;
 
-    addChatMessage('assistant'🎉 Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
+    addChatMessage('assistant', `🎉 Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
 
     // Reset after 3 seconds
     setTimeout(() => {
