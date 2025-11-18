@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables (NEVER commit!)
+.env
+.env.local
+.env.production
+
+# Uploaded files and storage
+uploads/
+storage/
+
+# Database
+*.sqlite
+*.db
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary and backup files
+*.tmp
+*.backup
+*.bak
+*.bak2
+fix*.py
+fix*.pl
