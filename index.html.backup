@@ -525,7 +525,7 @@
         <!-- Widget 1: Rotating Forest of Family Trees -->
         <div class="widget-forest">
             <div class="forest-title">
-                <h1>ðŸ“œ Historical Records Database</h1>
+                <h1>📜 Historical Records Database</h1>
             </div>
 
             <div class="carousel-container">
@@ -585,7 +585,7 @@
             <div class="widget">
                 <h2>Documented Owners</h2>
                 <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
-                    Click to view details â€¢ Green = verified
+                    Click to view details • Green = verified
                 </p>
 
                 <div class="owner-list" id="ownerList">
@@ -595,12 +595,12 @@
 
           <!-- Widget 4: LLM Chat Interface -->
 <div class="widget">
-    <h2>ðŸ¤– Research Assistant</h2>
+    <h2>🤖 Research Assistant</h2>
     <div style="display: flex; flex-direction: column; height: calc(100% - 60px);">
         <!-- Chat Messages -->
         <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(10, 14, 39, 0.8); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px; margin-bottom: 15px;">
             <div style="color: #64c8ff; margin-bottom: 10px;">
-                ðŸ’¬ Ask me about the database: owners, documents, enslaved people, families, or statistics.
+                💬 Ask me about the database: owners, documents, enslaved people, families, or statistics.
             </div>
         </div>
         
@@ -625,7 +625,7 @@
        <!-- Multi-Page Upload Ribbon -->
 <div style="margin-top: 15px; padding: 15px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px;">
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-        <span style="color: #64c8ff; font-size: 0.9em;">ðŸ“„ Upload Multi-Page Document</span>
+        <span style="color: #64c8ff; font-size: 0.9em;">📄 Upload Multi-Page Document</span>
         <input
             type="file"
             id="multiPageFileInput"
@@ -676,6 +676,34 @@
         console.log('API Base URL:', API_BASE_URL);
 
         // ============================================
+        // AUTO-PING BACKEND TO PREVENT COLD START
+        // ============================================
+        // Ping backend immediately on page load to wake it up
+        // This reduces wait time for first user query
+        (async function pingBackend() {
+            try {
+                console.log('Pinging backend to wake it up...');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    console.log('Backend is awake and ready!');
+                } else {
+                    console.log('Backend responded but may not be fully ready');
+                }
+            } catch (error) {
+                console.log('Backend may be waking up (cold start):', error.message);
+            }
+        })();
+
+        // ============================================
         // CORE SYSTEM INITIALIZATION (Robust + Fallbacks)
         // ============================================
 
@@ -718,9 +746,8 @@
                 addConsoleMessage('✅ Frontend initialized', 'success');
                 document.getElementById('systemStatus').textContent = 'API Connected';
 
-                // Load sample data
-                await loadSampleData();
-                
+                // REMOVED FAKE SAMPLE DATA - Real data will load from API
+
                 // Initialize UI
                 initializeCarousel();
                 populateOwnerList();
@@ -737,49 +764,8 @@
         });
 
         // ============================================
-        // SAMPLE DATA
+        // MULTI-PAGE DOCUMENT UPLOAD (CLEAN VERSION)
         // ============================================
-        async function loadSampleData() {
-            // Load James Hopewell as example
-            const sampleOwner = {
-                name: "James Hopewell",
-                dates: "Will: 2/14/1816, Probate: 12/23/1817",
-                location: "St. Mary's County, MD",
-                deathYear: 1816,
-                documents: [{
-                    type: 'will',
-                    description: '1816 Last Will and Testament',
-                    ipfsHash: 'Qm7a8f94b2c8e...',
-                    ocrConfidence: 85,
-                    processed: true
-                }],
-                enslaved: [
-                    {name: "Minna", relation: "Mother of 7 children", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "John", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Harriett", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Sandy", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Henry", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "George", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Charlotte", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
-                    {name: "Jesse", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"}
-                ],
-                count: 32,
-                reparations: 70416000,
-                confidence: { level: 'HIGH', score: 85 }
-            };
-            
-            ownersData = [sampleOwner];
-            stats.owners = 1;
-            stats.documents = 1;
-            stats.enslaved = 32;
-            stats.reparations = 70416000;
-            
-            addConsoleMessage('âœ“ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
-        }
-
-// ============================================
-// MULTI-PAGE DOCUMENT UPLOAD (CLEAN VERSION)
-// ============================================
 
 // Check if already declared, if not declare it
 if (typeof selectedDocumentFiles === 'undefined') {
@@ -831,7 +817,7 @@ function showDocumentMetadataForm(files) {
     modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
         '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
         '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
-        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">ðŸ“„ Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
         '</div>' +
         '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 12px;">' +
         
@@ -966,96 +952,6 @@ function updateFieldsBasedOnDocType() {
 }
 
 // Collect metadata based on document type
-async function uploadMultiPageDocument() {
-    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
-        addChatMessage('assistant', 'âŒ No files selected.');
-        closeDocumentMetadataForm();
-        return;
-    }
-    
-    const docType = document.getElementById('docType').value;
-    const ownerName = document.getElementById('ownerName').value;
-    
-    if (!docType) {
-        alert('Please select a document type');
-        return;
-    }
-    
-    if (!ownerName || ownerName.trim() === '') {
-        alert('Please enter the slave owner name');
-        return;
-    }
-    
-    let metadata = {
-        documentType: docType,
-        ownerName: ownerName
-    };
-    
-    // Add type-specific fields
-    if (docType === 'census' || docType === 'slave_schedule') {
-        metadata.censusYear = document.getElementById('censusYear').value;
-        metadata.city = document.getElementById('censusCity').value;
-        metadata.county = document.getElementById('censusCounty').value;
-        metadata.state = document.getElementById('censusState').value;
-        metadata.location = (metadata.city ? metadata.city + ', ' : '') + metadata.county + ', ' + metadata.state;
-    } else {
-        metadata.birthYear = document.getElementById('birthYear').value;
-        metadata.deathYear = document.getElementById('deathYear').value;
-        metadata.location = document.getElementById('location').value;
-        metadata.spouses = document.getElementById('spouses').value;
-        metadata.children = document.getElementById('children').value;
-        metadata.parents = document.getElementById('parents').value;
-    }
-    
-    closeDocumentMetadataForm();
-    
-    addChatMessage('assistant', 'ðŸ“¤ Uploading ' + selectedDocumentFiles.length + '-page document...');
-    
-    try {
-        const formData = new FormData();
-        
-        for (let i = 0; i < selectedDocumentFiles.length; i++) {
-            formData.append('pages', selectedDocumentFiles[i]);
-        }
-        
-        // Add all metadata
-        Object.keys(metadata).forEach(key => {
-            formData.append(key, metadata[key] || '');
-        });
-        
-        formData.append('pageCount', selectedDocumentFiles.length);
-        
-        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
-            method: 'POST',
-            body: formData
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            addChatMessage('assistant', 'âœ… Document uploaded! ID: ' + result.documentId);
-        } else {
-            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
-        }
-        
-    } catch (error) {
-        addChatMessage('assistant', 'âŒ Error: ' + error.message);
-    } finally {
-        selectedDocumentFiles = [];
-    }
-}
-
-function closeDocumentMetadataForm() {
-    const modal = document.getElementById('documentMetadataModal');
-    if (modal) {
-        modal.remove();
-    }
-    selectedDocumentFiles = [];
-    const fileInput = document.getElementById('multiPageFileInput');
-    if (fileInput) {
-        fileInput.value = '';
-    }
-}
 
 async function uploadMultiPageDocument() {
     // Validation
@@ -1083,10 +979,10 @@ async function uploadMultiPageDocument() {
         alert('Please enter the slave owner name');
         return;
     }
-    
-    closeDocumentMetadataForm();
-    
-    addChatMessage('assistant', 'ðŸ“¤ Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
+
+    closeDocumentMetadataForm(false);  // CRITICAL: Don't clear files yet!
+
+    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
     
     try {
         const formData = new FormData();
@@ -1215,9 +1111,15 @@ async function uploadMultiPageDocument() {
                     <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(100, 200, 255, 0.3);">
                         <div style="color: #ffaa00; font-weight: bold;">Total: ${owner.count || 0} enslaved</div>
                         <div style="color: #64c8ff;">Reparations: $${(((owner.reparations || 0) / 1000000)).toFixed(1)}M</div>
+                        <button onclick="viewOwnerDocuments('${owner.name}')"
+                                style="margin-top: 10px; padding: 8px 12px; background: rgba(100, 200, 255, 0.2);
+                                       border: 1px solid #64c8ff; color: #64c8ff; border-radius: 5px;
+                                       cursor: pointer; width: 100%; font-size: 0.9em;">
+                            📄 View Documents
+                        </button>
                     </div>
                 `;
-                
+
                 content += '</div>';
                 card.innerHTML = content;
                 carousel.appendChild(card);
@@ -1264,7 +1166,7 @@ async function uploadMultiPageDocument() {
                 item.className = 'owner-item';
                 item.innerHTML = `
                     <div class="owner-item-name">${owner.name}</div>
-                    <div class="owner-item-details">${owner.location || 'Location unknown'} â€¢ <span class="owner-item-count">${owner.count || 0}</span> enslaved</div>
+                    <div class="owner-item-details">${owner.location || 'Location unknown'} • <span class="owner-item-count">${owner.count || 0}</span> enslaved</div>
                 `;
                 item.onclick = () => {
                     alert(`${owner.name}\nLocation: ${owner.location}\nCount: ${owner.count || 0}`);
@@ -1289,7 +1191,7 @@ async function uploadMultiPageDocument() {
             a.download = 'reparations-export-' + Date.now() + '.json';
             a.click();
             URL.revokeObjectURL(url);
-            addConsoleMessage('âœ“ Export started', 'success');
+            addConsoleMessage('✔ Export started', 'success');
         }
 
         function showHelp() {
@@ -1309,10 +1211,10 @@ async function sendChatMessage() {
     // Add user message
     addChatMessage('user', query);
     input.value = '';
-    
+
     // Add loading indicator
     const loadingId = 'loading-' + Date.now();
-    addChatMessage('assistant', 'Searching database... (First request may take 60 seconds if backend is sleeping)', loadingId);
+    addChatMessage('assistant', '🔍 Searching database... (First request may take 60 seconds if backend is sleeping)', loadingId);
     
     try {
         // Call your backend with 90 second timeout for Render cold starts
@@ -1353,7 +1255,14 @@ async function sendChatMessage() {
         const loadingMsg = document.getElementById(loadingId);
         if (loadingMsg) loadingMsg.remove();
         
-        addChatMessage('assistant', `âŒ Connection error. Unable to reach backend at ${API_BASE_URL}`);
+        // Better error messages for Render cold starts
+        if (error.name === 'AbortError') {
+            addChatMessage('assistant', 'Request timed out after 90 seconds. Backend may be waking up (Render free tier). Please wait and try again.');
+        } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('network') || error.message.includes('connection was lost'))) {
+            addChatMessage('assistant', 'Backend is waking up from sleep (Render free tier). This takes 30-60 seconds. Please wait and retry your query.');
+        } else {
+            addChatMessage('assistant', `Connection error: ${error.message || 'Unable to reach backend'} - Backend may be down.`);
+        }
     }
 }
 
@@ -1387,7 +1296,7 @@ function updateEvidenceDisplay(evidence) {
     // This will update the top carousel/forest area to show evidence
     // For now, just log it - you can expand this later
     console.log('Evidence to display:', evidence);
-    addConsoleMessage('ðŸ“‹ Evidence displayed in main window', 'info');
+    addConsoleMessage('📋 Evidence displayed in main window', 'info');
 }
 
 // ============================================
@@ -1414,7 +1323,7 @@ function handleMultiFileSelection() {
     // Display selected files
     filesList.innerHTML = selectedFiles.map((file, index) => `
         <div style="padding: 4px 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(100, 200, 255, 0.1);">
-            <span>ðŸ“„ ${file.name} (${formatFileSize(file.size)})</span>
+            <span>📄 ${file.name} (${formatFileSize(file.size)})</span>
             <button onclick="removeFile(${index})" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); color: #ff6464; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;">Remove</button>
         </div>
     `).join('');
@@ -1461,7 +1370,7 @@ async function uploadSelectedFiles() {
     let failCount = 0;
     const uploadedDocs = []; // Track successfully uploaded documents
 
-    addChatMessage('assistant', `ðŸ“¤ Starting upload of ${selectedFiles.length} file(s)...`);
+    addChatMessage('assistant', `📤 Starting upload of ${selectedFiles.length} file(s)...`);
 
     for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
@@ -1489,7 +1398,7 @@ async function uploadSelectedFiles() {
             if (result.success) {
                 successCount++;
                 const docId = result.result?.documentId || 'N/A';
-                addChatMessage('assistant', `âœ… ${file.name} uploaded successfully (ID: ${docId})`);
+                addChatMessage('assistant', `✅ ${file.name} uploaded successfully (ID: ${docId})`);
 
                 // Track for metadata collection
                 uploadedDocs.push({
@@ -1518,7 +1427,7 @@ async function uploadSelectedFiles() {
     uploadProgressBar.style.width = '100%';
     uploadStatus.textContent = `Upload complete: ${successCount} succeeded, ${failCount} failed`;
 
-    addChatMessage('assistant', `ðŸŽ‰ Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
+    addChatMessage('assistant', `🎉 Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
 
     // Reset after 3 seconds
     setTimeout(() => {
@@ -1563,7 +1472,7 @@ function showMetadataDialogue(uploadedDocuments) {
 function loadNextMetadataForm() {
     if (currentMetadataIndex >= pendingDocuments.length) {
         closeMetadataDialogue();
-        addChatMessage('assistant', 'âœ… All metadata collected! Processing relationships in background...');
+        addChatMessage('assistant', '✅ All metadata collected! Processing relationships in background...');
         return;
     }
 
@@ -1645,6 +1554,138 @@ function skipMetadata() {
     loadNextMetadataForm();
 }
 
+        // ============================================
+        // DOCUMENT VIEWING FUNCTIONS
+        // ============================================
+
+        async function viewOwnerDocuments(ownerName) {
+            try {
+                // Fetch documents for this owner
+                const response = await fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(ownerName)}`);
+                const data = await response.json();
+
+                if (!data.success || data.documents.length === 0) {
+                    alert(`No documents found for ${ownerName}`);
+                    return;
+                }
+
+                // Show documents modal
+                showDocumentsModal(ownerName, data.documents);
+
+            } catch (error) {
+                console.error('Error fetching documents:', error);
+                alert('Failed to load documents. Please try again.');
+            }
+        }
+
+        function showDocumentsModal(ownerName, documents) {
+            // Create modal
+            const modal = document.createElement('div');
+            modal.id = 'documentsModal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            `;
+
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: #0a0e27;
+                border: 2px solid #64c8ff;
+                border-radius: 10px;
+                padding: 30px;
+                max-width: 900px;
+                max-height: 90vh;
+                overflow-y: auto;
+                width: 100%;
+            `;
+
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="color: #64c8ff; margin: 0;">Documents for ${ownerName}</h2>
+                    <button onclick="closeDocumentsModal()" style="background: rgba(255,100,100,0.2); border: 1px solid #ff6464;
+                                   color: #ff6464; padding: 8px 16px; border-radius: 5px; cursor: pointer;">
+                        ✕ Close
+                    </button>
+                </div>
+                <div style="color: #9aa5b1; margin-bottom: 20px;">
+                    ${documents.length} document${documents.length !== 1 ? 's' : ''} found
+                </div>
+            `;
+
+            documents.forEach(doc => {
+                const fileSize = (doc.file_size / 1024).toFixed(1);
+                const docType = doc.doc_type || 'unknown';
+                const uploadDate = new Date(doc.created_at).toLocaleDateString();
+
+                html += `
+                    <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
+                               border-radius: 8px; padding: 20px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                            <div style="flex: 1;">
+                                <div style="color: #64c8ff; font-size: 1.1em; font-weight: bold; margin-bottom: 5px;">
+                                    ${doc.filename}
+                                </div>
+                                <div style="color: #9aa5b1; font-size: 0.9em;">
+                                    Type: ${docType.toUpperCase()} • Size: ${fileSize} KB • Uploaded: ${uploadDate}
+                                </div>
+                                ${doc.owner_location ? `<div style="color: #9aa5b1; font-size: 0.9em;">Location: ${doc.owner_location}</div>` : ''}
+                                ${doc.total_enslaved ? `<div style="color: #ffaa00; font-size: 0.9em;">Enslaved: ${doc.total_enslaved}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="viewDocument('${doc.document_id}')"
+                                    style="background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff;
+                                           color: #64c8ff; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                                👁️ View Document
+                            </button>
+                            <button onclick="downloadDocument('${doc.document_id}')"
+                                    style="background: rgba(100, 255, 100, 0.2); border: 1px solid #64ff64;
+                                           color: #64ff64; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                                ⬇️ Download
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html;
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+
+            // Close on click outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeDocumentsModal();
+                }
+            });
+        }
+
+        function closeDocumentsModal() {
+            const modal = document.getElementById('documentsModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        function viewDocument(documentId) {
+            // Open document in new tab/window
+            window.open(`${API_BASE_URL}/api/documents/${documentId}/file`, '_blank');
+        }
+
+        function downloadDocument(documentId) {
+            // Download document
+            window.location.href = `${API_BASE_URL}/api/documents/${documentId}/file?download=true`;
+        }
+
     </script>
 
     <!-- Metadata Collection Modal -->
@@ -1715,5 +1756,6 @@ function skipMetadata() {
             </div>
         </div>
     </div>
+    </div> <!-- Close dashboard -->
 </body>
 </html>
