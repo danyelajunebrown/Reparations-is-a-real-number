@@ -1,0 +1,1905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reparations Accountability Platform - Enhanced</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            overflow-x: hidden;
+        }
+
+        /* Top Icon Bar */
+        .icon-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: rgba(10, 14, 39, 0.95);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            gap: 15px;
+            z-index: 1000;
+            border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+        }
+
+        .icon-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .system-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #64c8ff;
+        }
+
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64ff64;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .icon-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .icon-btn {
+            background: rgba(100, 200, 255, 0.1);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            color: #64c8ff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .icon-btn:hover {
+            background: rgba(100, 200, 255, 0.2);
+            border-color: rgba(100, 200, 255, 0.5);
+        }
+
+        .wallet-status {
+            padding: 8px 12px;
+            background: rgba(255, 100, 100, 0.1);
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            border-radius: 5px;
+            font-size: 11px;
+            color: #ff6464;
+        }
+
+        .wallet-status.connected {
+            background: rgba(100, 255, 100, 0.1);
+            border-color: rgba(100, 255, 100, 0.3);
+            color: #64ff64;
+        }
+
+        /* Main Dashboard */
+        .dashboard {
+            margin-top: 60px;
+            height: calc(100vh - 60px);
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+        }
+
+        /* Top Section: Document Processing Stats */
+        .stats-banner {
+            height: 80px;
+            background: linear-gradient(90deg, #1a1e3f 0%, #2a2e4f 100%);
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            padding: 0 40px;
+        }
+
+        .stat-box {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #64c8ff;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #9aa5b1;
+            margin-top: 5px;
+        }
+
+        /* Widget 1: Rotating Forest (Top Half) */
+        .widget-forest {
+            height: calc(50vh - 80px);
+            background: linear-gradient(180deg, #0a0e27 0%, #1a1e3f 100%);
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            position: relative;
+            overflow: hidden;
+            perspective: 1200px;
+        }
+
+        .forest-title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            z-index: 10;
+        }
+
+        .forest-title h1 {
+            font-size: 2em;
+            color: #64c8ff;
+            text-shadow: 0 0 20px rgba(100, 200, 255, 0.5);
+        }
+
+        .carousel-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .carousel {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            transform-style: preserve-3d;
+            transition: transform 1s ease;
+        }
+
+        .tree-card {
+            position: absolute;
+            width: 300px;
+            height: 350px;
+            background: rgba(30, 40, 70, 0.9);
+            border: 2px solid rgba(100, 200, 255, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+        }
+
+        .tree-card:hover {
+            border-color: rgba(100, 200, 255, 0.8);
+            box-shadow: 0 0 30px rgba(100, 200, 255, 0.4);
+            transform: scale(1.05) !important;
+        }
+
+        .tree-card.active {
+            border-color: #64ff64;
+            box-shadow: 0 0 40px rgba(100, 255, 100, 0.5);
+        }
+
+        .owner-name {
+            font-size: 1.3em;
+            color: #ff6464;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 100, 100, 0.3);
+            padding-bottom: 8px;
+        }
+
+        .tree-content {
+            max-height: 280px;
+            overflow-y: auto;
+            font-size: 0.85em;
+        }
+
+        .tree-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .tree-content::-webkit-scrollbar-track {
+            background: rgba(100, 200, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .tree-content::-webkit-scrollbar-thumb {
+            background: rgba(100, 200, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        .enslaved-person {
+            background: rgba(100, 200, 255, 0.1);
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 5px;
+            border-left: 3px solid #64c8ff;
+        }
+
+        .person-name {
+            font-weight: bold;
+            color: #64c8ff;
+        }
+
+        .person-relation {
+            color: #9aa5b1;
+            font-size: 0.9em;
+            font-style: italic;
+        }
+
+        .document-badge {
+            display: inline-block;
+            background: rgba(100, 255, 100, 0.2);
+            color: #64ff64;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin: 3px;
+        }
+
+        .carousel-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: #64c8ff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+
+        .control-btn:hover {
+            background: rgba(100, 200, 255, 0.4);
+        }
+
+        /* Bottom Row: 3 Widgets */
+        .bottom-row {
+            height: 50vh;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0;
+        }
+
+        .widget {
+            background: #1a1e3f;
+            border-right: 1px solid rgba(100, 200, 255, 0.2);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .widget:last-child {
+            border-right: none;
+        }
+
+        .widget h2 {
+            color: #64c8ff;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            padding-bottom: 10px;
+        }
+
+        /* Widget 2: Formula Calculator */
+        .formula-display {
+            background: rgba(30, 40, 70, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            font-family: 'Courier New', monospace;
+            margin-bottom: 20px;
+        }
+
+        .formula-line {
+            margin: 10px 0;
+            color: #e0e0e0;
+            cursor: pointer;
+            transition: all 0.2s;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .formula-line:hover {
+            background: rgba(100, 200, 255, 0.2);
+            color: #64c8ff;
+        }
+
+        .formula-component {
+            color: #ffaa00;
+            font-weight: bold;
+        }
+
+        .formula-result {
+            font-size: 1.2em;
+            color: #64ff64;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(100, 200, 255, 0.3);
+        }
+
+        /* Widget 3: Data Browser */
+        .owner-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .owner-item {
+            background: rgba(30, 40, 70, 0.6);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid #64c8ff;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .owner-item:hover {
+            background: rgba(30, 40, 70, 0.9);
+            border-left-color: #64ff64;
+            transform: translateX(5px);
+        }
+
+        .owner-item-name {
+            font-weight: bold;
+            color: #64c8ff;
+            margin-bottom: 5px;
+        }
+
+        .owner-item-details {
+            font-size: 0.85em;
+            color: #9aa5b1;
+        }
+
+        .owner-item-count {
+            color: #ffaa00;
+            font-weight: bold;
+        }
+
+        /* Widget 4: Console */
+        .console-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100% - 60px);
+        }
+
+        .console-output {
+            flex: 1;
+            background: rgba(10, 14, 39, 0.8);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            margin-bottom: 15px;
+        }
+
+        .console-line {
+            margin: 5px 0;
+            color: #9aa5b1;
+        }
+
+        .console-line.success {
+            color: #64ff64;
+        }
+
+        .console-line.error {
+            color: #ff6464;
+        }
+
+        .console-line.info {
+            color: #64c8ff;
+        }
+
+        .console-input-area {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .console-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .console-btn {
+            flex: 1;
+            padding: 10px;
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: #64c8ff;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .console-btn:hover {
+            background: rgba(100, 200, 255, 0.4);
+        }
+
+        .file-upload-label {
+            flex: 1;
+            padding: 10px;
+            background: rgba(255, 170, 0, 0.2);
+            border: 1px solid rgba(255, 170, 0, 0.5);
+            color: #ffaa00;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .file-upload-label:hover {
+            background: rgba(255, 170, 0, 0.4);
+        }
+
+        #fileUpload {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Icon Bar -->
+    <div class="icon-bar">
+        <div class="icon-bar-left">
+            <div class="system-title">âš–ï¸ Reparations Platform v2.0</div>
+            <div class="system-status">
+                <div class="status-indicator"></div>
+                <span id="systemStatus">Enhanced Processor Active</span>
+            </div>
+        </div>
+        <div class="icon-bar-right">
+            <span class="wallet-status" id="walletStatus">Not Connected</span>
+            <button class="icon-btn" id="connectWallet">ðŸ”— Connect Wallet</button>
+            <button class="icon-btn" onclick="exportData()">ðŸ“Š Export</button>
+            <button class="icon-btn" onclick="showHelp()">â“ Help</button>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="dashboard">
+        <!-- Stats Banner -->
+        <div class="stats-banner">
+            <div class="stat-box">
+                <div class="stat-number" id="statDocuments">0</div>
+                <div class="stat-label">Documents Processed</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statOwners">0</div>
+                <div class="stat-label">Slave Owners Identified</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statEnslaved">0</div>
+                <div class="stat-label">Enslaved People Counted</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="statReparations">$0</div>
+                <div class="stat-label">Total Reparations Calculated</div>
+            </div>
+        </div>
+
+        <!-- Widget 1: Rotating Forest of Family Trees -->
+        <div class="widget-forest">
+            <div class="forest-title">
+                <h1>ðŸ“œ Historical Records Database</h1>
+            </div>
+
+            <div class="carousel-container">
+                <div class="carousel" id="carousel">
+                    <!-- Trees will be dynamically generated -->
+                </div>
+            </div>
+
+            <div class="carousel-controls">
+                <button class="control-btn" onclick="rotateCarousel(-1)">â† Previous</button>
+                <button class="control-btn" id="autoRotateBtn" onclick="toggleAutoRotate()">â¸ Pause</button>
+                <button class="control-btn" onclick="rotateCarousel(1)">Next â†’</button>
+            </div>
+        </div>
+
+        <!-- Bottom Row: 3 Widgets -->
+        <div class="bottom-row">
+            <!-- Widget 2: Formula Calculator -->
+            <div class="widget">
+                <h2>Reparations Formula</h2>
+                <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
+                    Calculation methodology based on economic analysis
+                </p>
+
+                <div class="formula-display" id="formulaDisplay">
+                    <div class="formula-line">
+                        <span class="formula-component">Wage Theft</span> = Count Ã— $120/day Ã— Years Ã— 300 days Ã— inflation
+                    </div>
+
+                    <div class="formula-line">
+                        <span class="formula-component">Human Dignity Damages</span> = Count Ã— $15,000 Ã— Years Ã— 1.5
+                    </div>
+
+                    <div class="formula-line">
+                        <span class="formula-component">Profit Share</span> = Count Ã— $300/year Ã— Years Ã— inflation Ã— 40%
+                    </div>
+
+                    <div class="formula-line">
+                        <span class="formula-component">Compound Interest (4%)</span> = Subtotal Ã— (1.04^224 - 1)
+                    </div>
+
+                    <div class="formula-line">
+                        <span class="formula-component">Delayed Justice Penalty (2%)</span> = Subtotal Ã— 2% Ã— 224 years
+                    </div>
+
+                    <div class="formula-result">
+                        <strong>Average Per Person:</strong>
+                        <div style="font-size: 1.3em; margin-top: 5px;">$2,200,000</div>
+                        <div style="font-size: 0.8em; color: #9aa5b1; margin-top: 5px;">
+                            Based on 25 years enslavement
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Widget 3: Data Browser -->
+            <div class="widget">
+                <h2>Documented Owners</h2>
+                <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
+                    Click to view details â€¢ Green = verified
+                </p>
+
+                <div class="owner-list" id="ownerList">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+          <!-- Widget 4: LLM Chat Interface -->
+<div class="widget">
+    <h2>ðŸ¤– Research Assistant</h2>
+    <div style="display: flex; flex-direction: column; height: calc(100% - 60px);">
+        <!-- Chat Messages -->
+        <div id="chatMessages" style="flex: 1; overflow-y: auto; padding: 15px; background: rgba(10, 14, 39, 0.8); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px; margin-bottom: 15px;">
+            <div style="color: #64c8ff; margin-bottom: 10px;">
+                ðŸ’¬ Ask me about the database: owners, documents, enslaved people, families, or statistics.
+            </div>
+        </div>
+        
+        <!-- Chat Input -->
+        <div style="display: flex; gap: 10px;">
+            <input
+                type="text"
+                id="chatInput"
+                placeholder="Ask about James Hopewell, family structures, statistics..."
+                style="flex: 1; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;"
+                onkeypress="if(event.key === 'Enter') sendChatMessage()"
+            />
+            <button
+                onclick="sendChatMessage()"
+                class="console-btn"
+                style="padding: 10px 20px;"
+            >
+                Send
+            </button>
+        </div>
+
+       <!-- Multi-Page Upload Ribbon -->
+<div style="margin-top: 15px; padding: 15px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px;">
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+        <span style="color: #64c8ff; font-size: 0.9em;">ðŸ“„ Upload Multi-Page Document</span>
+        <input
+            type="file"
+            id="multiPageFileInput"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.heic"
+            style="display: none;"
+            onchange="handleMultiPageFileSelection()"
+        />
+        <button
+            onclick="document.getElementById('multiPageFileInput').click()"
+            class="console-btn"
+            style="padding: 6px 12px; font-size: 0.85em;"
+        >
+            Select Pages
+        </button>
+    </div>
+    <div style="color: #9aa5b1; font-size: 0.75em; font-style: italic;">
+        Tip: Select all pages of one document - metadata entered once for all pages
+    </div>
+</div>
+
+            <!-- Selected Files Display -->
+            <div id="selectedFilesList" style="max-height: 100px; overflow-y: auto; font-size: 0.8em; color: #9aa5b1;">
+                <div style="font-style: italic;">No files selected</div>
+            </div>
+
+            <!-- Upload Progress -->
+            <div id="uploadProgress" style="display: none; margin-top: 10px;">
+                <div style="background: rgba(100, 200, 255, 0.2); height: 20px; border-radius: 10px; overflow: hidden;">
+                    <div id="uploadProgressBar" style="background: #64c8ff; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <div id="uploadStatus" style="color: #64c8ff; font-size: 0.8em; margin-top: 5px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script>
+        // ============================================
+        // API CONFIGURATION
+        // ============================================
+
+        // Determine API base URL based on environment
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        console.log('API Base URL:', API_BASE_URL);
+
+        // ============================================
+        // AUTO-PING BACKEND TO PREVENT COLD START
+        // ============================================
+        // Ping backend immediately on page load to wake it up
+        // This reduces wait time for first user query
+        (async function pingBackend() {
+            try {
+                console.log('Pinging backend to wake it up...');
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    console.log('Backend is awake and ready!');
+                } else {
+                    console.log('Backend responded but may not be fully ready');
+                }
+            } catch (error) {
+                console.log('Backend may be waking up (cold start):', error.message);
+            }
+        })();
+
+        // ============================================
+        // CORE SYSTEM INITIALIZATION (Robust + Fallbacks)
+        // ============================================
+
+        // Document storage
+        let processedDocuments = [];
+        let ownersData = [];
+        
+        // Stats
+        let stats = {
+            documents: 0,
+            owners: 0,
+            enslaved: 0,
+            reparations: 0
+        };
+
+        // Small utility: append messages to console output
+        function addConsoleMessage(message, level = 'info') {
+            const out = document.getElementById('consoleOutput');
+            if (!out) return;
+            const div = document.createElement('div');
+            div.className = 'console-line ' + (level === 'info' ? 'info' : (level === 'success' ? 'success' : (level === 'error' ? 'error' : '')));
+            div.textContent = message;
+            out.appendChild(div);
+            out.scrollTop = out.scrollHeight;
+            console[level === 'error' ? 'error' : 'log']('[console]', message);
+        }
+
+        function clearConsole() {
+            const out = document.getElementById('consoleOutput');
+            if (!out) return;
+            out.innerHTML = '';
+        }
+
+        // Initialize on page load - API-ONLY MODE
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                addConsoleMessage('✅ Initializing frontend (API mode)...', 'info');
+                
+                // All processing happens via API - no need for local calculators
+                addConsoleMessage('✅ Frontend initialized', 'success');
+                document.getElementById('systemStatus').textContent = 'API Connected';
+
+                // Load sample data
+                await loadSampleData();
+                
+                // Initialize UI
+                initializeCarousel();
+                populateOwnerList();
+                updateStatsDisplay();
+                startAutoRotate();
+                
+                addConsoleMessage('✅ Ready for document processing via API', 'success');
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                addConsoleMessage('⚠️ Error: ' + (error && error.message ? error.message : error), 'error');
+                document.getElementById('systemStatus').textContent = 'System Error';
+            }
+        });
+
+        // ============================================
+        // SAMPLE DATA
+        // ============================================
+        async function loadSampleData() {
+            // Load James Hopewell as example
+            const sampleOwner = {
+                name: "James Hopewell",
+                dates: "Will: 2/14/1816, Probate: 12/23/1817",
+                location: "St. Mary's County, MD",
+                deathYear: 1816,
+                documents: [{
+                    type: 'will',
+                    description: '1816 Last Will and Testament',
+                    ipfsHash: 'Qm7a8f94b2c8e...',
+                    ocrConfidence: 85,
+                    processed: true
+                }],
+                enslaved: [
+                    {name: "Minna", relation: "Mother of 7 children", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "John", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "Harriett", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "Sandy", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "Henry", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "George", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "Charlotte", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"},
+                    {name: "Jesse", relation: "Child of Minna", bequeathedTo: "Henrietta Rebecca Hopewell"}
+                ],
+                count: 32,
+                reparations: 70416000,
+                confidence: { level: 'HIGH', score: 85 }
+            };
+            
+            ownersData = [sampleOwner];
+            stats.owners = 1;
+            stats.documents = 1;
+            stats.enslaved = 32;
+            stats.reparations = 70416000;
+            
+            addConsoleMessage('âœ“ Sample data loaded: James Hopewell (32 enslaved people)', 'success');
+        }
+
+// ============================================
+// MULTI-PAGE DOCUMENT UPLOAD (CLEAN VERSION)
+// ============================================
+
+// Check if already declared, if not declare it
+if (typeof selectedDocumentFiles === 'undefined') {
+    var selectedDocumentFiles = [];
+}
+
+// Check if DOCUMENT_TYPES already exists
+if (typeof DOCUMENT_TYPES === 'undefined') {
+    var DOCUMENT_TYPES = [
+        { value: 'will', label: 'Will' },
+        { value: 'probate', label: 'Probate Record' },
+        { value: 'census', label: 'Census Record' },
+        { value: 'slave_schedule', label: 'Slave Schedule' },
+        { value: 'estate_inventory', label: 'Estate Inventory' },
+        { value: 'correspondence', label: 'Correspondence/Letter' },
+        { value: 'deed', label: 'Property Deed' },
+        { value: 'other', label: 'Other' }
+    ];
+}
+
+function handleMultiPageFileSelection() {
+    const fileInput = document.getElementById('multiPageFileInput');
+    
+    if (!fileInput || !fileInput.files) {
+        console.error('File input not found');
+        return;
+    }
+    
+    const files = Array.from(fileInput.files);
+    
+    if (files.length === 0) {
+        console.log('No files selected');
+        return;
+    }
+    
+    console.log('Selected ' + files.length + ' files');
+    selectedDocumentFiles = files;
+    showDocumentMetadataForm(files);
+}
+// Enhanced Multi-Page Upload with Dynamic Fields
+
+function showDocumentMetadataForm(files) {
+    const existingModal = document.getElementById('documentMetadataModal');
+    if (existingModal) existingModal.remove();
+    const modal = document.createElement('div');
+    modal.id = 'documentMetadataModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;';
+    
+    modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
+        '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
+        '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
+        files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">ðŸ“„ Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
+        '</div>' +
+        '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 12px;">' +
+        
+        // Document Type (determines which fields show)
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Document Type *</label>' +
+        '<select id="docType" required onchange="updateFieldsBasedOnDocType()" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;">' +
+        '<option value="">Select type...</option>' +
+        '<option value="will">Will</option>' +
+        '<option value="probate">Probate Record</option>' +
+        '<option value="census">Census Record</option>' +
+        '<option value="slave_schedule">Slave Schedule</option>' +
+        '<option value="estate_inventory">Estate Inventory</option>' +
+        '<option value="correspondence">Correspondence/Letter</option>' +
+        '<option value="deed">Property Deed</option>' +
+        '<option value="other">Other</option>' +
+        '</select>' +
+        '</div>' +
+        
+        // SECTION 1: Always visible fields
+        '<div id="alwaysVisibleFields">' +
+        
+        // Owner Name
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Slave Owner Name *</label>' +
+        '<input type="text" id="ownerName" required placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        // SECTION 2: Census/Slave Schedule fields (hidden by default)
+        '<div id="censusFields" style="display: none;">' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Census Year *</label>' +
+        '<input type="number" id="censusYear" placeholder="e.g., 1850" min="1790" max="1870" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">City</label>' +
+        '<input type="text" id="censusCity" placeholder="e.g., Richmond" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">County *</label>' +
+        '<input type="text" id="censusCounty" placeholder="e.g., Henrico County" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">State *</label>' +
+        '<input type="text" id="censusState" placeholder="e.g., Virginia" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        // SECTION 3: Will/Probate fields (hidden by default)
+        '<div id="genealogyFields" style="display: none;">' +
+        
+        '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Birth Year</label>' +
+        '<input type="number" id="birthYear" placeholder="e.g., 1780" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Death Year</label>' +
+        '<input type="number" id="deathYear" placeholder="e.g., 1825" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Location (Full)</label>' +
+        '<input type="text" id="location" placeholder="e.g., Prince George\'s County, Maryland" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Spouse(s) <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="spouses" placeholder="e.g., Angelica Chesley, Mary Smith" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Children <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="children" placeholder="e.g., John Hopewell, Sarah Hopewell, Thomas Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Parents <span style="color: #9aa5b1; font-size: 0.85em;">(comma-separated)</span></label>' +
+        '<input type="text" id="parents" placeholder="e.g., William Hopewell, Margaret Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        
+        '</div>' +
+        
+        '<div style="display: flex; gap: 10px; margin-top: 15px;">' +
+        '<button type="submit" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;">Upload Document</button>' +
+        '<button type="button" onclick="closeDocumentMetadataForm()" style="flex: 1; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; border-radius: 5px; cursor: pointer;">Cancel</button>' +
+        '</div>' +
+        '</form>' +
+        '</div>';
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('documentMetadataForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        uploadMultiPageDocument();
+    });
+}
+
+// Show/hide fields based on document type
+function updateFieldsBasedOnDocType() {
+    const docType = document.getElementById('docType').value;
+    const censusFields = document.getElementById('censusFields');
+    const genealogyFields = document.getElementById('genealogyFields');
+    
+    if (docType === 'census' || docType === 'slave_schedule') {
+        // Show census fields, hide genealogy
+        censusFields.style.display = 'block';
+        genealogyFields.style.display = 'none';
+        
+        // Make census fields required
+        document.getElementById('censusYear').required = true;
+        document.getElementById('censusCounty').required = true;
+        document.getElementById('censusState').required = true;
+    } else {
+        // Show genealogy fields, hide census
+        censusFields.style.display = 'none';
+        genealogyFields.style.display = 'block';
+        
+        // Remove census required
+        document.getElementById('censusYear').required = false;
+        document.getElementById('censusCounty').required = false;
+        document.getElementById('censusState').required = false;
+    }
+}
+
+// Collect metadata based on document type
+async function uploadMultiPageDocument() {
+    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ No files selected.');
+        closeDocumentMetadataForm();
+        return;
+    }
+    
+    const docType = document.getElementById('docType').value;
+    const ownerName = document.getElementById('ownerName').value;
+    
+    if (!docType) {
+        alert('Please select a document type');
+        return;
+    }
+    
+    if (!ownerName || ownerName.trim() === '') {
+        alert('Please enter the slave owner name');
+        return;
+    }
+    
+    let metadata = {
+        documentType: docType,
+        ownerName: ownerName
+    };
+    
+    // Add type-specific fields
+    if (docType === 'census' || docType === 'slave_schedule') {
+        metadata.censusYear = document.getElementById('censusYear').value;
+        metadata.city = document.getElementById('censusCity').value;
+        metadata.county = document.getElementById('censusCounty').value;
+        metadata.state = document.getElementById('censusState').value;
+        metadata.location = (metadata.city ? metadata.city + ', ' : '') + metadata.county + ', ' + metadata.state;
+    } else {
+        metadata.birthYear = document.getElementById('birthYear').value;
+        metadata.deathYear = document.getElementById('deathYear').value;
+        metadata.location = document.getElementById('location').value;
+        metadata.spouses = document.getElementById('spouses').value;
+        metadata.children = document.getElementById('children').value;
+        metadata.parents = document.getElementById('parents').value;
+    }
+    
+    // Close modal but DON'T clear files yet (we need them for upload!)
+    closeDocumentMetadataForm(false);
+
+    console.log('DEBUG: selectedDocumentFiles at upload time:', selectedDocumentFiles);
+    console.log('DEBUG: selectedDocumentFiles.length:', selectedDocumentFiles.length);
+
+    addChatMessage('assistant', 'ðŸ"¤ Uploading ' + selectedDocumentFiles.length + '-page document...');
+
+    if (selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ Error: No files selected. Please select files first.');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+
+        for (let i = 0; i < selectedDocumentFiles.length; i++) {
+            console.log('DEBUG: Appending file', i, ':', selectedDocumentFiles[i].name);
+            formData.append('pages', selectedDocumentFiles[i]);
+        }
+        
+        // Add all metadata
+        Object.keys(metadata).forEach(key => {
+            formData.append(key, metadata[key] || '');
+        });
+        
+        formData.append('pageCount', selectedDocumentFiles.length);
+        
+        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            addChatMessage('assistant', 'âœ… Document uploaded! ID: ' + result.documentId);
+        } else {
+            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
+        }
+        
+    } catch (error) {
+        addChatMessage('assistant', 'âŒ Error: ' + error.message);
+    } finally {
+        selectedDocumentFiles = [];
+    }
+}
+
+function closeDocumentMetadataForm(clearFiles = true) {
+    const modal = document.getElementById('documentMetadataModal');
+    if (modal) {
+        modal.remove();
+    }
+    // Only clear files if explicitly requested (when canceling, not when submitting)
+    if (clearFiles) {
+        selectedDocumentFiles = [];
+        const fileInput = document.getElementById('multiPageFileInput');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+    }
+}
+
+async function uploadMultiPageDocument() {
+    // Validation
+    if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ No files selected. Please select files first.');
+        closeDocumentMetadataForm();
+        return;
+    }
+    
+    const metadata = {
+        documentType: document.getElementById('docType').value,
+        ownerName: document.getElementById('ownerName').value,
+        birthYear: document.getElementById('birthYear').value,
+        deathYear: document.getElementById('deathYear').value,
+        location: document.getElementById('location').value
+    };
+    
+    // Validate required fields
+    if (!metadata.documentType) {
+        alert('Please select a document type');
+        return;
+    }
+    
+    if (!metadata.ownerName || metadata.ownerName.trim() === '') {
+        alert('Please enter the slave owner name');
+        return;
+    }
+
+    closeDocumentMetadataForm(false);  // CRITICAL: Don't clear files yet!
+
+    addChatMessage('assistant', 'ðŸ"¤ Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
+    
+    try {
+        const formData = new FormData();
+        
+        // Add all files
+        for (let i = 0; i < selectedDocumentFiles.length; i++) {
+            formData.append('pages', selectedDocumentFiles[i]);
+            console.log('Adding file ' + (i + 1) + ': ' + selectedDocumentFiles[i].name);
+        }
+        
+        // Add metadata
+        formData.append('documentType', metadata.documentType);
+        formData.append('ownerName', metadata.ownerName);
+        formData.append('birthYear', metadata.birthYear || '');
+        formData.append('deathYear', metadata.deathYear || '');
+        formData.append('location', metadata.location || '');
+        formData.append('pageCount', selectedDocumentFiles.length);
+        
+        console.log('Sending upload request...');
+        
+        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        
+        const result = await response.json();
+        console.log('Response data:', result);
+        
+        if (result.success) {
+            addChatMessage('assistant', 'âœ… Document uploaded!\n\nðŸ“„ ID: ' + result.documentId + '\nðŸ“‘ Pages: ' + result.pageCount + '\nâ›“ï¸ Enslaved: ' + (result.totalEnslaved || 0));
+            
+            // Trigger metadata collection if function exists
+            if (result.documentId && result.documentId !== 'N/A') {
+                setTimeout(function() {
+                    if (typeof openMetadataModal === 'function') {
+                        openMetadataModal(result.documentId, '', metadata.ownerName);
+                    }
+                }, 1000);
+            }
+        } else {
+            addChatMessage('assistant', 'âŒ Upload failed: ' + (result.message || result.error));
+        }
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        addChatMessage('assistant', 'âŒ Upload error: ' + error.message);
+    } finally {
+        selectedDocumentFiles = [];
+    }
+}
+        // ============================================
+        // UI UPDATES
+        // ============================================
+        
+        function refreshUI() {
+            refreshCarousel();
+            populateOwnerList();
+            updateStatsDisplay();
+        }
+
+        function updateStatsDisplay() {
+            document.getElementById('statDocuments').textContent = stats.documents;
+            document.getElementById('statOwners').textContent = stats.owners;
+            document.getElementById('statEnslaved').textContent = stats.enslaved.toLocaleString();
+            document.getElementById('statReparations').textContent = '$' + (stats.reparations / 1000000).toFixed(1) + 'M';
+        }
+
+        // ============================================
+        // CAROUSEL
+        // ============================================
+        
+        let currentRotation = 0;
+        let autoRotateInterval;
+        let isAutoRotating = true;
+
+        function initializeCarousel() {
+            const carousel = document.getElementById('carousel');
+            carousel.innerHTML = '';
+            
+            if (ownersData.length === 0) return;
+            
+            const angleStep = 360 / ownersData.length;
+
+            ownersData.forEach((owner, index) => {
+                const card = document.createElement('div');
+                card.className = 'tree-card';
+                
+                const angle = angleStep * index;
+                const radius = 500;
+                card.style.transform = `rotateY(${angle}deg) translateZ(${radius}px)`;
+                
+                let content = `
+                    <div class="owner-name">${owner.name}</div>
+                    <div class="tree-content">
+                        <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 10px;">
+                            ${owner.location || 'Location unknown'}<br>
+                            ${owner.deathYear ? 'Died: ' + owner.deathYear : ''}
+                        </div>
+                `;
+                
+                if (owner.documents && owner.documents.length > 0) {
+                    content += '<div style="margin-bottom: 10px;">';
+                    owner.documents.forEach(doc => {
+                        content += `<span class="document-badge">${(doc.type || '').toUpperCase()}</span>`;
+                    });
+                    content += '</div>';
+                }
+                
+                if (owner.enslaved && owner.enslaved.length > 0) {
+                    owner.enslaved.slice(0, 6).forEach(person => {
+                        content += `
+                            <div class="enslaved-person">
+                                <span class="person-name">${person.name}</span>
+                                ${person.relation ? `<br><span class="person-relation">${person.relation}</span>` : ''}
+                            </div>
+                        `;
+                    });
+                    if (owner.enslaved.length > 6) {
+                        content += `<div style="text-align: center; color: #9aa5b1;">...and ${owner.enslaved.length - 6} more</div>`;
+                    }
+                }
+                
+                content += `
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(100, 200, 255, 0.3);">
+                        <div style="color: #ffaa00; font-weight: bold;">Total: ${owner.count || 0} enslaved</div>
+                        <div style="color: #64c8ff;">Reparations: $${(((owner.reparations || 0) / 1000000)).toFixed(1)}M</div>
+                        <button onclick="viewOwnerDocuments('${owner.name}')"
+                                style="margin-top: 10px; padding: 8px 12px; background: rgba(100, 200, 255, 0.2);
+                                       border: 1px solid #64c8ff; color: #64c8ff; border-radius: 5px;
+                                       cursor: pointer; width: 100%; font-size: 0.9em;">
+                            📄 View Documents
+                        </button>
+                    </div>
+                `;
+
+                content += '</div>';
+                card.innerHTML = content;
+                carousel.appendChild(card);
+            });
+        }
+
+        function refreshCarousel() {
+            // Simple refresh: re-init the carousel for current data
+            initializeCarousel();
+        }
+
+        function rotateCarousel(direction = 1) {
+            currentRotation += direction * 360 / Math.max(1, ownersData.length);
+            const carousel = document.getElementById('carousel');
+            carousel.style.transform = `translateZ(-500px) rotateY(${currentRotation}deg)`;
+        }
+
+        function startAutoRotate() {
+            if (autoRotateInterval) clearInterval(autoRotateInterval);
+            autoRotateInterval = setInterval(() => {
+                if (isAutoRotating) rotateCarousel(1);
+            }, 4000);
+            isAutoRotating = true;
+            document.getElementById('autoRotateBtn').textContent = 'â¸ Pause';
+        }
+
+        function toggleAutoRotate() {
+            isAutoRotating = !isAutoRotating;
+            document.getElementById('autoRotateBtn').textContent = isAutoRotating ? 'â¸ Pause' : 'â–¶ Play';
+        }
+
+        // ============================================
+        // OWNER LIST
+        // ============================================
+        function populateOwnerList() {
+            const list = document.getElementById('ownerList');
+            list.innerHTML = '';
+            if (!ownersData || ownersData.length === 0) {
+                list.innerHTML = '<div style="color:#9aa5b1;">No documented owners yet.</div>';
+                return;
+            }
+            ownersData.forEach(owner => {
+                const item = document.createElement('div');
+                item.className = 'owner-item';
+                item.innerHTML = `
+                    <div class="owner-item-name">${owner.name}</div>
+                    <div class="owner-item-details">${owner.location || 'Location unknown'} â€¢ <span class="owner-item-count">${owner.count || 0}</span> enslaved</div>
+                `;
+                item.onclick = () => {
+                    alert(`${owner.name}\nLocation: ${owner.location}\nCount: ${owner.count || 0}`);
+                };
+                list.appendChild(item);
+            });
+        }
+
+        // ============================================
+        // MISC ACTIONS
+        // ============================================
+        function exportData() {
+            const data = {
+                owners: ownersData,
+                stats: stats,
+                processedDocuments: processedDocuments
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'reparations-export-' + Date.now() + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            addConsoleMessage('âœ“ Export started', 'success');
+        }
+
+        function showHelp() {
+            alert('Upload documents (PDF / images / CSV). For multiple files you can apply the same metadata to all or enter metadata per file. The system will attempt to use a real document processor if available; otherwise it runs a mock for testing.');
+        }
+        // ============================================
+// LLM CHAT INTERFACE
+// ============================================
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const messagesDiv = document.getElementById('chatMessages');
+    const query = input.value.trim();
+    
+    if (!query) return;
+    
+    // Add user message
+    addChatMessage('user', query);
+    input.value = '';
+    
+    // Add loading indicator
+    const loadingId = 'loading-' + Date.now();
+    addChatMessage('assistant', 'Searching database... (First request may take 60 seconds if backend is sleeping)', loadingId);
+    
+    try {
+        // Call your backend with 90 second timeout for Render cold starts
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 90000);
+
+        const response = await fetch(`${API_BASE_URL}/api/llm-query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: query,
+                context: { currentDatabase: 'reparations' }
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        
+        const data = await response.json();
+        
+        // Remove loading message
+        const loadingMsg = document.getElementById(loadingId);
+        if (loadingMsg) loadingMsg.remove();
+        
+        if (data.success) {
+            addChatMessage('assistant', data.response);
+            
+            // Update the big window with evidence if provided
+            if (data.evidence) {
+                updateEvidenceDisplay(data.evidence);
+            }
+        } else {
+            addChatMessage('assistant', 'âŒ Error: ' + data.error);
+        }
+        
+    } catch (error) {
+        // Remove loading message
+        const loadingMsg = document.getElementById(loadingId);
+        if (loadingMsg) loadingMsg.remove();
+        
+        // Better error messages for Render cold starts
+        if (error.name === 'AbortError') {
+            addChatMessage('assistant', 'Request timed out after 90 seconds. Backend may be waking up (Render free tier). Please wait and try again.');
+        } else if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('network') || error.message.includes('connection was lost'))) {
+            addChatMessage('assistant', 'Backend is waking up from sleep (Render free tier). This takes 30-60 seconds. Please wait and retry your query.');
+        } else {
+            addChatMessage('assistant', `Connection error: ${error.message || 'Unable to reach backend'} - Backend may be down.`);
+        }
+    }
+}
+
+function addChatMessage(role, content, id) {
+    const messagesDiv = document.getElementById('chatMessages');
+    const msgDiv = document.createElement('div');
+    if (id) msgDiv.id = id;
+    
+    msgDiv.style.marginBottom = '10px';
+    msgDiv.style.padding = '8px 12px';
+    msgDiv.style.borderRadius = '8px';
+    msgDiv.style.maxWidth = '90%';
+    
+    if (role === 'user') {
+        msgDiv.style.background = 'rgba(100, 200, 255, 0.2)';
+        msgDiv.style.marginLeft = 'auto';
+        msgDiv.style.textAlign = 'right';
+        msgDiv.style.color = '#64c8ff';
+    } else {
+        msgDiv.style.background = 'rgba(30, 40, 70, 0.6)';
+        msgDiv.style.marginRight = 'auto';
+        msgDiv.style.color = '#e0e0e0';
+    }
+    
+    msgDiv.textContent = content;
+    messagesDiv.appendChild(msgDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function updateEvidenceDisplay(evidence) {
+    // This will update the top carousel/forest area to show evidence
+    // For now, just log it - you can expand this later
+    console.log('Evidence to display:', evidence);
+    addConsoleMessage('ðŸ“‹ Evidence displayed in main window', 'info');
+}
+
+// ============================================
+// MULTI-FILE UPLOAD FUNCTIONALITY
+// ============================================
+
+let selectedFiles = [];
+
+function handleMultiFileSelection() {
+    const fileInput = document.getElementById('multiFileInput');
+    const filesList = document.getElementById('selectedFilesList');
+    const fileCount = document.getElementById('fileCount');
+    const uploadBtn = document.getElementById('uploadFilesBtn');
+
+    selectedFiles = Array.from(fileInput.files);
+
+    if (selectedFiles.length === 0) {
+        filesList.innerHTML = '<div style="font-style: italic;">No files selected</div>';
+        fileCount.textContent = '0';
+        uploadBtn.disabled = true;
+        return;
+    }
+
+    // Display selected files
+    filesList.innerHTML = selectedFiles.map((file, index) => `
+        <div style="padding: 4px 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(100, 200, 255, 0.1);">
+            <span>ðŸ“„ ${file.name} (${formatFileSize(file.size)})</span>
+            <button onclick="removeFile(${index})" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.4); color: #ff6464; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.7em;">Remove</button>
+        </div>
+    `).join('');
+
+    fileCount.textContent = selectedFiles.length;
+    uploadBtn.disabled = false;
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+
+    // Update the file input
+    const fileInput = document.getElementById('multiFileInput');
+    const dt = new DataTransfer();
+    selectedFiles.forEach(file => dt.items.add(file));
+    fileInput.files = dt.files;
+
+    handleMultiFileSelection();
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+async function uploadSelectedFiles() {
+    if (selectedFiles.length === 0) {
+        addChatMessage('assistant', 'âŒ No files selected for upload.');
+        return;
+    }
+
+    const uploadProgress = document.getElementById('uploadProgress');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const uploadBtn = document.getElementById('uploadFilesBtn');
+
+    uploadProgress.style.display = 'block';
+    uploadBtn.disabled = true;
+
+    let successCount = 0;
+    let failCount = 0;
+    const uploadedDocs = []; // Track successfully uploaded documents
+
+    addChatMessage('assistant', `ðŸ“¤ Starting upload of ${selectedFiles.length} file(s)...`);
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const progress = Math.round(((i + 1) / selectedFiles.length) * 100);
+
+        uploadProgressBar.style.width = progress + '%';
+        uploadStatus.textContent = `Uploading ${i + 1} of ${selectedFiles.length}: ${file.name}`;
+
+        try {
+            const formData = new FormData();
+            formData.append('document', file);
+
+            // Add default metadata for will documents
+            formData.append('documentType', 'will');
+            formData.append('ownerName', 'Unknown Owner'); // Can be updated later
+            formData.append('location', 'United States');
+
+            const response = await fetch(`${API_BASE_URL}/api/upload-document`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                successCount++;
+                const docId = result.result?.documentId || 'N/A';
+                addChatMessage('assistant', `âœ… ${file.name} uploaded successfully (ID: ${docId})`);
+
+                // Track for metadata collection
+                uploadedDocs.push({
+                    documentId: docId,
+                    fileName: file.name,
+                    ocrText: result.result?.stages?.ocr?.text || '',
+                    documentType: 'will'
+                });
+            } else {
+                failCount++;
+                addChatMessage('assistant', `âŒ ${file.name} failed: ${result.message || 'Unknown error'}`);
+            }
+
+        } catch (error) {
+            failCount++;
+            addChatMessage('assistant', `âŒ ${file.name} failed: ${error.message}`);
+        }
+
+        // Small delay between uploads to avoid overwhelming the server
+        if (i < selectedFiles.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+
+    // Final status
+    uploadProgressBar.style.width = '100%';
+    uploadStatus.textContent = `Upload complete: ${successCount} succeeded, ${failCount} failed`;
+
+    addChatMessage('assistant', `ðŸŽ‰ Upload complete! ${successCount} file(s) uploaded successfully, ${failCount} failed.`);
+
+    // Reset after 3 seconds
+    setTimeout(() => {
+        uploadProgress.style.display = 'none';
+        uploadProgressBar.style.width = '0%';
+        selectedFiles = [];
+        document.getElementById('multiFileInput').value = '';
+        handleMultiFileSelection();
+    }, 3000);
+
+    // Refresh stats
+    if (successCount > 0) {
+        addConsoleMessage(`${successCount} document(s) added to the American dataset`, 'success');
+
+        // Trigger metadata collection dialogue
+        if (uploadedDocs.length > 0) {
+            setTimeout(() => {
+                showMetadataDialogue(uploadedDocs);
+            }, 3000);
+        }
+    }
+}
+
+// ============================================
+// METADATA COLLECTION DIALOGUE
+// ============================================
+
+let pendingDocuments = []; // Documents waiting for metadata
+let currentMetadataIndex = 0;
+
+function showMetadataDialogue(uploadedDocuments) {
+    pendingDocuments = uploadedDocuments;
+    currentMetadataIndex = 0;
+
+    if (pendingDocuments.length === 0) return;
+
+    // Show the modal
+    document.getElementById('metadataModal').style.display = 'flex';
+    loadNextMetadataForm();
+}
+
+function loadNextMetadataForm() {
+    if (currentMetadataIndex >= pendingDocuments.length) {
+        closeMetadataDialogue();
+        addChatMessage('assistant', 'âœ… All metadata collected! Processing relationships in background...');
+        return;
+    }
+
+    const doc = pendingDocuments[currentMetadataIndex];
+    document.getElementById('metadataDocumentName').textContent = doc.fileName;
+    document.getElementById('metadataProgress').textContent = `Document ${currentMetadataIndex + 1} of ${pendingDocuments.length}`;
+
+    // Clear form
+    document.getElementById('ownerFullName').value = '';
+    document.getElementById('ownerBirthYear').value = '';
+    document.getElementById('ownerDeathYear').value = '';
+    document.getElementById('ownerGender').value = '';
+    document.getElementById('ownerLocations').value = '';
+    document.getElementById('ownerSpouses').value = '';
+    document.getElementById('ownerChildren').value = '';
+    document.getElementById('ownerParents').value = '';
+    document.getElementById('ownerNotes').value = '';
+}
+
+function closeMetadataDialogue() {
+    document.getElementById('metadataModal').style.display = 'none';
+    pendingDocuments = [];
+    currentMetadataIndex = 0;
+}
+
+async function submitMetadata() {
+    const doc = pendingDocuments[currentMetadataIndex];
+
+    const metadata = {
+        documentId: doc.documentId,
+        fileName: doc.fileName,
+        fullName: document.getElementById('ownerFullName').value.trim(),
+        birthYear: parseInt(document.getElementById('ownerBirthYear').value) || null,
+        deathYear: parseInt(document.getElementById('ownerDeathYear').value) || null,
+        gender: document.getElementById('ownerGender').value || null,
+        locations: document.getElementById('ownerLocations').value.trim(),
+        spouses: document.getElementById('ownerSpouses').value.trim(),
+        children: document.getElementById('ownerChildren').value.trim(),
+        parents: document.getElementById('ownerParents').value.trim(),
+        notes: document.getElementById('ownerNotes').value.trim()
+    };
+
+    if (!metadata.fullName) {
+        alert('Please enter the owner\'s full name');
+        return;
+    }
+
+    try {
+        // Send metadata to backend
+        const response = await fetch(`${API_BASE_URL}/api/process-individual-metadata`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(metadata)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            addChatMessage('assistant', `âœ… Metadata saved for ${metadata.fullName} (ID: ${result.individualId})`);
+
+            // Show related individuals found
+            if (result.relatedIndividuals && result.relatedIndividuals.length > 0) {
+                const names = result.relatedIndividuals.map(r => r.name).join(', ');
+                addChatMessage('assistant', `ðŸ” Found ${result.relatedIndividuals.length} related individual(s): ${names}`);
+            }
+
+            currentMetadataIndex++;
+            loadNextMetadataForm();
+        } else {
+            addChatMessage('assistant', `âŒ Failed to save metadata: ${result.error}`);
+        }
+    } catch (error) {
+        addChatMessage('assistant', `âŒ Error saving metadata: ${error.message}`);
+    }
+}
+
+function skipMetadata() {
+    currentMetadataIndex++;
+    loadNextMetadataForm();
+}
+
+        // ============================================
+        // DOCUMENT VIEWING FUNCTIONS
+        // ============================================
+
+        async function viewOwnerDocuments(ownerName) {
+            try {
+                // Fetch documents for this owner
+                const response = await fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(ownerName)}`);
+                const data = await response.json();
+
+                if (!data.success || data.documents.length === 0) {
+                    alert(`No documents found for ${ownerName}`);
+                    return;
+                }
+
+                // Show documents modal
+                showDocumentsModal(ownerName, data.documents);
+
+            } catch (error) {
+                console.error('Error fetching documents:', error);
+                alert('Failed to load documents. Please try again.');
+            }
+        }
+
+        function showDocumentsModal(ownerName, documents) {
+            // Create modal
+            const modal = document.createElement('div');
+            modal.id = 'documentsModal';
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.9);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            `;
+
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: #0a0e27;
+                border: 2px solid #64c8ff;
+                border-radius: 10px;
+                padding: 30px;
+                max-width: 900px;
+                max-height: 90vh;
+                overflow-y: auto;
+                width: 100%;
+            `;
+
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="color: #64c8ff; margin: 0;">Documents for ${ownerName}</h2>
+                    <button onclick="closeDocumentsModal()" style="background: rgba(255,100,100,0.2); border: 1px solid #ff6464;
+                                   color: #ff6464; padding: 8px 16px; border-radius: 5px; cursor: pointer;">
+                        ✕ Close
+                    </button>
+                </div>
+                <div style="color: #9aa5b1; margin-bottom: 20px;">
+                    ${documents.length} document${documents.length !== 1 ? 's' : ''} found
+                </div>
+            `;
+
+            documents.forEach(doc => {
+                const fileSize = (doc.file_size / 1024).toFixed(1);
+                const docType = doc.doc_type || 'unknown';
+                const uploadDate = new Date(doc.created_at).toLocaleDateString();
+
+                html += `
+                    <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
+                               border-radius: 8px; padding: 20px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                            <div style="flex: 1;">
+                                <div style="color: #64c8ff; font-size: 1.1em; font-weight: bold; margin-bottom: 5px;">
+                                    ${doc.filename}
+                                </div>
+                                <div style="color: #9aa5b1; font-size: 0.9em;">
+                                    Type: ${docType.toUpperCase()} • Size: ${fileSize} KB • Uploaded: ${uploadDate}
+                                </div>
+                                ${doc.owner_location ? `<div style="color: #9aa5b1; font-size: 0.9em;">Location: ${doc.owner_location}</div>` : ''}
+                                ${doc.total_enslaved ? `<div style="color: #ffaa00; font-size: 0.9em;">Enslaved: ${doc.total_enslaved}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="viewDocument('${doc.document_id}')"
+                                    style="background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff;
+                                           color: #64c8ff; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                                👁️ View Document
+                            </button>
+                            <button onclick="downloadDocument('${doc.document_id}')"
+                                    style="background: rgba(100, 255, 100, 0.2); border: 1px solid #64ff64;
+                                           color: #64ff64; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                                ⬇️ Download
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html;
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+
+            // Close on click outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeDocumentsModal();
+                }
+            });
+        }
+
+        function closeDocumentsModal() {
+            const modal = document.getElementById('documentsModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        function viewDocument(documentId) {
+            // Open document in new tab/window
+            window.open(`${API_BASE_URL}/api/documents/${documentId}/file`, '_blank');
+        }
+
+        function downloadDocument(documentId) {
+            // Download document
+            window.location.href = `${API_BASE_URL}/api/documents/${documentId}/file?download=true`;
+        }
+
+    </script>
+
+    <!-- Metadata Collection Modal -->
+    <div id="metadataModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: linear-gradient(180deg, #1a1e3f 0%, #2a2e4f 100%); border: 2px solid rgba(100, 200, 255, 0.5); border-radius: 15px; padding: 30px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <h2 style="color: #64c8ff; margin-bottom: 10px;">ðŸ“ Slaveowner Metadata Collection</h2>
+            <p id="metadataProgress" style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 20px;">Document 1 of 1</p>
+            <p style="color: #e0e0e0; margin-bottom: 20px;">Document: <span id="metadataDocumentName" style="color: #64c8ff; font-weight: bold;">filename.pdf</span></p>
+
+            <div style="display: grid; gap: 15px;">
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Full Name *</label>
+                    <input id="ownerFullName" type="text" placeholder="James Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Birth Year</label>
+                        <input id="ownerBirthYear" type="number" placeholder="1780" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                    </div>
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Death Year</label>
+                        <input id="ownerDeathYear" type="number" placeholder="1850" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                    </div>
+                    <div>
+                        <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Gender</label>
+                        <select id="ownerGender" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;">
+                            <option value="">-</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Locations (comma-separated)</label>
+                    <input id="ownerLocations" type="text" placeholder="Richmond, VA; Charleston, SC" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Spouses (comma-separated)</label>
+                    <input id="ownerSpouses" type="text" placeholder="Mary Smith, Elizabeth Jones" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Children (comma-separated)</label>
+                    <input id="ownerChildren" type="text" placeholder="John Hopewell, Sarah Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Parents (comma-separated)</label>
+                    <input id="ownerParents" type="text" placeholder="William Hopewell, Margaret Hopewell" style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px;" />
+                </div>
+
+                <div>
+                    <label style="color: #64c8ff; display: block; margin-bottom: 5px;">Additional Notes</label>
+                    <textarea id="ownerNotes" rows="3" placeholder="Additional information..." style="width: 100%; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; padding: 10px; border-radius: 5px; resize: vertical;"></textarea>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 25px; justify-content: flex-end;">
+                <button onclick="skipMetadata()" style="background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                    Skip
+                </button>
+                <button onclick="submitMetadata()" style="background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                    Submit & Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
