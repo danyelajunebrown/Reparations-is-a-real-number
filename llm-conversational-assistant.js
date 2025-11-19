@@ -396,10 +396,18 @@ async function queryDatabase(intent) {
       FROM documents
     `);
 
+    if (!result.rows || result.rows.length === 0) {
+      return {
+        success: true,
+        message: 'No slave owners documented in the database yet.',
+        data: { count: 0 }
+      };
+    }
+
     const count = parseInt(result.rows[0].count);
     return {
       success: true,
-      message: `There are ${count} slave owners documented in the database.`,
+      message: `There are ${count} slave owner${count === 1 ? '' : 's'} documented in the database.`,
       data: { count }
     };
   }

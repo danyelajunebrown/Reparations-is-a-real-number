@@ -1261,14 +1261,30 @@ async function sendChatMessage() {
         if (loadingMsg) loadingMsg.remove();
         
         if (data.success) {
-            addChatMessage('assistant', data.response);
-            
+            let message = data.response;
+
+            // If there's data (like list of owners), format and display it
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                message += '\n\n';
+                data.data.forEach((item, index) => {
+                    if (item.owner_name) {
+                        message += `${index + 1}. ${item.owner_name}`;
+                        if (item.document_count) {
+                            message += ` (${item.document_count} documents)`;
+                        }
+                        message += '\n';
+                    }
+                });
+            }
+
+            addChatMessage('assistant', message);
+
             // Update the big window with evidence if provided
             if (data.evidence) {
                 updateEvidenceDisplay(data.evidence);
             }
         } else {
-            addChatMessage('assistant', '❌ Error: ' + data.error);
+            addChatMessage('assistant', '❌ Error: ' + (data.error || 'Unknown error'));
         }
         
     } catch (error) {
