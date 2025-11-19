@@ -11,6 +11,7 @@ const StorageAdapter = require('./storage-adapter');
 const IndividualEntityManager = require('./individual-entity-manager');
 const DescendantCalculator = require('./descendant-calculator');
 const FreeNLPResearchAssistant = require('./free-nlp-assistant');
+const llmAssistant = require('./llm-conversational-assistant');
 
 // SECURITY: Import middleware
 const { authenticate, optionalAuth } = require('./middleware/auth');
@@ -264,10 +265,45 @@ app.post('/api/llm-query',
 
     console.log('Research Assistant query: ' + query);
 
-    // Use FREE NLP system for intelligent responses
-    const result = await researchAssistant.query(query, sessionId || 'default');
+    // Session context for conversation tracking
+    if (!global.conversationContexts) {
+      global.conversationContexts = {};
+    }
+    const context = global.conversationContexts[sessionId || 'default'] || {};
 
-    res.json(result);
+    try {
+      // Use LLM-powered conversational assistant if API key is configured
+      if (process.env.OPENROUTER_API_KEY) {
+        console.log('Using LLM conversational assistant');
+        const result = await llmAssistant.processConversation(query, context);
+
+        // Update context
+        global.conversationContexts[sessionId || 'default'] = result.context;
+
+        res.json({
+          success: result.success,
+          response: result.message,
+          data: result.data,
+          intent: result.intent
+        });
+      } else {
+        // Fallback to FREE pattern-matching NLP system
+        console.log('Using pattern-matching NLP assistant (no API key configured)');
+        const result = await researchAssistant.query(query, sessionId || 'default');
+        res.json(result);
+      }
+    } catch (error) {
+      console.error('Research Assistant error:', error);
+
+      // If LLM fails, try fallback to pattern matching
+      if (process.env.OPENROUTER_API_KEY) {
+        console.log('LLM failed, falling back to pattern matching');
+        const result = await researchAssistant.query(query, sessionId || 'default');
+        res.json(result);
+      } else {
+        throw error;
+      }
+    }
   })
 );
 
@@ -277,7 +313,13 @@ app.post('/api/clear-chat',
   asyncHandler(async (req, res) => {
     const { sessionId } = req.validatedBody;
 
+    // Clear both pattern-matching and LLM conversation contexts
     researchAssistant.clearSession(sessionId || 'default');
+
+    if (global.conversationContexts) {
+      delete global.conversationContexts[sessionId || 'default'];
+    }
+
     res.json({ success: true, message: 'Chat history cleared' });
   })
 );

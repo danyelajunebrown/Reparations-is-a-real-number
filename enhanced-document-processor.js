@@ -6,6 +6,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const StorageAdapter = require('./storage-adapter');
+const OCRService = require('./ocr-service');
 
 class EnhancedDocumentProcessor {
   constructor(config = {}) {
@@ -23,6 +24,9 @@ class EnhancedDocumentProcessor {
 
     // New: initialize storage adapter
     this.storageAdapter = new StorageAdapter({ storage: { root: this.storageRoot, s3: config.s3 || {} } });
+
+    // Initialize OCR service
+    this.ocrService = new OCRService(config);
 
     this.stats = { totalProcessed: 0, totalBytes: 0, totalSlavesCounted: 0 };
   }
@@ -106,8 +110,30 @@ class EnhancedDocumentProcessor {
   }
 
   async performOCR(filePath, documentType) {
-    // keep your existing OCR logic (Google Vision / AWS Textract / Tesseract)
-    return null;
+    try {
+      const ocrResult = await this.ocrService.performOCR(filePath, {
+        documentType,
+        preferredService: 'auto' // Will use Google Vision if available, otherwise Tesseract
+      });
+
+      return {
+        text: ocrResult.text,
+        confidence: ocrResult.confidence,
+        pageCount: ocrResult.pageCount || 1,
+        ocrService: ocrResult.service,
+        method: ocrResult.method,
+        wordCount: ocrResult.text ? ocrResult.text.split(/\s+/).length : 0,
+        duration: ocrResult.duration
+      };
+    } catch (error) {
+      console.error('OCR failed:', error);
+      return {
+        text: '',
+        confidence: 0,
+        error: error.message,
+        ocrService: 'failed'
+      };
+    }
   }
 }
 
