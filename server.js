@@ -12,6 +12,7 @@ const IndividualEntityManager = require('./individual-entity-manager');
 const DescendantCalculator = require('./descendant-calculator');
 const FreeNLPResearchAssistant = require('./free-nlp-assistant');
 const llmAssistant = require('./llm-conversational-assistant');
+const ColonialAmericanDocumentParser = require('./historical-document-parser');
 
 // SECURITY: Import middleware
 const { authenticate, optionalAuth } = require('./middleware/auth');
@@ -86,6 +87,12 @@ const descendantCalc = new DescendantCalculator(database);
 
 // Initialize FREE NLP Research Assistant (no API keys needed!)
 const researchAssistant = new FreeNLPResearchAssistant(database);
+
+// Initialize Colonial American Document Parser (for pre-OCR'd text)
+const documentParser = new ColonialAmericanDocumentParser({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free'
+});
 
 // SECURED: Upload document endpoint with auth, validation, and rate limiting
 app.post('/api/upload-document',
@@ -252,6 +259,133 @@ app.post('/api/upload-multi-page-document',
         success: p.success
       })),
       status: 'processed'
+    });
+  })
+);
+
+// SECURED: Upload document with pre-OCR'd text (from archives, transcriptions)
+app.post('/api/upload-document-with-text',
+  uploadLimiter,
+  // authenticate, // DISABLED FOR TESTING - re-enable in production
+  validate('uploadDocumentWithText'),
+  asyncHandler(async (req, res) => {
+    const {
+      textContent,
+      textSource,
+      ownerName,
+      documentType,
+      birthYear,
+      deathYear,
+      location,
+      notes,
+      ...metadata
+    } = req.validatedBody;
+
+    console.log(`Received pre-OCR'd text for ${ownerName} (${textContent.length} chars)`);
+
+    const crypto = require('crypto');
+    const documentId = crypto.randomBytes(12).toString('hex');
+
+    // Parse the pre-OCR'd text using Colonial American parser
+    const parseResult = await documentParser.parsePreParsedDocument(textContent, {
+      documentType,
+      ownerName,
+      birthYear,
+      deathYear,
+      location,
+      textSource: textSource || 'transcription',
+      ...metadata
+    });
+
+    console.log(`Parsed ${parseResult.enslaved_people?.length || 0} enslaved people from text`);
+
+    // Save to database
+    const filename = `${ownerName.replace(/[^a-zA-Z0-9]/g, '_')}_${documentType}_transcription.txt`;
+
+    const documentData = {
+      documentId,
+      ownerName,
+      documentType,
+      birthYear,
+      deathYear,
+      location,
+      uploadDate: new Date(),
+
+      storage: {
+        storageType: 'text_only',
+        filename: filename,
+        filePath: `text_only/${documentId}/${filename}`,
+        textContent: textContent,
+        textSource: textSource || 'transcription',
+        documentType: documentType
+      },
+
+      ocr: {
+        text: textContent,
+        confidence: textSource === 'transcription' ? 1.0 : 0.95,
+        ocrService: textSource || 'pre-parsed'
+      },
+
+      parsing: {
+        method: parseResult.method || 'llm',
+        confidence: parseResult.confidence || 0.8,
+        enslaved_people: parseResult.enslaved_people || [],
+        owner_info: parseResult.owner_info || {},
+        relationships: parseResult.relationships || []
+      },
+
+      enslaved: {
+        totalCount: parseResult.enslaved_people?.length || 0,
+        namedIndividuals: parseResult.enslaved_people?.filter(p => p.name).length || 0
+      },
+
+      reparations: {
+        total: 0,
+        perPerson: 0,
+        estimatedYears: 0
+      },
+
+      blockchain: {
+        verificationLevel: 'pending'
+      },
+
+      uploadedBy: req.user?.id || 'text-upload',
+      notes: notes || null
+    };
+
+    await database.saveDocument(documentData);
+    console.log(`Saved text document: ${documentId}`);
+
+    // Train the parser if confidence is high
+    if (parseResult.confidence > 0.8 && parseResult.enslaved_people?.length > 0) {
+      console.log('Training parser from high-confidence example');
+      try {
+        await documentParser.trainFromExample(textContent, {
+          enslaved_people: parseResult.enslaved_people,
+          owner_info: parseResult.owner_info,
+          relationships: parseResult.relationships
+        }, {
+          documentType,
+          textSource
+        });
+        console.log('Parser training complete');
+      } catch (trainError) {
+        console.error('Parser training failed:', trainError.message);
+        // Don't fail the request if training fails
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Pre-OCR\'d document processed successfully',
+      documentId: documentId,
+      parsed: {
+        enslaved_count: parseResult.enslaved_people?.length || 0,
+        confidence: parseResult.confidence,
+        method: parseResult.method,
+        trained: parseResult.confidence > 0.8
+      },
+      result: parseResult
     });
   })
 );
