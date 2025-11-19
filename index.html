@@ -980,8 +980,8 @@ async function uploadMultiPageDocument() {
     const metadata = {
         documentType: document.getElementById('docType').value,
         ownerName: document.getElementById('ownerName').value,
-        birthYear: document.getElementById('birthYear').value,
-        deathYear: document.getElementById('deathYear').value,
+        birthYear: parseInt(document.getElementById('birthYear').value) || null,
+        deathYear: parseInt(document.getElementById('deathYear').value) || null,
         location: document.getElementById('location').value
     };
     
