@@ -23,11 +23,25 @@ const app = express();
 
 // SECURITY: Configure CORS with restrictions
 const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : process.env.NODE_ENV === 'production'
-      ? ['https://danyelajunebrown.github.io'] // GitHub Pages domain
-      : ['http://localhost:3000', 'http://localhost:8080', 'https://danyelajunebrown.github.io'],
+  origin: function (origin, callback) {
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : process.env.NODE_ENV === 'production'
+        ? ['https://danyelajunebrown.github.io']
+        : ['http://localhost:3000', 'http://localhost:8080', 'https://danyelajunebrown.github.io'];
+
+    // Allow requests with no origin (like mobile apps, curl, postman)
+    if (!origin) return callback(null, true);
+
+    // Check if origin starts with any allowed origin (handles subdirectories)
+    const isAllowed = allowedOrigins.some(allowed => origin.startsWith(allowed));
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
   credentials: true,
