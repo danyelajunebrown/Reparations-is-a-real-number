@@ -686,7 +686,7 @@
             try {
                 console.log('Pinging backend to wake it up...');
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout for cold start
 
                 const response = await fetch(`${API_BASE_URL}/health`, {
                     method: 'GET',
