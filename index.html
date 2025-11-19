@@ -1012,9 +1012,12 @@ async function uploadMultiPageDocument() {
         // Add metadata
         formData.append('documentType', metadata.documentType);
         formData.append('ownerName', metadata.ownerName);
-        formData.append('birthYear', metadata.birthYear || '');
-        formData.append('deathYear', metadata.deathYear || '');
-        formData.append('location', metadata.location || '');
+
+        // Only append year fields if they have valid values
+        if (metadata.birthYear) formData.append('birthYear', metadata.birthYear);
+        if (metadata.deathYear) formData.append('deathYear', metadata.deathYear);
+        if (metadata.location) formData.append('location', metadata.location);
+
         formData.append('pageCount', selectedDocumentFiles.length);
         
         console.log('Sending upload request...');
