@@ -10,7 +10,7 @@ const schemas = {
   uploadDocument: Joi.object({
     ownerName: Joi.string().min(2).max(100).required(),
     documentType: Joi.string()
-      .valid('will', 'probate', 'census', 'slave_schedule', 'estate_inventory', 'correspondence', 'deed', 'other')
+      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'other')
       .required(),
     birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
     deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
@@ -91,6 +91,23 @@ const schemas = {
 
   clearChat: Joi.object({
     sessionId: Joi.string().max(100).optional()
+  }),
+
+  uploadDocumentWithText: Joi.object({
+    ownerName: Joi.string().min(2).max(100).required(),
+    documentType: Joi.string()
+      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'other')
+      .required(),
+    textContent: Joi.string().min(10).max(500000).optional().allow(null, ''),
+    textSource: Joi.string().valid('ocr', 'transcription', 'manual', 'archive').optional(),
+    birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
+    deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
+    location: Joi.string().max(200).optional().allow(null, ''),
+    pageNumber: Joi.number().integer().min(1).optional(),
+    totalPages: Joi.number().integer().min(1).optional(),
+    isMultiPage: Joi.boolean().optional(),
+    parentDocumentId: Joi.string().alphanum().optional(),
+    notes: Joi.string().max(5000).optional().allow(null, '')
   })
 };
 
