@@ -110,11 +110,24 @@ ONLY return valid JSON, no other text.`;
 function fallbackPatternMatch(message) {
   const lower = message.toLowerCase();
 
-  // List queries
-  if (lower.match(/who (are|were|is|was) (the )?slave owner/i) ||
-      lower.match(/list.*slave owner/i) ||
-      lower.match(/show.*slave owner/i) ||
-      lower.match(/slave owner.*database/i)) {
+  // Count owner queries - "how many owners"
+  if (lower.match(/how many (slave )?owner/i) ||
+      lower.match(/count (of )?(slave )?owner/i) ||
+      lower.match(/number of (slave )?owner/i)) {
+    return {
+      intent: 'query',
+      person: null,
+      data: { query_type: 'count' },
+      confidence: 0.85
+    };
+  }
+
+  // List queries - recognize variations of asking for owners
+  if (lower.match(/who (are|were|is|was) (the )?(slave )?owner/i) ||
+      lower.match(/list.*(slave )?owner/i) ||
+      lower.match(/show.*(slave )?owner/i) ||
+      lower.match(/(slave )?owner.*database/i) ||
+      lower.match(/(slave )?owner.*documented/i)) {
     return {
       intent: 'query',
       person: null,
@@ -123,7 +136,7 @@ function fallbackPatternMatch(message) {
     };
   }
 
-  // Count queries
+  // Count enslaved people queries
   if (lower.match(/how many.*enslaved/i) || lower.match(/count.*enslaved/i)) {
     const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
     return {
@@ -376,6 +389,21 @@ async function queryDatabase(intent) {
     };
   }
 
+  if (data.query_type === 'count' && !person) {
+    // Count total owners (not enslaved people)
+    const result = await pool.query(`
+      SELECT COUNT(DISTINCT owner_name) as count
+      FROM documents
+    `);
+
+    const count = parseInt(result.rows[0].count);
+    return {
+      success: true,
+      message: `There are ${count} slave owners documented in the database.`,
+      data: { count }
+    };
+  }
+
   if (data.query_type === 'count' && person) {
     // Count enslaved people for a specific owner
     const result = await pool.query(`
@@ -430,7 +458,21 @@ async function queryDatabase(intent) {
 async function processConversation(userMessage, context = {}) {
   try {
     // Extract intent from natural language
-    const intent = await extractIntent(userMessage);
+    let intent;
+    try {
+      intent = await extractIntent(userMessage);
+      console.log('[DEBUG] Extracted intent:', JSON.stringify(intent));
+    } catch (llmError) {
+      console.log('[DEBUG] LLM intent extraction failed, using fallback pattern matching');
+      // If LLM fails (rate limit, timeout, etc), use fallback
+      intent = fallbackPatternMatch(userMessage);
+    }
+
+    // If intent is unknown, try fallback
+    if (intent.intent === 'unknown') {
+      console.log('[DEBUG] Intent unknown, trying fallback pattern matching');
+      intent = fallbackPatternMatch(userMessage);
+    }
 
     // If person is null but we have context, use last mentioned person
     if (!intent.person && context.lastPerson) {
