@@ -99,14 +99,72 @@ ONLY return valid JSON, no other text.`;
     return JSON.parse(jsonText);
   } catch (error) {
     console.error('Failed to parse LLM JSON response:', llmResponse);
+    // Fallback to pattern matching
+    return fallbackPatternMatch(userMessage);
+  }
+}
+
+/**
+ * Fallback pattern matching when LLM fails
+ */
+function fallbackPatternMatch(message) {
+  const lower = message.toLowerCase();
+
+  // List queries
+  if (lower.match(/who (are|were|is|was) (the )?slave owner/i) ||
+      lower.match(/list.*slave owner/i) ||
+      lower.match(/show.*slave owner/i) ||
+      lower.match(/slave owner.*database/i)) {
     return {
-      intent: 'unknown',
+      intent: 'query',
       person: null,
-      data: {},
-      confidence: 0.0,
-      raw_response: llmResponse
+      data: { query_type: 'list' },
+      confidence: 0.8
     };
   }
+
+  // Count queries
+  if (lower.match(/how many.*enslaved/i) || lower.match(/count.*enslaved/i)) {
+    const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
+    return {
+      intent: 'query',
+      person: personMatch ? personMatch[1] : null,
+      data: { query_type: 'count' },
+      confidence: 0.75
+    };
+  }
+
+  // Details queries
+  if (lower.match(/tell me about/i) || lower.match(/who is|who was/i) || lower.match(/find/i)) {
+    const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
+    if (personMatch) {
+      return {
+        intent: 'query',
+        person: personMatch[1],
+        data: { query_type: 'details' },
+        confidence: 0.75
+      };
+    }
+  }
+
+  // Add children
+  if (lower.match(/had.*children?/i) || lower.match(/children?.*(named|were|are)/i)) {
+    const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
+    const childrenMatches = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/g);
+    return {
+      intent: 'add_children',
+      person: personMatch ? personMatch[1] : null,
+      data: { children: childrenMatches ? childrenMatches.slice(1) : [] },
+      confidence: 0.7
+    };
+  }
+
+  return {
+    intent: 'unknown',
+    person: null,
+    data: {},
+    confidence: 0.0
+  };
 }
 
 /**
