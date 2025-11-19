@@ -110,6 +110,24 @@ ONLY return valid JSON, no other text.`;
 function fallbackPatternMatch(message) {
   const lower = message.toLowerCase();
 
+  // Query relationships FIRST - "who is X's wife/son/daughter/children"
+  // Check for possessive ('s) to distinguish from "who is the owner"
+  if (lower.match(/who (is|are|was|were) .*('s|'s).*(wife|spouse|husband|children|son|daughter|parent)/i)) {
+    const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
+    let relationshipType = 'spouse';
+    if (lower.includes('child') || lower.includes('son') || lower.includes('daughter')) {
+      relationshipType = 'children';
+    } else if (lower.includes('parent') || lower.includes('mother') || lower.includes('father')) {
+      relationshipType = 'parents';
+    }
+    return {
+      intent: 'query_relationship',
+      person: personMatch ? personMatch[1] : null,
+      data: { relationship_type: relationshipType },
+      confidence: 0.85
+    };
+  }
+
   // Count owner queries - "how many owners"
   if (lower.match(/how many (slave )?owner/i) ||
       lower.match(/count (of )?(slave )?owner/i) ||
@@ -368,6 +386,115 @@ async function addLocation(personName, location) {
 }
 
 /**
+ * Query relationships for a person
+ */
+async function queryRelationships(personName, relationshipType) {
+  try {
+    // Find the person
+    const person = await findPerson(personName);
+    if (!person) {
+      return {
+        success: false,
+        message: `Could not find ${personName} in the database.`
+      };
+    }
+
+    // Get the individual's ID
+    const individualResult = await pool.query(
+      'SELECT individual_id FROM individuals WHERE LOWER(full_name) LIKE LOWER($1) LIMIT 1',
+      [`%${person.owner_name}%`]
+    );
+
+    if (!individualResult.rows || individualResult.rows.length === 0) {
+      return {
+        success: false,
+        message: `${person.owner_name} has no relationship data yet. Add relationships using commands like "${person.owner_name} had a wife named Mary"`
+      };
+    }
+
+    const individualId = individualResult.rows[0].individual_id;
+
+    // Query relationships based on type
+    let query, params;
+    if (relationshipType === 'spouse') {
+      query = `
+        SELECT i.full_name, i.birth_year, i.death_year, i.gender
+        FROM relationships r
+        JOIN individuals i ON (r.individual_2_id = i.individual_id)
+        WHERE r.individual_1_id = $1 AND r.relationship_type = 'spouse'
+      `;
+      params = [individualId];
+    } else if (relationshipType === 'children') {
+      query = `
+        SELECT i.full_name, i.birth_year, i.death_year, i.gender
+        FROM relationships r
+        JOIN individuals i ON (r.individual_2_id = i.individual_id)
+        WHERE r.individual_1_id = $1 AND r.relationship_type = 'parent-child'
+      `;
+      params = [individualId];
+    } else if (relationshipType === 'parents') {
+      query = `
+        SELECT i.full_name, i.birth_year, i.death_year, i.gender
+        FROM relationships r
+        JOIN individuals i ON (r.individual_1_id = i.individual_id)
+        WHERE r.individual_2_id = $1 AND r.relationship_type = 'parent-child'
+      `;
+      params = [individualId];
+    }
+
+    const result = await pool.query(query, params);
+
+    if (!result.rows || result.rows.length === 0) {
+      return {
+        success: true,
+        message: `No ${relationshipType} found for ${person.owner_name}.`
+      };
+    }
+
+    // Format response
+    let message = '';
+    if (relationshipType === 'spouse' && result.rows.length > 0) {
+      const spouse = result.rows[0];
+      message = `${person.owner_name}'s spouse is ${spouse.full_name}`;
+      if (spouse.birth_year || spouse.death_year) {
+        message += ` (${spouse.birth_year || '?'}-${spouse.death_year || '?'})`;
+      }
+    } else if (relationshipType === 'children') {
+      message = `${person.owner_name} has ${result.rows.length} child${result.rows.length === 1 ? '' : 'ren'}:\n`;
+      result.rows.forEach((child, i) => {
+        message += `${i + 1}. ${child.full_name}`;
+        if (child.birth_year || child.death_year) {
+          message += ` (${child.birth_year || '?'}-${child.death_year || '?'})`;
+        }
+        message += '\n';
+      });
+    } else if (relationshipType === 'parents') {
+      message = `${person.owner_name}'s parents:\n`;
+      result.rows.forEach((parent, i) => {
+        message += `${i + 1}. ${parent.full_name}`;
+        if (parent.birth_year || parent.death_year) {
+          message += ` (${parent.birth_year || '?'}-${parent.death_year || '?'})`;
+        }
+        message += '\n';
+      });
+    }
+
+    return {
+      success: true,
+      message: message.trim(),
+      data: result.rows
+    };
+
+  } catch (error) {
+    console.error('Error querying relationships:', error);
+    return {
+      success: false,
+      message: `Error retrieving relationship data: ${error.message}`
+    };
+  }
+}
+
+/**
  * Query the database
  */
 async function queryDatabase(intent) {
@@ -504,6 +631,10 @@ async function processConversation(userMessage, context = {}) {
 
       case 'query':
         result = await queryDatabase(intent);
+        break;
+
+      case 'query_relationship':
+        result = await queryRelationships(intent.person, intent.data.relationship_type);
         break;
 
       default:
