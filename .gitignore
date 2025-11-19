@@ -11,6 +11,9 @@ package-lock.json
 uploads/
 storage/
 
+# Learned patterns and training data (local only)
+data/
+
 # Database
 *.sqlite
 *.db

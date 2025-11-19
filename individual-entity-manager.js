@@ -236,6 +236,20 @@ class IndividualEntityManager {
     }
 
     /**
+     * Add a relationship between two individuals (simpler wrapper for createRelationship)
+     * Used by API endpoints for easier relationship creation
+     */
+    async addRelationship(individualId1, individualId2, relationshipType, sourceDocumentId = null, sourceType = 'manual') {
+        return await this.createRelationship(individualId1, individualId2, relationshipType, {
+            isDirected: relationshipType === 'parent-child', // parent-child is directed, spouse is not
+            sourceDocumentId,
+            sourceType,
+            confidence: 1.0,
+            verified: false
+        });
+    }
+
+    /**
      * Extract related individuals from document OCR text
      * Looks for heir names, witnesses, neighbors, etc.
      */
