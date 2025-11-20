@@ -263,6 +263,120 @@ class EnslavedIndividualManager {
 
     return result.rows || [];
   }
+
+  /**
+   * Add alternative name spelling
+   */
+  async addAlternativeName(enslavedId, alternativeName) {
+    await this.db.query(`
+      UPDATE enslaved_individuals
+      SET alternative_names = array_append(COALESCE(alternative_names, '{}'), $1),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE enslaved_id = $2
+    `, [alternativeName, enslavedId]);
+
+    console.log(`✓ Added alternative name "${alternativeName}" for ${enslavedId}`);
+  }
+
+  /**
+   * Set middle name
+   */
+  async setMiddleName(enslavedId, middleName) {
+    await this.db.query(`
+      UPDATE enslaved_individuals
+      SET middle_name = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE enslaved_id = $2
+    `, [middleName, enslavedId]);
+
+    console.log(`✓ Set middle name "${middleName}" for ${enslavedId}`);
+  }
+
+  /**
+   * Set FamilySearch ID
+   */
+  async setFamilySearchId(enslavedId, familysearchId) {
+    await this.db.query(`
+      UPDATE enslaved_individuals
+      SET familysearch_id = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE enslaved_id = $2
+    `, [familysearchId, enslavedId]);
+
+    console.log(`✓ Set FamilySearch ID "${familysearchId}" for ${enslavedId}`);
+  }
+
+  /**
+   * Add child name (as text)
+   */
+  async addChildName(enslavedId, childName) {
+    await this.db.query(`
+      UPDATE enslaved_individuals
+      SET child_names = array_append(COALESCE(child_names, '{}'), $1),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE enslaved_id = $2
+    `, [childName, enslavedId]);
+
+    console.log(`✓ Added child "${childName}" for ${enslavedId}`);
+  }
+
+  /**
+   * Flexible metadata update
+   * Supports any field with proper validation
+   */
+  async updateMetadata(enslavedId, updates) {
+    const allowedFields = [
+      'middle_name', 'birth_year', 'death_year', 'gender',
+      'spouse_name', 'freedom_year', 'familysearch_id',
+      'ancestry_id', 'notes'
+    ];
+
+    const updateClauses = [];
+    const values = [];
+    let paramCount = 1;
+
+    for (const [field, value] of Object.entries(updates)) {
+      if (allowedFields.includes(field) && value !== undefined && value !== null) {
+        // For notes, append instead of replace
+        if (field === 'notes') {
+          updateClauses.push(`notes = COALESCE(notes || E'\\n\\n', '') || $${paramCount++}`);
+        } else {
+          updateClauses.push(`${field} = $${paramCount++}`);
+        }
+        values.push(value);
+      }
+    }
+
+    if (updateClauses.length > 0) {
+      updateClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(enslavedId);
+
+      const query = `
+        UPDATE enslaved_individuals
+        SET ${updateClauses.join(', ')}
+        WHERE enslaved_id = $${paramCount}
+      `;
+
+      await this.db.query(query, values);
+      console.log(`✓ Updated metadata for ${enslavedId}:`, Object.keys(updates));
+    }
+  }
+
+  /**
+   * Search by name (including alternative names)
+   */
+  async searchByName(name) {
+    const result = await this.db.query(`
+      SELECT *
+      FROM enslaved_individuals
+      WHERE LOWER(full_name) LIKE LOWER($1)
+         OR $1 = ANY(SELECT LOWER(unnest(alternative_names)))
+      ORDER BY full_name
+      LIMIT 10
+    `, [`%${name}%`]);
+
+    return result.rows || [];
+  }
 }
 
 module.exports = EnslavedIndividualManager;
