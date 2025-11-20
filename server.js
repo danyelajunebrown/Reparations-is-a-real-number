@@ -14,6 +14,7 @@ const FreeNLPResearchAssistant = require('./free-nlp-assistant');
 const llmAssistant = require('./llm-conversational-assistant');
 const ColonialAmericanDocumentParser = require('./historical-document-parser');
 const OCRComparisonTrainer = require('./ocr-comparison-trainer');
+const EnslavedIndividualManager = require('./enslaved-individual-manager');
 
 // SECURITY: Import middleware
 const { authenticate, optionalAuth } = require('./middleware/auth');
@@ -90,6 +91,9 @@ const processor = new EnhancedDocumentProcessor({
 
 // Initialize individual entity manager
 const entityManager = new IndividualEntityManager(database);
+
+// Initialize enslaved individual manager
+const enslavedManager = new EnslavedIndividualManager(database);
 
 // Initialize descendant calculator
 const descendantCalc = new DescendantCalculator(database);
@@ -318,7 +322,32 @@ app.post('/api/upload-multi-page-document',
       await database.saveDocument(consolidatedDoc);
       console.log('Saved multi-page document: ' + documentId);
     }
-    
+
+    // Handle enslaved-person-primary documents
+    if (sharedMetadata.subjectType === 'enslaved' && sharedMetadata.enslavedPersonName) {
+      try {
+        console.log('Creating enslaved individual record...');
+
+        const enslavedId = await enslavedManager.findOrCreateEnslavedIndividual({
+          fullName: sharedMetadata.enslavedPersonName,
+          birthYear: sharedMetadata.birthYear,
+          deathYear: sharedMetadata.deathYear,
+          spouseName: sharedMetadata.spouseName,
+          enslavedBy: sharedMetadata.ownerName, // optional
+          location: sharedMetadata.location,
+          notes: `Uploaded from ${sharedMetadata.documentType} document`
+        });
+
+        // Link document to enslaved individual
+        await enslavedManager.linkToDocument(enslavedId, documentId);
+
+        console.log(`✓ Document linked to enslaved individual: ${enslavedId}`);
+      } catch (error) {
+        console.error('Error creating enslaved individual record:', error);
+        // Don't fail the upload if this fails
+      }
+    }
+
     // CRITICAL FIX: Clean up multer temp files to prevent disk space exhaustion
     const fs = require('fs');
     for (const file of req.files) {
@@ -1167,14 +1196,14 @@ app.get('/', (req, res) => {
   });
 });
 
-// Initialize OCR comparison schema on startup (for Render free tier auto-deployment)
-async function initializeOCRSchema() {
+// Initialize all database schemas on startup (for Render free tier auto-deployment)
+async function initializeDatabaseSchemas() {
   try {
-    console.log('Checking OCR comparison schema...');
+    console.log('Checking database schemas...');
 
     // Set a timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('OCR schema init timeout')), 5000)
+      setTimeout(() => reject(new Error('Schema init timeout')), 10000)
     );
 
     const schemaPromise = (async () => {
@@ -1234,12 +1263,42 @@ async function initializeOCRSchema() {
         ORDER BY created_at DESC
         LIMIT 100;
       `);
+
+      // Enslaved-person-primary documents schema
+      console.log('  Checking enslaved documents schema...');
+
+      // Make owner_name nullable
+      await database.query(`
+        ALTER TABLE documents
+        ALTER COLUMN owner_name DROP NOT NULL;
+      `).catch(() => {}); // Ignore if already done
+
+      // Add subject type columns
+      await database.query(`
+        ALTER TABLE documents
+        ADD COLUMN IF NOT EXISTS primary_subject_type VARCHAR(50) DEFAULT 'owner',
+        ADD COLUMN IF NOT EXISTS enslaved_individual_id VARCHAR(255) REFERENCES enslaved_individuals(enslaved_id) ON DELETE SET NULL;
+      `).catch(() => {});
+
+      // Add spouse name to enslaved_individuals
+      await database.query(`
+        ALTER TABLE enslaved_individuals
+        ADD COLUMN IF NOT EXISTS spouse_name VARCHAR(500);
+      `).catch(() => {});
+
+      // Create indexes
+      await database.query(`
+        CREATE INDEX IF NOT EXISTS idx_documents_enslaved_individual ON documents(enslaved_individual_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_subject_type ON documents(primary_subject_type);
+      `).catch(() => {});
+
+      console.log('  ✓ Enslaved documents schema ready');
     })();
 
     // Race between schema init and timeout
     await Promise.race([schemaPromise, timeoutPromise]);
 
-    console.log('✓ OCR comparison schema ready');
+    console.log('✓ All database schemas ready');
   } catch (error) {
     console.warn('OCR schema initialization warning:', error.message);
     // Don't fail server startup if this fails
@@ -1250,8 +1309,8 @@ async function initializeOCRSchema() {
 const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
-  // Initialize OCR schema before starting server
-  initializeOCRSchema().then(() => {
+  // Initialize database schemas before starting server
+  initializeDatabaseSchemas().then(() => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log('Reparations server running on port ' + PORT);
       console.log('Storage root: ' + config.storage.root);
