@@ -816,7 +816,7 @@ function showDocumentMetadataForm(files) {
     modal.id = 'documentMetadataModal';
     modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;';
     
-    modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">' +
+    modal.innerHTML = '<div style="background: #1a1f3a; padding: 30px; border-radius: 10px; border: 2px solid #64c8ff; max-width: 700px; width: 90%; max-height: 85vh; overflow-y: auto; box-sizing: border-box;">' +
         '<h3 style="color: #64c8ff; margin-top: 0;">Upload Document (' + files.length + ' page' + (files.length > 1 ? 's' : '') + ')</h3>' +
         '<div style="max-height: 150px; overflow-y: auto; background: rgba(10, 14, 39, 0.8); padding: 10px; border-radius: 5px; margin-bottom: 15px;">' +
         files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
