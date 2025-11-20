@@ -419,25 +419,25 @@ async function queryRelationships(personName, relationshipType) {
     if (relationshipType === 'spouse') {
       query = `
         SELECT i.full_name, i.birth_year, i.death_year, i.gender
-        FROM relationships r
-        JOIN individuals i ON (r.individual_2_id = i.individual_id)
-        WHERE r.individual_1_id = $1 AND r.relationship_type = 'spouse'
+        FROM individual_relationships r
+        JOIN individuals i ON (r.individual_id_2 = i.individual_id)
+        WHERE r.individual_id_1 = $1 AND r.relationship_type = 'spouse'
       `;
       params = [individualId];
     } else if (relationshipType === 'children') {
       query = `
         SELECT i.full_name, i.birth_year, i.death_year, i.gender
-        FROM relationships r
-        JOIN individuals i ON (r.individual_2_id = i.individual_id)
-        WHERE r.individual_1_id = $1 AND r.relationship_type = 'parent-child'
+        FROM individual_relationships r
+        JOIN individuals i ON (r.individual_id_2 = i.individual_id)
+        WHERE r.individual_id_1 = $1 AND r.relationship_type = 'parent-child'
       `;
       params = [individualId];
     } else if (relationshipType === 'parents') {
       query = `
         SELECT i.full_name, i.birth_year, i.death_year, i.gender
-        FROM relationships r
-        JOIN individuals i ON (r.individual_1_id = i.individual_id)
-        WHERE r.individual_2_id = $1 AND r.relationship_type = 'parent-child'
+        FROM individual_relationships r
+        JOIN individuals i ON (r.individual_id_1 = i.individual_id)
+        WHERE r.individual_id_2 = $1 AND r.relationship_type = 'parent-child'
       `;
       params = [individualId];
     }
@@ -592,21 +592,30 @@ async function queryDatabase(intent) {
  */
 async function processConversation(userMessage, context = {}) {
   try {
-    // Extract intent from natural language
+    // IMPORTANT: Check for relationship queries FIRST (before LLM)
+    // LLM often misclassifies possessive queries like "who is X's wife"
+    const lower = userMessage.toLowerCase();
     let intent;
-    try {
-      intent = await extractIntent(userMessage);
-      console.log('[DEBUG] Extracted intent:', JSON.stringify(intent));
-    } catch (llmError) {
-      console.log('[DEBUG] LLM intent extraction failed, using fallback pattern matching');
-      // If LLM fails (rate limit, timeout, etc), use fallback
-      intent = fallbackPatternMatch(userMessage);
-    }
 
-    // If intent is unknown, try fallback
-    if (intent.intent === 'unknown') {
-      console.log('[DEBUG] Intent unknown, trying fallback pattern matching');
+    if (lower.match(/who (is|are|was|were) .*('s|'s).*(wife|spouse|husband|children|son|daughter|parent)/i)) {
+      console.log('[DEBUG] Detected relationship query pattern, using pattern matching');
       intent = fallbackPatternMatch(userMessage);
+    } else {
+      // Try LLM for non-relationship queries
+      try {
+        intent = await extractIntent(userMessage);
+        console.log('[DEBUG] Extracted intent:', JSON.stringify(intent));
+      } catch (llmError) {
+        console.log('[DEBUG] LLM intent extraction failed, using fallback pattern matching');
+        // If LLM fails (rate limit, timeout, etc), use fallback
+        intent = fallbackPatternMatch(userMessage);
+      }
+
+      // If intent is unknown, try fallback
+      if (intent.intent === 'unknown') {
+        console.log('[DEBUG] Intent unknown, trying fallback pattern matching');
+        intent = fallbackPatternMatch(userMessage);
+      }
     }
 
     // If person is null but we have context, use last mentioned person
