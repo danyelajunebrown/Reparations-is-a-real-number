@@ -832,9 +832,13 @@ function showDocumentMetadataForm(files) {
         '<option value="probate">Probate Record</option>' +
         '<option value="census">Census Record</option>' +
         '<option value="slave_schedule">Slave Schedule</option>' +
+        '<option value="slave_manifest">Slave Manifest</option>' +
         '<option value="estate_inventory">Estate Inventory</option>' +
         '<option value="correspondence">Correspondence/Letter</option>' +
         '<option value="deed">Property Deed</option>' +
+        '<option value="ship_manifest">Ship Manifest</option>' +
+        '<option value="sale_record">Sale Record</option>' +
+        '<option value="tombstone">Tombstone/Cemetery Record</option>' +
         '<option value="other">Other</option>' +
         '</select>' +
         '</div>' +
@@ -910,7 +914,34 @@ function showDocumentMetadataForm(files) {
         '</div>' +
         
         '</div>' +
-        
+
+        // SECTION 4: OCR Enhancement Fields (always visible, optional)
+        '<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(100, 200, 255, 0.2);">' +
+        '<div style="color: #64c8ff; font-weight: bold; margin-bottom: 15px; font-size: 1em;">✨ OCR Enhancement (Optional)</div>' +
+        '<div style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">Help improve OCR accuracy by providing pre-transcribed text or context from the source website.</div>' +
+
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Precompleted OCR Text <span style="color: #9aa5b1; font-size: 0.85em;">(if you already have a transcription)</span></label>' +
+        '<textarea id="precompletedOCR" rows="4" placeholder="Paste transcription from FamilySearch, Ancestry, archives, etc..." style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px; font-family: monospace; font-size: 0.9em; resize: vertical;"></textarea>' +
+        '</div>' +
+
+        '<div style="margin-top: 10px;">' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">OCR Source <span style="color: #9aa5b1; font-size: 0.85em;">(where the transcription came from)</span></label>' +
+        '<input type="text" id="ocrSource" placeholder="e.g., FamilySearch, Ancestry.com, Archive.org" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+
+        '<div style="margin-top: 10px;">' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Accompanying Text <span style="color: #9aa5b1; font-size: 0.85em;">(context from website/archive page)</span></label>' +
+        '<textarea id="accompanyingText" rows="3" placeholder="Paste any contextual information from the source website..." style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px; resize: vertical;"></textarea>' +
+        '</div>' +
+
+        '<div style="margin-top: 10px;">' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Text Source <span style="color: #9aa5b1; font-size: 0.85em;">(where the context came from)</span></label>' +
+        '<input type="text" id="textSource" placeholder="e.g., website, cemetery records, archive notes" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+
+        '</div>' +
+
         '<div style="display: flex; gap: 10px; margin-top: 15px;">' +
         '<button type="submit" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;">Upload Document</button>' +
         '<button type="button" onclick="closeDocumentMetadataForm()" style="flex: 1; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; border-radius: 5px; cursor: pointer;">Cancel</button>' +
@@ -984,7 +1015,11 @@ async function uploadMultiPageDocument() {
         ownerName: document.getElementById('ownerName').value,
         birthYear: parseInt(document.getElementById('birthYear').value) || null,
         deathYear: parseInt(document.getElementById('deathYear').value) || null,
-        location: document.getElementById('location').value
+        location: document.getElementById('location').value,
+        precompletedOCR: document.getElementById('precompletedOCR')?.value || '',
+        ocrSource: document.getElementById('ocrSource')?.value || '',
+        accompanyingText: document.getElementById('accompanyingText')?.value || '',
+        textSource: document.getElementById('textSource')?.value || ''
     };
     
     // Validate required fields
@@ -1019,6 +1054,12 @@ async function uploadMultiPageDocument() {
         if (metadata.birthYear) formData.append('birthYear', metadata.birthYear);
         if (metadata.deathYear) formData.append('deathYear', metadata.deathYear);
         if (metadata.location) formData.append('location', metadata.location);
+
+        // OCR Enhancement fields (optional)
+        if (metadata.precompletedOCR) formData.append('precompletedOCR', metadata.precompletedOCR);
+        if (metadata.ocrSource) formData.append('ocrSource', metadata.ocrSource);
+        if (metadata.accompanyingText) formData.append('accompanyingText', metadata.accompanyingText);
+        if (metadata.textSource) formData.append('textSource', metadata.textSource);
 
         formData.append('pageCount', selectedDocumentFiles.length);
         
