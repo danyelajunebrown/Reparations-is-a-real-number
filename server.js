@@ -13,6 +13,7 @@ const DescendantCalculator = require('./descendant-calculator');
 const FreeNLPResearchAssistant = require('./free-nlp-assistant');
 const llmAssistant = require('./llm-conversational-assistant');
 const ColonialAmericanDocumentParser = require('./historical-document-parser');
+const OCRComparisonTrainer = require('./ocr-comparison-trainer');
 
 // SECURITY: Import middleware
 const { authenticate, optionalAuth } = require('./middleware/auth');
@@ -102,6 +103,9 @@ const documentParser = new ColonialAmericanDocumentParser({
   model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.1-8b-instruct:free'
 });
 
+// Initialize OCR Comparison Trainer (for OCR quality improvement)
+const ocrTrainer = new OCRComparisonTrainer(database);
+
 // SECURED: Upload document endpoint with auth, validation, and rate limiting
 app.post('/api/upload-document',
   uploadLimiter,
@@ -114,7 +118,81 @@ app.post('/api/upload-document',
 
     console.log(`Received upload from ${req.user?.type || 'user'}: ${req.file.originalname}`);
 
+    // Process the document
     const result = await processor.processDocument(req.file, metadata);
+
+    // If precompleted OCR or accompanying text provided, enhance the results
+    if (metadata.precompletedOCR || metadata.accompanyingText) {
+      console.log('Processing with precompleted OCR/accompanying text...');
+
+      const systemOCR = result.stages?.ocr?.text || '';
+      const precompletedOCR = metadata.precompletedOCR || '';
+      const accompanyingText = metadata.accompanyingText || '';
+
+      // Compare OCR if both system and precompleted exist
+      if (systemOCR && precompletedOCR) {
+        const comparison = await ocrTrainer.compareOCR(systemOCR, precompletedOCR, {
+          documentType: metadata.documentType,
+          documentId: result.documentId,
+          ownerName: metadata.ownerName,
+          ocrSource: metadata.ocrSource || 'user_provided'
+        });
+
+        result.ocrComparison = {
+          similarity: comparison.similarity,
+          quality: comparison.quality,
+          recommendation: comparison.recommendation,
+          discrepancyCount: comparison.discrepancies.missingWords.length +
+                           comparison.discrepancies.extraWords.length
+        };
+
+        // Use precompleted OCR if recommended
+        if (comparison.recommendation === 'use_precompleted_ocr') {
+          console.log(`Using precompleted OCR (similarity: ${(comparison.similarity * 100).toFixed(1)}%)`);
+          result.stages.ocr.text = precompletedOCR;
+          result.stages.ocr.source = 'precompleted';
+          result.stages.ocr.originalSystemText = systemOCR;
+
+          // Update database with precompleted OCR
+          if (result.documentId) {
+            await database.query(`
+              UPDATE documents
+              SET ocr_text = $1,
+                  ocr_confidence = $2,
+                  ocr_service = $3
+              WHERE document_id = $4
+            `, [precompletedOCR, 1.0, 'precompleted_' + (metadata.ocrSource || 'user'), result.documentId]);
+          }
+        }
+      } else if (precompletedOCR && !systemOCR) {
+        // No system OCR, just use precompleted
+        console.log('Using precompleted OCR (no system OCR available)');
+        if (!result.stages.ocr) result.stages.ocr = {};
+        result.stages.ocr.text = precompletedOCR;
+        result.stages.ocr.source = 'precompleted_only';
+      }
+
+      // Merge with accompanying text if provided
+      if (accompanyingText) {
+        const finalOCR = result.stages?.ocr?.text || precompletedOCR || '';
+        const merged = ocrTrainer.mergeWithAccompanyingText(finalOCR, accompanyingText, {
+          textSource: metadata.textSource || 'website'
+        });
+
+        result.textEnhancement = merged;
+
+        // If there's valuable additional context, append it to notes
+        if (merged.enhanced && merged.enhancedWords.length > 0) {
+          const additionalContext = `\n\nAdditional context from ${merged.source}: ${accompanyingText.substring(0, 500)}${accompanyingText.length > 500 ? '...' : ''}`;
+
+          await database.query(`
+            UPDATE documents
+            SET notes = COALESCE(notes, '') || $1
+            WHERE document_id = $2
+          `, [additionalContext, result.documentId]);
+        }
+      }
+    }
 
     res.json({
       success: true,
