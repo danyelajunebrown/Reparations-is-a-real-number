@@ -1167,14 +1167,94 @@ app.get('/', (req, res) => {
   });
 });
 
+// Initialize OCR comparison schema on startup (for Render free tier auto-deployment)
+async function initializeOCRSchema() {
+  try {
+    console.log('Checking OCR comparison schema...');
+
+    // Create table if not exists
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ocr_comparisons (
+        id SERIAL PRIMARY KEY,
+        document_type VARCHAR(50),
+        similarity_score DECIMAL(5,4),
+        quality_assessment VARCHAR(50),
+        recommendation VARCHAR(50),
+        system_word_count INTEGER,
+        precompleted_word_count INTEGER,
+        discrepancy_count INTEGER,
+        comparison_data JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create indexes
+    await database.query(`
+      CREATE INDEX IF NOT EXISTS idx_ocr_comparisons_document_type ON ocr_comparisons(document_type);
+      CREATE INDEX IF NOT EXISTS idx_ocr_comparisons_similarity ON ocr_comparisons(similarity_score);
+      CREATE INDEX IF NOT EXISTS idx_ocr_comparisons_quality ON ocr_comparisons(quality_assessment);
+      CREATE INDEX IF NOT EXISTS idx_ocr_comparisons_created_at ON ocr_comparisons(created_at);
+    `);
+
+    // Create views
+    await database.query(`
+      CREATE OR REPLACE VIEW ocr_performance_stats AS
+      SELECT
+        document_type,
+        COUNT(*) as total_comparisons,
+        AVG(similarity_score) as avg_similarity,
+        MIN(similarity_score) as min_similarity,
+        MAX(similarity_score) as max_similarity,
+        COUNT(CASE WHEN quality_assessment = 'excellent' THEN 1 END) as excellent_count,
+        COUNT(CASE WHEN quality_assessment = 'good_with_improvements_needed' THEN 1 END) as good_count,
+        COUNT(CASE WHEN quality_assessment = 'poor_needs_training' THEN 1 END) as poor_count,
+        AVG(discrepancy_count) as avg_discrepancies
+      FROM ocr_comparisons
+      GROUP BY document_type
+      ORDER BY total_comparisons DESC;
+    `);
+
+    await database.query(`
+      CREATE OR REPLACE VIEW recent_ocr_comparisons AS
+      SELECT
+        id,
+        document_type,
+        similarity_score,
+        quality_assessment,
+        recommendation,
+        discrepancy_count,
+        created_at
+      FROM ocr_comparisons
+      ORDER BY created_at DESC
+      LIMIT 100;
+    `);
+
+    console.log('✓ OCR comparison schema ready');
+  } catch (error) {
+    console.warn('OCR schema initialization warning:', error.message);
+    // Don't fail server startup if this fails
+  }
+}
+
 // Start server
 const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log('Reparations server running on port ' + PORT);
-    console.log('Storage root: ' + config.storage.root);
-    console.log('OCR enabled: ' + processor.performOCR);
+  // Initialize OCR schema before starting server
+  initializeOCRSchema().then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log('Reparations server running on port ' + PORT);
+      console.log('Storage root: ' + config.storage.root);
+      console.log('OCR enabled: ' + processor.performOCR);
+    });
+  }).catch(err => {
+    console.error('Server startup error:', err);
+    // Start server anyway even if OCR schema fails
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log('Reparations server running on port ' + PORT);
+      console.log('Storage root: ' + config.storage.root);
+      console.log('OCR enabled: ' + processor.performOCR);
+    });
   });
 }
 
