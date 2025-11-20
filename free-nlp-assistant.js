@@ -5,10 +5,11 @@
  */
 
 class FreeNLPResearchAssistant {
-    constructor(database) {
+    constructor(database, enslavedManager = null) {
         this.database = database;
+        this.enslavedManager = enslavedManager;
         this.sessions = new Map(); // Store conversation context per session
-        
+
         // Intent patterns (what is the user trying to do?)
         this.intentPatterns = {
             // Search for a person
@@ -24,12 +25,33 @@ class FreeNLPResearchAssistant {
             
             // Update person metadata
             update_person: [
+                // Middle name
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name (?:is|was) ([A-Z][a-z]+)/i,
+                /set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name to ([A-Z][a-z]+)/i,
+                /add middle name ([A-Z][a-z]+) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+
+                // Alternative names/spellings
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /add (?:alternative|alternate|alias) (?:name|spelling) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:goes by|went by) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+
+                // FamilySearch ID
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i,
+                /set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /FamilySearch ID for ([A-Z][a-z]+(?: [A-Z][a-z]+)*) is ([A-Z0-9-]+)/i,
+
+                // Children
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i,
+                /add child ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) had (?:a child|children) (?:named |)(.+)/i,
+
+                // Spouse
                 /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
                 /([A-Z][a-z]+(?: [A-Z][a-z]+)*) married ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:child|children|son|daughter) (?:was|were|is|are) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:parent|parents|father|mother) (?:was|were|is|are) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /update ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (spouse|wife|husband|child|children|parent|parents) to ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+
+                // General notes
+                /add note (?:to |for |)([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i,
+                /note for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i
             ],
             
             // Count enslaved people
@@ -174,6 +196,174 @@ class FreeNLPResearchAssistant {
         };
     }
     
+    /**
+     * Parse metadata update from query
+     */
+    parseMetadataUpdate(query) {
+        const updates = {
+            personName: null,
+            field: null,
+            value: null,
+            action: null  // 'set', 'add', 'append'
+        };
+
+        // Middle name patterns
+        if (/middle name/i.test(query)) {
+            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name (?:is|was) ([A-Z][a-z]+)/i) ||
+                          query.match(/set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name to ([A-Z][a-z]+)/i) ||
+                          query.match(/add middle name ([A-Z][a-z]+) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            if (match) {
+                updates.personName = match[match.length === 4 ? 2 : 1];
+                updates.value = match[match.length === 4 ? 1 : 2];
+                updates.field = 'middle_name';
+                updates.action = 'set';
+                return updates;
+            }
+        }
+
+        // Alternative names patterns
+        if (/spelled|known as|alias|goes by/i.test(query)) {
+            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
+                          query.match(/add (?:alternative|alternate|alias) (?:name|spelling) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
+                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:goes by|went by) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            if (match) {
+                updates.personName = match[match[0].includes('to') || match[0].includes('for') ? 2 : 1];
+                updates.value = match[match[0].includes('to') || match[0].includes('for') ? 1 : 2];
+                updates.field = 'alternative_names';
+                updates.action = 'add';
+                return updates;
+            }
+        }
+
+        // FamilySearch ID patterns
+        if (/FamilySearch ID/i.test(query)) {
+            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i) ||
+                          query.match(/set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
+                          query.match(/FamilySearch ID for ([A-Z][a-z]+(?: [A-Z][a-z]+)*) is ([A-Z0-9-]+)/i);
+            if (match) {
+                updates.personName = match[match[0].includes('for') ? 2 : 1];
+                updates.value = match[match[0].includes('for') ? 1 : 2];
+                updates.field = 'familysearch_id';
+                updates.action = 'set';
+                return updates;
+            }
+        }
+
+        // Children patterns
+        if (/child(?:ren)?/i.test(query)) {
+            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i) ||
+                          query.match(/add child ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
+                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) had (?:a child|children) (?:named |)(.+)/i);
+            if (match) {
+                updates.personName = match[match[0].includes('to') || match[0].includes('for') ? 2 : 1];
+                updates.value = match[match[0].includes('to') || match[0].includes('for') ? 1 : 2];
+                updates.field = 'child_names';
+                updates.action = 'add';
+                return updates;
+            }
+        }
+
+        // Spouse patterns
+        if (/wife|husband|spouse|married/i.test(query)) {
+            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
+                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) married ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            if (match) {
+                updates.personName = match[1];
+                updates.value = match[2];
+                updates.field = 'spouse_name';
+                updates.action = 'set';
+                return updates;
+            }
+        }
+
+        // Notes patterns
+        if (/note/i.test(query)) {
+            const match = query.match(/add note (?:to |for |)([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i) ||
+                          query.match(/note for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i);
+            if (match) {
+                updates.personName = match[1];
+                updates.value = match[2];
+                updates.field = 'notes';
+                updates.action = 'append';
+                return updates;
+            }
+        }
+
+        return updates;
+    }
+
+    /**
+     * Execute metadata update
+     */
+    async executeUpdate(personName, field, value, action) {
+        if (!this.enslavedManager) {
+            throw new Error('EnslavedIndividualManager not available');
+        }
+
+        // Find the person
+        const results = await this.enslavedManager.searchByName(personName);
+
+        if (!results || results.length === 0) {
+            return {
+                success: false,
+                message: `Could not find "${personName}" in the database. Please check the spelling or upload their document first.`
+            };
+        }
+
+        const person = results[0];
+        const enslavedId = person.enslaved_id;
+
+        try {
+            // Execute the update based on field and action
+            switch (field) {
+                case 'middle_name':
+                    await this.enslavedManager.setMiddleName(enslavedId, value);
+                    break;
+
+                case 'alternative_names':
+                    await this.enslavedManager.addAlternativeName(enslavedId, value);
+                    break;
+
+                case 'familysearch_id':
+                    await this.enslavedManager.setFamilySearchId(enslavedId, value);
+                    break;
+
+                case 'child_names':
+                    // Parse multiple children (comma-separated or "and")
+                    const childNames = value.split(/,| and /i).map(name => name.trim());
+                    for (const childName of childNames) {
+                        if (childName && childName.length > 0) {
+                            await this.enslavedManager.addChildName(enslavedId, childName);
+                        }
+                    }
+                    break;
+
+                case 'spouse_name':
+                case 'notes':
+                    await this.enslavedManager.updateMetadata(enslavedId, { [field]: value });
+                    break;
+
+                default:
+                    return {
+                        success: false,
+                        message: `Unknown field: ${field}`
+                    };
+            }
+
+            return {
+                success: true,
+                message: `✓ Updated ${person.full_name}'s ${field.replace('_', ' ')}`
+            };
+
+        } catch (error) {
+            console.error('Update error:', error);
+            return {
+                success: false,
+                message: `Error updating ${personName}: ${error.message}`
+            };
+        }
+    }
+
     /**
      * Search for a person in the database
      */
@@ -380,20 +570,42 @@ class FreeNLPResearchAssistant {
             // Execute query based on intent
             let data = {};
             let response = '';
-            
-            if (intent === 'statistics') {
+
+            if (intent === 'update_person') {
+                // Handle metadata updates
+                const updateInfo = this.parseMetadataUpdate(processedQuery);
+
+                if (updateInfo.personName && updateInfo.field && updateInfo.value) {
+                    const result = await this.executeUpdate(
+                        updateInfo.personName,
+                        updateInfo.field,
+                        updateInfo.value,
+                        updateInfo.action
+                    );
+
+                    response = result.message;
+                    session.lastPerson = updateInfo.personName;
+                } else {
+                    response = `I couldn't understand that update. Try:\n` +
+                               `- "Adjua's middle name is Maria"\n` +
+                               `- "Adjua also goes by Adjwa"\n` +
+                               `- "Adjua's FamilySearch ID is XXXX-XXX"\n` +
+                               `- "Adjua's children were John, Mary, and Sarah"`;
+                }
+
+            } else if (intent === 'statistics') {
                 data.stats = await this.database.getStats();
                 response = this.formatResponse(intent, data, null, session);
-                
+
             } else if (personName) {
                 data = await this.findPerson(personName);
                 response = this.formatResponse(intent, data, personName, session);
-                
+
             } else if (resolved && session.lastPerson) {
                 // Follow-up question about last person
                 data = await this.findPerson(session.lastPerson);
                 response = this.formatResponse(intent, data, session.lastPerson, session);
-                
+
             } else {
                 response = this.formatResponse('unknown', {}, null, session);
             }

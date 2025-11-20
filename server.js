@@ -99,7 +99,7 @@ const enslavedManager = new EnslavedIndividualManager(database);
 const descendantCalc = new DescendantCalculator(database);
 
 // Initialize FREE NLP Research Assistant (no API keys needed!)
-const researchAssistant = new FreeNLPResearchAssistant(database);
+const researchAssistant = new FreeNLPResearchAssistant(database, enslavedManager);
 
 // Initialize Colonial American Document Parser (for pre-OCR'd text)
 const documentParser = new ColonialAmericanDocumentParser({
@@ -1293,6 +1293,28 @@ async function initializeDatabaseSchemas() {
       `).catch(() => {});
 
       console.log('  ✓ Enslaved documents schema ready');
+
+      // Enslaved individuals metadata (alternative names, middle name, children, etc.)
+      console.log('  Checking enslaved individuals metadata schema...');
+
+      await database.query(`
+        ALTER TABLE enslaved_individuals
+        ADD COLUMN IF NOT EXISTS alternative_names TEXT[] DEFAULT '{}',
+        ADD COLUMN IF NOT EXISTS middle_name VARCHAR(200),
+        ADD COLUMN IF NOT EXISTS child_names TEXT[] DEFAULT '{}';
+      `).catch(() => {});
+
+      await database.query(`
+        CREATE INDEX IF NOT EXISTS idx_enslaved_alternative_names
+        ON enslaved_individuals USING GIN (alternative_names);
+      `).catch(() => {});
+
+      await database.query(`
+        CREATE INDEX IF NOT EXISTS idx_enslaved_familysearch_id
+        ON enslaved_individuals(familysearch_id);
+      `).catch(() => {});
+
+      console.log('  ✓ Enslaved metadata schema ready');
     })();
 
     // Race between schema init and timeout
@@ -1300,7 +1322,7 @@ async function initializeDatabaseSchemas() {
 
     console.log('✓ All database schemas ready');
   } catch (error) {
-    console.warn('OCR schema initialization warning:', error.message);
+    console.warn('Database schema initialization warning:', error.message);
     // Don't fail server startup if this fails
   }
 }
