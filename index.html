@@ -680,28 +680,57 @@
         // ============================================
         // AUTO-PING BACKEND TO PREVENT COLD START
         // ============================================
-        // Ping backend immediately on page load to wake it up
-        // This reduces wait time for first user query
+        // Backend wake-up state
+        let backendReady = false;
+
+        // Ping backend with retries until it's awake
         (async function pingBackend() {
-            try {
-                console.log('Pinging backend to wake it up...');
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout for cold start
+            const maxRetries = 20; // Try for up to ~2 minutes
+            let retries = 0;
 
-                const response = await fetch(`${API_BASE_URL}/health`, {
-                    method: 'GET',
-                    signal: controller.signal
-                });
+            while (retries < maxRetries && !backendReady) {
+                try {
+                    console.log(`Pinging backend (attempt ${retries + 1}/${maxRetries})...`);
 
-                clearTimeout(timeoutId);
+                    const response = await fetch(`${API_BASE_URL}/health`, {
+                        method: 'GET',
+                        mode: 'cors',
+                        cache: 'no-cache'
+                    });
 
-                if (response.ok) {
-                    console.log('Backend is awake and ready!');
-                } else {
-                    console.log('Backend responded but may not be fully ready');
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.status === 'ok' && data.database === 'connected') {
+                            console.log('✓ Backend is awake and ready!');
+                            backendReady = true;
+
+                            // Enable all upload buttons
+                            const uploadBtns = document.querySelectorAll('button[onclick*="upload"], #modalUploadBtn, #uploadFilesBtn');
+                            uploadBtns.forEach(btn => {
+                                if (btn) {
+                                    btn.disabled = false;
+                                    btn.style.opacity = '1';
+                                }
+                            });
+
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.log(`Backend not ready yet: ${error.message}`);
                 }
-            } catch (error) {
-                console.log('Backend may be waking up (cold start):', error.message);
+
+                retries++;
+
+                if (retries < maxRetries) {
+                    // Wait 6 seconds between retries
+                    await new Promise(resolve => setTimeout(resolve, 6000));
+                }
+            }
+
+            if (!backendReady) {
+                console.error('Backend failed to wake up after multiple attempts');
+                alert('Backend service is not responding. Please refresh the page in a minute.');
             }
         })();
 
@@ -985,7 +1014,7 @@ function showDocumentMetadataForm(files) {
         '</div>' +
 
         '<div style="display: flex; gap: 10px; margin-top: 15px;">' +
-        '<button type="submit" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;">Upload Document</button>' +
+        '<button type="submit" id="modalUploadBtn" style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid rgba(100, 255, 100, 0.5); color: #64ff64; border-radius: 5px; cursor: pointer; font-weight: bold;" ' + (!backendReady ? 'disabled' : '') + '>Upload Document</button>' +
         '<button type="button" onclick="closeDocumentMetadataForm()" style="flex: 1; padding: 12px; background: rgba(255, 100, 100, 0.2); border: 1px solid rgba(255, 100, 100, 0.5); color: #ff6464; border-radius: 5px; cursor: pointer;">Cancel</button>' +
         '</div>' +
         '</form>' +
@@ -1076,6 +1105,12 @@ function updateFieldsBasedOnDocType() {
 // Collect metadata based on document type
 
 async function uploadMultiPageDocument() {
+    // Check if backend is ready
+    if (!backendReady) {
+        addChatMessage('assistant', '⏳ Backend is still waking up from cold start. Please wait a moment...');
+        return;
+    }
+
     // Validation
     if (!selectedDocumentFiles || selectedDocumentFiles.length === 0) {
         addChatMessage('assistant', '❌ No files selected. Please select files first.');
@@ -1533,6 +1568,12 @@ function formatFileSize(bytes) {
 }
 
 async function uploadSelectedFiles() {
+    // Check if backend is ready
+    if (!backendReady) {
+        addChatMessage('assistant', '⏳ Backend is still waking up from cold start. Please wait a moment...');
+        return;
+    }
+
     if (selectedFiles.length === 0) {
         addChatMessage('assistant', '❌ No files selected for upload.');
         return;
