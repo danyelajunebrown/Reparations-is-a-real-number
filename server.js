@@ -398,6 +398,103 @@ app.post('/api/upload-document-with-text',
   })
 );
 
+// SECURED: Re-process existing document with improved parser
+app.post('/api/reprocess-document',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    const { documentId } = req.body;
+
+    if (!documentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Document ID is required'
+      });
+    }
+
+    console.log(`Re-processing document: ${documentId}`);
+
+    // Fetch document from database
+    const doc = await database.getDocumentById(documentId);
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    // Check if document has OCR text
+    if (!doc.ocr_text) {
+      return res.status(400).json({
+        success: false,
+        error: 'Document has no OCR text to re-process'
+      });
+    }
+
+    // Re-parse the OCR text with current parser
+    const parseResult = await documentParser.parsePreParsedDocument(doc.ocr_text, {
+      documentType: doc.doc_type,
+      ownerName: doc.owner_name,
+      birthYear: doc.owner_birth_year,
+      deathYear: doc.owner_death_year,
+      location: doc.owner_location,
+      textSource: 'reprocess'
+    });
+
+    console.log(`Re-parsed ${parseResult.enslaved_people?.length || 0} enslaved people`);
+
+    // Update document in database with new counts
+    await database.pool.query(`
+      UPDATE documents
+      SET total_enslaved = $1,
+          named_enslaved = $2,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE document_id = $3
+    `, [
+      parseResult.enslaved_people?.length || 0,
+      parseResult.enslaved_people?.filter(p => p.name).length || 0,
+      documentId
+    ]);
+
+    // Delete old enslaved_people records
+    await database.pool.query(`
+      DELETE FROM enslaved_people WHERE document_id = $1
+    `, [documentId]);
+
+    // Insert new enslaved_people records
+    if (parseResult.enslaved_people && parseResult.enslaved_people.length > 0) {
+      for (const person of parseResult.enslaved_people) {
+        await database.pool.query(`
+          INSERT INTO enslaved_people (
+            document_id, name, gender, age, source
+          ) VALUES ($1, $2, $3, $4, $5)
+        `, [
+          documentId,
+          person.name,
+          person.gender || null,
+          person.age || null,
+          'reprocessed'
+        ]);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Document re-processed successfully',
+      documentId: documentId,
+      previous_count: doc.total_enslaved,
+      new_count: parseResult.enslaved_people?.length || 0,
+      improvement: (parseResult.enslaved_people?.length || 0) - doc.total_enslaved,
+      parsed: {
+        enslaved_count: parseResult.enslaved_people?.length || 0,
+        confidence: parseResult.confidence,
+        method: parseResult.method
+      },
+      result: parseResult
+    });
+  })
+);
+
 // SECURED: FREE Natural Language Research Assistant (public with rate limiting)
 app.post('/api/llm-query',
   queryLimiter,
