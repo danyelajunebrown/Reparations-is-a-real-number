@@ -347,7 +347,41 @@ Be thorough. Extract EVERY person mentioned, even if information is incomplete.`
     const { owner, year, location } = metadata;
     const enslavedPeople = [];
 
-    // Common patterns for enslaved people in historical documents
+    // STRUCTURAL PATTERNS (detect document structure, not keywords)
+    const foundNames = new Set();
+
+    // Pattern 1: Detect numbered tabular rows (schedule/manifest format)
+    // Matches: "1.    Name Surname    Male/Female/"    Age.    ..."
+    // Flexible for: multi-word names, apostrophes, ditto marks, variable spacing
+    const numberedRowPattern = /^(\d+)\.\s+([A-Z][\w'\.\s]+?)\s{2,}[\w"\s]*?\s+(\d+)\./gm;
+    const numberedMatches = [...ocrText.matchAll(numberedRowPattern)];
+
+    for (const match of numberedMatches) {
+      const rowNum = match[1];
+      let name = match[2].trim();
+      const age = parseInt(match[3]);
+
+      // Clean up name (remove trailing periods, quotes, etc.)
+      name = name.replace(/['"\.]$/, '').trim();
+
+      const key = `${name}-${age}`;
+      if (!foundNames.has(key) && name.length >= 3) {
+        foundNames.add(key);
+
+        enslavedPeople.push({
+          name: name,
+          normalized_name: name,
+          age: age,
+          age_approximate: false,
+          gender: null, // Will be determined by context
+          relationships: [],
+          evidence_quote: match[0],
+          confidence: 0.8 // Higher confidence for structured data
+        });
+      }
+    }
+
+    // Common keyword-based patterns (fallback for unstructured text)
     const patterns = [
       // "Harry, aged 35" or "Harry aged 35"
       /\b([A-Z][a-z]+),?\s+aged?\s+(\d+)/gi,
@@ -364,8 +398,6 @@ Be thorough. Extract EVERY person mentioned, even if information is incomplete.`
       // "Betsy and her child"
       /\b([A-Z][a-z]+)\s+and\s+(?:his|her)\s+child/gi
     ];
-
-    const foundNames = new Set();
 
     for (const pattern of patterns) {
       const matches = [...ocrText.matchAll(pattern)];
