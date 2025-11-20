@@ -128,6 +128,19 @@ function fallbackPatternMatch(message) {
     };
   }
 
+  // Count documents queries - "how many documents"
+  if (lower.match(/how many document/i) ||
+      lower.match(/count.*document/i) ||
+      lower.match(/number of document/i) ||
+      lower.match(/total document/i)) {
+    return {
+      intent: 'query',
+      person: null,
+      data: { query_type: 'document_count' },
+      confidence: 0.9
+    };
+  }
+
   // Count owner queries - "how many owners"
   if (lower.match(/how many (slave )?owner/i) ||
       lower.match(/count (of )?(slave )?owner/i) ||
@@ -499,6 +512,20 @@ async function queryRelationships(personName, relationshipType) {
  */
 async function queryDatabase(intent) {
   const { person, data } = intent;
+
+  if (data.query_type === 'document_count') {
+    // Count total documents
+    const result = await pool.query(`
+      SELECT COUNT(*) as count FROM documents
+    `);
+
+    const count = parseInt(result.rows[0].count);
+    return {
+      success: true,
+      message: `There are ${count} document${count === 1 ? '' : 's'} stored in the database.`,
+      data: { count }
+    };
+  }
 
   if (data.query_type === 'list') {
     // List all slave owners
