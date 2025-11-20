@@ -10,7 +10,7 @@ const schemas = {
   uploadDocument: Joi.object({
     ownerName: Joi.string().min(2).max(100).required(),
     documentType: Joi.string()
-      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'other')
+      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'tombstone', 'other')
       .required(),
     birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
     deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
@@ -18,7 +18,11 @@ const schemas = {
     pageNumber: Joi.number().integer().min(1).optional(),
     totalPages: Joi.number().integer().min(1).optional(),
     isMultiPage: Joi.boolean().optional(),
-    parentDocumentId: Joi.string().alphanum().optional()
+    parentDocumentId: Joi.string().alphanum().optional(),
+    precompletedOCR: Joi.string().max(500000).optional().allow(null, ''),
+    ocrSource: Joi.string().max(200).optional().allow(null, ''),
+    accompanyingText: Joi.string().max(500000).optional().allow(null, ''),
+    textSource: Joi.string().max(200).optional().allow(null, '')
   }),
 
   processMetadata: Joi.object({
@@ -96,10 +100,10 @@ const schemas = {
   uploadDocumentWithText: Joi.object({
     ownerName: Joi.string().min(2).max(100).required(),
     documentType: Joi.string()
-      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'other')
+      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'tombstone', 'other')
       .required(),
     textContent: Joi.string().min(10).max(500000).optional().allow(null, ''),
-    textSource: Joi.string().valid('ocr', 'transcription', 'manual', 'archive').optional(),
+    textSource: Joi.string().valid('ocr', 'transcription', 'manual', 'archive', 'website').optional(),
     birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
     deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
     location: Joi.string().max(200).optional().allow(null, ''),
