@@ -822,7 +822,22 @@ function showDocumentMetadataForm(files) {
         files.map(function(f, i) { return '<div style="color: #9aa5b1; font-size: 0.85em;">📄 Page ' + (i + 1) + ': ' + f.name + '</div>'; }).join('') +
         '</div>' +
         '<form id="documentMetadataForm" style="display: flex; flex-direction: column; gap: 12px;">' +
-        
+
+        // SECTION 0: Subject Type Selector
+        '<div style="background: rgba(100, 200, 255, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(100, 200, 255, 0.3); margin-bottom: 10px;">' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 10px; font-size: 1em; font-weight: bold;">This document is primarily about: *</label>' +
+        '<div style="display: flex; gap: 20px;">' +
+        '<label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #e0e0e0;">' +
+        '<input type="radio" name="subjectType" value="owner" id="subjectTypeOwner" onchange="updateSubjectFields()" checked style="width: 18px; height: 18px; cursor: pointer;" />' +
+        '<span style="font-size: 0.95em;">Slave Owner</span>' +
+        '</label>' +
+        '<label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #e0e0e0;">' +
+        '<input type="radio" name="subjectType" value="enslaved" id="subjectTypeEnslaved" onchange="updateSubjectFields()" style="width: 18px; height: 18px; cursor: pointer;" />' +
+        '<span style="font-size: 0.95em;">Enslaved Person</span>' +
+        '</label>' +
+        '</div>' +
+        '</div>' +
+
         // Document Type (determines which fields show)
         '<div>' +
         '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Document Type *</label>' +
@@ -842,16 +857,43 @@ function showDocumentMetadataForm(files) {
         '<option value="other">Other</option>' +
         '</select>' +
         '</div>' +
-        
-        // SECTION 1: Always visible fields
-        '<div id="alwaysVisibleFields">' +
-        
-        // Owner Name
+
+        // SECTION 1: Owner Fields (shown when subjectType='owner')
+        '<div id="ownerFields">' +
         '<div>' +
         '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Slave Owner Name *</label>' +
-        '<input type="text" id="ownerName" required placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '<input type="text" id="ownerName" placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
         '</div>' +
-        
+        '</div>' +
+
+        // SECTION 1B: Enslaved Person Fields (shown when subjectType='enslaved')
+        '<div id="enslavedFields" style="display: none;">' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Enslaved Person Name *</label>' +
+        '<input type="text" id="enslavedPersonName" placeholder="e.g., Sarah Johnson" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Spouse Name</label>' +
+        '<input type="text" id="spouseName" placeholder="e.g., John Johnson" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Birth Year</label>' +
+        '<input type="number" id="enslavedBirthYear" placeholder="e.g., 1820" min="1600" max="1900" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Death Year</label>' +
+        '<input type="number" id="enslavedDeathYear" placeholder="e.g., 1895" min="1600" max="1950" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Location</label>' +
+        '<input type="text" id="enslavedLocation" placeholder="e.g., Baltimore, Maryland" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
+        '<div>' +
+        '<label style="color: #64c8ff; display: block; margin-bottom: 5px; font-size: 0.9em;">Enslaved By (Owner Name - Optional)</label>' +
+        '<input type="text" id="enslavedByOwner" placeholder="e.g., James Hopewell" style="width: 100%; padding: 10px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.5); color: #e0e0e0; border-radius: 5px;" />' +
+        '</div>' +
         '</div>' +
         
         // SECTION 2: Census/Slave Schedule fields (hidden by default)
@@ -973,17 +1015,48 @@ function closeDocumentMetadataForm(clearFiles = true) {
     }
 }
 
+// Toggle between owner and enslaved person fields
+function updateSubjectFields() {
+    const subjectType = document.querySelector('input[name="subjectType"]:checked').value;
+    const ownerFields = document.getElementById('ownerFields');
+    const enslavedFields = document.getElementById('enslavedFields');
+
+    if (subjectType === 'enslaved') {
+        // Show enslaved person fields, hide owner fields
+        ownerFields.style.display = 'none';
+        enslavedFields.style.display = 'block';
+
+        // Update required attributes
+        document.getElementById('ownerName').required = false;
+        document.getElementById('enslavedPersonName').required = true;
+    } else {
+        // Show owner fields, hide enslaved person fields
+        ownerFields.style.display = 'block';
+        enslavedFields.style.display = 'none';
+
+        // Update required attributes
+        document.getElementById('ownerName').required = true;
+        document.getElementById('enslavedPersonName').required = false;
+    }
+}
+
 // Show/hide fields based on document type
 function updateFieldsBasedOnDocType() {
     const docType = document.getElementById('docType').value;
     const censusFields = document.getElementById('censusFields');
     const genealogyFields = document.getElementById('genealogyFields');
-    
+
+    // Auto-select enslaved person mode for tombstones
+    if (docType === 'tombstone') {
+        document.getElementById('subjectTypeEnslaved').checked = true;
+        updateSubjectFields();
+    }
+
     if (docType === 'census' || docType === 'slave_schedule') {
         // Show census fields, hide genealogy
         censusFields.style.display = 'block';
         genealogyFields.style.display = 'none';
-        
+
         // Make census fields required
         document.getElementById('censusYear').required = true;
         document.getElementById('censusCounty').required = true;
@@ -992,7 +1065,7 @@ function updateFieldsBasedOnDocType() {
         // Show genealogy fields, hide census
         censusFields.style.display = 'none';
         genealogyFields.style.display = 'block';
-        
+
         // Remove census required
         document.getElementById('censusYear').required = false;
         document.getElementById('censusCounty').required = false;
@@ -1010,12 +1083,27 @@ async function uploadMultiPageDocument() {
         return;
     }
     
+    const subjectType = document.querySelector('input[name="subjectType"]:checked').value;
+
     const metadata = {
+        subjectType: subjectType,
         documentType: document.getElementById('docType').value,
-        ownerName: document.getElementById('ownerName').value,
-        birthYear: parseInt(document.getElementById('birthYear').value) || null,
-        deathYear: parseInt(document.getElementById('deathYear').value) || null,
-        location: document.getElementById('location').value,
+
+        // Owner fields (when subjectType='owner')
+        ownerName: subjectType === 'owner' ? document.getElementById('ownerName').value : (document.getElementById('enslavedByOwner')?.value || ''),
+
+        // Enslaved person fields (when subjectType='enslaved')
+        enslavedPersonName: subjectType === 'enslaved' ? document.getElementById('enslavedPersonName').value : '',
+        spouseName: document.getElementById('spouseName')?.value || '',
+
+        // Date fields (use appropriate ones based on subject type)
+        birthYear: subjectType === 'owner' ? (parseInt(document.getElementById('birthYear').value) || null) : (parseInt(document.getElementById('enslavedBirthYear').value) || null),
+        deathYear: subjectType === 'owner' ? (parseInt(document.getElementById('deathYear').value) || null) : (parseInt(document.getElementById('enslavedDeathYear').value) || null),
+
+        // Location (use appropriate one)
+        location: subjectType === 'owner' ? document.getElementById('location').value : document.getElementById('enslavedLocation').value,
+
+        // OCR enhancement fields
         precompletedOCR: document.getElementById('precompletedOCR')?.value || '',
         ocrSource: document.getElementById('ocrSource')?.value || '',
         accompanyingText: document.getElementById('accompanyingText')?.value || '',
@@ -1027,28 +1115,42 @@ async function uploadMultiPageDocument() {
         alert('Please select a document type');
         return;
     }
-    
-    if (!metadata.ownerName || metadata.ownerName.trim() === '') {
-        alert('Please enter the slave owner name');
-        return;
+
+    // Validate based on subject type
+    if (metadata.subjectType === 'owner') {
+        if (!metadata.ownerName || metadata.ownerName.trim() === '') {
+            alert('Please enter the slave owner name');
+            return;
+        }
+    } else {
+        if (!metadata.enslavedPersonName || metadata.enslavedPersonName.trim() === '') {
+            alert('Please enter the enslaved person\'s name');
+            return;
+        }
     }
 
     closeDocumentMetadataForm(false);  // CRITICAL: Don't clear files yet!
 
-    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + metadata.ownerName + '" (' + metadata.documentType + ')...');
-    
+    const subjectName = metadata.subjectType === 'owner' ? metadata.ownerName : metadata.enslavedPersonName;
+    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + subjectName + '" (' + metadata.documentType + ')...');
+
     try {
         const formData = new FormData();
-        
+
         // Add all files
         for (let i = 0; i < selectedDocumentFiles.length; i++) {
             formData.append('pages', selectedDocumentFiles[i]);
             console.log('Adding file ' + (i + 1) + ': ' + selectedDocumentFiles[i].name);
         }
-        
+
         // Add metadata
+        formData.append('subjectType', metadata.subjectType);
         formData.append('documentType', metadata.documentType);
-        formData.append('ownerName', metadata.ownerName);
+
+        // Add name fields
+        if (metadata.ownerName) formData.append('ownerName', metadata.ownerName);
+        if (metadata.enslavedPersonName) formData.append('enslavedPersonName', metadata.enslavedPersonName);
+        if (metadata.spouseName) formData.append('spouseName', metadata.spouseName);
 
         // Only append year fields if they have valid values
         if (metadata.birthYear) formData.append('birthYear', metadata.birthYear);

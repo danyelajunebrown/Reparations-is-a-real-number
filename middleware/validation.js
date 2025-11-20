@@ -8,7 +8,24 @@ const Joi = require('joi');
 // Validation schemas for different endpoints
 const schemas = {
   uploadDocument: Joi.object({
-    ownerName: Joi.string().min(2).max(100).required(),
+    // Subject type determines required fields
+    subjectType: Joi.string().valid('owner', 'enslaved').optional().default('owner'),
+
+    // Owner fields (required if subjectType='owner')
+    ownerName: Joi.string().min(2).max(100).when('subjectType', {
+      is: 'owner',
+      then: Joi.required(),
+      otherwise: Joi.optional().allow(null, '')
+    }),
+
+    // Enslaved person fields (required if subjectType='enslaved')
+    enslavedPersonName: Joi.string().min(2).max(500).when('subjectType', {
+      is: 'enslaved',
+      then: Joi.required(),
+      otherwise: Joi.optional().allow(null, '')
+    }),
+    spouseName: Joi.string().max(500).optional().allow(null, ''),
+
     documentType: Joi.string()
       .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'tombstone', 'other')
       .required(),
