@@ -223,12 +223,26 @@ function fallbackPatternMatch(message) {
     };
   }
 
-  // Count enslaved people queries
-  if (lower.match(/how many.*enslaved/i) || lower.match(/count.*enslaved/i)) {
+  // Count enslaved people queries - "how many enslaved" or "how many slaves"
+  if (lower.match(/how many.*(enslaved|slave)/i) ||
+      lower.match(/count.*(enslaved|slave)/i) ||
+      lower.match(/total.*(enslaved|slave)/i)) {
     const personMatch = message.match(/\b([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/);
+
+    // If no person name found, count ALL enslaved people
+    if (!personMatch) {
+      return {
+        intent: 'query',
+        person: null,
+        data: { query_type: 'count_all_enslaved' },
+        confidence: 0.85
+      };
+    }
+
+    // If person name found, count enslaved people for that owner
     return {
       intent: 'query',
-      person: personMatch ? personMatch[1] : null,
+      person: personMatch[1],
       data: { query_type: 'count' },
       confidence: 0.75
     };
@@ -791,6 +805,29 @@ async function queryDatabase(intent) {
     };
   }
 
+  if (data.query_type === 'count_all_enslaved') {
+    // Count total enslaved people across all documents
+    const result = await pool.query(`
+      SELECT COUNT(*) as count
+      FROM enslaved_people
+    `);
+
+    if (!result.rows || result.rows.length === 0) {
+      return {
+        success: true,
+        message: 'No enslaved people documented in the database yet.',
+        data: { count: 0 }
+      };
+    }
+
+    const count = parseInt(result.rows[0].count);
+    return {
+      success: true,
+      message: `There are ${count} enslaved ${count === 1 ? 'person' : 'people'} documented in the database.`,
+      data: { count }
+    };
+  }
+
   if (data.query_type === 'count' && !person) {
     // Count total owners (not enslaved people)
     const result = await pool.query(`
@@ -885,6 +922,11 @@ async function processConversation(userMessage, context = {}) {
     // Reprocess commands - "reprocess documents" or "reprocess all"
     else if (lower.match(/reprocess/i)) {
       console.log('[DEBUG] Detected reprocess pattern, using pattern matching');
+      intent = fallbackPatternMatch(userMessage);
+    }
+    // Count enslaved people - "how many enslaved" or "how many slaves"
+    else if (lower.match(/how many.*(enslaved|slave)/i) || lower.match(/count.*(enslaved|slave)/i) || lower.match(/total.*(enslaved|slave)/i)) {
+      console.log('[DEBUG] Detected enslaved count pattern, using pattern matching');
       intent = fallbackPatternMatch(userMessage);
     }
     // Otherwise, use LLM
