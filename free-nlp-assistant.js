@@ -583,6 +583,16 @@ class FreeNLPResearchAssistant {
                         updateInfo.action
                     );
 
+                    // Check if update failed
+                    if (!result.success) {
+                        return {
+                            success: false,
+                            error: result.message,
+                            response: result.message,
+                            intent: 'update_person'
+                        };
+                    }
+
                     response = result.message;
                     session.lastPerson = updateInfo.personName;
                 } else {
