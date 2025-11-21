@@ -5,9 +5,10 @@
  */
 
 class FreeNLPResearchAssistant {
-    constructor(database, enslavedManager = null) {
+    constructor(database, enslavedManager = null, descendantTreeBuilder = null) {
         this.database = database;
         this.enslavedManager = enslavedManager;
+        this.descendantTreeBuilder = descendantTreeBuilder;
         this.sessions = new Map(); // Store conversation context per session
 
         // Intent patterns (what is the user trying to do?)
@@ -89,6 +90,44 @@ class FreeNLPResearchAssistant {
                 /how much (?:does|did) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) owe/i,
                 /reparations (?:for|owed by) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
                 /what'?s the (?:reparations|amount) for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+            ],
+
+            // GENEALOGY: Count descendants
+            count_descendants: [
+                /how many descendants (?:does|did) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) have/i,
+                /(?:total )?descendants? (?:of|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /count descendants? (?:of|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /how many people descended from ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+            ],
+
+            // GENEALOGY: Show family tree
+            show_tree: [
+                /show (?:me )?(?:the )?(?:family )?tree (?:for|of) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /(?:family )?tree (?:for|of) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /display tree/i,
+                /view tree/i
+            ],
+
+            // GENEALOGY: Find relationship
+            find_relationship: [
+                /how (?:am i|is .+) related to ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /relationship (?:between|to) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /(?:am i|is .+) (?:a )?descendant of ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+            ],
+
+            // GENEALOGY: Living descendants
+            living_descendants: [
+                /how many living descendants (?:does|did) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) have/i,
+                /living descendants? (?:of|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /estimate living descendants/i
+            ],
+
+            // GENEALOGY: Distribution/shares
+            descendant_shares: [
+                /(?:what is|what's|calculate) (?:my|the) share/i,
+                /how much would (?:my|each) share be/i,
+                /distribute reparations (?:for|to) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /reparations distribution (?:for|of) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
             ]
         };
         
@@ -607,6 +646,21 @@ class FreeNLPResearchAssistant {
                 data.stats = await this.database.getStats();
                 response = this.formatResponse(intent, data, null, session);
 
+            } else if (intent === 'count_descendants') {
+                // Handle descendant counting
+                data = await this.handleCountDescendants(personName || session.lastPerson);
+                response = this.formatGenealogyResponse(intent, data, session);
+
+            } else if (intent === 'living_descendants') {
+                // Handle living descendants estimation
+                data = await this.handleLivingDescendants(personName || session.lastPerson);
+                response = this.formatGenealogyResponse(intent, data, session);
+
+            } else if (intent === 'descendant_shares') {
+                // Handle reparations distribution calculation
+                data = await this.handleDescendantShares(personName, session);
+                response = this.formatGenealogyResponse(intent, data, session);
+
             } else if (personName) {
                 data = await this.findPerson(personName);
                 response = this.formatResponse(intent, data, personName, session);
@@ -652,6 +706,270 @@ class FreeNLPResearchAssistant {
      */
     clearSession(sessionId = 'default') {
         this.sessions.delete(sessionId);
+    }
+
+    // ============================================
+    // GENEALOGY QUERY HANDLERS
+    // ============================================
+
+    /**
+     * Handle count_descendants intent
+     */
+    async handleCountDescendants(personName) {
+        if (!this.descendantTreeBuilder) {
+            return {
+                error: 'Genealogy features not available. DescendantTreeBuilder not configured.'
+            };
+        }
+
+        try {
+            // Find person in enslaved_individuals table
+            const personResult = await this.database.query(`
+                SELECT enslaved_id, full_name, birth_year, death_year
+                FROM enslaved_individuals
+                WHERE full_name ILIKE $1
+                LIMIT 1
+            `, [`%${personName}%`]);
+
+            if (!personResult.rows || personResult.rows.length === 0) {
+                return {
+                    error: `Person "${personName}" not found in genealogy database`
+                };
+            }
+
+            const person = personResult.rows[0];
+
+            // Count descendants
+            const counts = await this.descendantTreeBuilder.countAllDescendants(person.enslaved_id);
+
+            return {
+                success: true,
+                person,
+                counts
+            };
+
+        } catch (error) {
+            console.error('Error counting descendants:', error);
+            return {
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Handle living_descendants intent
+     */
+    async handleLivingDescendants(personName) {
+        if (!this.descendantTreeBuilder) {
+            return {
+                error: 'Genealogy features not available'
+            };
+        }
+
+        try {
+            // Find person
+            const personResult = await this.database.query(`
+                SELECT enslaved_id, full_name
+                FROM enslaved_individuals
+                WHERE full_name ILIKE $1
+                LIMIT 1
+            `, [`%${personName}%`]);
+
+            if (!personResult.rows || personResult.rows.length === 0) {
+                return {
+                    error: `Person "${personName}" not found`
+                };
+            }
+
+            const person = personResult.rows[0];
+
+            // Estimate living descendants
+            const livingData = await this.descendantTreeBuilder.estimateLivingDescendants(person.enslaved_id);
+
+            return {
+                success: true,
+                person,
+                livingData
+            };
+
+        } catch (error) {
+            console.error('Error estimating living descendants:', error);
+            return {
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Handle descendant_shares intent
+     */
+    async handleDescendantShares(personName, session) {
+        if (!this.descendantTreeBuilder) {
+            return {
+                error: 'Genealogy features not available'
+            };
+        }
+
+        try {
+            // If no person name, use session context
+            if (!personName && session.lastPerson) {
+                personName = session.lastPerson;
+            }
+
+            if (!personName) {
+                return {
+                    error: 'Please specify a person, e.g., "distribute reparations for James Hopewell"'
+                };
+            }
+
+            // Find person
+            const personResult = await this.database.query(`
+                SELECT ei.enslaved_id, ei.full_name, ei.birth_year, ei.death_year,
+                       d.total_reparations
+                FROM enslaved_individuals ei
+                LEFT JOIN documents d ON d.owner_name ILIKE ei.full_name
+                WHERE ei.full_name ILIKE $1
+                LIMIT 1
+            `, [`%${personName}%`]);
+
+            if (!personResult.rows || personResult.rows.length === 0) {
+                return {
+                    error: `Person "${personName}" not found`
+                };
+            }
+
+            const person = personResult.rows[0];
+            const totalReparations = person.total_reparations || 1000000; // Default $1M if not set
+
+            // Calculate distribution
+            const distribution = await this.descendantTreeBuilder.distributeReparations(
+                person.enslaved_id,
+                totalReparations
+            );
+
+            return {
+                success: true,
+                person,
+                distribution
+            };
+
+        } catch (error) {
+            console.error('Error calculating shares:', error);
+            return {
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Format genealogy responses
+     */
+    formatGenealogyResponse(intent, data, session) {
+        let response = '';
+
+        switch (intent) {
+            case 'count_descendants':
+                if (data.error) {
+                    response = `❌ ${data.error}`;
+                } else if (data.counts) {
+                    const person = data.person;
+                    const counts = data.counts;
+
+                    response = `${person.full_name} has **${counts.total} known descendants** across ${Object.keys(counts.byGeneration).length} generations:\n\n`;
+
+                    Object.entries(counts.byGeneration)
+                        .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+                        .forEach(([gen, count]) => {
+                            const genLabel = this.getGenerationLabel(parseInt(gen));
+                            response += `  • Generation ${gen} (${genLabel}): ${count}\n`;
+                        });
+
+                    response += `\n💡 Ask "show me living descendants" or "calculate reparations distribution" for more details.`;
+
+                    session.lastPerson = person.full_name;
+                    session.lastPersonType = 'enslaved';
+                }
+                break;
+
+            case 'living_descendants':
+                if (data.error) {
+                    response = `❌ ${data.error}`;
+                } else if (data.livingData) {
+                    const person = data.person;
+                    const ld = data.livingData;
+
+                    response = `${person.full_name} has approximately **${ld.estimatedLiving} living descendants** (out of ${ld.total} total).\n\n`;
+                    response += `📊 Breakdown:\n`;
+                    response += `  • Living (estimated): ${ld.estimatedLiving}\n`;
+                    response += `  • Deceased: ${ld.deceased}\n`;
+                    response += `  • Total descendants: ${ld.total}\n\n`;
+                    response += `ℹ️ ${ld.methodology}`;
+
+                    session.lastPerson = person.full_name;
+                }
+                break;
+
+            case 'descendant_shares':
+                if (data.error) {
+                    response = `❌ ${data.error}`;
+                } else if (data.distribution) {
+                    const person = data.person;
+                    const dist = data.distribution;
+
+                    response = `💰 Reparations Distribution for ${person.full_name}\n\n`;
+                    response += `Total Reparations: $${this.formatMoney(dist.totalAmount)}\n`;
+                    response += `Living Descendants: ${dist.recipientCount}\n`;
+                    response += `Amount Distributed: $${this.formatMoney(dist.distributedAmount)}\n\n`;
+
+                    response += `📋 Top 10 Recipients:\n`;
+                    dist.distributions.slice(0, 10).forEach((d, i) => {
+                        response += `${i + 1}. ${d.fullName} (Gen ${d.generation}): $${this.formatMoney(d.amount)} (${d.sharePercentage}%)\n`;
+                    });
+
+                    if (dist.distributions.length > 10) {
+                        response += `\n... and ${dist.distributions.length - 10} more recipients.`;
+                    }
+
+                    response += `\n\n💡 Earlier generations receive larger shares due to generation multipliers.`;
+
+                    session.lastPerson = person.full_name;
+                }
+                break;
+
+            default:
+                response = 'Genealogy query result not formatted';
+        }
+
+        return response;
+    }
+
+    /**
+     * Get generation label (children, grandchildren, etc.)
+     */
+    getGenerationLabel(gen) {
+        const labels = {
+            1: 'Children',
+            2: 'Grandchildren',
+            3: 'Great-grandchildren',
+            4: '2nd great-grandchildren',
+            5: '3rd great-grandchildren',
+            6: '4th great-grandchildren',
+            7: '5th great-grandchildren',
+            8: '6th great-grandchildren'
+        };
+        return labels[gen] || `${gen}th generation`;
+    }
+
+    /**
+     * Format money amounts
+     */
+    formatMoney(amount) {
+        if (amount >= 1000000) {
+            return (amount / 1000000).toFixed(2) + 'M';
+        } else if (amount >= 1000) {
+            return (amount / 1000).toFixed(2) + 'K';
+        }
+        return amount.toFixed(2);
     }
 }
 

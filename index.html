@@ -482,6 +482,242 @@
         #fileUpload {
             display: none;
         }
+
+        /* Document Viewer Styles */
+        .document-viewer-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 14, 39, 0.98);
+            display: none;
+            flex-direction: row;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .document-viewer-container.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .document-main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        .document-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            border: 2px solid rgba(100, 200, 255, 0.3);
+            border-radius: 8px;
+            background: white;
+            box-shadow: 0 0 40px rgba(100, 200, 255, 0.3);
+            transition: transform 0.3s ease;
+        }
+
+        .document-canvas.pdf-frame {
+            width: 90%;
+            height: 90%;
+        }
+
+        .document-loading {
+            color: #64c8ff;
+            font-size: 1.2em;
+            text-align: center;
+        }
+
+        .document-error {
+            color: #ff6464;
+            font-size: 1.1em;
+            text-align: center;
+            padding: 20px;
+            background: rgba(255, 100, 100, 0.1);
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            border-radius: 8px;
+        }
+
+        .document-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            background: rgba(10, 14, 39, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+        }
+
+        .doc-control-btn {
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: #64c8ff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .doc-control-btn:hover {
+            background: rgba(100, 200, 255, 0.4);
+            border-color: #64c8ff;
+        }
+
+        .doc-control-btn.close {
+            background: rgba(255, 100, 100, 0.2);
+            border-color: rgba(255, 100, 100, 0.5);
+            color: #ff6464;
+        }
+
+        .doc-control-btn.close:hover {
+            background: rgba(255, 100, 100, 0.4);
+            border-color: #ff6464;
+        }
+
+        .metadata-panel {
+            width: 320px;
+            background: rgba(26, 30, 63, 0.95);
+            border-left: 2px solid rgba(100, 200, 255, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .metadata-panel h3 {
+            color: #64c8ff;
+            margin: 0 0 10px 0;
+            font-size: 1.2em;
+            border-bottom: 2px solid rgba(100, 200, 255, 0.3);
+            padding-bottom: 8px;
+        }
+
+        .metadata-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .metadata-label {
+            color: #9aa5b1;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .metadata-value {
+            color: #e0e0e0;
+            font-size: 0.95em;
+        }
+
+        .metadata-badge {
+            display: inline-block;
+            background: rgba(100, 200, 255, 0.2);
+            color: #64c8ff;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            border: 1px solid rgba(100, 200, 255, 0.4);
+        }
+
+        .document-navigation {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: rgba(10, 14, 39, 0.9);
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+        }
+
+        .doc-nav-btn {
+            background: rgba(100, 200, 255, 0.2);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: #64c8ff;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+
+        .doc-nav-btn:hover:not(:disabled) {
+            background: rgba(100, 200, 255, 0.4);
+            border-color: #64c8ff;
+        }
+
+        .doc-nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .doc-nav-counter {
+            color: #64c8ff;
+            font-size: 0.95em;
+            padding: 0 10px;
+            white-space: nowrap;
+        }
+
+        .enslaved-list {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(10, 14, 39, 0.6);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            border-radius: 5px;
+            padding: 10px;
+        }
+
+        .enslaved-list-item {
+            color: #e0e0e0;
+            padding: 5px;
+            margin: 3px 0;
+            background: rgba(100, 200, 255, 0.1);
+            border-left: 3px solid #64c8ff;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+
+        /* Zoom transform for images */
+        .document-canvas.zoomed {
+            transform: scale(1.5);
+            cursor: move;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .metadata-panel {
+                width: 100%;
+                max-height: 40vh;
+                border-left: none;
+                border-top: 2px solid rgba(100, 200, 255, 0.3);
+            }
+
+            .document-viewer-container.active {
+                flex-direction: column;
+            }
+
+            .document-controls {
+                top: 10px;
+                right: 10px;
+                flex-wrap: wrap;
+            }
+        }
     </style>
 </head>
 <body>
@@ -540,6 +776,92 @@
                 <button class="control-btn" onclick="rotateCarousel(-1)">← Previous</button>
                 <button class="control-btn" id="autoRotateBtn" onclick="toggleAutoRotate()">⏸ Pause</button>
                 <button class="control-btn" onclick="rotateCarousel(1)">Next →</button>
+            </div>
+
+            <!-- Document Viewer Overlay -->
+            <div class="document-viewer-container" id="documentViewer">
+                <!-- Main Document Display Area -->
+                <div class="document-main-area" id="documentMainArea">
+                    <!-- Document Controls -->
+                    <div class="document-controls">
+                        <button class="doc-control-btn" onclick="zoomIn()" title="Zoom In (Ctrl++)">🔍+</button>
+                        <button class="doc-control-btn" onclick="zoomOut()" title="Zoom Out (Ctrl+-)">🔍-</button>
+                        <button class="doc-control-btn" onclick="resetZoom()" title="Reset View">↺ Reset</button>
+                        <button class="doc-control-btn" onclick="downloadCurrentDocument()" title="Download">⬇️ Download</button>
+                        <button class="doc-control-btn close" onclick="closeDocumentViewer()" title="Close (ESC)">✕ Close</button>
+                    </div>
+
+                    <!-- Document Content (will be populated dynamically) -->
+                    <div id="documentContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                        <div class="document-loading">Loading document...</div>
+                    </div>
+
+                    <!-- Document Navigation (for multiple documents) -->
+                    <div class="document-navigation" id="documentNavigation">
+                        <button class="doc-nav-btn" id="prevDocBtn" onclick="previousDocument()">← Previous</button>
+                        <span class="doc-nav-counter" id="docCounter">Document 1 of 1</span>
+                        <button class="doc-nav-btn" id="nextDocBtn" onclick="nextDocument()">Next →</button>
+                    </div>
+                </div>
+
+                <!-- Metadata Panel -->
+                <div class="metadata-panel" id="metadataPanel">
+                    <h3>📋 Document Details</h3>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Document Type</div>
+                        <div class="metadata-value">
+                            <span class="metadata-badge" id="docTypeBadge">WILL</span>
+                        </div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Owner Name</div>
+                        <div class="metadata-value" id="docOwnerName">Loading...</div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Location</div>
+                        <div class="metadata-value" id="docLocation">-</div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Life Span</div>
+                        <div class="metadata-value" id="docLifeSpan">-</div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Upload Date</div>
+                        <div class="metadata-value" id="docUploadDate">-</div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">File Info</div>
+                        <div class="metadata-value" id="docFileInfo">-</div>
+                    </div>
+
+                    <div class="metadata-item" id="enslavedCountSection">
+                        <div class="metadata-label">Enslaved People Identified</div>
+                        <div class="metadata-value" id="docEnslavedCount" style="color: #ffaa00; font-weight: bold;">0</div>
+                    </div>
+
+                    <div class="metadata-item" id="enslavedListSection" style="display: none;">
+                        <div class="metadata-label">Names</div>
+                        <div class="enslaved-list" id="docEnslavedList">
+                            <!-- Will be populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="metadata-item" id="reparationsSection">
+                        <div class="metadata-label">Reparations Calculated</div>
+                        <div class="metadata-value" id="docReparations" style="color: #64ff64; font-weight: bold;">$0</div>
+                    </div>
+
+                    <div class="metadata-item">
+                        <div class="metadata-label">Document ID</div>
+                        <div class="metadata-value" id="docId" style="font-family: monospace; font-size: 0.8em; color: #9aa5b1;">-</div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -741,7 +1063,7 @@
         // Document storage
         let processedDocuments = [];
         let ownersData = [];
-        
+
         // Stats
         let stats = {
             documents: 0,
@@ -749,6 +1071,352 @@
             enslaved: 0,
             reparations: 0
         };
+
+        // ============================================
+        // DOCUMENT VIEWER STATE MANAGEMENT
+        // ============================================
+        let documentViewerState = {
+            isActive: false,
+            currentDocumentSet: [],      // Array of document IDs to view
+            currentIndex: 0,              // Current position in the set
+            currentMetadata: null,        // Current document metadata
+            zoomLevel: 1,                 // Current zoom level for images
+            viewMode: 'tree'              // 'tree' or 'document'
+        };
+
+        // ============================================
+        // DOCUMENT VIEWER CORE FUNCTIONS
+        // ============================================
+
+        /**
+         * Switch to document viewer mode and load documents
+         * @param {Array<string>} documentIds - Array of document IDs to view
+         * @param {number} startIndex - Which document to start with (default 0)
+         */
+        async function switchToDocumentMode(documentIds, startIndex = 0) {
+            if (!documentIds || documentIds.length === 0) {
+                console.error('No documents to display');
+                return;
+            }
+
+            console.log('Switching to document mode:', documentIds);
+
+            // Update state
+            documentViewerState.isActive = true;
+            documentViewerState.currentDocumentSet = documentIds;
+            documentViewerState.currentIndex = startIndex;
+            documentViewerState.viewMode = 'document';
+            documentViewerState.zoomLevel = 1;
+
+            // Pause carousel auto-rotation
+            if (isAutoRotating) {
+                toggleAutoRotate();
+            }
+
+            // Show document viewer
+            const viewer = document.getElementById('documentViewer');
+            viewer.classList.add('active');
+
+            // Load the first document
+            await loadDocument(documentIds[startIndex]);
+
+            // Update navigation buttons
+            updateNavigationButtons();
+        }
+
+        /**
+         * Close document viewer and return to tree mode
+         */
+        function closeDocumentViewer() {
+            console.log('Closing document viewer');
+
+            // Hide viewer
+            const viewer = document.getElementById('documentViewer');
+            viewer.classList.remove('active');
+
+            // Reset state
+            documentViewerState.isActive = false;
+            documentViewerState.currentDocumentSet = [];
+            documentViewerState.currentIndex = 0;
+            documentViewerState.currentMetadata = null;
+            documentViewerState.viewMode = 'tree';
+            documentViewerState.zoomLevel = 1;
+
+            // Resume carousel auto-rotation if it was active
+            if (!isAutoRotating) {
+                toggleAutoRotate();
+            }
+
+            // Clear document content
+            const content = document.getElementById('documentContent');
+            content.innerHTML = '<div class="document-loading">Select a document to view</div>';
+        }
+
+        /**
+         * Load a specific document by ID
+         * @param {string} documentId - The document ID to load
+         */
+        async function loadDocument(documentId) {
+            console.log('Loading document:', documentId);
+
+            const content = document.getElementById('documentContent');
+            content.innerHTML = '<div class="document-loading">📄 Loading document...</div>';
+
+            try {
+                // Fetch document metadata first
+                const metaResponse = await fetch(`${API_BASE_URL}/api/documents/${documentId}`);
+                const metaData = await metaResponse.json();
+
+                if (!metaData.success) {
+                    throw new Error('Failed to load document metadata');
+                }
+
+                const doc = metaData.document;
+                documentViewerState.currentMetadata = doc;
+
+                // Update metadata panel
+                updateMetadataPanel(doc);
+
+                // Load and display the actual document file
+                await renderDocument(documentId, doc.mime_type);
+
+            } catch (error) {
+                console.error('Error loading document:', error);
+                content.innerHTML = `<div class="document-error">❌ Failed to load document: ${error.message}</div>`;
+            }
+        }
+
+        /**
+         * Render the document in the viewer based on mime type
+         * @param {string} documentId - The document ID
+         * @param {string} mimeType - The document's MIME type
+         */
+        async function renderDocument(documentId, mimeType) {
+            const content = document.getElementById('documentContent');
+            const fileUrl = `${API_BASE_URL}/api/documents/${documentId}/file`;
+
+            console.log('Rendering document:', documentId, 'Type:', mimeType);
+
+            // Clear existing content
+            content.innerHTML = '';
+
+            if (mimeType && mimeType.includes('pdf')) {
+                // PDF Document - use iframe
+                const iframe = document.createElement('iframe');
+                iframe.src = fileUrl;
+                iframe.className = 'document-canvas pdf-frame';
+                iframe.style.border = 'none';
+                content.appendChild(iframe);
+
+            } else if (mimeType && (mimeType.includes('image') || mimeType.includes('jpeg') || mimeType.includes('png'))) {
+                // Image Document
+                const img = document.createElement('img');
+                img.src = fileUrl;
+                img.className = 'document-canvas';
+                img.alt = 'Document Image';
+                img.id = 'documentImage';
+
+                img.onload = () => {
+                    console.log('Image loaded successfully');
+                };
+
+                img.onerror = () => {
+                    content.innerHTML = '<div class="document-error">❌ Failed to load image</div>';
+                };
+
+                content.appendChild(img);
+
+            } else {
+                // Unknown type - try iframe as fallback
+                const iframe = document.createElement('iframe');
+                iframe.src = fileUrl;
+                iframe.className = 'document-canvas pdf-frame';
+                iframe.style.border = 'none';
+                content.appendChild(iframe);
+            }
+        }
+
+        /**
+         * Update the metadata panel with document information
+         * @param {Object} doc - Document metadata object
+         */
+        function updateMetadataPanel(doc) {
+            // Document type
+            const typeBadge = document.getElementById('docTypeBadge');
+            typeBadge.textContent = (doc.doc_type || 'UNKNOWN').toUpperCase();
+
+            // Owner name
+            const ownerName = document.getElementById('docOwnerName');
+            ownerName.textContent = doc.owner_name || 'Unknown';
+
+            // Location
+            const location = document.getElementById('docLocation');
+            location.textContent = doc.owner_location || 'Not specified';
+
+            // Life span
+            const lifeSpan = document.getElementById('docLifeSpan');
+            const birth = doc.owner_birth_year ? doc.owner_birth_year : '?';
+            const death = doc.owner_death_year ? doc.owner_death_year : '?';
+            lifeSpan.textContent = `${birth} - ${death}`;
+
+            // Upload date
+            const uploadDate = document.getElementById('docUploadDate');
+            uploadDate.textContent = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '-';
+
+            // File info
+            const fileInfo = document.getElementById('docFileInfo');
+            const fileSize = doc.file_size ? (doc.file_size / 1024).toFixed(1) + ' KB' : 'Unknown size';
+            fileInfo.textContent = `${doc.filename || 'Unknown'} (${fileSize})`;
+
+            // Enslaved count
+            const enslavedCount = document.getElementById('docEnslavedCount');
+            enslavedCount.textContent = doc.total_enslaved || 0;
+
+            // If there are enslaved people, show the list (would need additional API call)
+            // For now, just hide the list section
+            document.getElementById('enslavedListSection').style.display = 'none';
+
+            // Reparations
+            const reparations = document.getElementById('docReparations');
+            if (doc.total_reparations) {
+                reparations.textContent = '$' + (doc.total_reparations / 1000000).toFixed(2) + 'M';
+            } else {
+                reparations.textContent = 'Not calculated';
+            }
+
+            // Document ID
+            const docId = document.getElementById('docId');
+            docId.textContent = doc.document_id || '-';
+        }
+
+        /**
+         * Update navigation button states
+         */
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prevDocBtn');
+            const nextBtn = document.getElementById('nextDocBtn');
+            const counter = document.getElementById('docCounter');
+
+            const currentIdx = documentViewerState.currentIndex;
+            const totalDocs = documentViewerState.currentDocumentSet.length;
+
+            // Update counter
+            counter.textContent = `Document ${currentIdx + 1} of ${totalDocs}`;
+
+            // Update button states
+            prevBtn.disabled = currentIdx === 0;
+            nextBtn.disabled = currentIdx === totalDocs - 1;
+
+            // Hide navigation if only one document
+            const navContainer = document.getElementById('documentNavigation');
+            if (totalDocs === 1) {
+                navContainer.style.display = 'none';
+            } else {
+                navContainer.style.display = 'flex';
+            }
+        }
+
+        /**
+         * Navigate to next document
+         */
+        async function nextDocument() {
+            if (documentViewerState.currentIndex < documentViewerState.currentDocumentSet.length - 1) {
+                documentViewerState.currentIndex++;
+                const docId = documentViewerState.currentDocumentSet[documentViewerState.currentIndex];
+                await loadDocument(docId);
+                updateNavigationButtons();
+            }
+        }
+
+        /**
+         * Navigate to previous document
+         */
+        async function previousDocument() {
+            if (documentViewerState.currentIndex > 0) {
+                documentViewerState.currentIndex--;
+                const docId = documentViewerState.currentDocumentSet[documentViewerState.currentIndex];
+                await loadDocument(docId);
+                updateNavigationButtons();
+            }
+        }
+
+        /**
+         * Zoom in on image documents
+         */
+        function zoomIn() {
+            const img = document.getElementById('documentImage');
+            if (img) {
+                documentViewerState.zoomLevel = Math.min(documentViewerState.zoomLevel + 0.25, 3);
+                img.style.transform = `scale(${documentViewerState.zoomLevel})`;
+                console.log('Zoom level:', documentViewerState.zoomLevel);
+            }
+        }
+
+        /**
+         * Zoom out on image documents
+         */
+        function zoomOut() {
+            const img = document.getElementById('documentImage');
+            if (img) {
+                documentViewerState.zoomLevel = Math.max(documentViewerState.zoomLevel - 0.25, 0.5);
+                img.style.transform = `scale(${documentViewerState.zoomLevel})`;
+                console.log('Zoom level:', documentViewerState.zoomLevel);
+            }
+        }
+
+        /**
+         * Reset zoom to default
+         */
+        function resetZoom() {
+            const img = document.getElementById('documentImage');
+            if (img) {
+                documentViewerState.zoomLevel = 1;
+                img.style.transform = 'scale(1)';
+                console.log('Zoom reset to 1');
+            }
+        }
+
+        /**
+         * Download the current document
+         */
+        function downloadCurrentDocument() {
+            if (documentViewerState.currentMetadata) {
+                const docId = documentViewerState.currentMetadata.document_id;
+                window.location.href = `${API_BASE_URL}/api/documents/${docId}/file?download=true`;
+            }
+        }
+
+        /**
+         * Keyboard shortcuts for document viewer
+         */
+        document.addEventListener('keydown', function(e) {
+            if (!documentViewerState.isActive) return;
+
+            switch(e.key) {
+                case 'Escape':
+                    closeDocumentViewer();
+                    break;
+                case 'ArrowLeft':
+                    previousDocument();
+                    break;
+                case 'ArrowRight':
+                    nextDocument();
+                    break;
+                case '+':
+                case '=':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        zoomIn();
+                    }
+                    break;
+                case '-':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        zoomOut();
+                    }
+                    break;
+            }
+        });
 
         // Small utility: append messages to console output
         function addConsoleMessage(message, level = 'info') {
@@ -1459,7 +2127,19 @@ async function sendChatMessage() {
 
             // Update the big window with evidence if provided
             if (data.evidence) {
-                updateEvidenceDisplay(data.evidence);
+                await updateEvidenceDisplay(data.evidence);
+            }
+
+            // Check if data contains documents to display
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                const firstItemWithDocs = data.data[0];
+                // If the first item has a document_id, offer to show documents
+                if (firstItemWithDocs && firstItemWithDocs.document_id) {
+                    const docIds = data.data.map(item => item.document_id).filter(id => id);
+                    if (docIds.length > 0) {
+                        addChatMessage('assistant', `💡 Click the "View Documents" button in the carousel to see the actual documents.`);
+                    }
+                }
             }
         } else {
             // Show error message - check both error and response fields
@@ -1509,11 +2189,22 @@ function addChatMessage(role, content, id) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-function updateEvidenceDisplay(evidence) {
-    // This will update the top carousel/forest area to show evidence
-    // For now, just log it - you can expand this later
+async function updateEvidenceDisplay(evidence) {
     console.log('Evidence to display:', evidence);
-    addConsoleMessage('📋 Evidence displayed in main window', 'info');
+
+    // Check if evidence contains documents
+    if (evidence && evidence.documents && evidence.documents.length > 0) {
+        const documentIds = evidence.documents.map(doc => doc.document_id || doc.id);
+        console.log('Switching to document viewer for evidence:', documentIds);
+        await switchToDocumentMode(documentIds, 0);
+        addChatMessage('assistant', `📄 Displaying ${documentIds.length} document(s) as evidence`);
+    } else if (evidence && typeof evidence === 'string') {
+        // If evidence is a string (document ID)
+        await switchToDocumentMode([evidence], 0);
+        addChatMessage('assistant', '📄 Displaying document evidence');
+    } else {
+        console.log('No documents in evidence');
+    }
 }
 
 // ============================================
@@ -1783,21 +2474,31 @@ function skipMetadata() {
 
         async function viewOwnerDocuments(ownerName) {
             try {
+                console.log('Fetching documents for:', ownerName);
+
                 // Fetch documents for this owner
                 const response = await fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(ownerName)}`);
                 const data = await response.json();
 
                 if (!data.success || data.documents.length === 0) {
-                    alert(`No documents found for ${ownerName}`);
+                    addChatMessage('assistant', `❌ No documents found for ${ownerName}`);
                     return;
                 }
 
-                // Show documents modal
-                showDocumentsModal(ownerName, data.documents);
+                console.log(`Found ${data.documents.length} documents for ${ownerName}`);
+
+                // Extract document IDs
+                const documentIds = data.documents.map(doc => doc.document_id);
+
+                // Switch to document viewer mode
+                await switchToDocumentMode(documentIds, 0);
+
+                // Notify user
+                addChatMessage('assistant', `📄 Displaying ${data.documents.length} document(s) for ${ownerName}`);
 
             } catch (error) {
                 console.error('Error fetching documents:', error);
-                alert('Failed to load documents. Please try again.');
+                addChatMessage('assistant', `❌ Failed to load documents: ${error.message}`);
             }
         }
 
@@ -1900,8 +2601,8 @@ function skipMetadata() {
         }
 
         function viewDocument(documentId) {
-            // Open document in new tab/window
-            window.open(`${API_BASE_URL}/api/documents/${documentId}/file`, '_blank');
+            // Use the document viewer instead of opening in new tab
+            switchToDocumentMode([documentId], 0);
         }
 
         function downloadDocument(documentId) {
