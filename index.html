@@ -1462,7 +1462,9 @@ async function sendChatMessage() {
                 updateEvidenceDisplay(data.evidence);
             }
         } else {
-            addChatMessage('assistant', '❌ Error: ' + (data.error || 'Unknown error'));
+            // Show error message - check both error and response fields
+            const errorMsg = data.error || data.response || 'Unknown error';
+            addChatMessage('assistant', '❌ ' + errorMsg);
         }
         
     } catch (error) {
