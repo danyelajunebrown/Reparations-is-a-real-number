@@ -26,32 +26,32 @@ class FreeNLPResearchAssistant {
             // Update person metadata
             update_person: [
                 // Middle name
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name (?:is|was) ([A-Z][a-z]+)/i,
-                /set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name to ([A-Z][a-z]+)/i,
-                /add middle name ([A-Z][a-z]+) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name (?:is|was) ([A-Za-z]+)/i,
+                /set ([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name to ([A-Za-z]+)/i,
+                /add middle name ([A-Za-z]+) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
 
                 // Alternative names/spellings
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /add (?:alternative|alternate|alias) (?:name|spelling) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:goes by|went by) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /add (?:alternative|alternate|alias) (?:name|spelling) ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:goes by|went by) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
 
                 // FamilySearch ID
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i,
-                /set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /FamilySearch ID for ([A-Z][a-z]+(?: [A-Z][a-z]+)*) is ([A-Z0-9-]+)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i,
+                /set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /FamilySearch ID for ([A-Za-z]+(?:\s+[A-Za-z]+)*) is ([A-Z0-9-]+)/i,
 
                 // Children
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i,
-                /add child ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) had (?:a child|children) (?:named |)(.+)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i,
+                /add child ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*) had (?:a child|children) (?:named |)(.+)/i,
 
                 // Spouse
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /([A-Z][a-z]+(?: [A-Z][a-z]+)*) married ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([A-Za-z]+(?:\s+[A-Za-z]+)*) married ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
 
                 // General notes
-                /add note (?:to |for |)([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i,
-                /note for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i
+                /add note (?:to |for |)([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i,
+                /note for ([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i
             ],
             
             // Count enslaved people
@@ -209,9 +209,9 @@ class FreeNLPResearchAssistant {
 
         // Middle name patterns
         if (/middle name/i.test(query)) {
-            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name (?:is|was) ([A-Z][a-z]+)/i) ||
-                          query.match(/set ([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s middle name to ([A-Z][a-z]+)/i) ||
-                          query.match(/add middle name ([A-Z][a-z]+) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            const match = query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name (?:is|was) ([A-Za-z]+)/i) ||
+                          query.match(/set ([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name to ([A-Za-z]+)/i) ||
+                          query.match(/add middle name ([A-Za-z]+) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i);
             if (match) {
                 updates.personName = match[match.length === 4 ? 2 : 1];
                 updates.value = match[match.length === 4 ? 1 : 2];
@@ -223,9 +223,9 @@ class FreeNLPResearchAssistant {
 
         // Alternative names patterns
         if (/spelled|known as|alias|goes by/i.test(query)) {
-            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
-                          query.match(/add (?:alternative|alternate|alias) (?:name|spelling) ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
-                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:goes by|went by) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            const match = query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i) ||
+                          query.match(/add (?:alternative|alternate|alias) (?:name|spelling) ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i) ||
+                          query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:goes by|went by) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i);
             if (match) {
                 updates.personName = match[match[0].includes('to') || match[0].includes('for') ? 2 : 1];
                 updates.value = match[match[0].includes('to') || match[0].includes('for') ? 1 : 2];
@@ -237,9 +237,9 @@ class FreeNLPResearchAssistant {
 
         // FamilySearch ID patterns
         if (/FamilySearch ID/i.test(query)) {
-            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i) ||
-                          query.match(/set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
-                          query.match(/FamilySearch ID for ([A-Z][a-z]+(?: [A-Z][a-z]+)*) is ([A-Z0-9-]+)/i);
+            const match = query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i) ||
+                          query.match(/set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i) ||
+                          query.match(/FamilySearch ID for ([A-Za-z]+(?:\s+[A-Za-z]+)*) is ([A-Z0-9-]+)/i);
             if (match) {
                 updates.personName = match[match[0].includes('for') ? 2 : 1];
                 updates.value = match[match[0].includes('for') ? 1 : 2];
@@ -251,9 +251,9 @@ class FreeNLPResearchAssistant {
 
         // Children patterns
         if (/child(?:ren)?/i.test(query)) {
-            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i) ||
-                          query.match(/add child ([A-Z][a-z]+(?: [A-Z][a-z]+)*) (?:to|for) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
-                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) had (?:a child|children) (?:named |)(.+)/i);
+            const match = query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i) ||
+                          query.match(/add child ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i) ||
+                          query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*) had (?:a child|children) (?:named |)(.+)/i);
             if (match) {
                 updates.personName = match[match[0].includes('to') || match[0].includes('for') ? 2 : 1];
                 updates.value = match[match[0].includes('to') || match[0].includes('for') ? 1 : 2];
@@ -265,8 +265,8 @@ class FreeNLPResearchAssistant {
 
         // Spouse patterns
         if (/wife|husband|spouse|married/i.test(query)) {
-            const match = query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i) ||
-                          query.match(/([A-Z][a-z]+(?: [A-Z][a-z]+)*) married ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+            const match = query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i) ||
+                          query.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*) married ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i);
             if (match) {
                 updates.personName = match[1];
                 updates.value = match[2];
@@ -278,8 +278,8 @@ class FreeNLPResearchAssistant {
 
         // Notes patterns
         if (/note/i.test(query)) {
-            const match = query.match(/add note (?:to |for |)([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i) ||
-                          query.match(/note for ([A-Z][a-z]+(?: [A-Z][a-z]+)*)[: ] (.+)/i);
+            const match = query.match(/add note (?:to |for |)([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i) ||
+                          query.match(/note for ([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i);
             if (match) {
                 updates.personName = match[1];
                 updates.value = match[2];
