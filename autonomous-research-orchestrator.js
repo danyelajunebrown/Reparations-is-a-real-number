@@ -1,0 +1,409 @@
+/**
+ * Autonomous Research Orchestrator
+ *
+ * Main coordinator that ties together:
+ * - Web scraping
+ * - ML entity extraction
+ * - Document downloading
+ * - Database storage
+ * - Document processing
+ *
+ * Usage:
+ *   const orchestrator = new AutonomousResearchOrchestrator(database);
+ *   const results = await orchestrator.processURL('https://...');
+ */
+
+const AutonomousWebScraper = require('./autonomous-web-scraper');
+const GenealogyEntityExtractor = require('./genealogy-entity-extractor');
+const FormData = require('form-data');
+const fs = require('fs');
+
+class AutonomousResearchOrchestrator {
+    constructor(database, config = {}) {
+        this.db = database;
+        this.scraper = new AutonomousWebScraper(database);
+        this.extractor = new GenealogyEntityExtractor();
+
+        this.config = {
+            autoDownloadDocuments: config.autoDownloadDocuments !== false,
+            autoUploadDocuments: config.autoUploadDocuments !== false,
+            minConfidenceForConfirmed: config.minConfidenceForConfirmed || 0.85,
+            serverUrl: config.serverUrl || 'http://localhost:3000',
+            ...config
+        };
+    }
+
+    /**
+     * Main entry point: Process a URL completely
+     * @param {string} url - URL to scrape and process
+     * @returns {Promise<object>} Complete results
+     */
+    async processURL(url) {
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`🤖 AUTONOMOUS RESEARCH AGENT`);
+        console.log(`   Target: ${url}`);
+        console.log(`${'='.repeat(60)}`);
+
+        const sessionId = await this.createSession(url);
+        const startTime = Date.now();
+
+        const results = {
+            sessionId,
+            url,
+            success: true,
+            scrapingResults: null,
+            extractionResults: null,
+            personsAdded: {
+                unconfirmed: 0,  // All web-scraped persons are unconfirmed
+                highConfidence: 0,  // confidence >= 0.7
+                mediumConfidence: 0, // confidence 0.5-0.7
+                lowConfidence: 0  // confidence < 0.5
+            },
+            documentsDownloaded: 0,
+            documentsUploaded: 0,
+            errors: []
+        };
+
+        try {
+            // PHASE 1: Scrape the page
+            console.log('\n📍 PHASE 1: Web Scraping');
+            results.scrapingResults = await this.scraper.scrapeURL(url);
+
+            if (results.scrapingResults.errors.length > 0) {
+                results.errors.push(...results.scrapingResults.errors);
+            }
+
+            // PHASE 2: Extract entities from scraped text
+            console.log('\n📍 PHASE 2: Entity Extraction');
+            results.extractionResults = await this.extractor.extractPersons(
+                results.scrapingResults.rawText,
+                url
+            );
+
+            // Also extract from tables
+            if (results.scrapingResults.tables.length > 0) {
+                console.log(`    • Analyzing ${results.scrapingResults.tables.length} tables...`);
+                for (const table of results.scrapingResults.tables) {
+                    const tablePersons = this.extractor.extractFromTable(table);
+                    results.extractionResults.persons.push(...tablePersons);
+                }
+            }
+
+            // PHASE 3: Save persons to database (ALL as unconfirmed leads)
+            console.log('\n📍 PHASE 3: Saving Persons to Database (Unconfirmed Leads)');
+            await this.saveExtractedPersons(
+                results.extractionResults.persons,
+                url,
+                sessionId
+            );
+
+            // All web-scraped persons are unconfirmed - categorize by confidence for review priority
+            const highConfidence = results.extractionResults.persons.filter(
+                p => p.confidence >= 0.7
+            ).length;
+            const mediumConfidence = results.extractionResults.persons.filter(
+                p => p.confidence >= 0.5 && p.confidence < 0.7
+            ).length;
+            const lowConfidence = results.extractionResults.persons.filter(
+                p => p.confidence < 0.5
+            ).length;
+
+            results.personsAdded.unconfirmed = results.extractionResults.persons.length;
+            results.personsAdded.highConfidence = highConfidence;
+            results.personsAdded.mediumConfidence = mediumConfidence;
+            results.personsAdded.lowConfidence = lowConfidence;
+
+            console.log(`    ✓ Added ${results.personsAdded.unconfirmed} unconfirmed leads to database`);
+            console.log(`      • High confidence (≥0.7): ${highConfidence}`);
+            console.log(`      • Medium confidence (0.5-0.7): ${mediumConfidence}`);
+            console.log(`      • Low confidence (<0.5): ${lowConfidence}`);
+            console.log(`    ℹ️  All require verification with primary sources`);
+
+            // PHASE 4: Download and process documents
+            if (this.config.autoDownloadDocuments && results.scrapingResults.documents.length > 0) {
+                console.log('\n📍 PHASE 4: Processing Documents');
+                console.log(`    • Found ${results.scrapingResults.documents.length} documents`);
+
+                const downloadResults = await this.scraper.downloadDocuments(
+                    results.scrapingResults.documents
+                );
+
+                results.documentsDownloaded = downloadResults.filter(d => d.success).length;
+                console.log(`    ✓ Downloaded ${results.documentsDownloaded} documents`);
+
+                // PHASE 5: Auto-upload documents to system
+                if (this.config.autoUploadDocuments) {
+                    console.log('\n📍 PHASE 5: Auto-Uploading Documents');
+
+                    for (const doc of downloadResults) {
+                        if (doc.success) {
+                            try {
+                                const uploadResult = await this.uploadDocumentToSystem(doc, url);
+                                if (uploadResult.success) {
+                                    results.documentsUploaded++;
+                                    console.log(`      ✓ Uploaded: ${doc.filename} → Document ID: ${uploadResult.documentId}`);
+                                }
+                            } catch (error) {
+                                console.error(`      ✗ Upload failed: ${error.message}`);
+                                results.errors.push({
+                                    stage: 'document_upload',
+                                    file: doc.filename,
+                                    error: error.message
+                                });
+                            }
+                        }
+                    }
+
+                    console.log(`    ✓ Uploaded ${results.documentsUploaded} documents to system`);
+                }
+            }
+
+            // Update session with results
+            const duration = Date.now() - startTime;
+            await this.completeSession(sessionId, results, duration);
+
+            console.log(`\n${'='.repeat(60)}`);
+            console.log(`✅ SESSION COMPLETE`);
+            console.log(`   Duration: ${(duration / 1000).toFixed(1)}s`);
+            console.log(`   Persons Found: ${results.extractionResults.persons.length}`);
+            console.log(`   Documents Downloaded: ${results.documentsDownloaded}`);
+            console.log(`   Documents Uploaded: ${results.documentsUploaded}`);
+            console.log(`${'='.repeat(60)}\n`);
+
+            return results;
+
+        } catch (error) {
+            console.error('\n❌ ORCHESTRATION FAILED:', error);
+            results.success = false;
+            results.errors.push({
+                stage: 'orchestration',
+                error: error.message,
+                stack: error.stack
+            });
+
+            await this.failSession(sessionId, error.message);
+
+            return results;
+        }
+    }
+
+    /**
+     * Save extracted persons to appropriate database
+     *
+     * CRITICAL: ALL web-scraped data goes to unconfirmed_persons table.
+     * NEVER auto-confirm based on web scraping - only primary sources can confirm.
+     */
+    async saveExtractedPersons(persons, sourceUrl, sessionId) {
+        for (const person of persons) {
+            try {
+                // ALWAYS add to unconfirmed leads - web scraping is NEVER confirmation
+                // Only primary historical documents can confirm slave ownership/enslaved status
+                await this.addToUnconfirmedDB(person, sourceUrl, sessionId);
+            } catch (error) {
+                console.error(`    ✗ Failed to save ${person.fullName}:`, error.message);
+            }
+        }
+    }
+
+    /**
+     * Add person to confirmed database (enslaved_individuals or individuals)
+     *
+     * NOTE: This method should ONLY be called when verifying with PRIMARY SOURCES.
+     * It is kept for future manual verification workflows, but should NEVER
+     * be called from web scraping. Web-scraped data is always unconfirmed.
+     */
+    async addToConfirmedDB(person) {
+        // Determine which table based on person type
+        if (person.type === 'enslaved') {
+            await this.db.query(`
+                INSERT INTO enslaved_individuals (
+                    enslaved_id, full_name, birth_year, death_year, gender,
+                    location, notes, verified
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, false
+                )
+                ON CONFLICT (enslaved_id) DO UPDATE
+                SET updated_at = CURRENT_TIMESTAMP
+            `, [
+                `enslaved_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+                person.fullName,
+                person.birthYear,
+                person.deathYear,
+                person.gender,
+                person.locations.join(', '),
+                `Auto-extracted from ${person.sourceUrl}\nConfidence: ${person.confidence}\nEvidence: ${person.evidence.substring(0, 200)}`,
+            ]);
+        } else if (person.type === 'owner') {
+            await this.db.query(`
+                INSERT INTO individuals (
+                    individual_id, full_name, birth_year, death_year,
+                    notes
+                ) VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (individual_id) DO UPDATE
+                SET updated_at = CURRENT_TIMESTAMP
+            `, [
+                `owner_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+                person.fullName,
+                person.birthYear,
+                person.deathYear,
+                `Auto-extracted owner from ${person.sourceUrl}`
+            ]);
+        }
+    }
+
+    /**
+     * Add person to unconfirmed leads database
+     *
+     * All web-scraped persons are marked as 'secondary' or 'tertiary' sources.
+     * Only primary historical documents can move someone to confirmed status.
+     */
+    async addToUnconfirmedDB(person, sourceUrl, sessionId) {
+        // Classify source type based on URL
+        const sourceType = this.classifySourceType(sourceUrl);
+
+        await this.db.query(`
+            INSERT INTO unconfirmed_persons (
+                full_name, person_type, birth_year, death_year, gender,
+                locations, source_url, source_type, context_text, confidence_score,
+                relationships, status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `, [
+            person.fullName,
+            person.type,
+            person.birthYear,
+            person.deathYear,
+            person.gender,
+            person.locations,
+            sourceUrl,
+            sourceType,
+            person.evidence,
+            person.confidence,
+            JSON.stringify(person.relationships || []),
+            person.confidence >= 0.7 ? 'reviewing' : 'pending'
+        ]);
+    }
+
+    /**
+     * Classify source type based on URL
+     */
+    classifySourceType(url) {
+        const lower = url.toLowerCase();
+
+        // Wikipedia, encyclopedias = tertiary
+        if (lower.includes('wikipedia.org') ||
+            lower.includes('britannica.com') ||
+            lower.includes('encyclopedia')) {
+            return 'tertiary';
+        }
+
+        // Academic, historical sites = secondary
+        if (lower.includes('.edu') ||
+            lower.includes('history') ||
+            lower.includes('ancestry.com') ||
+            lower.includes('familysearch.org') ||
+            lower.includes('findagrave.com')) {
+            return 'secondary';
+        }
+
+        // Archives, library collections = could be primary
+        if (lower.includes('archive.org') ||
+            lower.includes('loc.gov') ||
+            lower.includes('nara.gov') ||
+            lower.includes('digitalarchive')) {
+            return 'primary'; // But still needs human verification
+        }
+
+        // Default to secondary
+        return 'secondary';
+    }
+
+    /**
+     * Upload document to the system
+     */
+    async uploadDocumentToSystem(downloadedDoc, sourceUrl) {
+        const formData = new FormData();
+
+        // Add file
+        formData.append('document', fs.createReadStream(downloadedDoc.filePath));
+
+        // Add metadata
+        formData.append('ownerName', downloadedDoc.metadata.guessedOwner || 'Unknown');
+        formData.append('documentType', downloadedDoc.metadata.guessedType || 'other');
+        formData.append('sourceUrl', sourceUrl);
+
+        // Upload to server
+        const response = await fetch(`${this.config.serverUrl}/api/upload-document`, {
+            method: 'POST',
+            body: formData,
+            headers: formData.getHeaders()
+        });
+
+        const result = await response.json();
+        return result;
+    }
+
+    /**
+     * Create scraping session record
+     */
+    async createSession(url) {
+        const result = await this.db.query(`
+            INSERT INTO scraping_sessions (target_url, status)
+            VALUES ($1, 'in_progress')
+            RETURNING session_id
+        `, [url]);
+
+        return result.rows[0].session_id;
+    }
+
+    /**
+     * Mark session as complete
+     */
+    async completeSession(sessionId, results, duration) {
+        await this.db.query(`
+            UPDATE scraping_sessions
+            SET
+                status = 'completed',
+                completed_at = CURRENT_TIMESTAMP,
+                duration_ms = $2,
+                persons_found = $3,
+                high_confidence_persons = $4,
+                documents_found = $5,
+                documents_downloaded = $6,
+                text_length = $7,
+                tables_found = $8
+            WHERE session_id = $1
+        `, [
+            sessionId,
+            duration,
+            results.extractionResults?.persons?.length || 0,
+            results.personsAdded.confirmed,
+            results.scrapingResults?.documents?.length || 0,
+            results.documentsDownloaded,
+            results.scrapingResults?.rawText?.length || 0,
+            results.scrapingResults?.tables?.length || 0
+        ]);
+    }
+
+    /**
+     * Mark session as failed
+     */
+    async failSession(sessionId, errorMessage) {
+        await this.db.query(`
+            UPDATE scraping_sessions
+            SET
+                status = 'failed',
+                completed_at = CURRENT_TIMESTAMP,
+                error_message = $2
+            WHERE session_id = $1
+        `, [sessionId, errorMessage]);
+    }
+
+    /**
+     * Close all resources
+     */
+    async close() {
+        await this.scraper.close();
+    }
+}
+
+module.exports = AutonomousResearchOrchestrator;
