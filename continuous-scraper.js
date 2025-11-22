@@ -15,7 +15,7 @@ const MAX_CONCURRENT = 1; // Process one at a time to avoid overload
 
 class ContinuousScraper {
     constructor() {
-        this.orchestrator = new AutonomousResearchOrchestrator();
+        this.orchestrator = new AutonomousResearchOrchestrator(database);
         this.isProcessing = false;
         this.processedCount = 0;
         this.errorCount = 0;
