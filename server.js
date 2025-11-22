@@ -1167,6 +1167,223 @@ app.get('/api/documents',
   })
 );
 
+// ========================================
+// PUBLIC RESEARCH CONTRIBUTION ENDPOINTS
+// ========================================
+
+// Submit URL for scraping (for contribute.html)
+app.post('/api/submit-url',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    const { url, category, submittedBy } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid URL format' });
+    }
+
+    // Check if URL already in queue (pending or processing)
+    const existingCheck = await database.query(
+      `SELECT id, status FROM scraping_queue
+       WHERE url = $1 AND status IN ('pending', 'processing')
+       LIMIT 1`,
+      [url]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      return res.json({
+        success: true,
+        message: 'This URL is already in the queue!',
+        queueId: existingCheck.rows[0].id,
+        status: existingCheck.rows[0].status
+      });
+    }
+
+    // Insert into queue
+    const result = await database.query(
+      `INSERT INTO scraping_queue (url, category, submitted_by, status, priority)
+       VALUES ($1, $2, $3, 'pending', 5)
+       RETURNING id, url, status, submitted_at`,
+      [url, category || 'other', submittedBy || 'anonymous']
+    );
+
+    res.json({
+      success: true,
+      message: 'URL submitted successfully! Our research agent will process it soon.',
+      queueEntry: result.rows[0]
+    });
+  })
+);
+
+// Get queue statistics (for contribute.html)
+app.get('/api/queue-stats',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const stats = await database.query(`
+      SELECT * FROM queue_stats LIMIT 1
+    `);
+
+    // Also get recent documents count
+    const docsResult = await database.query(`
+      SELECT COUNT(*) as count
+      FROM scraping_sessions
+      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+    `);
+
+    res.json({
+      pending_urls: stats.rows[0]?.pending_urls || 0,
+      processing_urls: stats.rows[0]?.processing_urls || 0,
+      completed_urls: stats.rows[0]?.completed_urls || 0,
+      failed_urls: stats.rows[0]?.failed_urls || 0,
+      persons_24h: stats.rows[0]?.persons_24h || 0,
+      documents_24h: docsResult.rows[0]?.count || 0,
+      sessions_24h: stats.rows[0]?.sessions_24h || 0
+    });
+  })
+);
+
+// ========================================
+// REPARATIONS PORTAL ENDPOINTS
+// ========================================
+
+// Search for reparations by name, year, or ID (for portal.html)
+app.post('/api/search-reparations',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const { searchType, searchValue } = req.body;
+
+    if (!searchType || !searchValue) {
+      return res.status(400).json({ success: false, error: 'Search type and value required' });
+    }
+
+    let searchQuery;
+    let queryParams;
+
+    // Build query based on search type
+    if (searchType === 'name') {
+      searchQuery = `
+        SELECT
+          i.individual_id,
+          i.full_name,
+          i.birth_year,
+          i.death_year,
+          i.gender,
+          i.locations,
+          i.enslaved_status,
+          i.slave_owner,
+          COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE LOWER(i.full_name) LIKE LOWER($1)
+        GROUP BY i.individual_id
+        ORDER BY total_reparations DESC
+        LIMIT 50
+      `;
+      queryParams = [`%${searchValue}%`];
+    } else if (searchType === 'year') {
+      searchQuery = `
+        SELECT
+          i.individual_id,
+          i.full_name,
+          i.birth_year,
+          i.death_year,
+          i.gender,
+          i.locations,
+          i.enslaved_status,
+          i.slave_owner,
+          COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE i.birth_year = $1
+        GROUP BY i.individual_id
+        ORDER BY total_reparations DESC
+        LIMIT 50
+      `;
+      queryParams = [parseInt(searchValue)];
+    } else if (searchType === 'id') {
+      searchQuery = `
+        SELECT
+          i.individual_id,
+          i.full_name,
+          i.birth_year,
+          i.death_year,
+          i.gender,
+          i.locations,
+          i.enslaved_status,
+          i.slave_owner,
+          COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE i.individual_id = $1
+        GROUP BY i.individual_id
+        LIMIT 1
+      `;
+      queryParams = [searchValue];
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid search type' });
+    }
+
+    const results = await database.query(searchQuery, queryParams);
+
+    if (results.rows.length === 0) {
+      return res.json({
+        success: false,
+        error: 'No records found for this search. Try different search terms or check back later as we continuously add new records.'
+      });
+    }
+
+    // Calculate total reparations across all results
+    const totalReparations = results.rows.reduce((sum, person) => {
+      return sum + parseFloat(person.total_reparations || 0);
+    }, 0);
+
+    // Get documents for each person
+    const ancestors = await Promise.all(results.rows.map(async (person) => {
+      const docs = await database.query(
+        `SELECT di.document_id, d.document_type, d.ipfs_hash
+         FROM document_individuals di
+         JOIN documents d ON di.document_id = d.document_id
+         WHERE di.individual_id = $1
+         LIMIT 10`,
+        [person.individual_id]
+      );
+
+      return {
+        name: person.full_name,
+        birthYear: person.birth_year,
+        deathYear: person.death_year,
+        location: person.locations ? person.locations[0] : null,
+        reparations: parseFloat(person.total_reparations || 0),
+        documents: docs.rows.map(doc => ({
+          type: doc.document_type,
+          url: doc.ipfs_hash ? `${config.ipfs.gateway}${doc.ipfs_hash}` : `/api/documents/${doc.document_id}/file`
+        }))
+      };
+    }));
+
+    // Build breakdown
+    const breakdown = {
+      'Total Ancestors Found': ancestors.length,
+      'Documented with Primary Sources': ancestors.filter(a => a.documents.length > 0).length,
+      'Average Reparations per Ancestor': ancestors.length > 0 ? totalReparations / ancestors.length : 0
+    };
+
+    res.json({
+      success: true,
+      searchedFor: searchValue,
+      totalReparations,
+      ancestors,
+      breakdown
+    });
+  })
+);
+
 // SECURITY: Use error handler middleware (must be last)
 app.use(errorHandler);
 

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+		
+	<head>
+		<style class="criticalcss" media="(max-width:992px)">@font-face{font-family:'HelveticaNeue';src:url("https://www.vmnh.net/assets/styles/_fonts/_H_HelveticaNeueInterface_3.ttf");font-weight:normal;font-style:normal}@font-face{font-family:'Avenir Next DemiBold';src:url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Demi.woff2") format("woff2"),url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Demi.woff") format("woff");font-weight:bold;font-style:normal;font-display:swap}@font-face{font-family:'Avenir Next Medium';src:url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Medium.woff") format("woff");font-weight:normal;font-style:normal;font-display:swap}@font-face{font-family:'Century Gothic Bold';src:url("https://www.vmnh.net/assets/styles/_fonts/GOTHICB.ttf");font-weight:bold;font-style:normal;font-display:swap}*,*:before,*:after{box-sizing:border-box}html{height:100%}body{background:#292929;color:#4A4A4A;font-family:"HelveticaNeue",Arial,sans-serif;font-size:16px;height:100%;line-height:1.475;overflow-x:hidden;margin:0}div,form,img{border:0;margin:0;padding:0;color:#4A4A4A}h1{position:relative;font-family:"Avenir Next Medium",sans-serif;line-height:1.3;margin:10px 0 30px;padding:0}h1{font-size:2.4em}p{position:relative;color:#4A4A4A;line-height:1.6;font-family:"HelveticaNeue",Arial,sans-serif;font-size:1.15em}a{text-decoration:none;color:#009DDC}a img{border:0 none}ul{padding-left:30px;overflow:hidden;margin:0 0 50px}li{font-size:18px;line-height:29px}.container{height:100%;min-height:100%;padding:0}.search-btn{outline:none;grid-column:2;grid-row:1;padding:20px 0;align-self:center}.search-container{position:absolute;right:-100%;top:calc(100% - 41px);width:100%}.search-form{width:100%;display:flex;flex-direction:row;flex-wrap:nowrap}.search-input{border:1px solid #525252;color:#525252;background:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;font-weight:700;padding:10px 10px;width:80%}.search-submit{border:1px solid #525252;background:#525252;color:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;font-weight:700;outline:none;width:20%}.navigation{background:#525252;width:100%;display:flex;left:0;flex-direction:row;flex-wrap:wrap;position:fixed;top:0}.nav:not(.nav-tabs){left:-100%;background:white;margin:0;overflow:scroll;max-height:100%;min-height:calc(100vh - 63px);padding:36px 48px 42px 61px;position:absolute;top:43px;width:100%;z-index:700}.nav-icon{color:#fff;font-size:1.7em;padding:10px 0 10px 20px;flex:0 1 calc(100% - 118px);display:flex;align-content:center}.nav-button{background:none;border:0 none;color:#fff;font-size:1.2em;padding:0}.nav-bar{display:block;height:3px;margin:0 0 6px;position:relative}.nav-bar:nth-child(1){background:white;width:30px}.nav-bar:nth-child(2){background:white;width:15px}.nav-bar:nth-child(3){background:white;margin:0;width:23px}.nav-join{background-color:#1888B5;display:block;color:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;flex:0 1 118px;display:flex;align-items:center;justify-content:center}.nav-item{align-items:center;display:flex;flex-wrap:wrap;justify-content:space-between;margin:0 0 10px;padding:0;position:relative;top:0}.nav-item-btn{background:none;border:0 none;flex:0 0 48px;font-size:1.3em;padding:13px 0;text-align:right;width:48px}.nav-item-btn span{transform:rotate(0deg)}.nav-link{border:none;color:#4A4A4A;display:block;flex:1 0 calc(100% - 58px);font-family:"Avenir Next Medium",sans-serif;font-size:1em;margin:0;padding:5px 0;position:relative;text-decoration:none}.nav-sub{background:white;height:0;list-style-type:none;margin:0;padding:0;text-align:right;width:100%}.nav-sub-wrap{width:100%}.nav-sub-title{display:none}.nav-sub-item{position:relative}.nav-sub-link{border:none;color:#4A4A4A;display:block;font-size:0.9em;padding:5px 0 5px 50px}.nav-member{display:none}.header{display:grid;grid-template-columns:calc(100% - 70px) 70px;grid-template-rows:repeat(3,min-content);padding-top:43px;position:relative;z-index:1000}.header-items{grid-column:1 / span 2;grid-row:2;border-top:1px solid #D8D8D8}.header-items-container{width:max-content;margin:0 auto;padding:25px 0}.header-items-link{display:flex;align-items:center;line-height:1;font-family:"Avenir Next DemiBold",sans-serif;font-size:1.1em;padding:15px;color:#4A4A4A}.logo{text-align:center;grid-column:1;grid-row:1;padding:20px}.logo img{height:auto;max-width:100%}.page{background:#fff;overflow:hidden}.page-title{color:#4A4A4A;font-family:"Century Gothic Bold",sans-serif;font-size:36px;margin:0;padding:0 0 20px;text-transform:capitalize}.page-breadcrumb{margin:0;padding:20px 0}.page-breadcrumb p{align-items:center;color:#469642;display:flex;flex-direction:row;flex-wrap:wrap;font-family:"Avenir Next Medium",sans-serif;font-size:14px;margin:0;text-transform:uppercase}.breadcrumb-divider{color:#4A4A4A;font-size:14px;margin:0 16px}.breadcrumb-link{color:#4A4A4A}.content{padding:0 0 60px}.content-head{margin-bottom:60px}.content-head-section{border-top:1px solid #D8D8D8;border-bottom:1px solid #D8D8D8;padding:0 0 0 30px}.content-head-section-alt{margin:0}.content-picture-caption{display:none}.content-image{display:block;height:auto;width:100%}.modal{position:fixed;top:0;right:0;bottom:0;left:0;z-index:1050;display:none;overflow:hidden;-webkit-overflow-scrolling:touch;outline:0}.modal.fade .modal-dialog{-webkit-transform:translate(0,-25%);-ms-transform:translate(0,-25%);-o-transform:translate(0,-25%);transform:translate(0,-25%)}.modal-dialog{position:relative;width:auto;margin:10px}.modal-content{position:relative;background-color:#fff;background-clip:padding-box;border:1px solid #999;border:1px solid rgba(0,0,0,0.2);border-radius:6px;-webkit-box-shadow:0 3px 9px rgba(0,0,0,0.5);box-shadow:0 3px 9px rgba(0,0,0,0.5);outline:0}@media (min-width:768px){.modal-dialog{width:600px;margin:30px auto}.modal-content{-webkit-box-shadow:0 5px 15px rgba(0,0,0,0.5);box-shadow:0 5px 15px rgba(0,0,0,0.5)}}input[type="search"]{-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;-webkit-appearance:none;appearance:none}.subscribe.modal-content{border:0 none;border-radius:0}.footer-nav-separator{display:none}</style> <style class="criticalcss" media="(min-width:993px)">@font-face{font-family:'HelveticaNeue';src:url("https://www.vmnh.net/assets/styles/_fonts/_H_HelveticaNeueInterface_3.ttf");font-weight:normal;font-style:normal}@font-face{font-family:'Avenir Next';src:url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Regular.woff") format("woff");font-weight:normal;font-style:normal;font-display:swap}@font-face{font-family:'Avenir Next DemiBold';src:url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Demi.woff2") format("woff2"),url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Demi.woff") format("woff");font-weight:bold;font-style:normal;font-display:swap}@font-face{font-family:'Avenir Next Medium';src:url("https://www.vmnh.net/assets/styles/_fonts/AvenirNext-Medium.woff") format("woff");font-weight:normal;font-style:normal;font-display:swap}@font-face{font-family:'Century Gothic Bold';src:url("https://www.vmnh.net/assets/styles/_fonts/GOTHICB.ttf");font-weight:bold;font-style:normal;font-display:swap}*,*:before,*:after{box-sizing:border-box}html{height:100%}body{background:#292929;color:#4A4A4A;font-family:"HelveticaNeue",Arial,sans-serif;font-size:16px;height:100%;line-height:1.475;overflow-x:hidden;margin:0}div,form,img{border:0;margin:0;padding:0;color:#4A4A4A}h1,h2{position:relative;font-family:"Avenir Next Medium",sans-serif;line-height:1.3;margin:10px 0 30px;padding:0}h2{color:#1888B5}h1{font-size:2.4em}h2{font-size:30px}p{position:relative;color:#4A4A4A;line-height:1.6;font-family:"HelveticaNeue",Arial,sans-serif;font-size:1.15em}a{text-decoration:none;color:#009DDC}a img{border:0 none}ul{padding-left:30px;overflow:hidden;margin:0 0 50px}li{font-size:18px;line-height:29px}.container{height:100%;min-height:100%;padding:0}.search-btn{outline:none;grid-column:2;grid-row:1;padding:20px 0;align-self:center}.search-container{position:absolute;right:-100%;top:calc(100% - 41px);width:100%}@media screen and (min-width:992px){.search-container{width:300px;top:100%}}.search-form{width:100%;display:flex;flex-direction:row;flex-wrap:nowrap}.search-input{border:1px solid #525252;color:#525252;background:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;font-weight:700;padding:10px 10px;width:80%}.search-submit{border:1px solid #525252;background:#525252;color:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;font-weight:700;outline:none;width:20%}@media screen and (min-width:992px){.search-btn{grid-column:3;grid-row:1;justify-self:center}.search-container{right:-30%}}.navigation{background:#525252;width:100%;display:flex;left:0;flex-direction:row;flex-wrap:wrap;position:fixed;top:0}@media screen and (min-width:992px){.navigation{grid-column:1 / span 3;align-items:center;justify-content:space-between}}.nav:not(.nav-tabs){left:-100%;background:white;margin:0;overflow:scroll;max-height:100%;min-height:calc(100vh - 63px);padding:36px 48px 42px 61px;position:absolute;top:43px;width:100%;z-index:700}.nav-icon{color:#fff;font-size:1.7em;padding:10px 0 10px 20px;flex:0 1 calc(100% - 118px);display:flex;align-content:center}.nav-button{background:none;border:0 none;color:#fff;font-size:1.2em;padding:0}.nav-bar{display:block;height:3px;margin:0 0 6px;position:relative}.nav-bar:nth-child(1){background:white;width:30px}.nav-bar:nth-child(2){background:white;width:15px}.nav-bar:nth-child(3){background:white;margin:0;width:23px}.nav-join{background-color:#1888B5;display:block;color:white;font-family:"Avenir Next DemiBold",sans-serif;font-size:1em;flex:0 1 118px;display:flex;align-items:center;justify-content:center}.nav-item{align-items:center;display:flex;flex-wrap:wrap;justify-content:space-between;margin:0 0 10px;padding:0;position:relative;top:0}.nav-item-btn{background:none;border:0 none;flex:0 0 48px;font-size:1.3em;padding:13px 0;text-align:right;width:48px}.nav-item-btn span{transform:rotate(0deg)}.nav-link{border:none;color:#4A4A4A;display:block;flex:1 0 calc(100% - 58px);font-family:"Avenir Next Medium",sans-serif;font-size:1em;margin:0;padding:5px 0;position:relative;text-decoration:none}.nav-sub{background:white;height:0;list-style-type:none;margin:0;padding:0;text-align:right;width:100%}.nav-sub-wrap{width:100%}.nav-sub-title{display:none}.nav-sub-item{position:relative}.nav-sub-link{border:none;color:#4A4A4A;display:block;font-size:0.9em;padding:5px 0 5px 50px}.nav-member{display:none}@media screen and (min-width:992px){.nav:not(.nav-tabs){background:#525252;flex:0 1 auto;min-height:auto;order:1;overflow:visible;padding:0;position:static;width:auto}.nav-icon{display:none}.nav-item{display:inline-block;margin:0;position:static}.nav-item-btn{display:none}.nav-join{order:2;flex:0 1 160px;height:55px;width:160px}.nav-link,.nav-join{color:white;font-size:0.5em;font-size:1vw}.nav-link{border-top:0 none;padding:13px 1.575vw}.nav-sub{background:none;height:auto;grid-column:2;text-align:left;display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(5,max-content);grid-auto-flow:column}.nav-sub-wrap{background:#469642;border-top:27px solid white;display:grid;grid-gap:0 30px;grid-template-columns:25% minmax(400px,50%) 1fr;grid-template-rows:min-content;height:auto;left:-200%;list-style:none;margin:0;min-width:100%;padding:22px 2vw 30px;position:absolute;top:100%;width:100%;z-index:700}.nav-sub-title{color:white;display:block;font-family:"Avenir Next DemiBold",sans-serif;font-size:36px;grid-column:1;line-height:1.4}.nav-sub-item{display:inline-block;width:100%}.nav-sub-link{align-items:center;font-family:"Avenir Next DemiBold",sans-serif;color:white;display:flex;flex-direction:row;flex-wrap:nowrap;font-size:18px;padding:8px 0;line-height:1.4}.nav-sub-link:before{content:'';display:inline-block;flex:0 0 40px;height:10px;width:40px}.nav-member{background:#398236;display:block;grid-column:3;height:200px;justify-self:end;padding:21px 19px;position:relative;width:200px}.nav-member p{color:#fff;font-size:24px;margin:0}.nav-member-link{display:flex;flex-direction:column;justify-content:space-between;height:100%;width:100%}.nav-member-link img{align-self:flex-end;margin-right:5px}}.header{display:grid;grid-template-columns:calc(100% - 70px) 70px;grid-template-rows:repeat(3,min-content);padding-top:43px;position:relative;z-index:1000}.header-items{grid-column:1 / span 2;grid-row:2;border-top:1px solid #D8D8D8}.header-items-container{width:max-content;margin:0 auto;padding:25px 0}.header-items-link{display:flex;align-items:center;line-height:1;font-family:"Avenir Next DemiBold",sans-serif;font-size:1.1em;padding:15px;color:#4A4A4A}.logo{text-align:center;grid-column:1;grid-row:1;padding:20px}.logo img{height:auto;max-width:100%}@media screen and (min-width:992px){.header{align-items:center;display:grid;grid-template-columns:auto 475px 160px;grid-template-rows:min-content;padding-top:55px}.header-items{grid-row:1;grid-column:2;border-top:none}.header-items-container{display:flex;flex-direction:row;flex-wrap:nowrap;width:auto;margin:0}.header-items-link{display:flex;padding:14px 30px}.logo{grid-row:1;text-align:left;max-width:450px;padding:0 40px}}.page{background:#fff;overflow:hidden}.page-title{color:#4A4A4A;font-family:"Century Gothic Bold",sans-serif;font-size:36px;margin:0;padding:0 0 20px;text-transform:capitalize}.page-breadcrumb{margin:0;padding:20px 0}.page-breadcrumb p{align-items:center;color:#469642;display:flex;flex-direction:row;flex-wrap:wrap;font-family:"Avenir Next Medium",sans-serif;font-size:14px;margin:0;text-transform:uppercase}.breadcrumb-divider{color:#4A4A4A;font-size:14px;margin:0 16px}.breadcrumb-link{color:#4A4A4A}.content{padding:0 0 60px}.content-head{margin-bottom:60px}.content-head-section{border-top:1px solid #D8D8D8;border-bottom:1px solid #D8D8D8;padding:0 0 0 30px}.content-head-section-alt{margin:0}.content-picture-caption{display:none}.content-image{display:block;height:auto;width:100%}.content-editable{padding:0 30px 30px}.content-editable{padding-bottom:30px}.content-editable h2:after{background-color:rgba(74,74,74,0.7);content:'';display:block;height:1px;margin:10px 0 30px;width:98px}.content-editable p{margin:0 0 50px}@media screen and (min-width:992px){.page-title{padding:0 20px 0 0;font-size:clamp(1.1em,2vw,40px)}.page-breadcrumb{padding:0;text-align:right}.page-breadcrumb p{font-size:clamp(0.7em,1vw,14px);justify-content:flex-end}.content{padding:0 0 60px}.content-head{display:grid;grid-template-columns:100%;grid-template-rows:155px 1fr;position:relative;margin-bottom:74px}.content-head-section{grid-column:1;grid-row:1;padding:40px 203px 40px 160px;display:flex;flex-direction:row-reverse;flex-wrap:nowrap;justify-content:space-between;align-items:center}.content-head-section-alt{background:rgba(74,74,74,0.3);border-bottom:none;grid-column:1;grid-row:1;margin:0;position:relative;z-index:15}.content-head-section-alt h1{color:white}.content-head-section-alt p{color:white}.content-head-section-alt p span{color:white}.content-head-section-alt p a{color:white}.content-picture{display:block;grid-column:1;grid-row:1 / 3;flex:0 1 100%;order:3;position:relative}.content-picture-caption{bottom:0;color:white;display:block;font-family:"Avenir Next DemiBold",sans-serif;font-size:24px;padding:0 203px 30px 264px;position:absolute;right:0}.content-editable{height:auto;margin:0 auto 135px;padding:0;width:70%}.content-editable-alt{margin:0 auto 135px}}.modal{position:fixed;top:0;right:0;bottom:0;left:0;z-index:1050;display:none;overflow:hidden;-webkit-overflow-scrolling:touch;outline:0}.modal.fade .modal-dialog{-webkit-transform:translate(0,-25%);-ms-transform:translate(0,-25%);-o-transform:translate(0,-25%);transform:translate(0,-25%)}.modal-dialog{position:relative;width:auto;margin:10px}.modal-content{position:relative;background-color:#fff;background-clip:padding-box;border:1px solid #999;border:1px solid rgba(0,0,0,0.2);border-radius:6px;-webkit-box-shadow:0 3px 9px rgba(0,0,0,0.5);box-shadow:0 3px 9px rgba(0,0,0,0.5);outline:0}@media (min-width:768px){.modal-dialog{width:600px;margin:30px auto}.modal-content{-webkit-box-shadow:0 5px 15px rgba(0,0,0,0.5);box-shadow:0 5px 15px rgba(0,0,0,0.5)}}@media (min-width:992px){.modal-lg{width:900px}}input[type="search"]{-webkit-box-sizing:border-box;-moz-box-sizing:border-box;box-sizing:border-box;-webkit-appearance:none;appearance:none}.subscribe.modal-content{border:0 none;border-radius:0}.footer-nav-separator{display:none}.highlights-container{margin:0 auto;max-width:355px;padding:0 0 80px}.highlights-summary{position:relative}.highlights-summary p{color:white;font-family:"HelveticaNeue",Arial,sans-serif;font-weight:300;font-size:22px;font-style:italic;text-align:right;margin:0 auto;width:calc(100% - 66px);line-height:1.3}.highlights-summary-leftquote{text-align:left;line-height:0.5}.highlights-summary-leftquote,.highlights-summary-rightquote{color:white;font-size:48px;display:block;padding:0 11px}.highlights-summary-rightquote{text-align:right;line-height:1}.highlights-author{color:white;font-family:"Avenir Next",sans-serif;text-align:right;padding:5px 0 50px;line-height:1;font-size:28px;font-weight:300;margin:0 auto;width:calc(100% - 66px)}.highlights-link{display:block;font-family:"Avenir Next",sans-serif;text-transform:uppercase;font-size:18px;font-weight:500;line-height:1;text-align:right;color:rgba(255,255,255,0.61);display:flex;align-content:center;justify-content:flex-end;margin:0 auto;width:calc(100% - 66px)}@media screen and (min-width:992px){.highlights-container{flex:0 1 50%;align-self:center;padding:50px 0;display:none}}</style> 
+		<title>Page Not Found</title>
+	
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+	
+		<meta property="og:title" content="Page Not Found" />
+		
+		<meta property="og:description" content="" />
+		
+		<meta property="og:type" content="website" />
+			
+		<meta property="og:site_name" content="Virginia Museum of Natural History" />
+		
+		<meta property="og:url" content="https://www.vmnh.net/documents/InsideVMNH07.pdf" />
+		
+		<meta property="og:image" content="https://www.vmnh.net/content/vmnh/global/medium/dino-lg-2.jpg" />
+		
+		<meta property="fb:app_id" content="0" />
+	
+		<!-- Google Tag Manager -->
+		<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+			new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+			j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+			'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+			})(window,document,'script','dataLayer','GTM-NFX2TW9');
+		</script>
+		<!-- End Google Tag Manager -->
+	
+		<link rel="shortcut icon" href="https://www.vmnh.net/favicon.ico" type="image/vnd.microsoft.icon"/>
+		<link rel="icon" href="https://www.vmnh.net/favicon.ico" type="image/ico" />
+
+	</head>
+	<body>	
+		
+		<!-- Google Tag Manager (noscript) -->
+			<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NFX2TW9"
+			height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+		<!-- End Google Tag Manager (noscript) -->
+	
+		<div class="container vmnh">
+			<div class="page vmnh">
+				
+				<header class="header vmnh component-content">
+					
+		<nav class="navigation " aria-label="main site navigation">
+			<div class="nav-icon">
+				<button aria-label="Navigation Button" class="nav-button closed">
+					<span class="nav-bar"></span>
+					<span class="nav-bar"></span>
+					<span class="nav-bar"></span>
+				</button>
+			</div>
+			<a href="https://www.vmnh.net/support-vmnh" class="nav-join">Join & Give</a>
+			
+
+<ul id="nav" class="nav vmnh" aria-label="main site navigation">
+
+
+
+					<li class="nav-item" id="toplinks_0">
+
+						
+								<a href="https://www.vmnh.net/plan-your-visit" title="Plan Your Visit" class="nav-link" aria-haspopup="true">
+							Plan Your Visit
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							 
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">Plan Your Visit</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/plan-your-visit/visit" title="Visitor Information" class="nav-sub-link">
+                        
+                        <span>Visitor Information</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/plan-your-visit/rent-the-museum" title="Rent the Museum" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Rent the Museum</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/plan-your-visit/birthday-parties" title="Birthday Parties" class="nav-sub-link">
+                        
+                        <span>Birthday Parties</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/plan-your-visit/sleepovers" title="Sleepovers" class="nav-sub-link">
+                        
+                        <span>Sleepovers</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/plan-your-visit/scouts" title="Scout Adventures" class="nav-sub-link">
+                        
+                        <span>Scout Adventures</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_1">
+
+						
+								<a href="https://www.vmnh.net/exhibits" title="Exhibits" class="nav-link">
+							Exhibits
+						</a>
+						
+						
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_2">
+
+						
+								<a href="https://www.vmnh.net/calendar" title="Calendar" class="nav-link">
+							Calendar
+						</a>
+						
+						
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_3">
+
+						
+								<a href="https://www.vmnh.net/education" title="Education" class="nav-link" aria-haspopup="true">
+							Education
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">Education</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/content/vmnh/uploads/PDFs/education/education_program_guide.pdf" title="Education Program Guide" target="_blank"  class="nav-sub-link">
+                        
+                        <span>Education Program Guide</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/student-tours-and-programs" title="Student Tours and Programs" class="nav-sub-link">
+                        
+                        <span>Student Tours and Programs</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/outreach-programming" title="Outreach Programming" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Outreach Programming</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/distance-learning" title="Distance Learning" class="nav-sub-link">
+                        
+                        <span>Distance Learning</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/homeschool-education" title="Homeschool Education" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Homeschool Education</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/doodle-bugs" title="Doodle Bugs" class="nav-sub-link">
+                        
+                        <span>Doodle Bugs</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.youtube.com/playlist?list=PLIDySL6Ole4c5dLucQ-LKOz0hjr2vpErm" title="Teacher Resource Videos" rel="noopener" class="nav-sub-link">
+                        
+                        <span>Teacher Resource Videos</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/remote-learning-resources" title="Remote Learning Resources" class="nav-sub-link">
+                        
+                        <span>Remote Learning Resources</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/vmnh-discovery-kits" title="VMNH Discovery Kits" class="nav-sub-link">
+                        
+                        <span>VMNH Discovery Kits</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/education/summer-adventure-camps" title="Summer Adventure Camps" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Summer Adventure Camps</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_4">
+
+						
+								<a href="https://www.vmnh.net/research-collections" title="Research & Collections" class="nav-link" aria-haspopup="true">
+							Research & Collections
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">Research & Collections</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/research-areas" title="Research Areas" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Research Areas</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/scientific-collections" title="Scientific Collections" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Scientific Collections</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/adjunct-researchers" title="Adjunct Researchers" class="nav-sub-link">
+                        
+                        <span>Adjunct Researchers</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/chml" title="Cultural Heritage Monitoring Lab" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Cultural Heritage Monitoring Lab</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/vmnh-scientific-publications" title="VMNH Scientific Publications" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>VMNH Scientific Publications</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/petra" title="Petra" class="nav-sub-link">
+                        
+                        <span>Petra</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/vmnhcast" title="VMNHcast" class="nav-sub-link">
+                        
+                        <span>VMNHcast</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/research-collections/pete-henika-memorial-fund" title="Pete Henika Memorial Fund" class="nav-sub-link">
+                        
+                        <span>Pete Henika Memorial Fund</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_5">
+
+						
+								<a href="https://www.vmnh.net/support-vmnh" title="Support VMNH" class="nav-link" aria-haspopup="true">
+							Support VMNH
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">Support VMNH</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/membership" title="Museum Membership" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Museum Membership</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/annual-fund" title="Donate" class="nav-sub-link">
+                        
+                        <span>Donate</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/gifts-of-stocks-ira-distributions" title="Gifts of Stocks, IRA" class="nav-sub-link">
+                        
+                        <span>Gifts of Stocks, IRA</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/corporate-partnerships" title="Corporate Partnerships" class="nav-sub-link">
+                        
+                        <span>Corporate Partnerships</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/naming-opportunities" title="Naming Opportunities" class="nav-sub-link">
+                        
+                        <span>Naming Opportunities</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/planned-giving" title="Planned Giving" class="nav-sub-link">
+                        
+                        <span>Planned Giving</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/support-vmnh/volunteer" title="Volunteer Program" class="nav-sub-link">
+                        
+                        <span>Volunteer Program</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_6">
+
+						
+								<a href="https://www.vmnh.net/projects" title="Projects" class="nav-link" aria-haspopup="true">
+							Projects
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">Projects</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/projects/energy-efficiency" title="Energy Efficiency" class="nav-sub-link">
+                        
+                        <span>Energy Efficiency</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/projects/waynesboro-campus" title="Waynesboro Campus" class="nav-sub-link" aria-haspopup="true">
+                        
+                        <span>Waynesboro Campus</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/projects/jean-s-adams-education-pavilion" title="Jean S. Adams Education Pavilion" class="nav-sub-link">
+                        
+                        <span>Jean S. Adams Education Pavilion</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/partnerships/virginia-master-naturalist-program" title="Virginia Master Naturalist Partnership"  class="nav-sub-link">
+                        
+                        <span>Virginia Master Naturalist Partnership</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://virginiainvertebrates.org/" title="Virginia Institute for Invertebrates" rel="noopener" class="nav-sub-link">
+                        
+                        <span>Virginia Institute for Invertebrates</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+					<li class="nav-item" id="toplinks_7">
+
+						
+								<a href="https://www.vmnh.net/about" title="About/FOIA" class="nav-link" aria-haspopup="true">
+							About/FOIA
+						</a>
+						
+						
+							<button aria-label="Sub-navigation button" class="nav-item-btn">
+								<span class="fa fa-angle-down"></span>
+							</button>
+							
+    <div class="nav-sub-wrap">
+        <span class="nav-sub-title">About</span>
+        <ul class="nav-sub">
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/governance" title="Governance" class="nav-sub-link">
+                        
+                        <span>Governance</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/vmnh-foundation" title="VMNH Foundation" class="nav-sub-link">
+                        
+                        <span>VMNH Foundation</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/staff" title="Museum Staff" class="nav-sub-link">
+                        
+                        <span>Museum Staff</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/careers" title="Museum Careers" class="nav-sub-link">
+                        
+                        <span>Museum Careers</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/internships" title="Internships" class="nav-sub-link">
+                        
+                        <span>Internships</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.datapoint.apa.virginia.gov/dashboard.php?Page=Expenditures&FiscalYear=2020" title="Expenditures" target="_blank" rel="noopener" class="nav-sub-link">
+                        
+                        <span>Expenditures</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="http://publicreports.dpb.virginia.gov/rdPage.aspx?rdReport=vp_Agency&Agency=942" title="Strategic Plan" target="_blank" rel="noopener" class="nav-sub-link">
+                        
+                        <span>Strategic Plan</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/content/vmnh/uploads/PDFs/about/annual_report/2024-2025_annual_report.pdf" title="Annual Report" target="_blank"  class="nav-sub-link">
+                        
+                        <span>Annual Report</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/privacy-policy" title="Privacy Policy" class="nav-sub-link">
+                        
+                        <span>Privacy Policy</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/foia-policy" title="FOIA Policy" class="nav-sub-link">
+                        
+                        <span>FOIA Policy</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://www.vmnh.net/about/refund-policy" title="Refund Policy" class="nav-sub-link">
+                        
+                        <span>Refund Policy</span>
+                        </a>
+                </li>
+            
+                <li class="nav-sub-item">                    
+                    
+                            <a href="https://logi.cgieva.com/Public/rdPage.aspx" title="eVA Report and Resource Center" rel="noopener" class="nav-sub-link">
+                        
+                        <span>eVA Report and Resource Center</span>
+                        </a>
+                </li>
+            
+        </ul>
+        <div class="nav-member">
+            <a class="nav-member-link" href="https://www.vmnh.net/support-vmnh/membership">
+                <p>Become<br>
+                a MEMBER<br>
+                today!</p>
+                <img src="https://www.vmnh.net/assets/images/vmnh_arrow_alt.svg" alt="Become a member today" />
+            </a>
+        </div>
+    </div>
+    
+
+					</li>
+
+				
+
+</ul>
+
+		</nav>
+	
+	<div class="logo">
+		
+			<a href="https://www.vmnh.net"><img src="https://www.vmnh.net/assets/images/vmnh_header_logo.svg" alt="Virginia Museum of Natural History"></a>
+		
+	</div>
+
+		<input type="image" src="https://www.vmnh.net/assets/images/vmnh_search_icon.svg" class="search-btn" alt="Magnifying Glass" />
+		<div class="search-container vmnh">
+			<form name="search" action="https://www.vmnh.net/search" method="post" class="search-form">
+				<input type="search" id="search" class="search-input" aria-label="Search VMNH" placeholder="Search VMNH" name="criteria">
+				<input type="submit" id="search_btn" class="search-submit" name="submit" value="GO" />
+			</form>
+		</div>
+
+<div class="header-items">
+    <div class="header-items-container">
+        <a class="header-items-link" href="https://www.vmnh.net/plan-your-visit"><img class="header-items-icon" src="https://www.vmnh.net/assets/images/vmnh_clock.svg" alt="clock icon">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Hours & Admissions</a>
+        <a class="header-items-link" href="https://www.google.com/maps/dir/?api=1&destination=21+Starling+AvenueMartinsvilleVA+24112" rel="noopener" target="_blank"><img class="header-items-icon" src="https://www.vmnh.net/assets/images/vmnh_location.svg" alt="map pin icon">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Directions</a>
+    </div>
+</div>
+
+				</header>
+				
+				
+<main class="content main">
+	<section id="main" class="main vmnh inside">
+		
+	
+	<header class="content-head">
+		<section class="content-head-section ">
+			
+			
+	<div class="page-breadcrumb">
+		<p>
+			<a class="breadcrumb-link" href="https://www.vmnh.net">Home</a>
+			
+		</p>
+	</div>
+	<h1 class="page-title">Page Not Found</h1> 
+		</section>
+		
+	</header>
+	
+		<article class="content-editable ">
+			<p>The page you are looking for has either moved or doesn't exist.</p>
+		</article>
+	
+	</section>
+	
+    <section class="region">
+        <picture class="region-picture">
+			<source media="(max-width: 991px)" 
+					srcset="https://www.vmnh.net/assets/images/vmnh_map_sm.png 1x,
+						https://www.vmnh.net/assets/images/vmnh_map_sm.png 2x,
+						https://www.vmnh.net/assets/images/vmnh_map_sm.png 3x">
+			<source media="(min-width: 992px)" 
+					srcset="https://www.vmnh.net/assets/images/vmnh_map_sm.png 750w,
+					https://www.vmnh.net/assets/images/vmnh_map.png 1318w"
+					sizes="100vw">
+			<img class="region-img" src="https://www.vmnh.net/assets/images/vmnh_map.png" alt="map of Virginia and surrounding areas">
+		</picture>
+        <div class="region-visit">
+            <h2 class="region-visit-title">Please Visit Us Soon</h2>
+            <div class="region-visit-section">
+                <h2 class="region-visit-heading">Hours:</h2>
+                <p class="region-visit-hours">
+                    Tuesday - Saturday: 10am - 4pm<br>
+                    Sunday: Noon to 4pm (Memorial Day Weekend through Labor Day Weekend only)<br>
+                    Monday: Closed
+                </p>
+            </div>
+            <div class="region-visit-section">
+                <h2 class="region-visit-heading">Admission:</h2>
+                <p class="region-visit-admission">
+                    $12 for ages 18-59<br>
+                    $6 for ages 3-17, seniors 60+, and college students<br>
+                    FREE for children under 3, museum members, members of ASTC Passport participating institutions, and EBT cardholders
+                </p>
+            </div>
+        </div>
+         
+<div class="highlights-container">
+	<div class="highlights-detail">
+		<div class="highlights-summary">
+			<span class="highlights-summary-leftquote">&ldquo;</span>
+			<p>My 4 year old son loves going to the museum. The exhibits are educational, interactive and kid-friendly.</p>
+			<span class="highlights-summary-rightquote">&rdquo;</span>
+		</div>
+		<p class="highlights-author">Beth Deathrage</p>
+	</div>
+	<a class="highlights-link" href="https://www.vmnh.net/testimonials">Hear More&nbsp;&nbsp;<img src="https://www.vmnh.net/assets/images/vmnh_arrow_testimonial_alt.svg" alt="arrow"></a>
+</div>
+
+<!-- end #highlight -->
+
+    </section>
+
+</main>
+<!-- end content -->
+
+				<div class="modal fade" id="subscribeModal" tabindex="-1" role="dialog" aria-hidden="true">
+					<div class="modal-dialog modal-lg">
+						<div class="modal-content subscribe">
+						
+						</div>
+					</div>
+				</div>
+			</div>
+			<!-- end page -->
+			<footer class="footer vmnh">
+				
+	<div class="footer-address">
+		<h2 class="footer-address-title">Virginia Museum of Natural History</h2>
+		
+			<section class="footer-address-section">
+			<p class="footer-address-street">21 Starling Avenue</p>
+			
+			<p class="footer-address-citystatezip">Martinsville VA 24112</p>
+			</section>
+		
+			<section class="footer-address-section">
+			
+				<a class="footer-address-phone" href="tel:276-634-4141">Phone: 276-634-4141</a>
+				
+			</section>
+			<a class="footer-address-email" href="mailto:information@vmnh.virginia.gov">information@vmnh.virginia.gov</a>
+			<a class="footer-address-email" href="https://www.vmnh.net/about/foia-policy">Freedom of Information</a>
+			<div class="footer-logos">
+				<img class="footer-address-smithsonian" src="https://www.vmnh.net/assets/images/vmnh_smithsonian.png" alt="Smithsonioan Affiliate Logo">
+				<a href="https://logi.cgieva.com/Public/rdPage.aspx?rdReport=Public.PublicLandingPage&amp;rdProcess=Process.procSetEnvironment&amp;rdTaskID=tskStartUp&amp;rdRnd=13396" target="_blank"><img class="footer-address-eva" src="https://www.vmnh.net/assets/images/vmnh_eva.png" alt="eVA Affiliate Logo"></a>
+			</div>
+		
+	</div>
+
+<section class="footer-links">
+    
+        <a href="https://www.instagram.com/virginiamuseum" class="footer-links-instagram" rel="noopener" target="_blank">
+            <img class="footer-links-image" src="https://www.vmnh.net/assets/images/vmnh_ig.jpeg" alt="instagram image">
+            <p class="footer-links-text"><span class="fa fa-instagram"></span>&nbsp;&nbsp;@virginiamuseum</p>
+        </a>
+    
+    <article class="footer-links-buttons">
+        <span class="subscribe-btn footer-links-newsletter" data-target="#subscribeModal" data-url="/forms/subscription">Sign up for newsletter</span>
+        <a href="https://www.vmnh.net/support-vmnh/donate" class="footer-links-shop">Donate</a>
+    </article>
+</section>
+
+				<section class="footer-navigation">
+					
+			<ul class="footer-nav">
+			
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/plan-your-visit">
+							Plan Your Visit 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/exhibits">
+							Exhibits 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/calendar">
+							Calendar 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/education">
+							Education 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/research-collections">
+							Research & Collections 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/support-vmnh">
+							Support VMNH 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/projects">
+							Projects 
+						</a>
+						
+							<span class="footer-nav-separator">&nbsp;|&nbsp;</span>
+						
+						</li>
+						
+						<li class="footer-nav-item">
+								
+								<a class="footer-nav-link" href="https://www.vmnh.net/about">
+							About/FOIA 
+						</a>
+						
+						</li>
+						
+			</ul>
+		
+<div class="footer-social">
+    
+        <a title="Virginia Museum of Natural History Facebook" href="https://www.facebook.com/VirginiaMuseum" rel="noopener" class="footer-social-link" target="_blank">
+            <span class="fa fa-facebook-square"></span>
+        </a>
+    
+    <a title="Virginia Museum of Natural History Flickr" href="https://www.flickr.com/photos/vmnh/" rel="noopener" class="footer-social-link" target="_blank">
+        <span class="fa fa-flickr"></span>
+    </a>
+    
+        <a title="Virginia Museum of Natural History Instagram" href="https://www.instagram.com/virginiamuseum" rel="noopener" class="footer-social-link" target="_blank">
+            <span class="fa fa-instagram"></span>
+        </a>
+    
+        <a title="Virginia Museum of Natural History LinkedIn" href="https://www.linkedin.com/company/virginia-museum-of-natural-history" rel="noopener" class="footer-social-link" target="_blank">
+            <span class="fa fa-linkedin-square" aria-hidden="true"></span>
+        </a>
+    
+</div>
+
+				</section>
+				<div class="footer-admin">
+					
+	<!-- begin webdevelopment -->
+	<div class="webdevelopment">
+		&nbsp;<a href="/login" aria-label="Admin Login">&nbsp;&nbsp;</a>&nbsp;
+		<a href="https://momenta.agency" rel="noopener" target="_blank"><img class="lazyload" data-src="https://www.vmnh.net/assets/images/momenta_logo.svg" alt="Website Design & Development by Momenta"></a>
+	</div>
+	<!-- end webdevelopment -->
+
+	<div class="adminlinks">
+		
+	</div>
+
+				</div>
+			</footer>	
+		</div>
+		<link href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet"> 
+            <link media="screen" rel="stylesheet" type="text/css" href="https://www.vmnh.net/assets/styles/layout/content.min.css?v=1.0.150"/>
+        
+		<link media="print" rel="stylesheet" type="text/css" href="https://www.vmnh.net/assets/styles/print.min.css?v=1.0.150"/>
+	
+		<link rel="stylesheet" type="text/css" href="https://www.vmnh.net/admin/assets/vendor/jquery/jquery_ui/jquery-ui.theme.min.css">
+
+		<script src="https://www.vmnh.net/admin/assets/vendor/jquery/jquery-3.3.1.min.js"></script>
+		<script src="https://www.vmnh.net/admin/assets/vendor/jquery/jquery_ui/jquery-ui.min.js"></script>
+
+		<script defer src="https://www.vmnh.net/admin/assets/vendor/bootstrap/js/bootstrap.min.js"></script>
+
+	<script defer src="https://www.vmnh.net/assets/js/MenubarLinks.js"></script>
+	<script defer src="https://www.vmnh.net/assets/js/MenubarItemLinks.js"></script>
+	<script defer src="https://www.vmnh.net/assets/js/PopupMenuLinks.js"></script>
+	<script defer src="https://www.vmnh.net/assets/js/PopupMenuItemLinks.js"></script>
+	<script defer src="https://www.vmnh.net/assets/js/navigation.js?v=1.0.101"></script>
+	
+		<script defer src="https://www.vmnh.net/admin/assets/js/frontEndFunctions.js"></script>
+		<script defer src="https://www.vmnh.net/assets/js/components/subscribe.js"></script>
+		
+		<script defer src="https://www.vmnh.net/assets/js/print.js"></script>
+		<script>
+			$(document).ready(function() {
+				footnoteLinks('main','main');
+			});
+		</script>
+	
+		<script>
+		$(document).ready(function (e) {
+			$('.criticalcss').remove();
+			let images = $('.lazyload');
+			$.each(images, function(idx, item) {
+				$(item).attr('src', $(this).data('src'));
+			});
+			/*
+			$.ajax({
+				url: '/instagram/getInstagramFeed',
+				dataType: 'json',
+				cache: false
+			}).done(function(resp) {
+				let data = $.parseJSON(resp);
+				var item = data.data[0];
+				$('.footer-links-image').attr( 'src', item.media_url);
+				$('.footer-links-image').attr( 'alt', item.caption);
+			});
+			*/
+		});
+		</script>
+	</body>
+	
+</html>
