@@ -818,22 +818,28 @@ class GenealogyEntityExtractor {
 
             // Extract EP counts from comments
             // Patterns: "2 EPs", "5 EP (1 mulatto)", "1 free colored"
+            // NOTE: Use word boundaries and negative lookahead to avoid matching years
             const epPatterns = [
-                /(\d+)\s+EP(?:s)?(?:\s+\([^)]+\))?/gi,  // "5 EP (1 mulatto)"
-                /(\d+)\s+enslaved/gi,                     // "3 enslaved"
-                /(\d+)\s+slave(?:s)?/gi,                  // "2 slaves"
-                /(\d+)\s+free\s+colored/gi                // "1 free colored"
+                /\b(\d{1,2})\s+EP(?:s)?(?:\s+\([^)]+\))?/gi,  // "5 EP (1 mulatto)" - max 2 digits
+                /\b(\d{1,3})\s+enslaved\b/gi,                   // "3 enslaved" - max 3 digits
+                /\b(\d{1,3})\s+free\s+colored/gi                // "1 free colored" - max 3 digits
+                // Removed generic "slaves" pattern - too prone to false positives with years
             ];
 
-            epPatterns.forEach(pattern => {
+            epPatterns.forEach((pattern, patternIndex) => {
                 let match;
                 while ((match = pattern.exec(entry.comments)) !== null) {
                     const count = parseInt(match[1]);
                     const context = match[0]; // e.g., "5 EP (1 mulatto)"
 
-                    // Extract year if present
-                    const yearMatch = entry.comments.match(new RegExp(context + '.*?(\\d{4})', 'i'));
-                    const year = yearMatch ? yearMatch[1] : null;
+                    // Extract year - look for 4-digit year AFTER this match in the same phrase
+                    // Example: "2 EPs, 1 free colored in 1830 census" -> extract 1830
+                    let year = null;
+                    const afterMatch = entry.comments.substring(match.index);
+                    const yearMatch = afterMatch.match(/\b(1[6-9]\d{2})\b/); // Years 1600-1999
+                    if (yearMatch) {
+                        year = yearMatch[1];
+                    }
 
                     entry.enslavedPersons.push({
                         count: count,

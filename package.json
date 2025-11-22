@@ -7,6 +7,7 @@
     "start": "node server.js",
     "init-db": "node init-database.js",
     "dev": "nodemon server.js",
+    "worker": "node continuous-scraper.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

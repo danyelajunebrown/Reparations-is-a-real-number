@@ -1257,6 +1257,116 @@ app.get('/api/queue-stats',
   })
 );
 
+// Manual trigger to process next pending URL (for testing/debugging)
+app.post('/api/process-next-queue-item',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    console.log('\n🔧 MANUAL TRIGGER: Processing next queue item...');
+
+    // Check if orchestrator module exists
+    const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+    const orchestrator = new AutonomousResearchOrchestrator(database);
+
+    // Get next pending URL
+    const result = await database.query(
+      `SELECT * FROM scraping_queue
+       WHERE status = 'pending'
+       ORDER BY priority DESC, submitted_at ASC
+       LIMIT 1`
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({
+        success: false,
+        message: 'No pending URLs in queue'
+      });
+    }
+
+    const queueEntry = result.rows[0];
+    const startTime = Date.now();
+
+    console.log(`📄 Processing URL: ${queueEntry.url}`);
+    console.log(`📁 Category: ${queueEntry.category}`);
+    console.log(`⭐ Priority: ${queueEntry.priority}`);
+
+    try {
+      // Mark as processing
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'processing',
+             processing_started_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [queueEntry.id]
+      );
+
+      const isBeyondKin = queueEntry.category === 'beyondkin';
+
+      // Process the URL
+      const processResult = await orchestrator.processURL(queueEntry.url, {
+        category: queueEntry.category,
+        isBeyondKin: isBeyondKin,
+        queueEntryId: queueEntry.id,
+        submittedBy: queueEntry.submitted_by
+      });
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      // Mark as completed
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'completed',
+             processing_completed_at = CURRENT_TIMESTAMP,
+             metadata = jsonb_set(
+                 COALESCE(metadata, '{}'::jsonb),
+                 '{result}',
+                 $1::jsonb
+             )
+         WHERE id = $2`,
+        [JSON.stringify({
+          personsFound: processResult.personsCount || 0,
+          documentsFound: processResult.documentsCount || 0,
+          duration: duration
+        }), queueEntry.id]
+      );
+
+      console.log(`✅ Processing completed in ${duration}s`);
+
+      res.json({
+        success: true,
+        message: `Processed URL successfully`,
+        queueId: queueEntry.id,
+        url: queueEntry.url,
+        category: queueEntry.category,
+        isBeyondKin: isBeyondKin,
+        duration: duration,
+        personsFound: processResult.personsCount || 0,
+        documentsFound: processResult.documentsCount || 0,
+        sessionId: processResult.sessionId
+      });
+
+    } catch (error) {
+      console.error(`❌ Processing failed:`, error);
+
+      // Mark as failed
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'failed',
+             processing_completed_at = CURRENT_TIMESTAMP,
+             error_message = $1
+         WHERE id = $2`,
+        [error.message, queueEntry.id]
+      );
+
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        queueId: queueEntry.id,
+        url: queueEntry.url
+      });
+    }
+  })
+);
+
 // ========================================
 // REPARATIONS PORTAL ENDPOINTS
 // ========================================
