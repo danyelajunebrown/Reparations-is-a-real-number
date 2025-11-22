@@ -120,7 +120,8 @@ class AutonomousWebScraper {
             const unwantedSelectors = [
                 'nav', 'header', 'footer', 'aside',
                 '.advertisement', '.ad', '.sidebar',
-                '.navigation', '.menu', '.comments',
+                '.navigation', '.menu',
+                // NOTE: Not removing '.comments' - may contain genealogical data (e.g., Beyond Kin)
                 'script', 'style', 'noscript'
             ];
 

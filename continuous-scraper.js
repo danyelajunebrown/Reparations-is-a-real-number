@@ -35,6 +35,9 @@ class ContinuousScraper {
     }
 
     async checkQueue() {
+        const timestamp = new Date().toISOString();
+        console.log(`\n[${timestamp}] 🔍 Checking queue...`);
+
         if (this.isProcessing) {
             console.log('⏳ Already processing, skipping this cycle...');
             return;
@@ -49,6 +52,8 @@ class ContinuousScraper {
                  LIMIT 1`
             );
 
+            console.log(`   Found ${result.rows.length} pending URL(s)`);
+
             if (result.rows.length === 0) {
                 // Check every 5th poll
                 if (this.processedCount % 5 === 0) {
@@ -58,10 +63,12 @@ class ContinuousScraper {
             }
 
             const queueEntry = result.rows[0];
+            console.log(`   ➡️  Next: ${queueEntry.url} (Priority: ${queueEntry.priority}, ID: ${queueEntry.id})`);
             await this.processQueueEntry(queueEntry);
 
         } catch (error) {
             console.error('❌ Queue check error:', error.message);
+            console.error('   Stack:', error.stack);
         }
     }
 
