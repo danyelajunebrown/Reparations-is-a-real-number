@@ -636,6 +636,147 @@ class GenealogyEntityExtractor {
         const match = str.match(/\b(\d{4})\b/);
         return match ? parseInt(match[1]) : null;
     }
+
+    // ========================================
+    // BEYOND KIN PROJECT INTEGRATION
+    // ========================================
+
+    /**
+     * Detect if text contains Beyond Kin formatted entries
+     * Beyond Kin format: "GivenName (Institution Name)"
+     * Examples:
+     *   - "Jim boy $250 (Patricia Coleman Farm)"
+     *   - "3a6 Mulatto Male c1820 (JN Mayberry Plantation)"
+     *   - "Mary the laundress (University of Alabama)"
+     */
+    detectBeyondKinFormat(text) {
+        // Look for pattern: descriptive name followed by (Institution)
+        const beyondKinPattern = /[\w\s$]+\([A-Z][\w\s]+(?:Plantation|Farm|Estate|University|College|Mine|Factory)\)/gi;
+        return beyondKinPattern.test(text);
+    }
+
+    /**
+     * Parse a Beyond Kin formatted name
+     * Returns: {givenName, institution, description}
+     */
+    parseBeyondKinName(fullName) {
+        // Pattern: "Description (Institution)"
+        const match = fullName.match(/^(.+?)\s*\((.+?)\)$/);
+
+        if (match) {
+            const givenName = match[1].trim();
+            const institution = match[2].trim();
+
+            // Extract additional details from given name
+            // E.g., "Jim boy $250" -> name: "Jim", description: "boy $250"
+            // E.g., "3a6 Mulatto Male c1820" -> name: "3a6", description: "Mulatto Male c1820"
+
+            const parts = givenName.split(/\s+/);
+            const primaryName = parts[0];
+            const description = parts.slice(1).join(' ');
+
+            return {
+                givenName: primaryName,
+                fullGivenName: givenName,
+                institution: institution,
+                description: description || null,
+                isBeyondKin: true
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract enslaved persons from Beyond Kin formatted text
+     * This is MUCH more reliable than general web scraping
+     * because Beyond Kin explicitly documents the evidentiary source
+     */
+    extractBeyondKinEntries(text, sourceUrl = '') {
+        const persons = [];
+        const institutionPattern = /\(([^)]+(?:Plantation|Farm|Estate|University|College|Mine|Factory)[^)]*)\)/gi;
+
+        // Find all institution references
+        const institutions = new Set();
+        let match;
+        while ((match = institutionPattern.exec(text)) !== null) {
+            institutions.add(match[1]);
+        }
+
+        // For each institution, look for enslaved person entries
+        institutions.forEach(institution => {
+            // Pattern: "GivenName (Institution)"
+            const namePattern = new RegExp(
+                `([\\w\\s$#@]+?)\\s*\\(${institution.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`,
+                'gi'
+            );
+
+            let nameMatch;
+            while ((nameMatch = namePattern.exec(text)) !== null) {
+                const fullName = `${nameMatch[1].trim()} (${institution})`;
+                const parsed = this.parseBeyondKinName(fullName);
+
+                if (parsed) {
+                    // Extract slaveholder name from institution
+                    // E.g., "JN Mayberry Plantation" -> slaveholder: "JN Mayberry"
+                    const slaveholder = institution.replace(/\s+(Plantation|Farm|Estate|University|College|Mine|Factory).*$/i, '').trim();
+
+                    persons.push({
+                        fullName: fullName,
+                        givenName: parsed.givenName,
+                        surname: `(${institution})`, // Beyond Kin uses institution as surname
+                        type: 'enslaved',
+                        personType: 'enslaved',
+                        confidence: 0.95, // Beyond Kin is HIGH confidence due to explicit documentation
+                        evidence: `Beyond Kin format: ${fullName}`,
+                        extractedAt: new Date(),
+                        sourceUrl: sourceUrl,
+                        isBeyondKin: true,
+                        slaveholder: slaveholder,
+                        institution: institution,
+                        description: parsed.description,
+                        relationships: [{
+                            type: 'enslaved-by',
+                            enslaved: parsed.fullGivenName,
+                            owner: slaveholder,
+                            evidence: `Beyond Kin documented: ${fullName}`,
+                            confidence: 0.95,
+                            needsPrimarySource: false // Beyond Kin IS the primary source reference
+                        }]
+                    });
+                }
+            }
+        });
+
+        return persons;
+    }
+
+    /**
+     * Extract slaveholder information from Beyond Kin entries
+     * Returns institutions and slaveholders for review queue
+     */
+    extractBeyondKinSlaveholders(text, sourceUrl = '') {
+        const slaveholders = new Map(); // institution -> slaveholder info
+
+        const institutionPattern = /\(([^)]+(?:Plantation|Farm|Estate|University|College|Mine|Factory)[^)]*)\)/gi;
+        let match;
+
+        while ((match = institutionPattern.exec(text)) !== null) {
+            const institution = match[1];
+            const slaveholder = institution.replace(/\s+(Plantation|Farm|Estate|University|College|Mine|Factory).*$/i, '').trim();
+
+            if (!slaveholders.has(institution)) {
+                slaveholders.set(institution, {
+                    slaveholderName: slaveholder,
+                    institutionName: institution,
+                    sourceUrl: sourceUrl,
+                    enslavedPersons: []
+                });
+            }
+        }
+
+        return Array.from(slaveholders.values());
+    }
 }
 
 module.exports = GenealogyEntityExtractor;
