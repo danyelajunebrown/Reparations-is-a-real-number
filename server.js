@@ -1205,18 +1205,27 @@ app.post('/api/submit-url',
       });
     }
 
+    // Set priority based on category
+    // Beyond Kin gets highest priority (10) - explicit evidentiary documentation
+    const priority = category === 'beyondkin' ? 10 : 5;
+
     // Insert into queue
     const result = await database.query(
       `INSERT INTO scraping_queue (url, category, submitted_by, status, priority)
-       VALUES ($1, $2, $3, 'pending', 5)
-       RETURNING id, url, status, submitted_at`,
-      [url, category || 'other', submittedBy || 'anonymous']
+       VALUES ($1, $2, $3, 'pending', $4)
+       RETURNING id, url, status, submitted_at, priority`,
+      [url, category || 'other', submittedBy || 'anonymous', priority]
     );
+
+    const message = category === 'beyondkin'
+      ? 'Beyond Kin submission received! High priority - will be reviewed soon.'
+      : 'URL submitted successfully! Our research agent will process it soon.';
 
     res.json({
       success: true,
-      message: 'URL submitted successfully! Our research agent will process it soon.',
-      queueEntry: result.rows[0]
+      message: message,
+      queueEntry: result.rows[0],
+      isBeyondKin: category === 'beyondkin'
     });
   })
 );
@@ -1380,6 +1389,149 @@ app.post('/api/search-reparations',
       totalReparations,
       ancestors,
       breakdown
+    });
+  })
+);
+
+// ========================================
+// BEYOND KIN REVIEW QUEUE ENDPOINTS
+// ========================================
+
+// Get Beyond Kin pending reviews (for index.html review panel)
+app.get('/api/beyond-kin/pending',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const reviews = await database.query(`
+      SELECT * FROM beyond_kin_pending_reviews
+      ORDER BY days_pending DESC
+      LIMIT 50
+    `);
+
+    const stats = await database.query(`
+      SELECT * FROM beyond_kin_stats LIMIT 1
+    `);
+
+    res.json({
+      success: true,
+      reviews: reviews.rows,
+      stats: stats.rows[0] || {}
+    });
+  })
+);
+
+// Get specific Beyond Kin review details
+app.get('/api/beyond-kin/:id',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const review = await database.query(
+      `SELECT * FROM beyond_kin_review_queue WHERE id = $1`,
+      [id]
+    );
+
+    if (review.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    res.json({
+      success: true,
+      review: review.rows[0]
+    });
+  })
+);
+
+// Approve Beyond Kin review (promote to confirmed)
+app.post('/api/beyond-kin/:id/approve',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reviewedBy, reviewNotes, documentId } = req.body;
+
+    const result = await database.query(
+      `UPDATE beyond_kin_review_queue
+       SET review_status = 'approved',
+           reviewed_by = $1,
+           reviewed_at = CURRENT_TIMESTAMP,
+           review_notes = $2,
+           promoted_document_id = $3,
+           promoted_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING *`,
+      [reviewedBy || 'program_lead', reviewNotes, documentId, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Beyond Kin entry approved and promoted to confirmed records',
+      review: result.rows[0]
+    });
+  })
+);
+
+// Reject Beyond Kin review
+app.post('/api/beyond-kin/:id/reject',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reviewedBy, reviewNotes } = req.body;
+
+    const result = await database.query(
+      `UPDATE beyond_kin_review_queue
+       SET review_status = 'rejected',
+           reviewed_by = $1,
+           reviewed_at = CURRENT_TIMESTAMP,
+           review_notes = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [reviewedBy || 'program_lead', reviewNotes, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Beyond Kin entry rejected',
+      review: result.rows[0]
+    });
+  })
+);
+
+// Mark Beyond Kin review as "needs document"
+app.post('/api/beyond-kin/:id/needs-document',
+  uploadLimiter,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { reviewedBy, reviewNotes } = req.body;
+
+    const result = await database.query(
+      `UPDATE beyond_kin_review_queue
+       SET review_status = 'needs_document',
+           reviewed_by = $1,
+           reviewed_at = CURRENT_TIMESTAMP,
+           review_notes = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [reviewedBy || 'program_lead', reviewNotes, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Review not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Marked as needs document - will track down source',
+      review: result.rows[0]
     });
   })
 );
