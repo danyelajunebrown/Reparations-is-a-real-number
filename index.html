@@ -2166,11 +2166,18 @@ async function uploadMultiPageDocument() {
                                                 ${entry.document_description}
                                             </div>
                                         ` : ''}
-                                        ${entry.source_url ? `
-                                            <a href="${entry.source_url}" target="_blank" style="color: #64c8ff; font-size: 0.8em; text-decoration: none;">
-                                                📄 View Source
-                                            </a>
-                                        ` : ''}
+                                        <div style="margin-top: 5px;">
+                                            ${entry.source_url ? `
+                                                <a href="${entry.source_url}" target="_blank" style="color: #64c8ff; font-size: 0.8em; text-decoration: none; margin-right: 10px;">
+                                                    📄 View Entry
+                                                </a>
+                                            ` : ''}
+                                            ${entry.document_url ? `
+                                                <a href="${entry.document_url}" target="_blank" style="color: #4CAF50; font-size: 0.8em; text-decoration: none;">
+                                                    🌳 View Tree/Website
+                                                </a>
+                                            ` : ''}
+                                        </div>
                                     </div>
                                     <div style="min-width: 120px; text-align: right;">
                                         <div style="color: #64c8ff; font-size: 0.9em;">
