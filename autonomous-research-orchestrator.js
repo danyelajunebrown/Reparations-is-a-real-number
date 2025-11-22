@@ -126,56 +126,103 @@ class AutonomousResearchOrchestrator {
             // BEYOND KIN PROCESSING: If this is a Beyond Kin submission, extract and queue for review
             if (options.isBeyondKin) {
                 console.log('\n📍 BEYOND KIN PROCESSING');
-                const isBeyondKinFormat = this.extractor.detectBeyondKinFormat(results.scrapingResults.rawText);
 
-                if (isBeyondKinFormat) {
-                    console.log('    ✓ Beyond Kin format detected!');
-                    const beyondKinPersons = this.extractor.extractBeyondKinEntries(
-                        results.scrapingResults.rawText,
-                        url
-                    );
-                    const slaveholders = this.extractor.extractBeyondKinSlaveholders(
-                        results.scrapingResults.rawText,
-                        url
-                    );
+                // Try parsing as entry detail page first
+                const entryPage = this.extractor.parseBeyondKinEntryPage(
+                    results.scrapingResults.rawText,
+                    url
+                );
 
-                    console.log(`    • Found ${beyondKinPersons.length} Beyond Kin formatted persons`);
-                    console.log(`    • Found ${slaveholders.length} slaveholder/institution pairs`);
-
-                    // Add to Beyond Kin review queue
-                    for (const sh of slaveholders) {
-                        // Get enslaved persons for this slaveholder
-                        const enslaved = beyondKinPersons.filter(p => p.slaveholder === sh.slaveholderName);
-
-                        if (enslaved.length > 0) {
-                            await this.db.query(
-                                `INSERT INTO beyond_kin_review_queue
-                                 (source_url, slaveholder_name, institution_name, enslaved_persons,
-                                  extraction_confidence, scraping_session_id, submitted_by, priority)
-                                 VALUES ($1, $2, $3, $4, $5, $6, $7, 10)`,
-                                [
-                                    url,
-                                    sh.slaveholderName,
-                                    sh.institutionName,
-                                    JSON.stringify(enslaved.map(ep => ({
-                                        given_name: ep.givenName,
-                                        surname: ep.surname,
-                                        description: ep.description,
-                                        full_name: ep.fullName
-                                    }))),
-                                    0.95,
-                                    sessionId,
-                                    options.submittedBy || 'continuous_scraper'
-                                ]
-                            );
-                        }
+                if (entryPage && entryPage.slaveholderName) {
+                    console.log('    ✓ Beyond Kin Entry Detail Page detected!');
+                    console.log(`    • Slaveholder: ${entryPage.slaveholderName}`);
+                    console.log(`    • Location: ${entryPage.locations.join(', ')}`);
+                    console.log(`    • Enslaved Persons: ${entryPage.enslavedPersons.length} entries`);
+                    if (entryPage.treeUrl) {
+                        console.log(`    • Tree URL: ${entryPage.treeUrl}`);
                     }
 
-                    console.log(`    ✓ Added ${slaveholders.length} entries to Beyond Kin review queue`);
-                    results.beyondKinEntriesAdded = slaveholders.length;
+                    // Calculate total EP count
+                    const totalEPs = entryPage.enslavedPersons.reduce((sum, ep) => sum + ep.count, 0);
+
+                    // Add to Beyond Kin review queue
+                    await this.db.query(
+                        `INSERT INTO beyond_kin_review_queue
+                         (source_url, slaveholder_name, institution_name, enslaved_persons,
+                          document_type, document_description, document_url, document_location,
+                          extraction_confidence, scraping_session_id, submitted_by, priority)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 10)`,
+                        [
+                            url,
+                            entryPage.slaveholderName,
+                            entryPage.slaveholderName, // institution = slaveholder for entry pages
+                            JSON.stringify(entryPage.enslavedPersons),
+                            'Beyond Kin Directory Entry',
+                            entryPage.comments || `${totalEPs} enslaved persons documented`,
+                            entryPage.treeUrl || null,
+                            entryPage.locations.join(', '),
+                            0.90, // High confidence for structured entry pages
+                            sessionId,
+                            options.submittedBy || 'continuous_scraper'
+                        ]
+                    );
+
+                    console.log(`    ✓ Added to Beyond Kin review queue (${totalEPs} total EPs)`);
+                    results.beyondKinEntriesAdded = 1;
+
                 } else {
-                    console.log('    ⚠️  Marked as Beyond Kin but no Beyond Kin format detected');
-                    console.log('    ℹ️  Processing as regular web scrape');
+                    // Try detecting formatted tree pages
+                    const isBeyondKinFormat = this.extractor.detectBeyondKinFormat(results.scrapingResults.rawText);
+
+                    if (isBeyondKinFormat) {
+                        console.log('    ✓ Beyond Kin Tree format detected!');
+                        const beyondKinPersons = this.extractor.extractBeyondKinEntries(
+                            results.scrapingResults.rawText,
+                            url
+                        );
+                        const slaveholders = this.extractor.extractBeyondKinSlaveholders(
+                            results.scrapingResults.rawText,
+                            url
+                        );
+
+                        console.log(`    • Found ${beyondKinPersons.length} Beyond Kin formatted persons`);
+                        console.log(`    • Found ${slaveholders.length} slaveholder/institution pairs`);
+
+                        // Add to Beyond Kin review queue
+                        for (const sh of slaveholders) {
+                            // Get enslaved persons for this slaveholder
+                            const enslaved = beyondKinPersons.filter(p => p.slaveholder === sh.slaveholderName);
+
+                            if (enslaved.length > 0) {
+                                await this.db.query(
+                                    `INSERT INTO beyond_kin_review_queue
+                                     (source_url, slaveholder_name, institution_name, enslaved_persons,
+                                      extraction_confidence, scraping_session_id, submitted_by, priority)
+                                     VALUES ($1, $2, $3, $4, $5, $6, $7, 10)`,
+                                    [
+                                        url,
+                                        sh.slaveholderName,
+                                        sh.institutionName,
+                                        JSON.stringify(enslaved.map(ep => ({
+                                            given_name: ep.givenName,
+                                            surname: ep.surname,
+                                            description: ep.description,
+                                            full_name: ep.fullName
+                                        }))),
+                                        0.95,
+                                        sessionId,
+                                        options.submittedBy || 'continuous_scraper'
+                                    ]
+                                );
+                            }
+                        }
+
+                        console.log(`    ✓ Added ${slaveholders.length} entries to Beyond Kin review queue`);
+                        results.beyondKinEntriesAdded = slaveholders.length;
+                    } else {
+                        console.log('    ⚠️  Marked as Beyond Kin but no Beyond Kin format detected');
+                        console.log('    ℹ️  Processing as regular web scrape');
+                    }
                 }
             }
 

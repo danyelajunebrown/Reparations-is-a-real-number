@@ -777,6 +777,88 @@ class GenealogyEntityExtractor {
 
         return Array.from(slaveholders.values());
     }
+
+    /**
+     * Parse Beyond Kin Entry Detail Pages
+     * These are the directory entry pages with structured data
+     * Format: /enslaved-population-research-view-details/?pdb=XXX
+     */
+    parseBeyondKinEntryPage(text, sourceUrl = '') {
+        // Check if this is an entry detail page
+        if (!sourceUrl.includes('enslaved-population-research-view-details')) {
+            return null;
+        }
+
+        const entry = {
+            slaveholderName: null,
+            locations: [],
+            comments: null,
+            treeUrl: null,
+            researcher: null,
+            enslavedPersons: [],
+            sourceUrl: sourceUrl
+        };
+
+        // Extract Slaveholder name
+        const shMatch = text.match(/Slaveholder[:\s]+([^\n]+)/i);
+        if (shMatch) {
+            entry.slaveholderName = shMatch[1].trim();
+        }
+
+        // Extract Locations
+        const locMatch = text.match(/Locations?[:\s]+([^\n]+)/i);
+        if (locMatch) {
+            entry.locations = locMatch[1].split(',').map(l => l.trim());
+        }
+
+        // Extract Comments (contains EP counts and census info)
+        const commentsMatch = text.match(/Comments[:\s]+([^\n]+(?:\n(?!(?:On-line Tree|Join|Beyond Kin))[^\n]+)*)/i);
+        if (commentsMatch) {
+            entry.comments = commentsMatch[1].trim();
+
+            // Extract EP counts from comments
+            // Patterns: "2 EPs", "5 EP (1 mulatto)", "1 free colored"
+            const epPatterns = [
+                /(\d+)\s+EP(?:s)?(?:\s+\([^)]+\))?/gi,  // "5 EP (1 mulatto)"
+                /(\d+)\s+enslaved/gi,                     // "3 enslaved"
+                /(\d+)\s+slave(?:s)?/gi,                  // "2 slaves"
+                /(\d+)\s+free\s+colored/gi                // "1 free colored"
+            ];
+
+            epPatterns.forEach(pattern => {
+                let match;
+                while ((match = pattern.exec(entry.comments)) !== null) {
+                    const count = parseInt(match[1]);
+                    const context = match[0]; // e.g., "5 EP (1 mulatto)"
+
+                    // Extract year if present
+                    const yearMatch = entry.comments.match(new RegExp(context + '.*?(\\d{4})', 'i'));
+                    const year = yearMatch ? yearMatch[1] : null;
+
+                    entry.enslavedPersons.push({
+                        count: count,
+                        description: context,
+                        year: year,
+                        source: 'census/slave schedule'
+                    });
+                }
+            });
+        }
+
+        // Extract On-line Tree or Website URL
+        const treeMatch = text.match(/On-?line\s+Tree\s+or\s+Website[:\s]+([^\n]+)/i);
+        if (treeMatch) {
+            entry.treeUrl = treeMatch[1].trim();
+        }
+
+        // Extract Researcher (for context only)
+        const researcherMatch = text.match(/Researcher[:\s]+([^\n]+)/i);
+        if (researcherMatch && !researcherMatch[1].includes('E-mail') && !researcherMatch[1].includes('Location')) {
+            entry.researcher = researcherMatch[1].trim();
+        }
+
+        return entry;
+    }
 }
 
 module.exports = GenealogyEntityExtractor;
