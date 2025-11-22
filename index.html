@@ -905,15 +905,40 @@
                 </div>
             </div>
 
-            <!-- Widget 3: Data Browser -->
-            <div class="widget">
-                <h2>Documented Owners</h2>
-                <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
-                    Click to view details • Green = verified
-                </p>
+            <!-- Widget 3: Data Browser - Split into two sections -->
+            <div class="widget" style="display: flex; flex-direction: column; height: 600px;">
+                <!-- TOP SECTION: Documented Owners -->
+                <div style="flex: 1; overflow-y: auto; padding-bottom: 15px; border-bottom: 2px solid rgba(100, 200, 255, 0.3);">
+                    <h2>Documented Owners</h2>
+                    <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
+                        Click to view details • Green = verified
+                    </p>
 
-                <div class="owner-list" id="ownerList">
-                    <!-- Will be populated dynamically -->
+                    <div class="owner-list" id="ownerList">
+                        <!-- Will be populated dynamically -->
+                    </div>
+                </div>
+
+                <!-- BOTTOM SECTION: Documents to Find (Beyond Kin Review Queue) -->
+                <div style="flex: 1; overflow-y: auto; padding-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h2 style="margin: 0;">Documents to Find</h2>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span id="beyondKinCount" style="color: #64c8ff; font-size: 0.9em;">0 pending</span>
+                            <button onclick="loadBeyondKinQueue()" class="console-btn" style="padding: 5px 10px; font-size: 0.85em;">
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                    <p style="color: #9aa5b1; font-size: 0.85em; margin-bottom: 15px;">
+                        Beyond Kin entries • Hunt down these evidentiary documents
+                    </p>
+
+                    <div id="beyondKinQueue">
+                        <div style="color: #9aa5b1; font-style: italic; padding: 20px; text-align: center;">
+                            Loading Beyond Kin review queue...
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2064,6 +2089,213 @@ async function uploadMultiPageDocument() {
         function showHelp() {
             alert('Upload documents (PDF / images / CSV). For multiple files you can apply the same metadata to all or enter metadata per file. The system will attempt to use a real document processor if available; otherwise it runs a mock for testing.');
         }
+
+        // ============================================
+        // BEYOND KIN REVIEW QUEUE
+        // ============================================
+
+        async function loadBeyondKinQueue() {
+            const queueDiv = document.getElementById('beyondKinQueue');
+            const countSpan = document.getElementById('beyondKinCount');
+
+            try {
+                queueDiv.innerHTML = '<div style="color: #64c8ff; padding: 20px; text-align: center;">Loading...</div>';
+
+                const response = await fetch(`${API_BASE_URL}/api/beyond-kin/pending`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    queueDiv.innerHTML = '<div style="color: #ff6b6b; padding: 20px;">Failed to load queue</div>';
+                    return;
+                }
+
+                const reviews = data.reviews || [];
+                const stats = data.stats || {};
+
+                // Update count
+                countSpan.textContent = `${reviews.length} pending`;
+
+                if (reviews.length === 0) {
+                    queueDiv.innerHTML = '<div style="color: #9aa5b1; font-style: italic; padding: 20px; text-align: center;">No Beyond Kin entries pending review</div>';
+                    return;
+                }
+
+                // Group by slaveholder for easier searching
+                const byOwner = {};
+                reviews.forEach(review => {
+                    const owner = review.slaveholder_name || 'Unknown';
+                    if (!byOwner[owner]) {
+                        byOwner[owner] = [];
+                    }
+                    byOwner[owner].push(review);
+                });
+
+                // Render grouped by owner
+                let html = '';
+                Object.keys(byOwner).sort().forEach(owner => {
+                    const entries = byOwner[owner];
+                    const totalEnslaved = entries.reduce((sum, e) => sum + (e.enslaved_count || 0), 0);
+
+                    html += `
+                        <div style="margin-bottom: 20px; background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3); border-radius: 8px; padding: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <div>
+                                    <div style="color: #64c8ff; font-weight: bold; font-size: 1.1em;">${owner}</div>
+                                    <div style="color: #9aa5b1; font-size: 0.85em;">${totalEnslaved} enslaved person(s) across ${entries.length} document(s)</div>
+                                </div>
+                                <div style="color: #9aa5b1; font-size: 0.8em;">
+                                    ${entries[0].days_pending || 0} days pending
+                                </div>
+                            </div>
+                    `;
+
+                    // List each document entry
+                    entries.forEach(entry => {
+                        html += `
+                            <div style="margin-top: 10px; padding: 10px; background: rgba(10, 14, 39, 0.8); border-left: 3px solid #64c8ff; border-radius: 4px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <div style="flex: 1;">
+                                        <div style="color: #e0e0e0; font-size: 0.95em; margin-bottom: 5px;">
+                                            <strong>${entry.document_type || 'Unknown document type'}</strong>
+                                        </div>
+                                        <div style="color: #9aa5b1; font-size: 0.85em;">
+                                            ${entry.institution_name || 'Unknown institution'}
+                                        </div>
+                                        ${entry.document_description ? `
+                                            <div style="color: #9aa5b1; font-size: 0.8em; margin-top: 5px; font-style: italic;">
+                                                ${entry.document_description}
+                                            </div>
+                                        ` : ''}
+                                        ${entry.source_url ? `
+                                            <a href="${entry.source_url}" target="_blank" style="color: #64c8ff; font-size: 0.8em; text-decoration: none;">
+                                                📄 View Source
+                                            </a>
+                                        ` : ''}
+                                    </div>
+                                    <div style="min-width: 120px; text-align: right;">
+                                        <div style="color: #64c8ff; font-size: 0.9em;">
+                                            ${entry.enslaved_count || 0} EPs
+                                        </div>
+                                        <div style="color: #9aa5b1; font-size: 0.75em;">
+                                            ID: ${entry.id}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                                    <button onclick="needsDocument(${entry.id})" class="console-btn" style="flex: 1; padding: 6px 10px; font-size: 0.8em; background: rgba(100, 200, 255, 0.3);">
+                                        📋 Hunt Doc
+                                    </button>
+                                    <button onclick="approveBeyondKin(${entry.id})" class="console-btn" style="flex: 1; padding: 6px 10px; font-size: 0.8em; background: rgba(76, 175, 80, 0.3);">
+                                        ✓ Approve
+                                    </button>
+                                    <button onclick="rejectBeyondKin(${entry.id})" class="console-btn" style="flex: 1; padding: 6px 10px; font-size: 0.8em; background: rgba(244, 67, 54, 0.3);">
+                                        ✗ Reject
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div>';
+                });
+
+                queueDiv.innerHTML = html;
+
+            } catch (error) {
+                console.error('Failed to load Beyond Kin queue:', error);
+                queueDiv.innerHTML = '<div style="color: #ff6b6b; padding: 20px;">Error loading queue. Check console.</div>';
+            }
+        }
+
+        async function approveBeyondKin(id) {
+            const notes = prompt('Approve this Beyond Kin entry? Add any notes about the document you found:');
+            if (notes === null) return; // Cancelled
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/beyond-kin/${id}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reviewedBy: 'program_lead',
+                        reviewNotes: notes || 'Approved - document obtained'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✓ Approved! Entry promoted to confirmed records.');
+                    loadBeyondKinQueue(); // Refresh
+                } else {
+                    alert('Failed to approve: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Approval error:', error);
+                alert('Error approving entry. Check console.');
+            }
+        }
+
+        async function rejectBeyondKin(id) {
+            const reason = prompt('Reject this Beyond Kin entry? Enter reason:');
+            if (!reason) return; // Cancelled or empty
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/beyond-kin/${id}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reviewedBy: 'program_lead',
+                        reviewNotes: reason
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✓ Rejected');
+                    loadBeyondKinQueue(); // Refresh
+                } else {
+                    alert('Failed to reject: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Rejection error:', error);
+                alert('Error rejecting entry. Check console.');
+            }
+        }
+
+        async function needsDocument(id) {
+            const notes = prompt('Mark as "Needs Document"? Add notes about where to find it:');
+            if (notes === null) return; // Cancelled
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/beyond-kin/${id}/needs-document`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reviewedBy: 'program_lead',
+                        reviewNotes: notes || 'Tracking down source document'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✓ Marked as needs document - added to hunting list');
+                    loadBeyondKinQueue(); // Refresh
+                } else {
+                    alert('Failed to mark: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Mark error:', error);
+                alert('Error marking entry. Check console.');
+            }
+        }
+
+        // Load Beyond Kin queue on page load
+        window.addEventListener('load', () => {
+            loadBeyondKinQueue();
+        });
+
         // ============================================
 // LLM CHAT INTERFACE
 // ============================================
