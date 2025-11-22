@@ -36,15 +36,19 @@ class AutonomousResearchOrchestrator {
     /**
      * Main entry point: Process a URL completely
      * @param {string} url - URL to scrape and process
+     * @param {object} options - Processing options
      * @returns {Promise<object>} Complete results
      */
-    async processURL(url) {
+    async processURL(url, options = {}) {
         console.log(`\n${'='.repeat(60)}`);
         console.log(`🤖 AUTONOMOUS RESEARCH AGENT`);
         console.log(`   Target: ${url}`);
+        if (options.isBeyondKin) {
+            console.log(`   🌟 Beyond Kin submission (high priority)`);
+        }
         console.log(`${'='.repeat(60)}`);
 
-        const sessionId = await this.createSession(url);
+        const sessionId = options.sessionId || await this.createSession(url);
         const startTime = Date.now();
 
         const results = {
@@ -119,6 +123,62 @@ class AutonomousResearchOrchestrator {
             console.log(`      • Low confidence (<0.5): ${lowConfidence}`);
             console.log(`    ℹ️  All require verification with primary sources`);
 
+            // BEYOND KIN PROCESSING: If this is a Beyond Kin submission, extract and queue for review
+            if (options.isBeyondKin) {
+                console.log('\n📍 BEYOND KIN PROCESSING');
+                const isBeyondKinFormat = this.extractor.detectBeyondKinFormat(results.scrapingResults.rawText);
+
+                if (isBeyondKinFormat) {
+                    console.log('    ✓ Beyond Kin format detected!');
+                    const beyondKinPersons = this.extractor.extractBeyondKinEntries(
+                        results.scrapingResults.rawText,
+                        url
+                    );
+                    const slaveholders = this.extractor.extractBeyondKinSlaveholders(
+                        results.scrapingResults.rawText,
+                        url
+                    );
+
+                    console.log(`    • Found ${beyondKinPersons.length} Beyond Kin formatted persons`);
+                    console.log(`    • Found ${slaveholders.length} slaveholder/institution pairs`);
+
+                    // Add to Beyond Kin review queue
+                    for (const sh of slaveholders) {
+                        // Get enslaved persons for this slaveholder
+                        const enslaved = beyondKinPersons.filter(p => p.slaveholder === sh.slaveholderName);
+
+                        if (enslaved.length > 0) {
+                            await this.db.query(
+                                `INSERT INTO beyond_kin_review_queue
+                                 (source_url, slaveholder_name, institution_name, enslaved_persons,
+                                  extraction_confidence, scraping_session_id, submitted_by, priority)
+                                 VALUES ($1, $2, $3, $4, $5, $6, $7, 10)`,
+                                [
+                                    url,
+                                    sh.slaveholderName,
+                                    sh.institutionName,
+                                    JSON.stringify(enslaved.map(ep => ({
+                                        given_name: ep.givenName,
+                                        surname: ep.surname,
+                                        description: ep.description,
+                                        full_name: ep.fullName
+                                    }))),
+                                    0.95,
+                                    sessionId,
+                                    options.submittedBy || 'continuous_scraper'
+                                ]
+                            );
+                        }
+                    }
+
+                    console.log(`    ✓ Added ${slaveholders.length} entries to Beyond Kin review queue`);
+                    results.beyondKinEntriesAdded = slaveholders.length;
+                } else {
+                    console.log('    ⚠️  Marked as Beyond Kin but no Beyond Kin format detected');
+                    console.log('    ℹ️  Processing as regular web scrape');
+                }
+            }
+
             // PHASE 4: Download and process documents
             if (this.config.autoDownloadDocuments && results.scrapingResults.documents.length > 0) {
                 console.log('\n📍 PHASE 4: Processing Documents');
@@ -162,12 +222,19 @@ class AutonomousResearchOrchestrator {
             const duration = Date.now() - startTime;
             await this.completeSession(sessionId, results, duration);
 
+            // Add convenience counts for continuous scraper
+            results.personsCount = results.extractionResults.persons.length;
+            results.documentsCount = results.documentsDownloaded;
+
             console.log(`\n${'='.repeat(60)}`);
             console.log(`✅ SESSION COMPLETE`);
             console.log(`   Duration: ${(duration / 1000).toFixed(1)}s`);
-            console.log(`   Persons Found: ${results.extractionResults.persons.length}`);
-            console.log(`   Documents Downloaded: ${results.documentsDownloaded}`);
+            console.log(`   Persons Found: ${results.personsCount}`);
+            console.log(`   Documents Downloaded: ${results.documentsCount}`);
             console.log(`   Documents Uploaded: ${results.documentsUploaded}`);
+            if (results.beyondKinEntriesAdded) {
+                console.log(`   Beyond Kin Entries: ${results.beyondKinEntriesAdded}`);
+            }
             console.log(`${'='.repeat(60)}\n`);
 
             return results;
