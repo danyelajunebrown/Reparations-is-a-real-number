@@ -48,7 +48,7 @@ class AutonomousResearchOrchestrator {
         }
         console.log(`${'='.repeat(60)}`);
 
-        const sessionId = options.sessionId || await this.createSession(url);
+        const sessionId = await this.createSession(url);
         const startTime = Date.now();
 
         const results = {
