@@ -92,10 +92,10 @@ class ContinuousScraper {
 
             // Process the URL
             const result = await this.orchestrator.processURL(entry.url, {
-                sessionId: `queue_${entry.id}`,
                 category: entry.category,
                 isBeyondKin: isBeyondKin,
-                queueEntryId: entry.id
+                queueEntryId: entry.id,
+                submittedBy: entry.submitted_by
             });
 
             const duration = ((Date.now() - startTime) / 1000).toFixed(2);
