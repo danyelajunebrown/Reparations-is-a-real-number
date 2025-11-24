@@ -1541,16 +1541,14 @@ app.get('/api/carousel-data',
         'enslaved' as type,
         ei.birth_year,
         ei.death_year,
-        ei.location,
-        ei.enslaved_by as enslaved_by_owner,
-        COALESCE(
-          (SELECT SUM(rc.amount_outstanding)
-           FROM reparations_credit rc
-           WHERE rc.ancestor_enslaved_id = ei.enslaved_id),
-          0
-        ) as total_credit,
-        ei.notes,
-        ei.verified,
+        NULL as location,
+        (SELECT i.full_name
+         FROM individuals i
+         WHERE i.individual_id = ei.enslaved_by_individual_id
+         LIMIT 1) as enslaved_by_owner,
+        COALESCE(ei.amount_outstanding, 0) as total_credit,
+        NULL as notes,
+        false as verified,
         ei.created_at as last_updated
       FROM enslaved_individuals ei
       WHERE ei.full_name IS NOT NULL
