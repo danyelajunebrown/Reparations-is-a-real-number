@@ -20,7 +20,7 @@ const EnslavedIndividualManager = require('./enslaved-individual-manager');
 const { authenticate, optionalAuth } = require('./middleware/auth');
 const { validate } = require('./middleware/validation');
 const { validateFile, validateFiles } = require('./middleware/file-validation');
-const { uploadLimiter, queryLimiter, strictLimiter, generalLimiter } = require('./middleware/rate-limit');
+const { uploadLimiter, queryLimiter, strictLimiter, moderateLimiter, generalLimiter } = require('./middleware/rate-limit');
 const { errorHandler, asyncHandler } = require('./middleware/error-handler');
 
 const app = express();
@@ -643,6 +643,16 @@ app.post('/api/llm-query',
     const context = global.conversationContexts[sessionId || 'default'] || {};
 
     try {
+      // Check if query is about document viewing - always use free NLP for this
+      const documentViewPattern = /(?:show|view|display|load|get|pull up).*(?:will|document|tombstone|inventory|deed|records?)/i;
+      const isDocumentView = documentViewPattern.test(query);
+
+      if (isDocumentView) {
+        console.log('Document viewing query detected - using free NLP assistant');
+        const result = await researchAssistant.query(query, sessionId || 'default');
+        return res.json(result);
+      }
+
       // Use LLM-powered conversational assistant if API key is configured
       if (process.env.OPENROUTER_API_KEY) {
         console.log('Using LLM conversational assistant');
@@ -1192,6 +1202,166 @@ app.get('/api/documents',
   })
 );
 
+// Search documents across multiple fields
+app.get('/api/search-documents',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const { query } = req.query;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search query is required'
+      });
+    }
+
+    const searchTerm = query.trim();
+
+    // Normalize search term to handle name variations (D'Wolf, DeWolf, d'wolf, etc.)
+    const normalizedSearch = searchTerm
+      .toLowerCase()
+      .replace(/['\s-]/g, '') // Remove apostrophes, spaces, hyphens
+      .replace(/^de/, 'd'); // Normalize "DeWolf" to "DWolf"
+
+    console.log(`🔍 Searching for: "${searchTerm}" (normalized: "${normalizedSearch}")`);
+
+    // Build a comprehensive search across all relevant tables
+    const searchQuery = `
+      WITH normalized_search AS (
+        SELECT
+          $1::text as original_search,
+          $2::text as normalized_search
+      ),
+      -- Search in documents table (owner names and FamilySearch IDs)
+      doc_matches AS (
+        SELECT DISTINCT
+          d.document_id,
+          d.owner_name,
+          d.filename,
+          d.doc_type,
+          d.file_size,
+          d.mime_type,
+          d.owner_location,
+          d.owner_birth_year,
+          d.owner_death_year,
+          d.owner_familysearch_id,
+          d.total_enslaved,
+          d.total_reparations,
+          d.created_at,
+          'owner' as match_type,
+          d.owner_name as match_field
+        FROM documents d, normalized_search ns
+        WHERE
+          -- Case-insensitive partial match on owner name
+          LOWER(d.owner_name) LIKE '%' || LOWER(ns.original_search) || '%'
+          -- Or normalized match (handles D'Wolf/DeWolf variations)
+          OR LOWER(REPLACE(REPLACE(REPLACE(d.owner_name, '''', ''), ' ', ''), '-', ''))
+             LIKE '%' || ns.normalized_search || '%'
+          -- Or FamilySearch ID match
+          OR d.owner_familysearch_id = ns.original_search
+      ),
+      -- Search in individuals table linked to documents
+      individual_matches AS (
+        SELECT DISTINCT
+          d.document_id,
+          d.owner_name,
+          d.filename,
+          d.doc_type,
+          d.file_size,
+          d.mime_type,
+          d.owner_location,
+          d.owner_birth_year,
+          d.owner_death_year,
+          d.owner_familysearch_id,
+          d.total_enslaved,
+          d.total_reparations,
+          d.created_at,
+          'individual' as match_type,
+          i.full_name as match_field
+        FROM documents d
+        JOIN document_individuals di ON d.document_id = di.document_id
+        JOIN individuals i ON di.individual_id = i.individual_id,
+        normalized_search ns
+        WHERE
+          -- Case-insensitive partial match on individual name
+          LOWER(i.full_name) LIKE '%' || LOWER(ns.original_search) || '%'
+          -- Or normalized match
+          OR LOWER(REPLACE(REPLACE(REPLACE(i.full_name, '''', ''), ' ', ''), '-', ''))
+             LIKE '%' || ns.normalized_search || '%'
+          -- Or FamilySearch ID match
+          OR i.familysearch_id = ns.original_search
+      ),
+      -- Search in enslaved_people table linked to documents
+      enslaved_matches AS (
+        SELECT DISTINCT
+          d.document_id,
+          d.owner_name,
+          d.filename,
+          d.doc_type,
+          d.file_size,
+          d.mime_type,
+          d.owner_location,
+          d.owner_birth_year,
+          d.owner_death_year,
+          d.owner_familysearch_id,
+          d.total_enslaved,
+          d.total_reparations,
+          d.created_at,
+          'enslaved' as match_type,
+          ep.name as match_field
+        FROM documents d
+        JOIN enslaved_people ep ON d.document_id = ep.document_id,
+        normalized_search ns
+        WHERE
+          -- Case-insensitive partial match on enslaved person name
+          LOWER(ep.name) LIKE '%' || LOWER(ns.original_search) || '%'
+          -- Or normalized match
+          OR LOWER(REPLACE(REPLACE(REPLACE(ep.name, '''', ''), ' ', ''), '-', ''))
+             LIKE '%' || ns.normalized_search || '%'
+      )
+      -- Combine all matches
+      SELECT * FROM doc_matches
+      UNION
+      SELECT * FROM individual_matches
+      UNION
+      SELECT * FROM enslaved_matches
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+
+    const results = await database.query(searchQuery, [searchTerm, normalizedSearch]);
+
+    // Group results by document to avoid duplicates
+    const uniqueDocuments = new Map();
+    const matchDetails = new Map();
+
+    for (const row of results.rows) {
+      if (!uniqueDocuments.has(row.document_id)) {
+        uniqueDocuments.set(row.document_id, row);
+        matchDetails.set(row.document_id, []);
+      }
+      matchDetails.get(row.document_id).push({
+        type: row.match_type,
+        field: row.match_field
+      });
+    }
+
+    const documents = Array.from(uniqueDocuments.values()).map(doc => ({
+      ...doc,
+      matches: matchDetails.get(doc.document_id)
+    }));
+
+    console.log(`✅ Found ${documents.length} document(s) matching "${searchTerm}"`);
+
+    res.json({
+      success: true,
+      query: searchTerm,
+      count: documents.length,
+      documents: documents
+    });
+  })
+);
+
 // ========================================
 // PUBLIC RESEARCH CONTRIBUTION ENDPOINTS
 // ========================================
@@ -1278,6 +1448,50 @@ app.get('/api/queue-stats',
       persons_24h: stats.rows[0]?.persons_24h || 0,
       documents_24h: docsResult.rows[0]?.count || 0,
       sessions_24h: stats.rows[0]?.sessions_24h || 0
+    });
+  })
+);
+
+// Get population statistics (for contribute.html)
+app.get('/api/population-stats',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    // Total individuals count
+    const totalResult = await database.query(`
+      SELECT COUNT(*) as total FROM individuals
+    `);
+
+    // Count slaveholders (individuals with total_enslaved > 0 or marked as enslavers)
+    const slaveholdersResult = await database.query(`
+      SELECT COUNT(DISTINCT individual_id) as count
+      FROM individuals
+      WHERE total_enslaved > 0
+         OR LOWER(notes) LIKE '%enslaver%'
+         OR LOWER(notes) LIKE '%slave owner%'
+         OR LOWER(notes) LIKE '%slave trader%'
+    `);
+
+    // Count enslaved people
+    const enslavedResult = await database.query(`
+      SELECT
+        (SELECT COUNT(*) FROM enslaved_people) +
+        (SELECT COUNT(*) FROM individuals WHERE LOWER(notes) LIKE '%enslaved%') as count
+    `);
+
+    const totalIndividuals = parseInt(totalResult.rows[0]?.total) || 0;
+    const slaveholdersFound = parseInt(slaveholdersResult.rows[0]?.count) || 0;
+    const enslavedFound = parseInt(enslavedResult.rows[0]?.count) || 0;
+
+    // Target from 1860 census
+    const targetSlaveholders = 393975;
+    const progressPercent = ((slaveholdersFound / targetSlaveholders) * 100).toFixed(4);
+
+    res.json({
+      total_individuals: totalIndividuals,
+      slaveholders_found: slaveholdersFound,
+      enslaved_found: enslavedFound,
+      target_slaveholders: targetSlaveholders,
+      progress_percent: progressPercent
     });
   })
 );
@@ -1781,7 +1995,7 @@ app.post('/api/get-descendants',
 
 // Trigger background processing of pending URLs (called by frontend)
 app.post('/api/trigger-queue-processing',
-  strictLimiter, // More restrictive since this is resource-intensive
+  moderateLimiter, // Moderate limits to support bulk operations
   asyncHandler(async (req, res) => {
     const batchSize = parseInt(req.body.batchSize) || 3; // Process 3 URLs per trigger
     const maxBatchSize = 5; // Never exceed 5 at once

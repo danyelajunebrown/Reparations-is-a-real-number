@@ -321,6 +321,26 @@
             </div>
         </div>
 
+        <!-- Population Progress Stats -->
+        <div class="stats" style="margin-top: 20px;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);">
+                <div class="stat-number" id="totalIndividuals">...</div>
+                <div class="stat-label">Total Individuals</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #ffa94d 0%, #f76707 100%);">
+                <div class="stat-number" id="slaveholdersFound">...</div>
+                <div class="stat-label">Slaveholders Identified</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #51cf66 0%, #2b8a3e 100%);">
+                <div class="stat-number" id="enslavedFound">...</div>
+                <div class="stat-label">Enslaved People Found</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #339af0 0%, #1864ab 100%);">
+                <div class="stat-number" id="progressPercent">...</div>
+                <div class="stat-label">Progress (of 393,975 owners)</div>
+            </div>
+        </div>
+
         <footer>
             <p><strong>Privacy Note:</strong> All web-scraped data is stored as "unconfirmed leads" and requires verification with primary historical documents before being used for any reparations calculations.</p>
             <p style="margin-top: 10px;">
@@ -385,17 +405,31 @@
 
         async function loadStats() {
             try {
+                // Load queue stats
                 const response = await fetch(`${API_BASE_URL}/api/queue-stats`);
                 const stats = await response.json();
 
                 document.getElementById('pendingCount').textContent = stats.pending_urls || '0';
                 document.getElementById('persons24h').textContent = stats.persons_24h || '0';
                 document.getElementById('docs24h').textContent = stats.documents_24h || '0';
+
+                // Load population stats
+                const popResponse = await fetch(`${API_BASE_URL}/api/population-stats`);
+                const popStats = await popResponse.json();
+
+                document.getElementById('totalIndividuals').textContent = popStats.total_individuals || '0';
+                document.getElementById('slaveholdersFound').textContent = popStats.slaveholders_found || '0';
+                document.getElementById('enslavedFound').textContent = popStats.enslaved_found || '0';
+                document.getElementById('progressPercent').textContent = popStats.progress_percent + '%';
             } catch (error) {
                 console.error('Failed to load stats:', error);
                 document.getElementById('pendingCount').textContent = '?';
                 document.getElementById('persons24h').textContent = '?';
                 document.getElementById('docs24h').textContent = '?';
+                document.getElementById('totalIndividuals').textContent = '?';
+                document.getElementById('slaveholdersFound').textContent = '?';
+                document.getElementById('enslavedFound').textContent = '?';
+                document.getElementById('progressPercent').textContent = '?';
             }
         }
 

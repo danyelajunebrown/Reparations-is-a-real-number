@@ -16,6 +16,28 @@ class FreeNLPResearchAssistant {
 
         // Intent patterns (what is the user trying to do?)
         this.intentPatterns = {
+            // DOCUMENT VIEWING: Show/load documents (check FIRST before find_person!)
+            view_document: [
+                // With possessive
+                /show(?: me)? ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                /view ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                /display ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                /load ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                /pull up ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                /get ([a-z][a-z]+(?: [a-z][a-z]+)*)'s (?:will|document|tombstone|inventory|deed|records?)/i,
+                // Without possessive
+                /show(?: me)? ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                /view ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                /display ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                /load ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                /pull up ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                /get ([a-z][a-z]+(?: [a-z][a-z]+)*) (?:will|document|tombstone|inventory|deed|records?)/i,
+                // With "for/of"
+                /(?:show|view|display|load)(?: me)? (?:the )?(?:will|document|tombstone|inventory|deed|records?) (?:for|of) ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                // Generic "documents for" pattern
+                /(?:show|view|display|load|get|pull up)(?: me)? (?:the )?documents? (?:for|of|from) ([a-z][a-z]+(?: [a-z][a-z]+)*)/i
+            ],
+
             // Search for a person
             find_person: [
                 /do you have (?:a |the |any )?(?:records? for |information (?:on|about) )?([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
@@ -757,6 +779,23 @@ class FreeNLPResearchAssistant {
                     source: 'tree-builder'
                 };
 
+            } else if (intent === 'view_document') {
+                // HANDLE DOCUMENT VIEWING
+                data = await this.searchDocuments(personName || session.lastPerson);
+                response = this.formatDocumentResponse(data, personName || session.lastPerson);
+
+                // Store documents in session for frontend to retrieve
+                session.lastDocuments = data.documents || [];
+
+                return {
+                    success: true,
+                    response,
+                    intent: 'view_document',
+                    documents: data.documents || [],
+                    personName: personName || session.lastPerson,
+                    source: 'free-nlp'
+                };
+
             } else if (personName) {
                 data = await this.findPerson(personName);
                 response = this.formatResponse(intent, data, personName, session);
@@ -1066,6 +1105,151 @@ class FreeNLPResearchAssistant {
             return (amount / 1000).toFixed(2) + 'K';
         }
         return amount.toFixed(2);
+    }
+
+    // ============================================
+    // DOCUMENT VIEWING METHODS
+    // ============================================
+
+    /**
+     * Search for documents related to a person
+     */
+    async searchDocuments(personName) {
+        if (!personName) {
+            return {
+                success: false,
+                documents: [],
+                error: 'No person specified'
+            };
+        }
+
+        try {
+            // Normalize search term for name variations (D'Wolf, DeWolf, etc.)
+            const normalizedSearch = personName
+                .toLowerCase()
+                .replace(/['\s-]/g, '')
+                .replace(/^de/, 'd');
+
+            const searchQuery = `
+                WITH normalized_search AS (
+                    SELECT $1::text as original_search, $2::text as normalized_search
+                ),
+                doc_matches AS (
+                    SELECT DISTINCT
+                        d.document_id,
+                        d.owner_name,
+                        d.filename,
+                        d.doc_type,
+                        d.file_size,
+                        d.mime_type,
+                        d.owner_location,
+                        d.created_at,
+                        'owner' as match_type
+                    FROM documents d, normalized_search ns
+                    WHERE LOWER(d.owner_name) LIKE '%' || LOWER(ns.original_search) || '%'
+                       OR LOWER(REPLACE(REPLACE(REPLACE(d.owner_name, '''', ''), ' ', ''), '-', ''))
+                          LIKE '%' || ns.normalized_search || '%'
+                ),
+                individual_matches AS (
+                    SELECT DISTINCT
+                        d.document_id,
+                        d.owner_name,
+                        d.filename,
+                        d.doc_type,
+                        d.file_size,
+                        d.mime_type,
+                        d.owner_location,
+                        d.created_at,
+                        'individual' as match_type
+                    FROM documents d
+                    INNER JOIN document_individuals di ON d.document_id = di.document_id
+                    INNER JOIN individuals i ON di.individual_id = i.individual_id, normalized_search ns
+                    WHERE LOWER(i.full_name) LIKE '%' || LOWER(ns.original_search) || '%'
+                       OR LOWER(REPLACE(REPLACE(REPLACE(i.full_name, '''', ''), ' ', ''), '-', ''))
+                          LIKE '%' || ns.normalized_search || '%'
+                ),
+                enslaved_matches AS (
+                    SELECT DISTINCT
+                        d.document_id,
+                        d.owner_name,
+                        d.filename,
+                        d.doc_type,
+                        d.file_size,
+                        d.mime_type,
+                        d.owner_location,
+                        d.created_at,
+                        'enslaved' as match_type
+                    FROM documents d
+                    INNER JOIN enslaved_people ep ON d.document_id = ep.document_id, normalized_search ns
+                    WHERE LOWER(ep.name) LIKE '%' || LOWER(ns.original_search) || '%'
+                       OR LOWER(REPLACE(REPLACE(REPLACE(ep.name, '''', ''), ' ', ''), '-', ''))
+                          LIKE '%' || ns.normalized_search || '%'
+                )
+                SELECT * FROM doc_matches
+                UNION
+                SELECT * FROM individual_matches
+                UNION
+                SELECT * FROM enslaved_matches
+                ORDER BY created_at DESC
+                LIMIT 20
+            `;
+
+            const result = await this.database.query(searchQuery, [personName, normalizedSearch]);
+
+            return {
+                success: true,
+                documents: result.rows || [],
+                count: result.rows ? result.rows.length : 0
+            };
+
+        } catch (error) {
+            console.error('Document search error:', error);
+            return {
+                success: false,
+                documents: [],
+                error: error.message
+            };
+        }
+    }
+
+    /**
+     * Format document search results for chat response
+     */
+    formatDocumentResponse(data, personName) {
+        if (!data.success || !data.documents || data.documents.length === 0) {
+            return `❌ I couldn't find any documents for ${personName}.\n\nTry:\n` +
+                   `• Checking the spelling\n` +
+                   `• Searching by first or last name only\n` +
+                   `• Using the search bar above to browse all documents`;
+        }
+
+        const count = data.documents.length;
+        const plural = count !== 1 ? 's' : '';
+
+        let response = `📄 **Found ${count} document${plural} for ${personName}:**\n\n`;
+
+        data.documents.forEach((doc, index) => {
+            const docType = (doc.doc_type || 'unknown').toUpperCase();
+            const fileSize = (doc.file_size / 1024).toFixed(1);
+            const uploadDate = new Date(doc.created_at).toLocaleDateString();
+
+            response += `${index + 1}. **${doc.filename}**\n`;
+            response += `   • Type: ${docType}\n`;
+            response += `   • Owner: ${doc.owner_name}\n`;
+            if (doc.owner_location) {
+                response += `   • Location: ${doc.owner_location}\n`;
+            }
+            response += `   • Size: ${fileSize} KB\n`;
+            response += `   • Uploaded: ${uploadDate}\n`;
+            response += `   • Match: ${doc.match_type}\n\n`;
+        });
+
+        response += `💡 **To view these documents:**\n`;
+        response += `• Use the search bar above and enter "${personName}"\n`;
+        response += `• Click "👁️ View Document" to open in the viewer\n`;
+        response += `• Click "⬇️ Download" to save the file\n`;
+
+        return response;
     }
 }
 
