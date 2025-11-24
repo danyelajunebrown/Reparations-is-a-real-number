@@ -14,10 +14,33 @@
  * Load carousel data from API
  */
 async function loadCarouselData() {
+    const url = `${API_BASE_URL}/api/carousel-data?limit=50`;
+
+    console.log('🎠 Loading carousel data from database...');
+    console.log(`[DEBUG] API_BASE_URL: ${API_BASE_URL}`);
+    console.log(`[DEBUG] Fetching: ${url}`);
+
     try {
-        console.log('🎠 Loading carousel data from database...');
-        const response = await fetch(`${API_BASE_URL}/api/carousel-data?limit=50`);
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            mode: 'cors',
+            credentials: 'omit' // Don't send cookies for CORS
+        });
+
+        console.log(`[DEBUG] Response status: ${response.status} ${response.statusText}`);
+        console.log(`[DEBUG] Response headers:`, response.headers);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[ERROR] HTTP ${response.status}: ${errorText}`);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
+        console.log('[DEBUG] Response data:', data);
 
         if (data.success && data.cards) {
             window.ownersData = data.cards; // Update global ownersData
@@ -34,10 +57,33 @@ async function loadCarouselData() {
                 updateStatsDisplay();
             }
         } else {
-            console.error('Failed to load carousel data:', data);
+            console.error('[ERROR] Invalid response format:', data);
+            throw new Error('Invalid response format from API');
         }
     } catch (error) {
-        console.error('Error loading carousel data:', error);
+        console.error('[ERROR] Failed to load carousel data:', error);
+        console.error('[ERROR] Error name:', error.name);
+        console.error('[ERROR] Error message:', error.message);
+        console.error('[ERROR] Error stack:', error.stack);
+
+        // Show user-friendly error message
+        const carousel = document.getElementById('carousel');
+        if (carousel) {
+            carousel.innerHTML = `
+                <div style="color: #ff6464; text-align: center; padding: 40px; max-width: 600px; margin: 0 auto;">
+                    <h3>⚠️ Backend Connection Error</h3>
+                    <p>Could not load data from backend server.</p>
+                    <p style="font-size: 0.9em; color: #9aa5b1; margin-top: 10px;">
+                        Error: ${error.message}<br>
+                        Backend: ${API_BASE_URL}
+                    </p>
+                    <p style="font-size: 0.85em; color: #9aa5b1; margin-top: 15px;">
+                        The backend may be starting up (Render cold start takes ~1 minute).<br>
+                        Please refresh the page in a moment.
+                    </p>
+                </div>
+            `;
+        }
     }
 }
 
@@ -182,30 +228,46 @@ async function toggleDescendants(personName, personType, cardIndex) {
     }
 
     // Load from API
+    const url = `${API_BASE_URL}/api/get-descendants`;
+    console.log(`[DEBUG] Loading descendants for ${personName} (${personType})`);
+    console.log(`[DEBUG] URL: ${url}`);
+
     try {
         descendantsDiv.innerHTML = '<div style="text-align: center; color: #64c8ff; font-size: 0.85em;">Loading...</div>';
 
-        const response = await fetch(`${API_BASE_URL}/api/get-descendants`, {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 personName,
                 personType,
                 generations: 2
-            })
+            }),
+            mode: 'cors',
+            credentials: 'omit'
         });
 
+        console.log(`[DEBUG] Descendants response status: ${response.status}`);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[ERROR] Descendants HTTP ${response.status}: ${errorText}`);
+            throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = await response.json();
+        console.log(`[DEBUG] Descendants data:`, data);
 
         if (data.success) {
             descendantsCache[cacheKey] = data.descendants;
             renderDescendants(descendantsDiv, data.descendants, personType);
         } else {
-            descendantsDiv.innerHTML = '<div style="color: #ff6464; font-size: 0.8em; text-align: center;">Failed to load descendants</div>';
+            console.error('[ERROR] Descendants API returned success=false:', data);
+            descendantsDiv.innerHTML = `<div style="color: #ff6464; font-size: 0.8em; text-align: center;">Failed: ${data.error || 'Unknown error'}</div>`;
         }
     } catch (error) {
-        console.error('Error loading descendants:', error);
-        descendantsDiv.innerHTML = '<div style="color: #ff6464; font-size: 0.8em; text-align: center;">Error loading descendants</div>';
+        console.error('[ERROR] Failed to load descendants:', error);
+        descendantsDiv.innerHTML = `<div style="color: #ff6464; font-size: 0.8em; text-align: center;">Error: ${error.message}</div>`;
     }
 }
 
@@ -268,16 +330,30 @@ function renderDescendants(container, descendants, personType) {
  * Trigger queue processing in background
  */
 async function triggerQueueProcessing(batchSize = 3) {
-    try {
-        console.log(`🔧 Triggering queue processing (batch size: ${batchSize})...`);
+    const url = `${API_BASE_URL}/api/trigger-queue-processing`;
 
-        const response = await fetch(`${API_BASE_URL}/api/trigger-queue-processing`, {
+    console.log(`🔧 Triggering queue processing (batch size: ${batchSize})...`);
+    console.log(`[DEBUG] Queue URL: ${url}`);
+
+    try {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ batchSize })
+            body: JSON.stringify({ batchSize }),
+            mode: 'cors',
+            credentials: 'omit'
         });
 
+        console.log(`[DEBUG] Queue response status: ${response.status}`);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`[WARN] Queue trigger HTTP ${response.status}: ${errorText}`);
+            return; // Don't throw, just log and skip
+        }
+
         const data = await response.json();
+        console.log('[DEBUG] Queue response data:', data);
 
         if (data.success) {
             console.log(`✅ Queue trigger: ${data.message}`);
@@ -287,10 +363,11 @@ async function triggerQueueProcessing(batchSize = 3) {
                 addConsoleMessage(`🤖 Processing ${data.queuedCount} URLs in background...`, 'info');
             }
         } else {
-            console.warn('Queue trigger failed:', data);
+            console.warn('[WARN] Queue trigger failed:', data);
         }
     } catch (error) {
-        console.error('Error triggering queue:', error);
+        console.warn('[WARN] Queue trigger error (non-critical):', error.message);
+        // Don't show error to user - queue processing is optional background task
     }
 }
 
