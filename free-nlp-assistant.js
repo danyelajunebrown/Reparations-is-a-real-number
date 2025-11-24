@@ -15,44 +15,46 @@ class FreeNLPResearchAssistant {
         this.intentPatterns = {
             // Search for a person
             find_person: [
-                /do you have.*?([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /is there.*?([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /tell me about ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /who (?:is|was) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /find ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /show me ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
-                /search (?:for )?([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+                /do you have (?:a |the |any )?(?:records? for |information (?:on|about) )?([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /is there (?:a |any )?(?:record|info|information) (?:for|about|on) ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /tell me about ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /who (?:is|was) ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /find ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /show me ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /search (?:for )?([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /(?:^|\s)([a-z][a-z]+(?:\s+[a-z][a-z]+)+)(?:\?|$)/i  // Just a name with question mark
             ],
             
             // Update person metadata
             update_person: [
                 // Middle name
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name (?:is|was) ([A-Za-z]+)/i,
-                /set ([A-Za-z]+(?:\s+[A-Za-z]+)*)'s middle name to ([A-Za-z]+)/i,
-                /add middle name ([A-Za-z]+) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*)'s middle name (?:is|was) ([a-z]+)/i,
+                /set ([a-z]+(?:\s+[a-z]+)*)'s middle name to ([a-z]+)/i,
+                /add middle name ([a-z]+) (?:to|for) ([a-z]+(?:\s+[a-z]+)*)/i,
 
                 // Alternative names/spellings
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:also|is also) (?:spelled|known as|called) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
-                /add (?:alternative|alternate|alias) (?:name|spelling) ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:goes by|went by) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*) (?:also|is also) (?:spelled|known as|called) ([a-z]+(?:\s+[a-z]+)*)/i,
+                /add (?:alternative|alternate|alias) (?:name|spelling) ([a-z]+(?:\s+[a-z]+)*) (?:to|for) ([a-z]+(?:\s+[a-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*) (?:goes by|went by) ([a-z]+(?:\s+[a-z]+)*)/i,
 
                 // FamilySearch ID
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i,
-                /set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
-                /FamilySearch ID for ([A-Za-z]+(?:\s+[A-Za-z]+)*) is ([A-Z0-9-]+)/i,
+                /([a-z]+(?:\s+[a-z]+)*)'s FamilySearch ID (?:is|=) ([A-Z0-9-]+)/i,
+                /set FamilySearch ID (?:to |)([A-Z0-9-]+) for ([a-z]+(?:\s+[a-z]+)*)/i,
+                /FamilySearch ID for ([a-z]+(?:\s+[a-z]+)*) is ([A-Z0-9-]+)/i,
 
-                // Children
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i,
-                /add child ([A-Za-z]+(?:\s+[A-Za-z]+)*) (?:to|for) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*) had (?:a child|children) (?:named |)(.+)/i,
+                // Children - FIXED: More specific patterns to identify parent correctly
+                /([a-z]+(?:\s+[a-z]+)*) had (?:a child|children|two children|three children|(?:\d+) children)(?: named)? (.+)/i,
+                /([a-z]+(?:\s+[a-z]+)*)'s children (?:were?|are|include[sd]?) (.+)/i,
+                /add child(?:ren)? (.+) (?:to|for) ([a-z]+(?:\s+[a-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*)'s (?:daughter|son) (?:is|was) ([a-z]+(?:\s+[a-z]+)*)/i,
 
                 // Spouse
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
-                /([A-Za-z]+(?:\s+[A-Za-z]+)*) married ([A-Za-z]+(?:\s+[A-Za-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*)'s (?:wife|husband|spouse) (?:was|is) ([a-z]+(?:\s+[a-z]+)*)/i,
+                /([a-z]+(?:\s+[a-z]+)*) married ([a-z]+(?:\s+[a-z]+)*)/i,
 
                 // General notes
-                /add note (?:to |for |)([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i,
-                /note for ([A-Za-z]+(?:\s+[A-Za-z]+)*)[: ] (.+)/i
+                /add note (?:to |for |)([a-z]+(?:\s+[a-z]+)*)[: ] (.+)/i,
+                /note for ([a-z]+(?:\s+[a-z]+)*)[: ] (.+)/i
             ],
             
             // Count enslaved people
@@ -333,26 +335,53 @@ class FreeNLPResearchAssistant {
 
     /**
      * Execute metadata update
+     * FIXED: Now searches BOTH owners (documents table) AND enslaved people
      */
     async executeUpdate(personName, field, value, action) {
-        if (!this.enslavedManager) {
-            throw new Error('EnslavedIndividualManager not available');
-        }
-
-        // Find the person
-        const results = await this.enslavedManager.searchByName(personName);
-
-        if (!results || results.length === 0) {
-            return {
-                success: false,
-                message: `Could not find "${personName}" in the database. Please check the spelling or upload their document first.`
-            };
-        }
-
-        const person = results[0];
-        const enslavedId = person.enslaved_id;
-
         try {
+            // SPECIAL CASE: FamilySearch ID - check documents table (slave owners) FIRST
+            if (field === 'familysearch_id') {
+                // Try to find as slave owner first
+                const ownerResult = await this.database.query(`
+                    SELECT owner_name, document_id
+                    FROM documents
+                    WHERE LOWER(owner_name) = LOWER($1)
+                    LIMIT 1
+                `, [personName]);
+
+                if (ownerResult.rows.length > 0) {
+                    // Update as owner in documents table
+                    await this.database.query(`
+                        UPDATE documents
+                        SET owner_familysearch_id = $1
+                        WHERE LOWER(owner_name) = LOWER($2)
+                    `, [value, personName]);
+
+                    return {
+                        success: true,
+                        message: `Successfully attached FamilySearch ID ${value} to slave owner ${ownerResult.rows[0].owner_name}`
+                    };
+                }
+            }
+
+            // For all other fields OR if person not found as owner, search enslaved people
+            if (!this.enslavedManager) {
+                throw new Error('EnslavedIndividualManager not available');
+            }
+
+            // Find the person in enslaved_individuals
+            const results = await this.enslavedManager.searchByName(personName);
+
+            if (!results || results.length === 0) {
+                return {
+                    success: false,
+                    message: `❌ Could not find ${personName} in the database. Please upload documents or add individual records first.`
+                };
+            }
+
+            const person = results[0];
+            const enslavedId = person.enslaved_id;
+
             // Execute the update based on field and action
             switch (field) {
                 case 'middle_name':
@@ -369,13 +398,18 @@ class FreeNLPResearchAssistant {
 
                 case 'child_names':
                     // Parse multiple children (comma-separated or "and")
-                    const childNames = value.split(/,| and /i).map(name => name.trim());
+                    const childNames = value.split(/,|\sand\s/i).map(name => name.trim()).filter(n => n.length > 1);
+                    let addedCount = 0;
                     for (const childName of childNames) {
                         if (childName && childName.length > 0) {
                             await this.enslavedManager.addChildName(enslavedId, childName);
+                            addedCount++;
                         }
                     }
-                    break;
+                    return {
+                        success: true,
+                        message: `Successfully added ${addedCount} children to ${person.full_name}: ${childNames.join(', ')}`
+                    };
 
                 case 'spouse_name':
                 case 'notes':
@@ -391,7 +425,7 @@ class FreeNLPResearchAssistant {
 
             return {
                 success: true,
-                message: `✓ Updated ${person.full_name}'s ${field.replace('_', ' ')}`
+                message: `✓ Updated ${person.full_name}'s ${field.replace(/_/g, ' ')}`
             };
 
         } catch (error) {
