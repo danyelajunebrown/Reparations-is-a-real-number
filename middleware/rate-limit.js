@@ -6,12 +6,12 @@
 const rateLimit = require('express-rate-limit');
 
 /**
- * Limiter for document uploads
- * More restrictive due to resource intensity
+ * Limiter for document uploads and URL submissions
+ * Generous limits to support bulk research contributions
  */
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 uploads per 15 minutes per IP
+  max: 200, // 200 uploads/submissions per 15 minutes per IP (supports bulk research)
   message: {
     success: false,
     error: 'Too many uploads',
@@ -53,6 +53,7 @@ const queryLimiter = rateLimit({
 /**
  * Strict limiter for sensitive operations
  * Payment recording, debt calculations, etc.
+ * NOTE: Queue processing now uses moderate limits, not strict
  */
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -72,6 +73,22 @@ const strictLimiter = rateLimit({
       message: 'You have exceeded the rate limit for this sensitive operation.'
     });
   }
+});
+
+/**
+ * Moderate limiter for queue processing operations
+ * More generous than strict limiter to support bulk operations
+ */
+const moderateLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 50, // 50 requests per 5 minutes
+  message: {
+    success: false,
+    error: 'Too many requests',
+    message: 'Please wait a moment before trying again.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 /**
@@ -111,6 +128,7 @@ module.exports = {
   uploadLimiter,
   queryLimiter,
   strictLimiter,
+  moderateLimiter,
   generalLimiter,
   loginLimiter
 };

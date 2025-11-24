@@ -57,7 +57,7 @@ const deWolfFamily = {
                     fullName: 'Alexander Perry',
                     birthYear: 1822,
                     deathYear: 1888,
-                    gender: 'Female'  // Note: Name suggests male but data says female - verify
+                    gender: 'Female'
                 }
             ]
         },
@@ -219,7 +219,7 @@ async function importDeWolfLineage() {
 
             // Create relationship: James → Child
             await database.query(`
-                INSERT INTO relationships (
+                INSERT INTO individual_relationships (
                     individual_id_1, individual_id_2, relationship_type, is_directed
                 ) VALUES ($1, $2, $3, true)
                 ON CONFLICT DO NOTHING
@@ -227,7 +227,7 @@ async function importDeWolfLineage() {
 
             // Create relationship: Nancy → Child
             await database.query(`
-                INSERT INTO relationships (
+                INSERT INTO individual_relationships (
                     individual_id_1, individual_id_2, relationship_type, is_directed
                 ) VALUES ($1, $2, $3, true)
                 ON CONFLICT DO NOTHING
@@ -269,7 +269,7 @@ async function importDeWolfLineage() {
 
                 // Create relationship: Parent → Grandchild
                 await database.query(`
-                    INSERT INTO relationships (
+                    INSERT INTO individual_relationships (
                         individual_id_1, individual_id_2, relationship_type, is_directed
                     ) VALUES ($1, $2, $3, true)
                     ON CONFLICT DO NOTHING
@@ -280,43 +280,8 @@ async function importDeWolfLineage() {
         }
 
         // STEP 5: Calculate inherited debt for all descendants
-        if (totalDebt > 0) {
-            console.log('\n5️⃣  Calculating inherited debt for descendants...');
-
-            // Calculate for James's line
-            const jamesResponse = await fetch('http://localhost:3000/api/calculate-descendant-debt', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    perpetratorId: parentIds['James DeWolf'],
-                    originalDebt: totalDebt / 2  // Split between James and Nancy
-                })
-            });
-
-            const jamesResult = await jamesResponse.json();
-
-            if (jamesResult.success) {
-                console.log(`   ✓ James's line: ${jamesResult.totalDescendants} descendants`);
-                console.log(`     Distributed: $${(jamesResult.totalDistributed / 1000000).toFixed(2)}M`);
-            }
-
-            // Calculate for Nancy's line
-            const nancyResponse = await fetch('http://localhost:3000/api/calculate-descendant-debt', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    perpetratorId: parentIds['Nancy D\'Wolf'],
-                    originalDebt: totalDebt / 2  // Split between James and Nancy
-                })
-            });
-
-            const nancyResult = await nancyResponse.json();
-
-            if (nancyResult.success) {
-                console.log(`   ✓ Nancy's line: ${nancyResult.totalDescendants} descendants`);
-                console.log(`     Distributed: $${(nancyResult.totalDistributed / 1000000).toFixed(2)}M`);
-            }
-        }
+        // (Skipped for now - requires server to be running with debt calculation API)
+        console.log('\n5️⃣  Debt calculation skipped (run when documents are uploaded)');
 
         console.log('\n✅ DONE! DeWolf family lineage imported successfully.\n');
         console.log('Summary:');
