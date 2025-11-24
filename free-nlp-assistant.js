@@ -1,8 +1,10 @@
 /**
  * Free Local NLP System for Reparations Research
  * No external APIs - pattern matching + context awareness
- * Handles: entity extraction, intent classification, follow-ups, pronouns
+ * Handles: entity extraction, intent classification, follow-ups, pronouns, tree building
  */
+
+const TreeBuilderConversation = require('./tree-builder-conversation');
 
 class FreeNLPResearchAssistant {
     constructor(database, enslavedManager = null, descendantTreeBuilder = null) {
@@ -10,6 +12,7 @@ class FreeNLPResearchAssistant {
         this.enslavedManager = enslavedManager;
         this.descendantTreeBuilder = descendantTreeBuilder;
         this.sessions = new Map(); // Store conversation context per session
+        this.treeBuilder = new TreeBuilderConversation(database); // Tree builder
 
         // Intent patterns (what is the user trying to do?)
         this.intentPatterns = {
@@ -130,6 +133,18 @@ class FreeNLPResearchAssistant {
                 /how much would (?:my|each) share be/i,
                 /distribute reparations (?:for|to) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
                 /reparations distribution (?:for|of) ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i
+            ],
+
+            // TREE BUILDER: Start conversational tree building
+            build_tree: [
+                /build (?:a |an? )?(?:family )?tree/i,
+                /add (?:a |an? )?(?:family )?tree/i,
+                /create (?:a |an? )?(?:family )?tree/i,
+                /add descendants for ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /add children (?:and grandchildren )?for ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /build family (?:for|of) ([a-z][a-z]+(?: [a-z][a-z]+)*)/i,
+                /start tree builder/i,
+                /build another tree/i
             ]
         };
         
@@ -617,25 +632,44 @@ class FreeNLPResearchAssistant {
      */
     async query(userQuery, sessionId = 'default') {
         const session = this.getSession(sessionId);
-        
+
         // Add to conversation history
         session.conversationHistory.push({
             timestamp: new Date(),
             query: userQuery,
             type: 'user'
         });
-        
+
         try {
+            // CHECK IF IN TREE BUILDER MODE
+            if (session.treeBuilderState && session.treeBuilderState.mode === 'tree_builder' && session.treeBuilderState.step !== 'complete') {
+                const result = await this.treeBuilder.processInput(userQuery, session.treeBuilderState);
+
+                session.treeBuilderState = result.state;
+
+                // If complete, exit tree builder mode
+                if (result.complete) {
+                    delete session.treeBuilderState;
+                }
+
+                return {
+                    success: true,
+                    response: result.message,
+                    intent: 'build_tree',
+                    source: 'tree-builder'
+                };
+            }
+
             // Check for pronouns and resolve
             let processedQuery = userQuery;
             let resolved = false;
-            
+
             if (this.containsPronoun(userQuery)) {
                 const resolution = this.resolvePronoun(userQuery, session);
                 processedQuery = resolution.query;
                 resolved = resolution.resolved;
             }
-            
+
             // Classify intent
             const { intent, personName } = this.classifyIntent(processedQuery);
             session.lastIntent = intent;
@@ -694,6 +728,20 @@ class FreeNLPResearchAssistant {
                 // Handle reparations distribution calculation
                 data = await this.handleDescendantShares(personName, session);
                 response = this.formatGenealogyResponse(intent, data, session);
+
+            } else if (intent === 'build_tree') {
+                // START TREE BUILDER MODE
+                session.treeBuilderState = this.treeBuilder.initializeSession(sessionId);
+                const result = await this.treeBuilder.processInput(userQuery, session.treeBuilderState);
+
+                session.treeBuilderState = result.state;
+
+                return {
+                    success: true,
+                    response: result.message,
+                    intent: 'build_tree',
+                    source: 'tree-builder'
+                };
 
             } else if (personName) {
                 data = await this.findPerson(personName);
