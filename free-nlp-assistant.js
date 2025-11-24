@@ -660,6 +660,20 @@ class FreeNLPResearchAssistant {
                 };
             }
 
+            // DETECT COMPLEX GENEALOGY DATA (not in tree builder mode)
+            // If user pastes complex data with children/grandchildren outside tree builder mode
+            const complexDataPattern = /grandchildren|children.*children|had.*child.*child/i;
+            const hasComplexData = complexDataPattern.test(userQuery) && userQuery.length > 200;
+
+            if (hasComplexData && !session.treeBuilderState) {
+                return {
+                    success: true,
+                    response: `🌳 I detected complex genealogy data!\n\nTo add multi-generation family trees, please use the **Tree Builder**.\n\nType: **"build tree"** to start the guided tree builder.\n\nIt will walk you through adding:\n- Root ancestor\n- Children\n- Grandchildren\n\n...one step at a time! Much easier than pasting all at once. 😊\n\nThen you can type the information for each person as I ask for it.`,
+                    intent: 'complex_data_detected',
+                    source: 'nlp-assistant'
+                };
+            }
+
             // Check for pronouns and resolve
             let processedQuery = userQuery;
             let resolved = false;
