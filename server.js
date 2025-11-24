@@ -79,6 +79,7 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' })); // Limit JSON payload size
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static('frontend/public'));
+app.use(express.static(__dirname)); // Also serve HTML files from root directory
 
 // SECURITY: Apply general rate limiting to all routes
 app.use('/api', generalLimiter);
@@ -2276,7 +2277,9 @@ app.get('/api/cors-test', (req, res) => {
 });
 
 // Root endpoint
-app.get('/', (req, res) => {
+// Root route now serves index.html via static middleware above
+// API info available at /api
+app.get('/api', (req, res) => {
   res.json({
     message: 'Reparations Platform API',
     version: '2.0.0',
