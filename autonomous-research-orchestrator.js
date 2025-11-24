@@ -298,6 +298,19 @@ class AutonomousResearchOrchestrator {
             await this.failSession(sessionId, error.message);
 
             return results;
+        } finally {
+            // CRITICAL FIX: Always close browser to prevent memory leaks
+            // This was causing the 8-9 URL submission limit
+            try {
+                if (this.scraper && this.scraper.browser) {
+                    console.log('\n🧹 Cleaning up browser resources...');
+                    await this.scraper.close();
+                    console.log('   ✓ Browser closed');
+                }
+            } catch (cleanupError) {
+                console.error('   ⚠️ Cleanup warning:', cleanupError.message);
+                // Don't throw - cleanup errors shouldn't fail the request
+            }
         }
     }
 

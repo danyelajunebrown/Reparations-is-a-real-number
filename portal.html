@@ -317,6 +317,31 @@
             font-size: 0.9em;
         }
     </style>
+
+    <!-- Queue Auto-Trigger Script -->
+    <script>
+        // Trigger queue processing when portal loads (people searching for money)
+        document.addEventListener('DOMContentLoaded', async function() {
+            const API_BASE_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000'
+                : 'https://reparations-platform.onrender.com';
+
+            try {
+                console.log('🔧 Portal page load - triggering queue processing...');
+                const response = await fetch(`${API_BASE_URL}/api/trigger-queue-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchSize: 3 })
+                });
+                const data = await response.json();
+                if (data.success && data.queuedCount > 0) {
+                    console.log(`✅ Processing ${data.queuedCount} URLs in background`);
+                }
+            } catch (error) {
+                console.log('Queue trigger skipped:', error.message);
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">
