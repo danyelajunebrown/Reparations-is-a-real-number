@@ -207,6 +207,31 @@
             color: #718096;
         }
     </style>
+
+    <!-- Queue Auto-Trigger Script -->
+    <script>
+        // Trigger queue processing when contribute page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            const API_BASE_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000'
+                : 'https://reparations-platform.onrender.com';
+
+            try {
+                console.log('🔧 Contribute page load - triggering queue processing...');
+                const response = await fetch(`${API_BASE_URL}/api/trigger-queue-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchSize: 3 })
+                });
+                const data = await response.json();
+                if (data.success && data.queuedCount > 0) {
+                    console.log(`✅ Processing ${data.queuedCount} URLs in background`);
+                }
+            } catch (error) {
+                console.log('Queue trigger skipped:', error.message);
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">

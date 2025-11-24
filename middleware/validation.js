@@ -129,6 +129,12 @@ const schemas = {
     isMultiPage: Joi.boolean().optional(),
     parentDocumentId: Joi.string().alphanum().optional(),
     notes: Joi.string().max(5000).optional().allow(null, '')
+  }),
+
+  getDescendants: Joi.object({
+    personName: Joi.string().min(2).max(100).required(),
+    personType: Joi.string().valid('owner', 'enslaved').required(),
+    generations: Joi.number().integer().min(1).max(3).optional().default(2)
   })
 };
 

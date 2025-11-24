@@ -1504,6 +1504,351 @@ app.post('/api/search-reparations',
 );
 
 // ========================================
+// CAROUSEL DATA ENDPOINTS
+// ========================================
+
+// Get aggregated data for carousel (slave owners + enslaved people)
+app.get('/api/carousel-data',
+  queryLimiter,
+  asyncHandler(async (req, res) => {
+    const limit = parseInt(req.query.limit) || 50; // Return 50 cards by default
+
+    // Get slave owners with aggregated stats
+    const ownersQuery = await database.query(`
+      SELECT
+        d.owner_name as name,
+        'owner' as type,
+        d.owner_birth_year as birth_year,
+        d.owner_death_year as death_year,
+        d.owner_location as location,
+        COUNT(DISTINCT d.document_id) as document_count,
+        SUM(d.total_enslaved) as total_enslaved,
+        SUM(d.total_reparations) as total_debt,
+        ARRAY_AGG(DISTINCT d.doc_type) as document_types,
+        ARRAY_AGG(DISTINCT d.document_id) as document_ids,
+        MAX(d.created_at) as last_updated
+      FROM documents d
+      WHERE d.owner_name IS NOT NULL
+      GROUP BY d.owner_name, d.owner_birth_year, d.owner_death_year, d.owner_location
+      ORDER BY SUM(d.total_reparations) DESC NULLS LAST
+      LIMIT $1
+    `, [Math.floor(limit / 2)]); // Half for owners
+
+    // Get enslaved individuals with aggregated stats
+    const enslavedQuery = await database.query(`
+      SELECT
+        ei.full_name as name,
+        'enslaved' as type,
+        ei.birth_year,
+        ei.death_year,
+        ei.location,
+        ei.enslaved_by as enslaved_by_owner,
+        COALESCE(
+          (SELECT SUM(rc.amount_outstanding)
+           FROM reparations_credit rc
+           WHERE rc.ancestor_enslaved_id = ei.enslaved_id),
+          0
+        ) as total_credit,
+        ei.notes,
+        ei.verified,
+        ei.created_at as last_updated
+      FROM enslaved_individuals ei
+      WHERE ei.full_name IS NOT NULL
+      ORDER BY ei.created_at DESC
+      LIMIT $1
+    `, [Math.floor(limit / 2)]); // Half for enslaved
+
+    // Combine and shuffle
+    const allCards = [
+      ...ownersQuery.rows.map(row => ({
+        name: row.name,
+        type: 'owner',
+        birthYear: row.birth_year,
+        deathYear: row.death_year,
+        location: row.location,
+        enslavedCount: parseInt(row.total_enslaved) || 0,
+        debt: parseFloat(row.total_debt) || 0,
+        documentCount: parseInt(row.document_count) || 0,
+        documentTypes: row.document_types || [],
+        documentIds: row.document_ids || [],
+        lastUpdated: row.last_updated
+      })),
+      ...enslavedQuery.rows.map(row => ({
+        name: row.name,
+        type: 'enslaved',
+        birthYear: row.birth_year,
+        deathYear: row.death_year,
+        location: row.location,
+        enslavedBy: row.enslaved_by_owner,
+        credit: parseFloat(row.total_credit) || 0,
+        notes: row.notes,
+        verified: row.verified,
+        lastUpdated: row.last_updated
+      }))
+    ];
+
+    // Shuffle array (Fisher-Yates algorithm)
+    for (let i = allCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allCards[i], allCards[j]] = [allCards[j], allCards[i]];
+    }
+
+    res.json({
+      success: true,
+      count: allCards.length,
+      cards: allCards,
+      breakdown: {
+        owners: ownersQuery.rows.length,
+        enslaved: enslavedQuery.rows.length
+      }
+    });
+  })
+);
+
+// Get descendants for a specific person (for click interaction)
+app.post('/api/get-descendants',
+  queryLimiter,
+  validate('getDescendants'),
+  asyncHandler(async (req, res) => {
+    const { personName, personType, generations } = req.validatedBody;
+    const maxGenerations = Math.min(generations || 2, 3); // Limit to 3 generations max
+
+    let descendants = [];
+
+    if (personType === 'owner') {
+      // Get descendants from individuals table
+      const result = await database.query(`
+        WITH RECURSIVE descendant_tree AS (
+          -- Base case: find the person
+          SELECT
+            i.individual_id,
+            i.full_name,
+            i.birth_year,
+            i.death_year,
+            0 as generation,
+            COALESCE(
+              (SELECT SUM(dd.amount_outstanding)
+               FROM descendant_debt dd
+               WHERE dd.descendant_individual_id = i.individual_id),
+              0
+            ) as inherited_debt
+          FROM individuals i
+          WHERE LOWER(i.full_name) = LOWER($1)
+
+          UNION ALL
+
+          -- Recursive case: find children
+          SELECT
+            child.individual_id,
+            child.full_name,
+            child.birth_year,
+            child.death_year,
+            dt.generation + 1,
+            COALESCE(
+              (SELECT SUM(dd.amount_outstanding)
+               FROM descendant_debt dd
+               WHERE dd.descendant_individual_id = child.individual_id),
+              0
+            ) as inherited_debt
+          FROM descendant_tree dt
+          JOIN relationships r ON dt.individual_id = r.individual_id_1
+          JOIN individuals child ON r.individual_id_2 = child.individual_id
+          WHERE r.relationship_type = 'parent-child'
+            AND r.is_directed = true
+            AND dt.generation < $2
+        )
+        SELECT * FROM descendant_tree
+        WHERE generation > 0
+        ORDER BY generation, full_name
+      `, [personName, maxGenerations]);
+
+      descendants = result.rows.map(row => ({
+        name: row.full_name,
+        birthYear: row.birth_year,
+        deathYear: row.death_year,
+        generation: row.generation,
+        inheritedDebt: parseFloat(row.inherited_debt) || 0
+      }));
+
+    } else if (personType === 'enslaved') {
+      // Get descendants from enslaved_individuals/enslaved_relationships
+      const result = await database.query(`
+        WITH RECURSIVE descendant_tree AS (
+          -- Base case: find the enslaved person
+          SELECT
+            ei.enslaved_id,
+            ei.full_name,
+            ei.birth_year,
+            ei.death_year,
+            0 as generation,
+            COALESCE(
+              (SELECT SUM(rc.amount_outstanding)
+               FROM reparations_credit rc
+               WHERE rc.descendant_enslaved_id = ei.enslaved_id),
+              0
+            ) as inherited_credit
+          FROM enslaved_individuals ei
+          WHERE LOWER(ei.full_name) = LOWER($1)
+
+          UNION ALL
+
+          -- Recursive case: find children
+          SELECT
+            child.enslaved_id,
+            child.full_name,
+            child.birth_year,
+            child.death_year,
+            dt.generation + 1,
+            COALESCE(
+              (SELECT SUM(rc.amount_outstanding)
+               FROM reparations_credit rc
+               WHERE rc.descendant_enslaved_id = child.enslaved_id),
+              0
+            ) as inherited_credit
+          FROM descendant_tree dt
+          JOIN enslaved_relationships er ON dt.enslaved_id = er.enslaved_id_1
+          JOIN enslaved_individuals child ON er.enslaved_id_2 = child.enslaved_id
+          WHERE er.relationship_type = 'parent-child'
+            AND er.is_directed = true
+            AND dt.generation < $2
+        )
+        SELECT * FROM descendant_tree
+        WHERE generation > 0
+        ORDER BY generation, full_name
+      `, [personName, maxGenerations]);
+
+      descendants = result.rows.map(row => ({
+        name: row.full_name,
+        birthYear: row.birth_year,
+        deathYear: row.death_year,
+        generation: row.generation,
+        inheritedCredit: parseFloat(row.inherited_credit) || 0
+      }));
+    }
+
+    res.json({
+      success: true,
+      personName,
+      personType,
+      descendants,
+      generationCount: descendants.length > 0 ? Math.max(...descendants.map(d => d.generation)) : 0
+    });
+  })
+);
+
+// ========================================
+// QUEUE AUTO-PROCESSING TRIGGER
+// ========================================
+
+// Trigger background processing of pending URLs (called by frontend)
+app.post('/api/trigger-queue-processing',
+  strictLimiter, // More restrictive since this is resource-intensive
+  asyncHandler(async (req, res) => {
+    const batchSize = parseInt(req.body.batchSize) || 3; // Process 3 URLs per trigger
+    const maxBatchSize = 5; // Never exceed 5 at once
+
+    const actualBatchSize = Math.min(batchSize, maxBatchSize);
+
+    console.log(`\n🔧 TRIGGER: Processing ${actualBatchSize} pending URLs from queue...`);
+
+    // Get pending URLs
+    const result = await database.query(
+      `SELECT * FROM scraping_queue
+       WHERE status = 'pending'
+       ORDER BY priority DESC, submitted_at ASC
+       LIMIT $1`,
+      [actualBatchSize]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No pending URLs in queue',
+        processed: 0
+      });
+    }
+
+    // Immediately respond to frontend (don't wait for processing)
+    res.json({
+      success: true,
+      message: `Processing ${result.rows.length} URLs in background`,
+      queuedCount: result.rows.length
+    });
+
+    // Process in background (don't await)
+    processQueueInBackground(result.rows).catch(error => {
+      console.error('Background queue processing error:', error);
+    });
+  })
+);
+
+// Background processing function
+async function processQueueInBackground(entries) {
+  const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+  const orchestrator = new AutonomousResearchOrchestrator(database);
+
+  for (const entry of entries) {
+    try {
+      console.log(`\n📄 Processing: ${entry.url}`);
+
+      // Mark as processing
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'processing',
+             processing_started_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [entry.id]
+      );
+
+      const startTime = Date.now();
+      const processResult = await orchestrator.processURL(entry.url, {
+        category: entry.category,
+        isBeyondKin: entry.category === 'beyondkin',
+        queueEntryId: entry.id,
+        submittedBy: entry.submitted_by
+      });
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+      // Mark as completed
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'completed',
+             processing_completed_at = CURRENT_TIMESTAMP,
+             metadata = jsonb_set(
+                 COALESCE(metadata, '{}'::jsonb),
+                 '{result}',
+                 $1::jsonb
+             )
+         WHERE id = $2`,
+        [JSON.stringify({
+          personsFound: processResult.personsCount || 0,
+          documentsFound: processResult.documentsCount || 0,
+          duration: duration
+        }), entry.id]
+      );
+
+      console.log(`✅ Completed in ${duration}s`);
+
+    } catch (error) {
+      console.error(`❌ Failed: ${error.message}`);
+
+      // Mark as failed
+      await database.query(
+        `UPDATE scraping_queue
+         SET status = 'failed',
+             processing_completed_at = CURRENT_TIMESTAMP,
+             error_message = $1
+         WHERE id = $2`,
+        [error.message, entry.id]
+      );
+    }
+  }
+
+  console.log('\n🎉 Background processing batch complete!');
+}
+
+// ========================================
 // BEYOND KIN REVIEW QUEUE ENDPOINTS
 // ========================================
 
