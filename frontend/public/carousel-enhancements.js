@@ -63,7 +63,7 @@ function initializeCarouselEnhanced() {
         domCard.className = 'tree-card';
 
         const angle = angleStep * index;
-        const radius = 500;
+        const radius = 700; // Increased from 500 for wider display
         domCard.style.transform = `rotateY(${angle}deg) translateZ(${radius}px)`;
         domCard.dataset.personName = card.name;
         domCard.dataset.personType = card.type;

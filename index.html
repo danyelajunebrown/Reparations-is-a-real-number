@@ -185,11 +185,24 @@
 
         .carousel {
             position: relative;
-            width: 90%;
-            max-width: 800px;
-            height: 400px;
+            width: 100%;
+            max-width: 1400px;
+            height: 500px;
             transform-style: preserve-3d;
-            transition: transform 1s ease;
+            animation: smoothSpin 60s linear infinite;
+        }
+
+        .carousel:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes smoothSpin {
+            from {
+                transform: rotateY(0deg);
+            }
+            to {
+                transform: rotateY(360deg);
+            }
         }
 
         .tree-card {
