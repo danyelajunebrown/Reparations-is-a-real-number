@@ -78,6 +78,17 @@ const upload = multer({
 // initialize shared storage adapter (used by processor)
 const storageAdapter = new StorageAdapter({ storage: { root: config.storage.root, s3: config.storage.s3 } });
 
+// Initialize ReparationsCalculator
+const ReparationsCalculator = require('./reparations-calculator');
+const reparationsCalculator = new ReparationsCalculator({
+  baseYear: 1800,
+  currentYear: new Date().getFullYear(),
+  inflationRate: 0.035,
+  dailyWageBase: 120,
+  humanDignityValue: 15000,
+  compoundInterestRate: 0.04
+});
+
 const processor = new EnhancedDocumentProcessor({
   googleVisionApiKey: config.googleVisionApiKey,
   storageRoot: config.storage.root,
@@ -86,7 +97,8 @@ const processor = new EnhancedDocumentProcessor({
   ipfsEnabled: config.ipfs.enabled,
   ipfsGateway: config.ipfs.gateway,
   generateIPFSHash: true,
-  performOCR: true
+  performOCR: true,
+  reparationsCalculator: reparationsCalculator  // Add calculator to processor
 });
 
 // Initialize individual entity manager
@@ -1611,9 +1623,12 @@ app.post('/api/get-descendants',
     const { personName, personType, generations } = req.validatedBody;
     const maxGenerations = Math.min(generations || 2, 3); // Limit to 3 generations max
 
+    console.log(`[get-descendants] Looking for ${personType}: ${personName}, max ${maxGenerations} generations`);
+
     let descendants = [];
 
-    if (personType === 'owner') {
+    try {
+      if (personType === 'owner') {
       // Get descendants from individuals table
       const result = await database.query(`
         WITH RECURSIVE descendant_tree AS (
@@ -1722,15 +1737,28 @@ app.post('/api/get-descendants',
         generation: row.generation,
         inheritedCredit: parseFloat(row.inherited_credit) || 0
       }));
-    }
+      }
 
-    res.json({
-      success: true,
-      personName,
-      personType,
-      descendants,
-      generationCount: descendants.length > 0 ? Math.max(...descendants.map(d => d.generation)) : 0
-    });
+      console.log(`[get-descendants] Found ${descendants.length} descendants for ${personName}`);
+
+      res.json({
+        success: true,
+        personName,
+        personType,
+        descendants,
+        generationCount: descendants.length > 0 ? Math.max(...descendants.map(d => d.generation)) : 0
+      });
+
+    } catch (error) {
+      console.error(`[get-descendants] Error for ${personName}:`, error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to fetch descendants',
+        details: error.message,
+        personName,
+        personType
+      });
+    }
   })
 );
 

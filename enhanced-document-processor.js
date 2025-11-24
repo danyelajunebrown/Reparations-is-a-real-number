@@ -77,21 +77,65 @@ class EnhancedDocumentProcessor {
       }
 
       // Continue with parsing, reparations calculations, DB save...
+
+      // CALCULATE REPARATIONS (if calculator provided)
+      let reparationsData = null;
+      let enslavedData = null;
+
+      if (this.reparationsCalculator && metadata.birthYear && metadata.deathYear) {
+        const enslavedCount = metadata.enslavedCount || metadata.totalEnslaved || 1; // Default to 1 if not specified
+        const years = metadata.deathYear - metadata.birthYear;
+
+        try {
+          const calculation = this.reparationsCalculator.calculateComprehensiveReparations(
+            enslavedCount,
+            years,
+            { includeInterest: true, includePenalty: true }
+          );
+
+          reparationsData = {
+            total: calculation.total,
+            perPerson: Math.round(calculation.total / enslavedCount),
+            estimatedYears: years,
+            breakdown: {
+              wageTheft: calculation.wageTheft,
+              damages: calculation.damages,
+              profitShare: calculation.profitShare,
+              compoundInterest: calculation.compoundInterest,
+              penalty: calculation.penalty
+            }
+          };
+
+          enslavedData = {
+            totalCount: enslavedCount,
+            namedIndividuals: 0 // Will be updated if OCR extracts names
+          };
+
+          console.log(`✓ Calculated reparations: $${(calculation.total / 1000000).toFixed(2)}M for ${enslavedCount} people over ${years} years`);
+        } catch (calcError) {
+          console.warn('Reparations calculation failed:', calcError.message);
+        }
+      }
+
       // Save metadata record linking storage info and ipfs hash into DB
       if (this.db && this.db.saveDocument) {
         const docRecord = {
           documentId: result.documentId,
           ownerName: metadata.ownerName,  // FIXED: Standardized on ownerName
-          birthYear: metadata.birthYear,
-          deathYear: metadata.deathYear,
-          location: metadata.location,
+          ownerBirthYear: metadata.birthYear,
+          ownerDeathYear: metadata.deathYear,
+          ownerLocation: metadata.location,
           storage: result.stages.storage,
           ipfs: result.stages.ipfs || null,
           ocr: result.stages.ocr || null,
+          reparations: reparationsData,
+          enslaved: enslavedData,
           createdAt: new Date()
         };
         await this.db.saveDocument(docRecord);
         result.stages.db = { saved: true, id: docRecord.documentId || docRecord.documentId };
+        result.stages.reparations = reparationsData;
+        result.stages.enslaved = enslavedData;
       }
 
       result.success = true;
