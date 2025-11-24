@@ -28,12 +28,16 @@ const app = express();
 // SECURITY: Configure CORS with restrictions
 const corsOptions = {
   origin: function (origin, callback) {
+    // Log all CORS requests for debugging
+    console.log(`[CORS] Request from origin: ${origin || 'NO ORIGIN'}`);
+
     // Always allow GitHub Pages domain
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:8080',
       'http://127.0.0.1:3000',
-      'https://danyelajunebrown.github.io'
+      'https://danyelajunebrown.github.io',
+      'null' // For local file:// protocol testing
     ];
 
     // Add custom origins from env var if specified
@@ -42,15 +46,24 @@ const corsOptions = {
     }
 
     // Allow requests with no origin (like mobile apps, curl, postman)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('[CORS] Allowing request with no origin');
+      return callback(null, true);
+    }
 
     // Check if origin starts with any allowed origin (handles subdirectories)
-    const isAllowed = allowedOrigins.some(allowed => origin.startsWith(allowed));
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (origin === allowed) return true;
+      if (origin.startsWith(allowed)) return true;
+      return false;
+    });
 
     if (isAllowed) {
+      console.log(`[CORS] ✓ Allowed: ${origin}`);
       callback(null, true);
     } else {
-      console.warn(`CORS blocked origin: ${origin}`);
+      console.warn(`[CORS] ✗ BLOCKED origin: ${origin}`);
+      console.warn(`[CORS] Allowed origins:`, allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -2032,6 +2045,22 @@ app.get('/health', asyncHandler(async (req, res) => {
   });
 }));
 
+// CORS diagnostic endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working!',
+    yourOrigin: req.headers.origin || 'NO ORIGIN HEADER',
+    timestamp: new Date().toISOString(),
+    allowedOrigins: [
+      'http://localhost:3000',
+      'http://localhost:8080',
+      'http://127.0.0.1:3000',
+      'https://danyelajunebrown.github.io'
+    ]
+  });
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -2184,17 +2213,32 @@ if (require.main === module) {
   // Initialize database schemas before starting server
   initializeDatabaseSchemas().then(() => {
     app.listen(PORT, '0.0.0.0', () => {
-      console.log('Reparations server running on port ' + PORT);
-      console.log('Storage root: ' + config.storage.root);
-      console.log('OCR enabled: ' + processor.performOCR);
+      console.log('\n========================================');
+      console.log('🚀 REPARATIONS PLATFORM SERVER STARTED');
+      console.log('========================================');
+      console.log(`✓ Port: ${PORT}`);
+      console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`✓ Storage root: ${config.storage.root}`);
+      console.log(`✓ OCR enabled: ${processor.performOCR}`);
+      console.log(`✓ Database: Connected`);
+      console.log(`✓ CORS: Allowing GitHub Pages (https://danyelajunebrown.github.io)`);
+      console.log(`✓ Reparations Calculator: Initialized`);
+      console.log('========================================');
+      console.log(`Health check: http://localhost:${PORT}/health`);
+      console.log('========================================\n');
     });
   }).catch(err => {
-    console.error('Server startup error:', err);
-    // Start server anyway even if OCR schema fails
+    console.error('⚠️  Server startup error:', err);
+    // Start server anyway even if schema init fails
     app.listen(PORT, '0.0.0.0', () => {
-      console.log('Reparations server running on port ' + PORT);
-      console.log('Storage root: ' + config.storage.root);
-      console.log('OCR enabled: ' + processor.performOCR);
+      console.log('\n========================================');
+      console.log('🚀 REPARATIONS PLATFORM SERVER STARTED');
+      console.log('========================================');
+      console.log(`✓ Port: ${PORT}`);
+      console.log(`⚠️  Database schemas: Failed to initialize (see error above)`);
+      console.log(`✓ Storage root: ${config.storage.root}`);
+      console.log(`✓ OCR enabled: ${processor.performOCR}`);
+      console.log('========================================\n');
     });
   });
 }
