@@ -73,7 +73,14 @@ class EnhancedDocumentProcessor {
 
       // STAGE 3: OCR (if configured)
       if (this.performOCRFlag) {
-        result.stages.ocr = await this.performOCR(uploadedFile.path, metadata.documentType);
+        result.stages.ocr = await this.performOCR(
+          uploadedFile.path,
+          metadata.documentType,
+          {
+            originalFilename: uploadedFile.originalname,
+            mimeType: uploadedFile.mimetype
+          }
+        );
       }
 
       // Continue with parsing, reparations calculations, DB save...
@@ -153,11 +160,12 @@ class EnhancedDocumentProcessor {
     return null;
   }
 
-  async performOCR(filePath, documentType) {
+  async performOCR(filePath, documentType, fileInfo = {}) {
     try {
-      const ocrResult = await this.ocrService.performOCR(filePath, {
-        documentType,
-        preferredService: 'auto' // Will use Google Vision if available, otherwise Tesseract
+      const ocrResult = await this.ocrService.performOCR(filePath, documentType, {
+        preferredService: 'auto', // Will use Google Vision if available, otherwise Tesseract
+        originalFilename: fileInfo.originalFilename,
+        mimeType: fileInfo.mimeType
       });
 
       return {
