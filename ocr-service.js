@@ -28,15 +28,29 @@ class OCRService {
   /**
    * Main OCR function - automatically selects best method
    */
-  async performOCR(filePath, options = {}) {
-    const { documentType = 'unknown', preferredService = 'auto' } = options;
+  async performOCR(filePath, documentType, options = {}) {
+    const { preferredService = 'auto', originalFilename = '', mimeType: providedMimeType = '' } = options;
 
-    console.log(`Starting OCR: ${path.basename(filePath)}`);
+    console.log(`Starting OCR: ${originalFilename || path.basename(filePath)}`);
 
     try {
-      // Check file type
-      const ext = path.extname(filePath).toLowerCase();
-      const mimeType = this.getMimeType(ext);
+      // Check file type using original filename (multer temp files have no extension)
+      const ext = originalFilename ? path.extname(originalFilename).toLowerCase() : path.extname(filePath).toLowerCase();
+      const mimeType = providedMimeType || this.getMimeType(ext);
+
+      // If it's a plain text file, read it directly (no OCR needed)
+      if (ext === '.txt' || mimeType === 'text/plain') {
+        console.log('✓ Plain text file detected, reading directly (no OCR needed)');
+        const textContent = await fs.readFile(filePath, 'utf-8');
+        return {
+          text: textContent,
+          confidence: 1.0,
+          pageCount: 1,
+          method: 'direct-read',
+          service: 'text-file-reader',
+          duration: 0
+        };
+      }
 
       // If it's a PDF, try direct text extraction first (fastest)
       if (ext === '.pdf') {
@@ -110,8 +124,9 @@ class OCRService {
     console.log('Using Tesseract.js OCR...');
     const startTime = Date.now();
 
+    let worker;
     try {
-      const worker = await Tesseract.createWorker('eng', 1, {
+      worker = await Tesseract.createWorker('eng', 1, {
         logger: (m) => {
           if (m.status === 'recognizing text') {
             process.stdout.write(`\rOCR Progress: ${Math.round(m.progress * 100)}%`);
@@ -120,7 +135,6 @@ class OCRService {
       });
 
       const { data } = await worker.recognize(filePath);
-      await worker.terminate();
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(`\n✓ Tesseract OCR complete in ${duration}s (confidence: ${data.confidence}%)`);
@@ -139,6 +153,15 @@ class OCRService {
     } catch (error) {
       console.error('Tesseract OCR failed:', error);
       throw new Error(`Tesseract OCR failed: ${error.message}`);
+    } finally {
+      // Always terminate worker to free resources
+      if (worker) {
+        try {
+          await worker.terminate();
+        } catch (terminateError) {
+          console.warn('Failed to terminate Tesseract worker:', terminateError.message);
+        }
+      }
     }
   }
 
