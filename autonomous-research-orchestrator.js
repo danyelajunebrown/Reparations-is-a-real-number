@@ -15,6 +15,7 @@
 
 const AutonomousWebScraper = require('./autonomous-web-scraper');
 const GenealogyEntityExtractor = require('./genealogy-entity-extractor');
+const LLMPageAnalyzer = require('./llm-page-analyzer');
 const FormData = require('form-data');
 const fs = require('fs');
 
@@ -23,6 +24,7 @@ class AutonomousResearchOrchestrator {
         this.db = database;
         this.scraper = new AutonomousWebScraper(database);
         this.extractor = new GenealogyEntityExtractor();
+        this.pageAnalyzer = new LLMPageAnalyzer();
 
         this.config = {
             autoDownloadDocuments: config.autoDownloadDocuments !== false,
@@ -77,6 +79,25 @@ class AutonomousResearchOrchestrator {
                 results.errors.push(...results.scrapingResults.errors);
             }
 
+            // PHASE 1.5: LLM-Powered Page Analysis (NEW!)
+            console.log('\n📍 PHASE 1.5: AI Page Analysis');
+            results.pageAnalysis = await this.pageAnalyzer.analyzePage(
+                url,
+                results.scrapingResults.rawText,
+                results.scrapingResults.html
+            );
+
+            // Store analysis for later use
+            const sourceType = results.pageAnalysis.source_type;
+            const isPrimarySource = sourceType === 'primary';
+            const isConfirmingDocument = results.pageAnalysis.is_confirming_document;
+
+            console.log(`    • Source Type: ${sourceType} (${Math.round(results.pageAnalysis.confidence * 100)}% confident)`);
+            console.log(`    • Document Type: ${results.pageAnalysis.document_type || 'N/A'}`);
+            if (isConfirmingDocument) {
+                console.log(`    🎯 PRIMARY SOURCE - Can confirm unconfirmed leads!`);
+            }
+
             // PHASE 2: Extract entities from scraped text
             console.log('\n📍 PHASE 2: Entity Extraction');
             results.extractionResults = await this.extractor.extractPersons(
@@ -98,7 +119,8 @@ class AutonomousResearchOrchestrator {
             await this.saveExtractedPersons(
                 results.extractionResults.persons,
                 url,
-                sessionId
+                sessionId,
+                results.pageAnalysis
             );
 
             // All web-scraped persons are unconfirmed - categorize by confidence for review priority
@@ -226,9 +248,45 @@ class AutonomousResearchOrchestrator {
                 }
             }
 
-            // PHASE 4: Download and process documents
-            if (this.config.autoDownloadDocuments && results.scrapingResults.documents.length > 0) {
-                console.log('\n📍 PHASE 4: Processing Documents');
+            // PHASE 3.5: PRIMARY SOURCE CONFIRMING DOCUMENTS (NEW!)
+            if (isPrimarySource && isConfirmingDocument) {
+                console.log('\n📍 PHASE 3.5: Processing Confirming Documents');
+                console.log(`    🎯 This is a PRIMARY SOURCE that can confirm unconfirmed leads!`);
+
+                // Download images (petition scans, document images, etc.)
+                let downloadedImages = [];
+                if (results.scrapingResults.images.length > 0) {
+                    console.log(`    • Found ${results.scrapingResults.images.length} document images`);
+                    downloadedImages = await this.scraper.downloadImages(results.scrapingResults.images);
+                }
+
+                // Download any linked documents too
+                let downloadedDocs = [];
+                if (results.scrapingResults.documents.length > 0) {
+                    console.log(`    • Found ${results.scrapingResults.documents.length} linked documents`);
+                    downloadedDocs = await this.scraper.downloadDocuments(results.scrapingResults.documents);
+                }
+
+                const allDownloads = [...downloadedImages, ...downloadedDocs].filter(d => d.success);
+                results.documentsDownloaded = allDownloads.length;
+
+                // Link confirming documents to persons and apply promotion logic
+                console.log(`    • Linking ${allDownloads.length} documents to ${results.extractionResults.persons.length} persons...`);
+
+                for (const person of results.extractionResults.persons) {
+                    await this.processConfirmingDocuments(
+                        person,
+                        allDownloads,
+                        url,
+                        results.pageAnalysis
+                    );
+                }
+
+                console.log(`    ✓ Confirming documents processed and linked`);
+
+            } else if (this.config.autoDownloadDocuments && results.scrapingResults.documents.length > 0) {
+                // FALLBACK: Regular document download (non-primary sources)
+                console.log('\n📍 PHASE 4: Processing Documents (Non-Primary Source)');
                 console.log(`    • Found ${results.scrapingResults.documents.length} documents`);
 
                 const downloadResults = await this.scraper.downloadDocuments(
@@ -320,12 +378,12 @@ class AutonomousResearchOrchestrator {
      * CRITICAL: ALL web-scraped data goes to unconfirmed_persons table.
      * NEVER auto-confirm based on web scraping - only primary sources can confirm.
      */
-    async saveExtractedPersons(persons, sourceUrl, sessionId) {
+    async saveExtractedPersons(persons, sourceUrl, sessionId, pageAnalysis = null) {
         for (const person of persons) {
             try {
                 // ALWAYS add to unconfirmed leads - web scraping is NEVER confirmation
                 // Only primary historical documents can confirm slave ownership/enslaved status
-                await this.addToUnconfirmedDB(person, sourceUrl, sessionId);
+                await this.addToUnconfirmedDB(person, sourceUrl, sessionId, pageAnalysis);
             } catch (error) {
                 console.error(`    ✗ Failed to save ${person.fullName}:`, error.message);
             }
@@ -384,9 +442,9 @@ class AutonomousResearchOrchestrator {
      * All web-scraped persons are marked as 'secondary' or 'tertiary' sources.
      * Only primary historical documents can move someone to confirmed status.
      */
-    async addToUnconfirmedDB(person, sourceUrl, sessionId) {
-        // Classify source type based on URL
-        const sourceType = this.classifySourceType(sourceUrl);
+    async addToUnconfirmedDB(person, sourceUrl, sessionId, pageAnalysis = null) {
+        // Classify source type based on LLM analysis (or URL as fallback)
+        const sourceType = this.classifySourceType(sourceUrl, pageAnalysis);
 
         await this.db.query(`
             INSERT INTO unconfirmed_persons (
@@ -412,8 +470,16 @@ class AutonomousResearchOrchestrator {
 
     /**
      * Classify source type based on URL
+     * NOW DEPRECATED - Use LLM analysis from pageAnalysis instead
+     * Kept for backward compatibility with old code
      */
-    classifySourceType(url) {
+    classifySourceType(url, pageAnalysis = null) {
+        // If we have LLM analysis, use that!
+        if (pageAnalysis && pageAnalysis.source_type) {
+            return pageAnalysis.source_type;
+        }
+
+        // Fallback to simple heuristics (only if LLM unavailable)
         const lower = url.toLowerCase();
 
         // Wikipedia, encyclopedias = tertiary
@@ -436,12 +502,155 @@ class AutonomousResearchOrchestrator {
         if (lower.includes('archive.org') ||
             lower.includes('loc.gov') ||
             lower.includes('nara.gov') ||
-            lower.includes('digitalarchive')) {
+            lower.includes('digitalarchive') ||
+            lower.includes('civilwardc.org')) {
             return 'primary'; // But still needs human verification
         }
 
         // Default to secondary
         return 'secondary';
+    }
+
+    /**
+     * Process confirming documents for a person
+     * Links documents to person, calculates confidence, applies promotion logic
+     */
+    async processConfirmingDocuments(person, downloadedDocs, sourceUrl, pageAnalysis) {
+        try {
+            // Find this person in unconfirmed_persons (just added in PHASE 3)
+            const personResult = await this.db.query(`
+                SELECT lead_id, confidence_score, person_type
+                FROM unconfirmed_persons
+                WHERE full_name = $1
+                AND source_url = $2
+                ORDER BY created_at DESC
+                LIMIT 1
+            `, [person.fullName, sourceUrl]);
+
+            if (personResult.rows.length === 0) {
+                console.log(`      ⚠️  Could not find ${person.fullName} in unconfirmed_persons`);
+                return;
+            }
+
+            const unconfirmedPerson = personResult.rows[0];
+            const baseConfidence = parseFloat(unconfirmedPerson.confidence_score) || 0.5;
+
+            // Calculate confidence boost based on document quality
+            const confidenceBoost = this.calculateConfidenceBoost(pageAnalysis);
+
+            // Final confidence = base + boost
+            const finalConfidence = Math.min(baseConfidence + confidenceBoost, 1.0);
+
+            // Determine promotion status based on hybrid logic
+            let promotionStatus = 'pending_review';
+            if (finalConfidence >= 0.9) {
+                promotionStatus = 'auto_promoted';
+            } else if (finalConfidence >= 0.7) {
+                promotionStatus = 'manual_review_queue';
+            }
+
+            console.log(`      • ${person.fullName}: ${(baseConfidence * 100).toFixed(0)}% + ${(confidenceBoost * 100).toFixed(0)}% = ${(finalConfidence * 100).toFixed(0)}% → ${promotionStatus}`);
+
+            // Insert each downloaded document as a confirming document
+            for (const doc of downloadedDocs) {
+                await this.db.query(`
+                    INSERT INTO confirming_documents (
+                        unconfirmed_person_id,
+                        document_url,
+                        document_type,
+                        llm_confidence,
+                        llm_reasoning,
+                        downloaded_file_path,
+                        download_status,
+                        downloaded_at,
+                        file_size,
+                        promotion_status,
+                        confidence_boost,
+                        final_confidence
+                    ) VALUES ($1, $2, $3, $4, $5, $6, 'downloaded', CURRENT_TIMESTAMP, $7, $8, $9, $10)
+                `, [
+                    unconfirmedPerson.lead_id,
+                    doc.originalUrl || sourceUrl,
+                    pageAnalysis.document_type || 'unknown',
+                    pageAnalysis.confidence,
+                    pageAnalysis.reasoning,
+                    doc.filePath,
+                    doc.fileSize || 0,
+                    promotionStatus,
+                    confidenceBoost,
+                    finalConfidence
+                ]);
+            }
+
+            // If auto-promoted, promote to confirmed database now
+            if (promotionStatus === 'auto_promoted') {
+                console.log(`      🚀 AUTO-PROMOTING ${person.fullName} (${(finalConfidence * 100).toFixed(0)}% confidence)`);
+                await this.promoteToConfirmed(unconfirmedPerson.lead_id, person, finalConfidence);
+            } else if (promotionStatus === 'manual_review_queue') {
+                console.log(`      📋 Queued for human review: ${person.fullName} (${(finalConfidence * 100).toFixed(0)}%)`);
+            }
+
+        } catch (error) {
+            console.error(`      ✗ Error processing confirming docs for ${person.fullName}:`, error.message);
+        }
+    }
+
+    /**
+     * Calculate confidence boost from primary source
+     */
+    calculateConfidenceBoost(pageAnalysis) {
+        if (!pageAnalysis || pageAnalysis.source_type !== 'primary') {
+            return 0;
+        }
+
+        // Base boost for primary sources
+        let boost = 0.25;
+
+        // Higher boost for official government documents
+        const officialDocTypes = ['compensation_petition', 'census', 'slave_schedule', 'court_record'];
+        if (officialDocTypes.includes(pageAnalysis.document_type)) {
+            boost = 0.35;
+        }
+
+        // Adjust based on LLM confidence in its classification
+        const llmConfidence = pageAnalysis.confidence || 0.8;
+        boost = boost * llmConfidence;
+
+        return boost;
+    }
+
+    /**
+     * Promote unconfirmed person to confirmed database
+     * This is called for auto-promoted persons (confidence >= 0.9)
+     */
+    async promoteToConfirmed(leadId, person, finalConfidence) {
+        try {
+            // For now, just update status in unconfirmed_persons
+            // Later, this can create records in enslaved_people or individuals tables
+            await this.db.query(`
+                UPDATE unconfirmed_persons
+                SET
+                    status = 'confirmed',
+                    confidence_score = $2,
+                    reviewed_at = CURRENT_TIMESTAMP,
+                    reviewed_by = 'auto_promotion_system'
+                WHERE lead_id = $1
+            `, [leadId, finalConfidence]);
+
+            // Update confirming_documents records
+            await this.db.query(`
+                UPDATE confirming_documents
+                SET
+                    promoted_at = CURRENT_TIMESTAMP,
+                    promoted_to_table = 'unconfirmed_persons',
+                    promoted_to_id = $1::text
+                WHERE unconfirmed_person_id = $1
+                AND promotion_status = 'auto_promoted'
+            `, [leadId]);
+
+        } catch (error) {
+            console.error(`      ✗ Auto-promotion failed:`, error.message);
+        }
     }
 
     /**

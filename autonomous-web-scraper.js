@@ -391,6 +391,50 @@ class AutonomousWebScraper {
     }
 
     /**
+     * Download images (for confirming documents like petition scans)
+     */
+    async downloadImages(images) {
+        const results = [];
+
+        console.log(`    📥 Downloading ${images.length} images...`);
+
+        for (const image of images) {
+            try {
+                // Use the same downloadDocument method (works for images too)
+                const result = await this.downloadDocument(image.url, {
+                    type: 'image',
+                    alt: image.alt,
+                    width: image.width,
+                    height: image.height,
+                    guessedType: 'confirming_document_scan'
+                });
+
+                if (result.success) {
+                    console.log(`      ✓ Downloaded: ${result.filename}`);
+                }
+
+                results.push(result);
+
+                // Be polite to servers
+                await this.sleep(1000);
+
+            } catch (error) {
+                console.error(`      ✗ Image download failed:`, error.message);
+                results.push({
+                    success: false,
+                    error: error.message,
+                    originalUrl: image.url
+                });
+            }
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        console.log(`    ✓ Successfully downloaded ${successCount}/${images.length} images`);
+
+        return results;
+    }
+
+    /**
      * Close browser
      */
     async close() {
