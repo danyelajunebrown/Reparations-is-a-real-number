@@ -82,6 +82,12 @@ Output: {"intent":"query","person":null,"data":{"query_type":"list"},"confidence
 Input: "How many enslaved people did James Hopewell own?"
 Output: {"intent":"query","person":"James Hopewell","data":{"query_type":"count"},"confidence":0.95}
 
+Input: "James Hopewell"
+Output: {"intent":"query","person":"James Hopewell","data":{"query_type":"details"},"confidence":0.95}
+
+Input: "Do you have Nancy D'Wolf?"
+Output: {"intent":"query","person":"Nancy D'Wolf","data":{"query_type":"details"},"confidence":0.9}
+
 ONLY return valid JSON, no other text.`;
 
   const llmResponse = await callLLM(systemPrompt, userMessage);
@@ -284,10 +290,10 @@ function fallbackPatternMatch(message) {
 /**
  * Find person in database (check documents table for slave owners)
  */
-async function findPerson(personName) {
+async function findPerson(personName, filters = {}) {
   if (!personName) return null;
 
-  const query = `
+  let query = `
     SELECT
       document_id,
       owner_name,
@@ -295,15 +301,44 @@ async function findPerson(personName) {
       owner_birth_year as birth_year,
       owner_death_year as death_year,
       owner_location as location,
-      created_at
+      created_at,
+      filename
     FROM documents
     WHERE LOWER(owner_name) LIKE LOWER($1)
-    ORDER BY created_at DESC
-    LIMIT 1
   `;
 
-  const result = await pool.query(query, [`%${personName}%`]);
-  return result.rows.length > 0 ? result.rows[0] : null;
+  const params = [`%${personName}%`];
+  let paramIndex = 2;
+
+  // Apply filters for disambiguation
+  if (filters.location) {
+    query += ` AND LOWER(owner_location) LIKE LOWER($${paramIndex})`;
+    params.push(`%${filters.location}%`);
+    paramIndex++;
+  }
+
+  if (filters.birthYear) {
+    query += ` AND owner_birth_year = $${paramIndex}`;
+    params.push(filters.birthYear);
+    paramIndex++;
+  }
+
+  if (filters.deathYear) {
+    query += ` AND owner_death_year = $${paramIndex}`;
+    params.push(filters.deathYear);
+    paramIndex++;
+  }
+
+  if (filters.docType) {
+    query += ` AND LOWER(doc_type) LIKE LOWER($${paramIndex})`;
+    params.push(`%${filters.docType}%`);
+    paramIndex++;
+  }
+
+  query += ` ORDER BY created_at DESC`;
+
+  const result = await pool.query(query, params);
+  return result.rows; // Return ALL matches, not just first one
 }
 
 /**
@@ -877,19 +912,91 @@ async function queryDatabase(intent) {
 
   if (data.query_type === 'details' && person) {
     // Get detailed info about a person
-    const personData = await findPerson(person);
+    // Check if user is disambiguating from previous results
+    const filters = {};
 
-    if (!personData) {
+    // Extract filters from data (LLM can provide these)
+    if (data.location) filters.location = data.location;
+    if (data.birthYear) filters.birthYear = data.birthYear;
+    if (data.deathYear) filters.deathYear = data.deathYear;
+    if (data.docType) filters.docType = data.docType;
+
+    const matches = await findPerson(person, filters);
+
+    if (!matches || matches.length === 0) {
       return {
         success: false,
-        message: `Could not find ${person} in the database.`
+        message: `Could not find "${person}" in the database. Try searching for slave owners or check the spelling.`
       };
     }
 
+    // If multiple matches, ask user to clarify
+    if (matches.length > 1) {
+      const matchList = matches.map((m, idx) => {
+        const parts = [m.owner_name];
+        if (m.birth_year && m.death_year) parts.push(`(${m.birth_year}-${m.death_year})`);
+        else if (m.birth_year) parts.push(`(b. ${m.birth_year})`);
+        else if (m.death_year) parts.push(`(d. ${m.death_year})`);
+        if (m.location) parts.push(`from ${m.location}`);
+        parts.push(`[${m.doc_type || 'document'}]`);
+        return `${idx + 1}. ${parts.join(' ')}`;
+      }).join('\n');
+
+      return {
+        success: true,
+        message: `Found ${matches.length} people matching "${person}":\n\n${matchList}\n\nPlease specify which one you mean by saying:\n- "The one from [location]"\n- "The one born in [year]"\n- "Number [1-${matches.length}]"`,
+        data: {
+          ambiguous: true,
+          candidates: matches,
+          count: matches.length
+        }
+      };
+    }
+
+    // Single match - return details
+    const personData = matches[0];
+
+    // Get counts of enslaved people and reparations
+    const enslavedResult = await pool.query(`
+      SELECT COUNT(*) as count
+      FROM enslaved_people
+      WHERE document_id = $1
+    `, [personData.document_id]);
+
+    const repsResult = await pool.query(`
+      SELECT COALESCE(SUM(total_reparations_owed), 0) as total
+      FROM reparations_breakdown
+      WHERE document_id = $1
+    `, [personData.document_id]);
+
+    const enslavedCount = parseInt(enslavedResult.rows[0]?.count || 0);
+    const reparationsTotal = parseFloat(repsResult.rows[0]?.total || 0);
+
+    const details = [];
+    details.push(`📄 **${personData.owner_name}**`);
+    if (personData.birth_year || personData.death_year) {
+      details.push(`📅 Life: ${personData.birth_year || '?'} - ${personData.death_year || '?'}`);
+    }
+    if (personData.location) {
+      details.push(`📍 Location: ${personData.location}`);
+    }
+    if (enslavedCount > 0) {
+      details.push(`⛓️  Enslaved: ${enslavedCount} people`);
+    }
+    if (reparationsTotal > 0) {
+      details.push(`💰 Reparations: $${(reparationsTotal / 1000000).toFixed(1)}M`);
+    }
+    details.push(`📁 Document: ${personData.doc_type || 'unknown type'}`);
+
     return {
       success: true,
-      message: `Found ${personData.owner_name}`,
-      data: personData
+      message: details.join('\n'),
+      data: {
+        ...personData,
+        enslaved_count: enslavedCount,
+        reparations_total: reparationsTotal,
+        document_ids: [personData.document_id]
+      }
     };
   }
 
@@ -928,6 +1035,66 @@ async function processConversation(userMessage, context = {}) {
     else if (lower.match(/how many.*(enslaved|slave)/i) || lower.match(/count.*(enslaved|slave)/i) || lower.match(/total.*(enslaved|slave)/i)) {
       console.log('[DEBUG] Detected enslaved count pattern, using pattern matching');
       intent = fallbackPatternMatch(userMessage);
+    }
+    // Disambiguation - "the one from Maryland" or "number 2" or "the one born in 1780"
+    else if (context.lastAmbiguousQuery &&
+             (lower.match(/^(the one|number|#)\s/i) || lower.match(/from\s+[a-z]/i) || lower.match(/born in|died in/i))) {
+      console.log('[DEBUG] Detected disambiguation query');
+      const filters = {};
+
+      // Extract filters from natural language
+      const locationMatch = userMessage.match(/(?:from|in)\s+([a-z\s]+?)(?:\s|$)/i);
+      if (locationMatch) filters.location = locationMatch[1].trim();
+
+      const birthMatch = userMessage.match(/born\s+in\s+(\d{4})/i);
+      if (birthMatch) filters.birthYear = parseInt(birthMatch[1]);
+
+      const deathMatch = userMessage.match(/died?\s+in\s+(\d{4})/i);
+      if (deathMatch) filters.deathYear = parseInt(deathMatch[1]);
+
+      // Handle "number 2" or "#2"
+      const numberMatch = userMessage.match(/(?:number|#)\s*(\d+)/i);
+      if (numberMatch && context.lastCandidates) {
+        const index = parseInt(numberMatch[1]) - 1;
+        if (index >= 0 && index < context.lastCandidates.length) {
+          const selected = context.lastCandidates[index];
+          intent = {
+            intent: 'query',
+            person: selected.owner_name,
+            data: {
+              query_type: 'details',
+              location: selected.location,
+              birthYear: selected.birth_year,
+              deathYear: selected.death_year
+            },
+            confidence: 1.0
+          };
+        }
+      } else {
+        // Apply filters to narrow down previous results
+        intent = {
+          intent: 'query',
+          person: context.lastAmbiguousQuery,
+          data: {
+            query_type: 'details',
+            ...filters
+          },
+          confidence: 0.9
+        };
+      }
+    }
+    // Simple person name lookup - "james hopewell" or "do you have james hopewell" or "tell me about james hopewell"
+    else if (userMessage.match(/^[A-Z][a-z]+(\s+[A-Z][a-z']+)+$/i) ||
+             lower.match(/^(do you have|tell me about|find|search|show me|who is|what about)\s+[a-z]/i)) {
+      console.log('[DEBUG] Detected person lookup query, using details query');
+      // Extract person name - remove query words
+      const personName = userMessage.replace(/^(do you have|tell me about|find|search|show me|who is|what about)\s+/i, '').trim();
+      intent = {
+        intent: 'query',
+        person: personName,
+        data: { query_type: 'details' },
+        confidence: 0.9
+      };
     }
     // Otherwise, use LLM
     else {
@@ -998,6 +1165,16 @@ async function processConversation(userMessage, context = {}) {
     // Update context with last mentioned person
     if (intent.person) {
       context.lastPerson = intent.person;
+    }
+
+    // Store ambiguous query context for follow-up disambiguation
+    if (result.data?.ambiguous) {
+      context.lastAmbiguousQuery = intent.person;
+      context.lastCandidates = result.data.candidates;
+    } else {
+      // Clear ambiguous context once resolved
+      delete context.lastAmbiguousQuery;
+      delete context.lastCandidates;
     }
 
     return {
