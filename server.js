@@ -1147,15 +1147,8 @@ app.get('/api/documents/:documentId/file',
 
     const doc = result.rows[0];
     const fs = require('fs');
-
-    // Check if file exists
-    if (!fs.existsSync(doc.file_path)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Document file not found on server',
-        path: doc.file_path
-      });
-    }
+    const isS3Enabled = config.storage.s3.enabled;
+    const isS3Path = !doc.file_path.startsWith('./') && !doc.file_path.startsWith('/');
 
     // Set appropriate headers
     res.setHeader('Content-Type', doc.mime_type || 'application/pdf');
@@ -1168,9 +1161,50 @@ app.get('/api/documents/:documentId/file',
       res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
     }
 
-    // Stream the file
-    const fileStream = fs.createReadStream(doc.file_path);
-    fileStream.pipe(res);
+    // Serve from S3 if enabled and path is S3 key
+    if (isS3Enabled && isS3Path) {
+      const AWS = require('aws-sdk');
+      const s3 = new AWS.S3({
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        region: config.storage.s3.region
+      });
+
+      const params = {
+        Bucket: config.storage.s3.bucket,
+        Key: doc.file_path
+      };
+
+      // Stream from S3
+      const s3Stream = s3.getObject(params).createReadStream();
+
+      s3Stream.on('error', (error) => {
+        console.error('S3 streaming error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Error streaming file from S3',
+            details: error.message
+          });
+        }
+      });
+
+      s3Stream.pipe(res);
+
+    } else {
+      // Serve from local file system
+      if (!fs.existsSync(doc.file_path)) {
+        return res.status(404).json({
+          success: false,
+          error: 'Document file not found on server',
+          path: doc.file_path
+        });
+      }
+
+      // Stream the file
+      const fileStream = fs.createReadStream(doc.file_path);
+      fileStream.pipe(res);
+    }
   })
 );
 
