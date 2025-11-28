@@ -2,12 +2,18 @@
   "name": "reparations-blockchain",
   "version": "2.0.0",
   "description": "Blockchain-based reparations with FamilySearch integration",
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node index.js",
+    "start:old": "node server.js",
     "init-db": "node init-database.js",
-    "dev": "nodemon server.js",
+    "dev": "nodemon index.js",
+    "dev:old": "nodemon server.js",
     "worker": "node continuous-scraper.js",
+    "migrate:up": "node-pg-migrate up",
+    "migrate:down": "node-pg-migrate down",
+    "migrate:create": "node-pg-migrate create",
+    "migrate:status": "node-pg-migrate status",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -43,11 +49,14 @@
     "sharp": "^0.33.1",
     "tesseract.js": "^5.0.3",
     "web3": "^1.10.0",
+    "winston": "^3.18.3",
+    "winston-daily-rotate-file": "^5.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@truffle/hdwallet-provider": "^2.1.0",
     "ganache-cli": "^6.12.2",
+    "node-pg-migrate": "^8.0.3",
     "nodemon": "^3.0.2",
     "truffle": "^5.11.0"
   }
