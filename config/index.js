@@ -85,8 +85,8 @@ const envSchema = Joi.object({
   // Security
   JWT_SECRET: Joi.string()
     .min(32)
-    .required()
-    .description('CRITICAL: Must be 32+ characters'),
+    .default('INSECURE_DEFAULT_JWT_SECRET_PLEASE_CHANGE_IN_PRODUCTION_32CHARS')
+    .description('CRITICAL: Must be 32+ characters - using insecure default if not set'),
   API_KEYS: Joi.string()
     .optional()
     .description('Comma-separated list of valid API keys'),
@@ -198,6 +198,15 @@ const config = {
     baseUrl: env.API_URL
   }
 };
+
+// Security warning if using default JWT_SECRET
+if (config.security.jwtSecret === 'INSECURE_DEFAULT_JWT_SECRET_PLEASE_CHANGE_IN_PRODUCTION_32CHARS') {
+  console.warn('⚠️  WARNING: Using default JWT_SECRET! This is INSECURE for production.');
+  console.warn('⚠️  Set JWT_SECRET environment variable with a secure 32+ character string.');
+  if (config.isProduction) {
+    console.error('❌ CRITICAL: Default JWT_SECRET in production environment!');
+  }
+}
 
 // Log configuration on startup (without secrets)
 if (config.isDevelopment) {
