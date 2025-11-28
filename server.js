@@ -1147,18 +1147,53 @@ app.get('/api/documents/:documentId/file',
 
     const doc = result.rows[0];
     const fs = require('fs');
+    const FileType = require('file-type');
     const isS3Enabled = config.storage.s3.enabled;
     const isS3Path = !doc.file_path.startsWith('./') && !doc.file_path.startsWith('/');
 
-    // Set appropriate headers
-    res.setHeader('Content-Type', doc.mime_type || 'application/pdf');
+    // CRITICAL FIX: Detect actual file type if file exists locally
+    let actualMimeType = doc.mime_type || 'application/pdf';
+    let actualFilename = doc.filename;
+
+    if (!isS3Enabled || !isS3Path) {
+      // Local file - validate mime type
+      if (fs.existsSync(doc.file_path)) {
+        try {
+          const detectedType = await FileType.fromFile(doc.file_path);
+          if (detectedType) {
+            actualMimeType = detectedType.mime;
+
+            // Log warning if database mime type doesn't match
+            if (doc.mime_type && doc.mime_type !== detectedType.mime) {
+              console.warn(`⚠ MIME mismatch for ${documentId}:`);
+              console.warn(`  Database: ${doc.mime_type}, Actual: ${detectedType.mime}`);
+            }
+          } else {
+            // Check if it's plain text
+            const buffer = fs.readFileSync(doc.file_path);
+            const sample = buffer.toString('utf8', 0, Math.min(512, buffer.length));
+            const isBinaryFree = !/[\x00-\x08\x0E-\x1F]/.test(sample);
+
+            if (isBinaryFree) {
+              actualMimeType = 'text/plain';
+              console.warn(`⚠ File ${documentId} detected as plain text, database says ${doc.mime_type}`);
+            }
+          }
+        } catch (error) {
+          console.error('File type detection failed:', error);
+        }
+      }
+    }
+
+    // Set appropriate headers with detected mime type
+    res.setHeader('Content-Type', actualMimeType);
 
     if (download) {
       // Force download
-      res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${actualFilename}"`);
     } else {
       // Display inline (for PDFs/images)
-      res.setHeader('Content-Disposition', `inline; filename="${doc.filename}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${actualFilename}"`);
     }
 
     // Serve from S3 if enabled and path is S3 key
