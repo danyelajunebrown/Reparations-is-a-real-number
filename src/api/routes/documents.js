@@ -74,6 +74,96 @@ router.post('/upload',
 );
 
 /**
+ * GET /api/documents/:documentId/file
+ * Serve document file (must be before /:documentId route)
+ */
+router.get('/:documentId/file',
+  moderateLimiter,
+  asyncHandler(async (req, res) => {
+    const { documentId } = req.params;
+    const download = req.query.download === 'true';
+
+    // Get document metadata
+    const document = await DocumentService.getDocumentById(documentId);
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    const filePath = document.file_path || document.relative_path;
+
+    if (!filePath) {
+      return res.status(404).json({
+        success: false,
+        error: 'File path not found in document metadata'
+      });
+    }
+
+    const config = require('../../../config');
+    const isS3Path = !filePath.startsWith('./') && !filePath.startsWith('/');
+
+    // Set appropriate headers
+    res.setHeader('Content-Type', document.mime_type || 'application/pdf');
+
+    if (download) {
+      res.setHeader('Content-Disposition', `attachment; filename="${document.filename}"`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
+    }
+
+    // Serve from S3 if path is S3 key
+    if (config.storage.s3.enabled && isS3Path) {
+      const AWS = require('aws-sdk');
+      const s3 = new AWS.S3({
+        accessKeyId: config.storage.s3.accessKeyId,
+        secretAccessKey: config.storage.s3.secretAccessKey,
+        region: config.storage.s3.region
+      });
+
+      const params = {
+        Bucket: config.storage.s3.bucket,
+        Key: filePath
+      };
+
+      const stream = s3.getObject(params).createReadStream();
+
+      stream.on('error', (err) => {
+        logger.error('S3 stream error', { error: err.message, filePath, documentId });
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Error streaming file from S3',
+            details: err.message
+          });
+        }
+      });
+
+      stream.pipe(res);
+
+    } else {
+      // Serve from local file system
+      const fs = require('fs');
+      const path = require('path');
+      const absolutePath = path.resolve(filePath);
+
+      if (!fs.existsSync(absolutePath)) {
+        return res.status(404).json({
+          success: false,
+          error: 'Document file not found on server',
+          path: filePath
+        });
+      }
+
+      const fileStream = fs.createReadStream(absolutePath);
+      fileStream.pipe(res);
+    }
+  })
+);
+
+/**
  * GET /api/documents/:documentId
  * Get document by ID with all relations
  */
