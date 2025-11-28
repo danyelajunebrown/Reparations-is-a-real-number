@@ -1,9 +1,11 @@
-// new file: storage-adapter.js
-// Simple abstraction to upload files to local storage or S3.
-// Add this file and require it from your EnhancedDocumentProcessor or server.
+// storage-adapter.js
+// Abstraction layer for file storage with automatic file type detection
+// Supports: Local filesystem, AWS S3, with proper mime type detection
 
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const FileType = require('file-type');
 
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3'); // v3 AWS SDK
 
@@ -23,15 +25,68 @@ class StorageAdapter {
     return String(name).replace(/[^a-z0-9_\-\.]/gi, '-').replace(/-+/g, '-');
   }
 
+  /**
+   * Detect actual file type from content (magic numbers/file signatures)
+   * Returns: { ext, mime } or null if undetectable
+   */
+  async detectFileType(filePath) {
+    try {
+      const fileType = await FileType.fromFile(filePath);
+      if (fileType) {
+        console.log(`✓ Detected file type: ${fileType.mime} (.${fileType.ext})`);
+        return fileType;
+      }
+
+      // Fallback: Check if it's plain text
+      const buffer = await fs.readFile(filePath);
+      const sample = buffer.toString('utf8', 0, Math.min(512, buffer.length));
+
+      // Check if it's valid UTF-8 text (no binary characters)
+      const isBinaryFree = !/[\x00-\x08\x0E-\x1F]/.test(sample);
+      if (isBinaryFree) {
+        console.log('✓ Detected as plain text file');
+        return { ext: 'txt', mime: 'text/plain' };
+      }
+
+      console.warn('⚠ Could not detect file type, using generic binary');
+      return { ext: 'bin', mime: 'application/octet-stream' };
+    } catch (error) {
+      console.error('File type detection error:', error);
+      return null;
+    }
+  }
+
   async uploadFileToLocal(uploadedFile, metadata = {}) {
     const ownerName = this.sanitizeFilename(metadata.ownerName || 'unknown');
     const docType = this.sanitizeFilename(metadata.documentType || 'unknown');
     const ownerDir = path.join(this.localRoot, 'owners', ownerName, docType);
     await fs.mkdir(ownerDir, { recursive: true });
 
+    // CRITICAL: Detect actual file type from content
+    const detectedType = await this.detectFileType(uploadedFile.path);
+    const uploadedExt = path.extname(uploadedFile.originalname || uploadedFile.name || '').toLowerCase();
+    const uploadedMime = uploadedFile.mimetype;
+
+    // Determine correct extension and mime type
+    let actualExt, actualMime;
+    if (detectedType) {
+      actualExt = '.' + detectedType.ext;
+      actualMime = detectedType.mime;
+
+      // Warn if mismatch
+      if (uploadedExt && uploadedExt !== actualExt) {
+        console.warn(`⚠ File type mismatch: uploaded as ${uploadedExt} but actual type is ${actualExt}`);
+        console.warn(`  File: ${uploadedFile.originalname}`);
+        console.warn(`  Claimed MIME: ${uploadedMime}, Actual MIME: ${actualMime}`);
+      }
+    } else {
+      // Use uploaded type as fallback
+      actualExt = uploadedExt || '.bin';
+      actualMime = uploadedMime || 'application/octet-stream';
+    }
+
     const timestamp = Date.now();
-    const ext = path.extname(uploadedFile.originalname || uploadedFile.name || '');
-    const filename = `${ownerName}-${docType}-${timestamp}${ext}`;
+    const filename = `${ownerName}-${docType}-${timestamp}${actualExt}`;
     const destPath = path.join(ownerDir, filename);
 
     // copy from multer tmp path
@@ -46,7 +101,9 @@ class StorageAdapter {
       filename,
       originalName: uploadedFile.originalname || uploadedFile.name,
       fileSize: stats.size,
-      mimeType: uploadedFile.mimetype || 'application/octet-stream',
+      mimeType: actualMime, // Use detected mime type
+      detectedType: detectedType ? `${detectedType.mime} (.${detectedType.ext})` : null,
+      uploadedType: uploadedMime,
       storedAt: new Date().toISOString(),
       ownerDirectory: ownerName,
       documentType: docType
@@ -61,13 +118,34 @@ class StorageAdapter {
     const ownerName = this.sanitizeFilename(metadata.ownerName || 'unknown');
     const docType = this.sanitizeFilename(metadata.documentType || 'unknown');
 
+    // CRITICAL: Detect actual file type from content
+    const detectedType = await this.detectFileType(uploadedFile.path);
+    const uploadedExt = path.extname(uploadedFile.originalname || uploadedFile.name || '').toLowerCase();
+    const uploadedMime = uploadedFile.mimetype;
+
+    // Determine correct extension and mime type
+    let actualExt, actualMime;
+    if (detectedType) {
+      actualExt = '.' + detectedType.ext;
+      actualMime = detectedType.mime;
+
+      // Warn if mismatch
+      if (uploadedExt && uploadedExt !== actualExt) {
+        console.warn(`⚠ S3 Upload - File type mismatch: uploaded as ${uploadedExt} but actual type is ${actualExt}`);
+        console.warn(`  File: ${uploadedFile.originalname}`);
+        console.warn(`  Claimed MIME: ${uploadedMime}, Actual MIME: ${actualMime}`);
+      }
+    } else {
+      // Use uploaded type as fallback
+      actualExt = uploadedExt || '.bin';
+      actualMime = uploadedMime || 'application/octet-stream';
+    }
+
     const timestamp = Date.now();
-    const ext = path.extname(uploadedFile.originalname || uploadedFile.name || '');
-    const filename = `${ownerName}-${docType}-${timestamp}${ext}`;
+    const filename = `${ownerName}-${docType}-${timestamp}${actualExt}`;
     const key = `owners/${ownerName}/${docType}/${filename}`;
 
-    // FIXED: Use streaming for large files instead of loading into memory
-    const fsSync = require('fs');
+    // Use streaming for large files instead of loading into memory
     const fileStream = fsSync.createReadStream(uploadedFile.path);
     const fileStats = await fs.stat(uploadedFile.path);
 
@@ -75,8 +153,13 @@ class StorageAdapter {
       Bucket: this.s3Bucket,
       Key: key,
       Body: fileStream, // Stream instead of buffer
-      ContentType: uploadedFile.mimetype || 'application/octet-stream',
-      ContentLength: fileStats.size
+      ContentType: actualMime, // Use detected mime type
+      ContentLength: fileStats.size,
+      Metadata: {
+        'original-filename': uploadedFile.originalname || uploadedFile.name,
+        'detected-type': detectedType ? detectedType.mime : 'unknown',
+        'uploaded-type': uploadedMime || 'unknown'
+      }
       // You can add ServerSideEncryption: 'AES256' or SSE-KMS with appropriate KMS key
     };
 
@@ -93,7 +176,9 @@ class StorageAdapter {
       filename,
       originalName: uploadedFile.originalname || uploadedFile.name,
       fileSize: fileStats.size,
-      mimeType: uploadedFile.mimetype || 'application/octet-stream',
+      mimeType: actualMime, // Use detected mime type
+      detectedType: detectedType ? `${detectedType.mime} (.${detectedType.ext})` : null,
+      uploadedType: uploadedMime,
       storedAt: new Date().toISOString(),
       ownerDirectory: ownerName,
       documentType: docType
