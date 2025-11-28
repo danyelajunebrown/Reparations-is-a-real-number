@@ -103,7 +103,8 @@ router.get('/:documentId/file',
     }
 
     const config = require('../../../config');
-    const isS3Path = !filePath.startsWith('./') && !filePath.startsWith('/');
+    const fs = require('fs');
+    const path = require('path');
 
     // Set appropriate headers
     res.setHeader('Content-Type', document.mime_type || 'application/pdf');
@@ -114,8 +115,27 @@ router.get('/:documentId/file',
       res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
     }
 
-    // Serve from S3 if path is S3 key
-    if (config.storage.s3.enabled && isS3Path) {
+    // Try local file first (handle paths like "storage/..." or "./storage/..." or "/absolute/path")
+    const localPath = filePath.startsWith('/') ? filePath : path.resolve(filePath);
+    const fileExists = fs.existsSync(localPath);
+
+    // Serve from local if file exists
+    if (fileExists) {
+      const fileStream = fs.createReadStream(localPath);
+      fileStream.on('error', (err) => {
+        logger.error('Local file stream error', { error: err.message, filePath, documentId });
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Error streaming file',
+            details: err.message
+          });
+        }
+      });
+      fileStream.pipe(res);
+
+    // Otherwise try S3 if enabled
+    } else if (config.storage.s3.enabled) {
       const AWS = require('aws-sdk');
       const s3 = new AWS.S3({
         accessKeyId: config.storage.s3.accessKeyId,
@@ -144,21 +164,13 @@ router.get('/:documentId/file',
       stream.pipe(res);
 
     } else {
-      // Serve from local file system
-      const fs = require('fs');
-      const path = require('path');
-      const absolutePath = path.resolve(filePath);
-
-      if (!fs.existsSync(absolutePath)) {
-        return res.status(404).json({
-          success: false,
-          error: 'Document file not found on server',
-          path: filePath
-        });
-      }
-
-      const fileStream = fs.createReadStream(absolutePath);
-      fileStream.pipe(res);
+      // File not found locally and S3 not enabled/configured
+      return res.status(404).json({
+        success: false,
+        error: 'Document file not found',
+        path: filePath,
+        checked: { local: localPath, s3Enabled: config.storage.s3.enabled }
+      });
     }
   })
 );
