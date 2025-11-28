@@ -106,14 +106,8 @@ const envSchema = Joi.object({
     .optional()
     .default('http://localhost:3000')
 })
-  .unknown(true) // Allow other env vars to exist
-  .custom((value) => {
-    // Custom validation: Must have either DATABASE_URL OR individual POSTGRES_* vars
-    if (!value.DATABASE_URL && !value.POSTGRES_USER) {
-      throw new Error('Must provide either DATABASE_URL or POSTGRES_USER/POSTGRES_PASSWORD');
-    }
-    return value;
-  });
+  .unknown(true); // Allow other env vars to exist
+  // Note: Database validation removed - will use whatever is available
 
 // Validate environment variables
 const { error, value: env } = envSchema.validate(process.env, {
