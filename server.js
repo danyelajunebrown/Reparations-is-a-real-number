@@ -1147,7 +1147,7 @@ app.get('/api/documents/:documentId/file',
 
     const doc = result.rows[0];
     const fs = require('fs');
-    const FileType = require('file-type');
+    const fileType = require('file-type'); // v12 API
     const isS3Enabled = config.storage.s3.enabled;
     const isS3Path = !doc.file_path.startsWith('./') && !doc.file_path.startsWith('/');
 
@@ -1159,7 +1159,10 @@ app.get('/api/documents/:documentId/file',
       // Local file - validate mime type
       if (fs.existsSync(doc.file_path)) {
         try {
-          const detectedType = await FileType.fromFile(doc.file_path);
+          // Read buffer and detect type (file-type v12 API)
+          const buffer = fs.readFileSync(doc.file_path);
+          const detectedType = await fileType(buffer);
+
           if (detectedType) {
             actualMimeType = detectedType.mime;
 
@@ -1170,7 +1173,6 @@ app.get('/api/documents/:documentId/file',
             }
           } else {
             // Check if it's plain text
-            const buffer = fs.readFileSync(doc.file_path);
             const sample = buffer.toString('utf8', 0, Math.min(512, buffer.length));
             const isBinaryFree = !/[\x00-\x08\x0E-\x1F]/.test(sample);
 
