@@ -5,7 +5,7 @@
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
-const FileType = require('file-type');
+const fileType = require('file-type'); // v12 API: use as function, not class
 
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3'); // v3 AWS SDK
 
@@ -28,17 +28,21 @@ class StorageAdapter {
   /**
    * Detect actual file type from content (magic numbers/file signatures)
    * Returns: { ext, mime } or null if undetectable
+   * Uses file-type v12 API (buffer-based)
    */
   async detectFileType(filePath) {
     try {
-      const fileType = await FileType.fromFile(filePath);
-      if (fileType) {
-        console.log(`✓ Detected file type: ${fileType.mime} (.${fileType.ext})`);
-        return fileType;
+      // Read file buffer for detection
+      const buffer = await fs.readFile(filePath);
+
+      // file-type v12: call function directly on buffer
+      const detected = await fileType(buffer);
+      if (detected) {
+        console.log(`✓ Detected file type: ${detected.mime} (.${detected.ext})`);
+        return detected;
       }
 
       // Fallback: Check if it's plain text
-      const buffer = await fs.readFile(filePath);
       const sample = buffer.toString('utf8', 0, Math.min(512, buffer.length));
 
       // Check if it's valid UTF-8 text (no binary characters)
