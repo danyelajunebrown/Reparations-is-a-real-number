@@ -9,7 +9,7 @@
  * - Stores patterns and known entities
  */
 
-const llmAssistant = require('./llm-conversational-assistant');
+const llmAssistant = require('./LLMAssistant');
 const fs = require('fs').promises;
 const path = require('path');
 
