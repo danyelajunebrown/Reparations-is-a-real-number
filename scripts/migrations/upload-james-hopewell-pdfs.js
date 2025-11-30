@@ -12,9 +12,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, CreateBucketCommand, HeadBucketCommand } = require('@aws-sdk/client-s3');
 const database = require('./database');
-const FileType = require('file-type');
+const fileType = require('file-type'); // v12 API
 
 // Configuration
 const config = {
@@ -32,10 +32,16 @@ const config = {
 async function uploadToS3(filePath, key) {
   console.log(`\nUploading ${path.basename(filePath)} to S3...`);
 
-  const s3Client = new S3Client({ region: config.s3Region });
+  // Try with endpoint configuration for region auto-detection
+  const s3Client = new S3Client({
+    region: config.s3Region,
+    forcePathStyle: false,
+    useAccelerateEndpoint: false
+  });
 
-  // Detect file type
-  const detectedType = await FileType.fromFile(filePath);
+  // Detect file type (file-type v12 API: buffer-based)
+  const buffer = fs.readFileSync(filePath);
+  const detectedType = await fileType(buffer);
   if (!detectedType) {
     throw new Error(`Could not detect file type for ${filePath}`);
   }
@@ -111,6 +117,37 @@ async function updateDatabase(uploadResults) {
   console.log(`  MIME type: ${primaryFile.mimeType}`);
 }
 
+async function ensureBucketExists() {
+  console.log(`\n🪣 Checking S3 bucket: ${config.s3Bucket}...`);
+  const s3Client = new S3Client({ region: config.s3Region });
+
+  try {
+    // Try to access the bucket
+    await s3Client.send(new HeadBucketCommand({ Bucket: config.s3Bucket }));
+    console.log(`✓ Bucket exists and is accessible`);
+  } catch (error) {
+    if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+      // Bucket doesn't exist, create it
+      console.log(`⚠️  Bucket doesn't exist, creating it...`);
+      try {
+        await s3Client.send(new CreateBucketCommand({
+          Bucket: config.s3Bucket,
+          CreateBucketConfiguration: config.s3Region !== 'us-east-1' ? {
+            LocationConstraint: config.s3Region
+          } : undefined
+        }));
+        console.log(`✓ Bucket created successfully`);
+      } catch (createError) {
+        console.error(`❌ Failed to create bucket: ${createError.message}`);
+        throw createError;
+      }
+    } else {
+      console.error(`❌ Bucket access error: ${error.message}`);
+      throw error;
+    }
+  }
+}
+
 async function main() {
   console.log('========================================');
   console.log('James Hopewell PDFs → S3 Upload Script');
@@ -122,6 +159,9 @@ async function main() {
     console.error('   Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables');
     process.exit(1);
   }
+
+  // Ensure bucket exists
+  await ensureBucketExists();
 
   // Check if files exist
   for (const filePath of config.pdfFiles) {
