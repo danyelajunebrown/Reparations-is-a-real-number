@@ -5,8 +5,8 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
-const StorageAdapter = require('./storage-adapter');
-const OCRService = require('./ocr-service');
+const StorageAdapter = require('./StorageAdapter');
+const OCRService = require('./OCRService');
 
 class EnhancedDocumentProcessor {
   constructor(config = {}) {

@@ -8,7 +8,7 @@
  */
 
 const database = require('./database');
-const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+const AutonomousResearchOrchestrator = require('../../src/services/scraping/Orchestrator');
 
 const POLL_INTERVAL = 30000; // 30 seconds
 const MAX_CONCURRENT = 1; // Process one at a time to avoid overload
