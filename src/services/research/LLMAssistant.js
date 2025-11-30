@@ -4,7 +4,7 @@
  */
 
 const fetch = require('node-fetch');
-const pool = require('../../database');
+const pool = require('../../../database');
 const IndividualEntityManager = require('../genealogy/EntityManager');
 
 const entityManager = new IndividualEntityManager(pool);
