@@ -4,8 +4,8 @@
   "description": "Blockchain-based reparations with FamilySearch integration",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "start:old": "node server.js",
+    "start": "node server.js",
+    "start:old": "node index.js",
     "init-db": "node init-database.js",
     "dev": "nodemon index.js",
     "dev:old": "nodemon server.js",
