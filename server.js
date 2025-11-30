@@ -6,15 +6,15 @@ const path = require('path');
 const cors = require('cors');
 const config = require('./config');
 const database = require('./database');
-const EnhancedDocumentProcessor = require('./enhanced-document-processor');
-const StorageAdapter = require('./storage-adapter');
-const IndividualEntityManager = require('./individual-entity-manager');
-const DescendantCalculator = require('./descendant-calculator');
-const FreeNLPResearchAssistant = require('./free-nlp-assistant');
-const llmAssistant = require('./llm-conversational-assistant');
-const ColonialAmericanDocumentParser = require('./historical-document-parser');
-const OCRComparisonTrainer = require('./ocr-comparison-trainer');
-const EnslavedIndividualManager = require('./enslaved-individual-manager');
+const EnhancedDocumentProcessor = require('./src/services/document/DocumentProcessor');
+const StorageAdapter = require('./src/services/document/StorageAdapter');
+const IndividualEntityManager = require('./src/services/genealogy/EntityManager');
+const DescendantCalculator = require('./src/services/genealogy/DescendantCalculator');
+const FreeNLPResearchAssistant = require('./src/services/research/NLPAssistant');
+const llmAssistant = require('./src/services/research/LLMAssistant');
+const ColonialAmericanDocumentParser = require('./src/services/research/DocumentParser');
+const OCRComparisonTrainer = require('./src/services/document/OCRComparisonTrainer');
+const EnslavedIndividualManager = require('./src/services/genealogy/EnslavedManager');
 
 // SECURITY: Import middleware
 const { authenticate, optionalAuth } = require('./middleware/auth');
@@ -93,7 +93,7 @@ const upload = multer({
 const storageAdapter = new StorageAdapter({ storage: { root: config.storage.root, s3: config.storage.s3 } });
 
 // Initialize ReparationsCalculator
-const ReparationsCalculator = require('./reparations-calculator');
+const ReparationsCalculator = require('./src/services/reparations/Calculator');
 const reparationsCalculator = new ReparationsCalculator({
   baseYear: 1800,
   currentYear: new Date().getFullYear(),
@@ -1575,7 +1575,7 @@ app.post('/api/process-next-queue-item',
     console.log('\n🔧 MANUAL TRIGGER: Processing next queue item...');
 
     // Check if orchestrator module exists
-    const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+    const AutonomousResearchOrchestrator = require('./src/services/scraping/Orchestrator');
     const orchestrator = new AutonomousResearchOrchestrator(database);
 
     // Get next pending URL
@@ -2109,7 +2109,7 @@ app.post('/api/trigger-queue-processing',
 
 // Background processing function
 async function processQueueInBackground(entries) {
-  const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+  const AutonomousResearchOrchestrator = require('./src/services/scraping/Orchestrator');
   const orchestrator = new AutonomousResearchOrchestrator(database);
 
   for (const entry of entries) {
