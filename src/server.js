@@ -18,8 +18,8 @@ const { errorHandler } = require('../middleware/error-handler');
 const { generalLimiter } = require('../middleware/rate-limit');
 
 // Legacy processors (to be refactored)
-const EnhancedDocumentProcessor = require('../enhanced-document-processor');
-const StorageAdapter = require('../storage-adapter');
+const EnhancedDocumentProcessor = require('../services/document/DocumentProcessor');
+const StorageAdapter = require('../services/document/StorageAdapter');
 
 // Routes
 const documentsRouter = require('./api/routes/documents');

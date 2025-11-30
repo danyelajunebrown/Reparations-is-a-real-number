@@ -4,7 +4,7 @@
  */
 
 const EvidenceManager = require('./evidence-manager');
-const IndividualEntityManager = require('./individual-entity-manager');
+const IndividualEntityManager = require('../../src/services/genealogy/EntityManager');
 const pool = require('./database');
 
 async function addAdjuaDWolfEvidence() {

@@ -6,7 +6,7 @@
 
 const pool = require('./database');
 const crypto = require('crypto');
-const StorageAdapter = require('./storage-adapter');
+const StorageAdapter = require('../services/document/StorageAdapter');
 
 class EvidenceManager {
   constructor(config = {}) {

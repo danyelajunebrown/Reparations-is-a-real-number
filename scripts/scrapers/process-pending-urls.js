@@ -6,7 +6,7 @@
  */
 
 const database = require('./database');
-const AutonomousResearchOrchestrator = require('./autonomous-research-orchestrator');
+const AutonomousResearchOrchestrator = require('../../src/services/scraping/Orchestrator');
 
 async function processAllPending() {
     console.log('🔧 Processing all pending URLs in queue...\n');

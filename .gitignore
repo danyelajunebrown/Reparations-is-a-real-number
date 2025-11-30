@@ -33,3 +33,5 @@ Thumbs.db
 *.bak2
 fix*.py
 fix*.pl
+RUN-THIS-TO-UPLOAD-PDFS.sh
+s3-setup-instructions.sh
