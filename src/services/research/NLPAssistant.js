@@ -4,7 +4,7 @@
  * Handles: entity extraction, intent classification, follow-ups, pronouns, tree building
  */
 
-const TreeBuilderConversation = require('./tree-builder-conversation');
+const TreeBuilderConversation = require('../../../tree-builder-conversation');
 
 class FreeNLPResearchAssistant {
     constructor(database, enslavedManager = null, descendantTreeBuilder = null) {
