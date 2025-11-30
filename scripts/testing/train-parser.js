@@ -3,7 +3,7 @@
  * This improves accuracy over time as you add more documents
  */
 
-const ColonialAmericanDocumentParser = require('./historical-document-parser');
+const ColonialAmericanDocumentParser = require('../../src/services/research/DocumentParser');
 const fs = require('fs');
 
 async function trainParser() {
