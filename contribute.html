@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contribute Research - Reparations Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            color: #2d3748;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 1.2em;
+        }
+
+        .info-box {
+            background: #edf2f7;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+
+        .info-box h3 {
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+        }
+
+        .info-box li {
+            margin-bottom: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2d3748;
+        }
+
+        input[type="url"],
+        select,
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="url"]:focus,
+        select:focus,
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 40px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border-left: 4px solid #38a169;
+        }
+
+        .alert.error {
+            background: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid #e53e3e;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .examples {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .examples h4 {
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+
+        .example-link {
+            display: block;
+            padding: 8px;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background 0.2s;
+            font-size: 14px;
+            word-break: break-all;
+        }
+
+        .example-link:hover {
+            background: #edf2f7;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e2e8f0;
+            color: #718096;
+        }
+    </style>
+
+    <!-- Queue Auto-Trigger Script -->
+    <script>
+        // Trigger queue processing when contribute page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            const API_BASE_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000'
+                : 'https://reparations-platform.onrender.com';
+
+            try {
+                console.log('🔧 Contribute page load - triggering queue processing...');
+                const response = await fetch(`${API_BASE_URL}/api/trigger-queue-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchSize: 3 })
+                });
+                const data = await response.json();
+                if (data.success && data.queuedCount > 0) {
+                    console.log(`✅ Processing ${data.queuedCount} URLs in background`);
+                }
+            } catch (error) {
+                console.log('Queue trigger skipped:', error.message);
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Contribute Research</h1>
+            <p class="subtitle">Help us build the largest database of slavery records</p>
+        </header>
+
+        <div class="info-box">
+            <h3>How This Works</h3>
+            <ul>
+                <li>Submit any URL containing information about slavery or genealogy</li>
+                <li>Our AI agent will automatically scrape and analyze the page</li>
+                <li>Names, relationships, and documents are extracted and saved</li>
+                <li>All data is marked as "unconfirmed" until verified with primary sources</li>
+                <li>You can track progress and see what's been found!</li>
+            </ul>
+        </div>
+
+        <div id="alert" class="alert"></div>
+
+        <form id="submitForm">
+            <div class="form-group">
+                <label for="url">Website URL to Research</label>
+                <input
+                    type="url"
+                    id="url"
+                    name="url"
+                    placeholder="https://en.wikipedia.org/wiki/Thomas_Jefferson"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="category">Category (Optional)</label>
+                <select id="category" name="category">
+                    <option value="other">Other / Unknown</option>
+                    <option value="beyondkin">Beyond Kin Project (High Priority)</option>
+                    <option value="wikipedia">Wikipedia Article</option>
+                    <option value="findagrave">FindAGrave Memorial</option>
+                    <option value="ancestry">Ancestry Profile (requires HTML upload)</option>
+                    <option value="familysearch">FamilySearch (requires HTML upload)</option>
+                    <option value="archive">Archive.org Document</option>
+                    <option value="newspaper">Newspaper Archive</option>
+                    <option value="academic">Academic/Historical Site</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="submittedBy">Your Name/Email (Optional)</label>
+                <input
+                    type="text"
+                    id="submittedBy"
+                    name="submittedBy"
+                    placeholder="Leave blank to remain anonymous"
+                >
+            </div>
+
+            <button type="submit" id="submitBtn">Submit for Research</button>
+        </form>
+
+        <div class="examples">
+            <h4>Example URLs You Can Submit:</h4>
+            <a href="#" class="example-link" onclick="fillExample('https://en.wikipedia.org/wiki/George_Washington'); return false;">
+                George Washington - Wikipedia
+            </a>
+            <a href="#" class="example-link" onclick="fillExample('https://www.findagrave.com/memorial/8194/george-washington'); return false;">
+                George Washington - FindAGrave
+            </a>
+            <a href="#" class="example-link" onclick="fillExample('https://en.wikipedia.org/wiki/James_Madison'); return false;">
+                James Madison - Wikipedia
+            </a>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="pendingCount">...</div>
+                <div class="stat-label">URLs Waiting</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="persons24h">...</div>
+                <div class="stat-label">Persons Found (24h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="docs24h">...</div>
+                <div class="stat-label">Documents Found (24h)</div>
+            </div>
+        </div>
+
+        <!-- Population Progress Stats -->
+        <div class="stats" style="margin-top: 20px;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);">
+                <div class="stat-number" id="totalIndividuals">...</div>
+                <div class="stat-label">Total Individuals</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #ffa94d 0%, #f76707 100%);">
+                <div class="stat-number" id="slaveholdersFound">...</div>
+                <div class="stat-label">Slaveholders Identified</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #51cf66 0%, #2b8a3e 100%);">
+                <div class="stat-number" id="enslavedFound">...</div>
+                <div class="stat-label">Enslaved People Found</div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #339af0 0%, #1864ab 100%);">
+                <div class="stat-number" id="progressPercent">...</div>
+                <div class="stat-label">Progress (of 393,975 owners)</div>
+            </div>
+        </div>
+
+        <footer>
+            <p><strong>Privacy Note:</strong> All web-scraped data is stored as "unconfirmed leads" and requires verification with primary historical documents before being used for any reparations calculations.</p>
+            <p style="margin-top: 10px;">
+                <a href="index.html" style="color: #667eea;">← Back to Main Site</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // API base URL - update this for production
+        const API_BASE_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        // Load stats on page load
+        loadStats();
+
+        // Refresh stats every 30 seconds
+        setInterval(loadStats, 30000);
+
+        // Handle form submission
+        document.getElementById('submitForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const alert = document.getElementById('alert');
+
+            // Get form data
+            const url = document.getElementById('url').value;
+            const category = document.getElementById('category').value;
+            const submittedBy = document.getElementById('submittedBy').value || 'anonymous';
+
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/submit-url`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url, category, submittedBy })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('success', data.message || 'URL submitted successfully! Our research agent will process it soon.');
+                    document.getElementById('submitForm').reset();
+                    loadStats(); // Refresh stats
+                } else {
+                    showAlert('error', data.error || 'Failed to submit URL. Please try again.');
+                }
+            } catch (error) {
+                showAlert('error', 'Network error. Please check your connection and try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit for Research';
+            }
+        });
+
+        async function loadStats() {
+            try {
+                // Load queue stats
+                const response = await fetch(`${API_BASE_URL}/api/queue-stats`);
+                const stats = await response.json();
+
+                document.getElementById('pendingCount').textContent = stats.pending_urls || '0';
+                document.getElementById('persons24h').textContent = stats.persons_24h || '0';
+                document.getElementById('docs24h').textContent = stats.documents_24h || '0';
+
+                // Load population stats
+                const popResponse = await fetch(`${API_BASE_URL}/api/population-stats`);
+                const popStats = await popResponse.json();
+
+                document.getElementById('totalIndividuals').textContent = popStats.total_individuals || '0';
+                document.getElementById('slaveholdersFound').textContent = popStats.slaveholders_found || '0';
+                document.getElementById('enslavedFound').textContent = popStats.enslaved_found || '0';
+                document.getElementById('progressPercent').textContent = popStats.progress_percent + '%';
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+                document.getElementById('pendingCount').textContent = '?';
+                document.getElementById('persons24h').textContent = '?';
+                document.getElementById('docs24h').textContent = '?';
+                document.getElementById('totalIndividuals').textContent = '?';
+                document.getElementById('slaveholdersFound').textContent = '?';
+                document.getElementById('enslavedFound').textContent = '?';
+                document.getElementById('progressPercent').textContent = '?';
+            }
+        }
+
+        function showAlert(type, message) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert ${type} show`;
+            alert.textContent = message;
+
+            // Hide after 5 seconds
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        function fillExample(url) {
+            document.getElementById('url').value = url;
+
+            // Auto-select category based on URL
+            if (url.includes('wikipedia')) {
+                document.getElementById('category').value = 'wikipedia';
+            } else if (url.includes('findagrave')) {
+                document.getElementById('category').value = 'findagrave';
+            }
+        }
+    </script>
+</body>
+</html>

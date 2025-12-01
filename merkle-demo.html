@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merkle Tree with Keccak256</title>
+</head>
+<body>
+  <h1>Merkle Tree (Keccak256)</h1>
+  <pre id="output"></pre>
+
+  <!-- Keccak library (browser-friendly) -->
+  <script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.2/dist/sha3.min.js"></script>
+  <script>
+    // Example data (could be ancestor names + values)
+    const entries = ["Ancestor A: 100", "Ancestor B: 200", "Ancestor C: 300"];
+
+    // Hash with keccak256
+    function hash(data) {
+      return sha3_256(data); // from js-sha3 library
+    }
+
+    // Build Merkle Tree
+    function buildMerkleTree(leaves) {
+      if (leaves.length === 1) return leaves;
+      const newLevel = [];
+      for (let i = 0; i < leaves.length; i += 2) {
+        if (i + 1 < leaves.length) {
+          const combined = [leaves[i], leaves[i + 1]].sort().join("");
+          newLevel.push(hash(combined));
+        } else {
+          newLevel.push(leaves[i]); // carry last odd leaf
+        }
+      }
+      return buildMerkleTree(newLevel);
+    }
+
+    // Generate Merkle Proof for one leaf
+    function getProof(leaves, target) {
+      const proof = [];
+      let idx = leaves.indexOf(target);
+      let level = leaves.slice();
+
+      while (level.length > 1) {
+        const newLevel = [];
+        for (let i = 0; i < level.length; i += 2) {
+          let left = level[i];
+          let right = (i + 1 < level.length) ? level[i+1] : null;
+
+          if (i === idx || i+1 === idx) {
+            const sibling = (i === idx) ? right : left;
+            if (sibling) proof.push(sibling);
+            idx = Math.floor(i / 2);
+          }
+
+          if (right) {
+            const combined = [left, right].sort().join("");
+            newLevel.push(hash(combined));
+          } else {
+            newLevel.push(left);
+          }
+        }
+        level = newLevel;
+      }
+      return proof;
+    }
+
+    // Run demo
+    const leaves = entries.map(e => hash(e));
+    const root = buildMerkleTree(leaves)[0];
+
+    const proofForFirst = getProof(leaves, leaves[0]);
+
+    document.getElementById("output").textContent =
+      "Merkle Root: " + root + "\n\n" +
+      "Proof for first leaf (" + entries[0] + "):\n" +
+      JSON.stringify(proofForFirst, null, 2);
+  </script>
+</body>
+</html>

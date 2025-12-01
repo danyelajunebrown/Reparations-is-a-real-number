@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reparations Portal - Check Your Reparations</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .login-card, .results-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+        }
+
+        .results-card {
+            display: none;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            color: #2d3748;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 1.2em;
+        }
+
+        .info-box {
+            background: #edf2f7;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+
+        .info-box h3 {
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2d3748;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border-left: 4px solid #38a169;
+        }
+
+        .alert.error {
+            background: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid #e53e3e;
+        }
+
+        .alert.info {
+            background: #bee3f8;
+            color: #2c5282;
+            border-left: 4px solid #3182ce;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .reparations-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .reparations-amount {
+            font-size: 3.5em;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .reparations-label {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .ancestor-tree {
+            background: #f7fafc;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .ancestor-tree h3 {
+            color: #2d3748;
+            margin-bottom: 20px;
+        }
+
+        .ancestor-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .ancestor-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+
+        .ancestor-details {
+            color: #718096;
+            font-size: 0.95em;
+            margin-bottom: 10px;
+        }
+
+        .ancestor-docs {
+            margin-top: 10px;
+        }
+
+        .doc-link {
+            display: inline-block;
+            padding: 5px 10px;
+            background: #edf2f7;
+            border-radius: 4px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 0.9em;
+            margin-right: 10px;
+            margin-bottom: 5px;
+            transition: background 0.2s;
+        }
+
+        .doc-link:hover {
+            background: #e2e8f0;
+        }
+
+        .breakdown-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .breakdown-section h3 {
+            color: #2d3748;
+            margin-bottom: 20px;
+        }
+
+        .breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .breakdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .breakdown-label {
+            color: #4a5568;
+        }
+
+        .breakdown-value {
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .back-button {
+            background: transparent;
+            color: #667eea;
+            border: 2px solid #667eea;
+            margin-top: 20px;
+        }
+
+        .back-button:hover {
+            background: #edf2f7;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            color: white;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .search-types {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .search-type-card {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .search-type-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .search-type-card.selected {
+            background: #edf2f7;
+            border-color: #667eea;
+        }
+
+        .search-type-card h4 {
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+
+        .search-type-card p {
+            color: #718096;
+            font-size: 0.9em;
+        }
+    </style>
+
+    <!-- Queue Auto-Trigger Script -->
+    <script>
+        // Trigger queue processing when portal loads (people searching for money)
+        document.addEventListener('DOMContentLoaded', async function() {
+            const API_BASE_URL = window.location.hostname === 'localhost'
+                ? 'http://localhost:3000'
+                : 'https://reparations-platform.onrender.com';
+
+            try {
+                console.log('🔧 Portal page load - triggering queue processing...');
+                const response = await fetch(`${API_BASE_URL}/api/trigger-queue-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ batchSize: 3 })
+                });
+                const data = await response.json();
+                if (data.success && data.queuedCount > 0) {
+                    console.log(`✅ Processing ${data.queuedCount} URLs in background`);
+                }
+            } catch (error) {
+                console.log('Queue trigger skipped:', error.message);
+            }
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Card -->
+        <div class="login-card" id="loginCard">
+            <header>
+                <h1>Reparations Portal</h1>
+                <p class="subtitle">Find your ancestors and calculate reparations owed</p>
+            </header>
+
+            <div class="info-box">
+                <h3>How to Search</h3>
+                <p>You can search for your reparations in three ways:</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>By Name</strong> - Search for your full name or ancestor's name</li>
+                    <li><strong>By Birth Year</strong> - Find records from a specific year</li>
+                    <li><strong>By Unique ID</strong> - If you have a reference ID from our system</li>
+                </ul>
+            </div>
+
+            <div id="alert" class="alert"></div>
+
+            <div class="search-types">
+                <div class="search-type-card selected" data-type="name">
+                    <h4>Search by Name</h4>
+                    <p>Most common search method</p>
+                </div>
+                <div class="search-type-card" data-type="year">
+                    <h4>Search by Birth Year</h4>
+                    <p>Find by year of birth</p>
+                </div>
+                <div class="search-type-card" data-type="id">
+                    <h4>Search by ID</h4>
+                    <p>Use reference number</p>
+                </div>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group" id="nameGroup">
+                    <label for="fullName">Full Name</label>
+                    <input
+                        type="text"
+                        id="fullName"
+                        name="fullName"
+                        placeholder="Enter your full name or ancestor's name"
+                    >
+                </div>
+
+                <div class="form-group" id="yearGroup" style="display: none;">
+                    <label for="birthYear">Birth Year</label>
+                    <input
+                        type="number"
+                        id="birthYear"
+                        name="birthYear"
+                        placeholder="e.g., 1850"
+                        min="1600"
+                        max="2025"
+                    >
+                </div>
+
+                <div class="form-group" id="idGroup" style="display: none;">
+                    <label for="uniqueId">Unique ID</label>
+                    <input
+                        type="text"
+                        id="uniqueId"
+                        name="uniqueId"
+                        placeholder="e.g., REP-12345"
+                    >
+                </div>
+
+                <button type="submit" id="searchBtn">Search Records</button>
+            </form>
+        </div>
+
+        <!-- Results Card -->
+        <div class="results-card" id="resultsCard">
+            <header>
+                <h1>Your Reparations Summary</h1>
+                <p class="subtitle" id="resultSubtitle"></p>
+            </header>
+
+            <div id="resultAlert" class="alert"></div>
+
+            <div class="reparations-summary">
+                <div class="reparations-label">Total Reparations Owed</div>
+                <div class="reparations-amount" id="totalAmount">$0</div>
+                <div class="reparations-label">Based on <span id="ancestorCount">0</span> documented ancestor(s)</div>
+            </div>
+
+            <div class="ancestor-tree">
+                <h3>Documented Ancestors</h3>
+                <div id="ancestorList">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="breakdown-section">
+                <h3>Calculation Breakdown</h3>
+                <div id="breakdownList">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <button class="back-button" onclick="resetSearch()">New Search</button>
+        </div>
+
+        <footer>
+            <p><strong>Privacy & Accuracy:</strong> All calculations are based on documented historical records. Data is continuously updated as new sources are verified.</p>
+            <p style="margin-top: 10px;">
+                <a href="index.html">Research Dashboard</a> |
+                <a href="contribute.html">Contribute Research</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // API base URL
+        const API_BASE_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        let currentSearchType = 'name';
+
+        // Search type selection
+        document.querySelectorAll('.search-type-card').forEach(card => {
+            card.addEventListener('click', function() {
+                // Update selected state
+                document.querySelectorAll('.search-type-card').forEach(c => c.classList.remove('selected'));
+                this.classList.add('selected');
+
+                // Update current search type
+                currentSearchType = this.dataset.type;
+
+                // Show/hide appropriate form groups
+                document.getElementById('nameGroup').style.display = currentSearchType === 'name' ? 'block' : 'none';
+                document.getElementById('yearGroup').style.display = currentSearchType === 'year' ? 'block' : 'none';
+                document.getElementById('idGroup').style.display = currentSearchType === 'id' ? 'block' : 'none';
+
+                // Clear previous alerts
+                hideAlert('alert');
+            });
+        });
+
+        // Handle form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const searchBtn = document.getElementById('searchBtn');
+            const alert = document.getElementById('alert');
+
+            // Get search value based on type
+            let searchValue;
+            if (currentSearchType === 'name') {
+                searchValue = document.getElementById('fullName').value;
+            } else if (currentSearchType === 'year') {
+                searchValue = document.getElementById('birthYear').value;
+            } else {
+                searchValue = document.getElementById('uniqueId').value;
+            }
+
+            if (!searchValue) {
+                showAlert('alert', 'error', 'Please enter a search value');
+                return;
+            }
+
+            // Disable button
+            searchBtn.disabled = true;
+            searchBtn.textContent = 'Searching...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/search-reparations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        searchType: currentSearchType,
+                        searchValue: searchValue
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.results) {
+                    displayResults(data.results);
+                } else {
+                    showAlert('alert', 'error', data.error || 'No records found. Please try a different search.');
+                }
+            } catch (error) {
+                showAlert('alert', 'error', 'Network error. Please check your connection and try again.');
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'Search Records';
+            }
+        });
+
+        function displayResults(results) {
+            // Hide login card, show results card
+            document.getElementById('loginCard').style.display = 'none';
+            document.getElementById('resultsCard').style.display = 'block';
+
+            // Update subtitle
+            document.getElementById('resultSubtitle').textContent =
+                `Results for: ${results.searchedFor || 'Unknown'}`;
+
+            // Update total amount
+            document.getElementById('totalAmount').textContent =
+                formatCurrency(results.totalReparations || 0);
+
+            // Update ancestor count
+            document.getElementById('ancestorCount').textContent =
+                results.ancestors ? results.ancestors.length : 0;
+
+            // Populate ancestor list
+            const ancestorList = document.getElementById('ancestorList');
+            ancestorList.innerHTML = '';
+
+            if (results.ancestors && results.ancestors.length > 0) {
+                results.ancestors.forEach(ancestor => {
+                    const card = document.createElement('div');
+                    card.className = 'ancestor-card';
+
+                    let docsHtml = '';
+                    if (ancestor.documents && ancestor.documents.length > 0) {
+                        docsHtml = '<div class="ancestor-docs">';
+                        ancestor.documents.forEach(doc => {
+                            docsHtml += `<a href="${doc.url}" class="doc-link" target="_blank">${doc.type || 'Document'}</a>`;
+                        });
+                        docsHtml += '</div>';
+                    }
+
+                    card.innerHTML = `
+                        <div class="ancestor-name">${ancestor.name}</div>
+                        <div class="ancestor-details">
+                            ${ancestor.birthYear ? `Born: ${ancestor.birthYear}` : ''}
+                            ${ancestor.deathYear ? ` | Died: ${ancestor.deathYear}` : ''}
+                            ${ancestor.location ? ` | Location: ${ancestor.location}` : ''}
+                        </div>
+                        <div class="ancestor-details">
+                            Reparations: <strong>${formatCurrency(ancestor.reparations || 0)}</strong>
+                        </div>
+                        ${docsHtml}
+                    `;
+                    ancestorList.appendChild(card);
+                });
+            } else {
+                ancestorList.innerHTML = '<p style="color: #718096;">No documented ancestors found in our records yet. Consider contributing research via the <a href="contribute.html">contribution page</a>.</p>';
+            }
+
+            // Populate breakdown
+            const breakdownList = document.getElementById('breakdownList');
+            breakdownList.innerHTML = '';
+
+            if (results.breakdown) {
+                Object.entries(results.breakdown).forEach(([label, value]) => {
+                    const item = document.createElement('div');
+                    item.className = 'breakdown-item';
+                    item.innerHTML = `
+                        <div class="breakdown-label">${label}</div>
+                        <div class="breakdown-value">${typeof value === 'number' ? formatCurrency(value) : value}</div>
+                    `;
+                    breakdownList.appendChild(item);
+                });
+            } else {
+                breakdownList.innerHTML = '<p style="color: #718096;">No detailed breakdown available.</p>';
+            }
+
+            // Show info alert if no verified records
+            if (!results.ancestors || results.ancestors.length === 0) {
+                showAlert('resultAlert', 'info', 'No verified records found yet. Our research team is continuously processing new documents. Check back later or submit research via the contribution page.');
+            }
+        }
+
+        function resetSearch() {
+            document.getElementById('loginCard').style.display = 'block';
+            document.getElementById('resultsCard').style.display = 'none';
+            document.getElementById('loginForm').reset();
+            hideAlert('alert');
+            hideAlert('resultAlert');
+        }
+
+        function showAlert(elementId, type, message) {
+            const alert = document.getElementById(elementId);
+            alert.className = `alert ${type} show`;
+            alert.textContent = message;
+
+            // Auto-hide after 10 seconds
+            setTimeout(() => {
+                hideAlert(elementId);
+            }, 10000);
+        }
+
+        function hideAlert(elementId) {
+            const alert = document.getElementById(elementId);
+            alert.classList.remove('show');
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+    </script>
+</body>
+</html>
