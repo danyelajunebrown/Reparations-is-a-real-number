@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FamilySearch Login Callback</title>
+</head>
+<body>
+    <h2>Processing FamilySearch login...</h2>
+    <script>
+        // Extract code from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+        const error = urlParams.get('error');
+        
+        // Send to parent window
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'familysearch_oauth_callback',
+                code: code,
+                state: state,
+                error: error
+            }, window.location.origin);
+        }
+        
+        // Close popup
+        setTimeout(() => {
+            window.close();
+        }, 1000);
+    </script>
+</body>
+</html>
