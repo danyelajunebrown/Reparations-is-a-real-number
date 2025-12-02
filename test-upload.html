@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+        input, select, textarea {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+            color: #666;
+        }
+        .status-check {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Reparations Document Upload Test</h1>
+        
+        <form id="uploadForm" class="upload-form">
+            <div>
+                <label for="document">Select Document:</label>
+                <input type="file" id="document" name="document" accept=".pdf,.jpg,.jpeg,.png,.tiff,.txt" required>
+            </div>
+            
+            <div>
+                <label for="ownerName">Owner Name:</label>
+                <input type="text" id="ownerName" name="ownerName" placeholder="e.g., James Hopewell" required>
+            </div>
+            
+            <div>
+                <label for="documentType">Document Type:</label>
+                <select id="documentType" name="documentType" required>
+                    <option value="">Select type...</option>
+                    <option value="will">Will</option>
+                    <option value="deed">Deed</option>
+                    <option value="inventory">Inventory</option>
+                    <option value="letter">Letter</option>
+                    <option value="legal">Legal</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="notes">Notes (optional):</label>
+                <textarea id="notes" name="notes" rows="3" placeholder="Additional information about the document..."></textarea>
+            </div>
+            
+            <button type="submit">Upload Document</button>
+        </form>
+        
+        <div id="loading" class="loading">
+            <p>Uploading document... Please wait...</p>
+        </div>
+        
+        <div id="result"></div>
+        
+        <div id="statusCheck" class="status-check" style="display: none;">
+            <h3>Job Status</h3>
+            <p>Job ID: <span id="jobId"></span></p>
+            <button onclick="checkStatus()">Check Status</button>
+            <div id="statusResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let currentJobId = null;
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('document');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showResult('Please select a file', 'error');
+                return;
+            }
+            
+            // Add file
+            formData.append('document', file);
+            
+            // Add metadata
+            formData.append('ownerName', document.getElementById('ownerName').value);
+            formData.append('documentType', document.getElementById('documentType').value);
+            formData.append('notes', document.getElementById('notes').value);
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').innerHTML = '';
+            
+            try {
+                const response = await fetch(`${API_BASE}/documents/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showResult(`Upload successful! Job ID: ${data.jobId}`, 'success');
+                    currentJobId = data.jobId;
+                    document.getElementById('jobId').textContent = data.jobId;
+                    document.getElementById('statusCheck').style.display = 'block';
+                } else {
+                    showResult(`Upload failed: ${data.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                showResult(`Upload error: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        });
+        
+        async function checkStatus() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/documents/upload-status/${currentJobId}`);
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    document.getElementById('statusResult').innerHTML = `
+                        <p><strong>State:</strong> ${data.jobStatus.state}</p>
+                        <p><strong>Progress:</strong> ${data.jobStatus.progress}%</p>
+                        ${data.jobStatus.error ? `<p class="error">Error: ${data.jobStatus.error}</p>` : ''}
+                        ${data.jobStatus.result ? `<p class="success">Result: ${JSON.stringify(data.jobStatus.result, null, 2)}</p>` : ''}
+                    `;
+                } else {
+                    document.getElementById('statusResult').innerHTML = `<p class="error">Failed to get status: ${data.error}</p>`;
+                }
+            } catch (error) {
+                document.getElementById('statusResult').innerHTML = `<p class="error">Error checking status: ${error.message}</p>`;
+            }
+        }
+        
+        function showResult(message, type) {
+            document.getElementById('result').innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+    </script>
+</body>
+</html>
