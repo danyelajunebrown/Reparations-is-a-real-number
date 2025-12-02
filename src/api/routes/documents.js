@@ -107,7 +107,14 @@ router.post('/upload',
           stored_at: new Date().toISOString(),
           uploaded_by: 'web-upload',
           verification_status: 'pending',
-          needs_human_review: true
+          needs_human_review: true,
+          // Required columns with default values (will be updated after OCR processing)
+          total_enslaved: 0,
+          total_reparations: 0,
+          // Optional metadata from form
+          owner_location: metadata.location || null,
+          owner_birth_year: metadata.birthYear || null,
+          owner_death_year: metadata.deathYear || null
         });
 
         res.json({
@@ -147,7 +154,14 @@ router.post('/upload',
           stored_at: new Date().toISOString(),
           uploaded_by: 'web-upload',
           verification_status: 'pending',
-          needs_human_review: true
+          needs_human_review: true,
+          // Required columns with default values
+          total_enslaved: 0,
+          total_reparations: 0,
+          // Optional metadata from form
+          owner_location: metadata.location || null,
+          owner_birth_year: metadata.birthYear || null,
+          owner_death_year: metadata.deathYear || null
         });
 
         res.json({
