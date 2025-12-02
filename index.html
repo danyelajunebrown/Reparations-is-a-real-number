@@ -1267,51 +1267,138 @@
 
         /**
          * Render the document in the viewer based on mime type
+         * Uses the NEW /access endpoint for presigned URLs
          * @param {string} documentId - The document ID
          * @param {string} mimeType - The document's MIME type
          */
         async function renderDocument(documentId, mimeType) {
             const content = document.getElementById('documentContent');
-            const fileUrl = `${API_BASE_URL}/api/documents/${documentId}/file`;
 
             console.log('Rendering document:', documentId, 'Type:', mimeType);
 
-            // Clear existing content
-            content.innerHTML = '';
+            // Clear existing content and show loading
+            content.innerHTML = '<div class="document-loading">Loading document file...</div>';
 
-            if (mimeType && mimeType.includes('pdf')) {
-                // PDF Document - use iframe
-                const iframe = document.createElement('iframe');
-                iframe.src = fileUrl;
-                iframe.className = 'document-canvas pdf-frame';
-                iframe.style.border = 'none';
-                content.appendChild(iframe);
+            try {
+                // Use NEW /access endpoint for presigned URLs
+                const accessResponse = await fetch(`${API_BASE_URL}/api/documents/${documentId}/access`);
+                const accessData = await accessResponse.json();
 
-            } else if (mimeType && (mimeType.includes('image') || mimeType.includes('jpeg') || mimeType.includes('png'))) {
-                // Image Document
-                const img = document.createElement('img');
-                img.src = fileUrl;
-                img.className = 'document-canvas';
-                img.alt = 'Document Image';
-                img.id = 'documentImage';
+                console.log('Access response:', accessData);
 
-                img.onload = () => {
-                    console.log('Image loaded successfully');
-                };
+                if (!accessData.success) {
+                    // Show detailed error
+                    content.innerHTML = `
+                        <div class="document-error" style="padding: 40px; text-align: center;">
+                            <div style="font-size: 3em; margin-bottom: 20px;">&#x26A0;</div>
+                            <h3 style="color: #ff6464; margin-bottom: 15px;">Unable to Load Document</h3>
+                            <p style="color: #e0e0e0; margin-bottom: 10px;"><strong>Error:</strong> ${accessData.error}</p>
+                            <p style="color: #9aa5b1; margin-bottom: 20px;">${accessData.message}</p>
+                            ${accessData.debugInfo ? `
+                                <details style="text-align: left; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-top: 15px;">
+                                    <summary style="cursor: pointer; color: #64c8ff;">Technical Details</summary>
+                                    <pre style="color: #9aa5b1; font-size: 0.8em; margin-top: 10px; overflow-x: auto;">${JSON.stringify(accessData.debugInfo, null, 2)}</pre>
+                                </details>
+                            ` : ''}
+                            <button onclick="renderDocument('${documentId}', '${mimeType}')"
+                                    style="margin-top: 20px; padding: 10px 20px; background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff; color: #64c8ff; border-radius: 5px; cursor: pointer;">
+                                Retry
+                            </button>
+                        </div>
+                    `;
 
-                img.onerror = () => {
-                    content.innerHTML = '<div class="document-error">❌ Failed to load image</div>';
-                };
+                    // Log error to server
+                    try {
+                        await fetch(`${API_BASE_URL}/api/errors/log`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'render_document',
+                                documentId,
+                                error: accessData.error,
+                                message: accessData.message,
+                                debugInfo: accessData.debugInfo
+                            })
+                        });
+                    } catch (logErr) {
+                        console.error('Failed to log error:', logErr);
+                    }
 
-                content.appendChild(img);
+                    return;
+                }
 
-            } else {
-                // Unknown type - try iframe as fallback
-                const iframe = document.createElement('iframe');
-                iframe.src = fileUrl;
-                iframe.className = 'document-canvas pdf-frame';
-                iframe.style.border = 'none';
-                content.appendChild(iframe);
+                // Got access URLs - now render
+                const fileUrl = accessData.viewUrl;
+                const effectiveMimeType = accessData.metadata?.mimeType || mimeType;
+
+                // Clear loading
+                content.innerHTML = '';
+
+                if (effectiveMimeType && effectiveMimeType.includes('pdf')) {
+                    // PDF Document - use iframe
+                    const iframe = document.createElement('iframe');
+                    iframe.src = fileUrl;
+                    iframe.className = 'document-canvas pdf-frame';
+                    iframe.style.border = 'none';
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+
+                    iframe.onerror = () => {
+                        content.innerHTML = '<div class="document-error">Failed to load PDF</div>';
+                    };
+
+                    content.appendChild(iframe);
+
+                } else if (effectiveMimeType && (effectiveMimeType.includes('image') || effectiveMimeType.includes('jpeg') || effectiveMimeType.includes('png'))) {
+                    // Image Document
+                    const img = document.createElement('img');
+                    img.src = fileUrl;
+                    img.className = 'document-canvas';
+                    img.alt = 'Document Image';
+                    img.id = 'documentImage';
+
+                    img.onload = () => {
+                        console.log('Image loaded successfully');
+                    };
+
+                    img.onerror = () => {
+                        content.innerHTML = '<div class="document-error">Failed to load image</div>';
+                    };
+
+                    content.appendChild(img);
+
+                } else {
+                    // Unknown type - try iframe as fallback
+                    const iframe = document.createElement('iframe');
+                    iframe.src = fileUrl;
+                    iframe.className = 'document-canvas pdf-frame';
+                    iframe.style.border = 'none';
+                    iframe.style.width = '100%';
+                    iframe.style.height = '100%';
+                    content.appendChild(iframe);
+                }
+
+                // Store download URL for the download button
+                window.currentDocumentDownloadUrl = accessData.downloadUrl;
+
+                // Show expiration warning if applicable
+                if (accessData.expiresAt) {
+                    console.log('Document URL expires at:', accessData.expiresAt);
+                }
+
+            } catch (error) {
+                console.error('Error rendering document:', error);
+                content.innerHTML = `
+                    <div class="document-error" style="padding: 40px; text-align: center;">
+                        <div style="font-size: 3em; margin-bottom: 20px;">&#x26A0;</div>
+                        <h3 style="color: #ff6464; margin-bottom: 15px;">Connection Error</h3>
+                        <p style="color: #e0e0e0;">${error.message}</p>
+                        <button onclick="renderDocument('${documentId}', '${mimeType}')"
+                                style="margin-top: 20px; padding: 10px 20px; background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff; color: #64c8ff; border-radius: 5px; cursor: pointer;">
+                            Retry
+                        </button>
+                    </div>
+                `;
             }
         }
 
@@ -1457,10 +1544,20 @@
 
         /**
          * Download the current document
+         * Uses the presigned download URL if available, otherwise falls back to /file endpoint
          */
         function downloadCurrentDocument() {
+            // First try the presigned download URL (set by renderDocument)
+            if (window.currentDocumentDownloadUrl) {
+                console.log('Downloading via presigned URL');
+                window.open(window.currentDocumentDownloadUrl, '_blank');
+                return;
+            }
+
+            // Fall back to legacy /file endpoint
             if (documentViewerState.currentMetadata) {
                 const docId = documentViewerState.currentMetadata.document_id;
+                console.log('Downloading via legacy /file endpoint');
                 window.location.href = `${API_BASE_URL}/api/documents/${docId}/file?download=true`;
             }
         }

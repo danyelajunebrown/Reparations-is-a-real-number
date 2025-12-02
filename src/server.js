@@ -25,6 +25,7 @@ const StorageAdapter = require('./services/document/S3StorageAdapter');
 const documentsRouter = require('./api/routes/documents');
 const researchRouter = require('./api/routes/research');
 const healthRouter = require('./api/routes/health');
+const errorsRouter = require('./api/routes/errors');
 
 // Initialize Express app
 const app = express();
@@ -82,7 +83,15 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Static file serving
 app.use(express.static('frontend/public'));
-app.use(express.static(__dirname)); // Serve HTML files from root
+
+// Serve specific test files
+app.get('/test-upload.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'test-upload.html'));
+});
+
+app.get('/test-viewer.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'test-viewer.html'));
+});
 
 // Rate limiting
 app.use('/api', generalLimiter);
@@ -99,12 +108,8 @@ const storageAdapter = new StorageAdapter({
   }
 });
 
-// Document processor
-const documentProcessor = new EnhancedDocumentProcessor({
-  storageAdapter,
-  database: db,
-  googleVisionApiKey: config.apiKeys.googleVision
-});
+// Document processor is already instantiated
+const documentProcessor = EnhancedDocumentProcessor;
 
 // Make processor available to routes
 app.set('documentProcessor', documentProcessor);
@@ -116,6 +121,7 @@ app.set('documentProcessor', documentProcessor);
 app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/health', healthRouter);
+app.use('/api/errors', errorsRouter);
 
 // Legacy compatibility routes (redirect to new routes)
 app.post('/api/upload-document', (req, res) => {
