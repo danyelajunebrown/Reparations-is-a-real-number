@@ -1,10 +1,10 @@
-const { Queue } = require('bull');
+const Queue = require('bull');
 const logger = require('../../utils/logger');
 const DocumentService = require('../DocumentService');
 const FileTypeDetector = require('./FileTypeDetector');
 const S3StorageAdapter = require('./S3StorageAdapter');
 const OCRProcessor = require('./OCRProcessor');
-const { validateDocumentMetadata } = require('../../middleware/validation');
+const { validateDocumentMetadata } = require('../../../middleware/validation');
 
 class EnhancedDocumentProcessor {
   constructor() {
