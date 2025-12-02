@@ -67,6 +67,9 @@ class UnifiedScraper {
                 case 'civilwardc':
                     await this.scrapeCivilWarDC(url, result, options);
                     break;
+                case 'rootsweb_census':
+                    await this.scrapeRootswebCensus(url, result, options);
+                    break;
                 case 'wikipedia':
                     await this.scrapeWikipedia(url, result, options);
                     break;
@@ -113,6 +116,7 @@ class UnifiedScraper {
 
         if (lower.includes('beyondkin.org')) return 'beyondkin';
         if (lower.includes('civilwardc.org')) return 'civilwardc';
+        if (lower.includes('freepages.rootsweb.com') || lower.includes('rootsweb.com/~ajac')) return 'rootsweb_census';
         if (lower.includes('wikipedia.org')) return 'wikipedia';
         if (lower.includes('findagrave.com')) return 'findagrave';
         if (lower.includes('familysearch.org')) return 'familysearch';
@@ -333,6 +337,208 @@ class UnifiedScraper {
             enslavedCount: result.enslavedPeople.length,
             isPrimarySource: true
         };
+    }
+
+    /**
+     * ========================================
+     * ROOTSWEB CENSUS SCRAPER
+     * ========================================
+     * Scrapes Tom Blake's "Large Slaveholders of 1860" census data
+     * Source: https://freepages.rootsweb.com/~ajac/genealogy/
+     * Data: CONFIRMED slaveholders from 1860 Census (PRIMARY SOURCE!)
+     *
+     * This is census data - the gold standard for confirming slave ownership.
+     * Format: "NAME, # slaves, Location, page #"
+     */
+    async scrapeRootswebCensus(url, result, options) {
+        console.log('\n📊 Scraping Rootsweb Census Data (1860 Large Slaveholders)...');
+
+        const html = await this.fetchHTML(url);
+        const $ = cheerio.load(html);
+        result.rawText = $('body').text();
+
+        // Determine if this is the main index or a county page
+        const isMainIndex = url.includes('genealogy/') && !url.match(/\.htm$/i);
+        const isCountyPage = url.match(/\w+\.htm$/i);
+
+        if (isMainIndex) {
+            // Main index page - extract all county/state links for queue
+            console.log('   📋 Processing main index page - extracting county links...');
+
+            const countyLinks = [];
+            $('a[href$=".htm"]').each((i, el) => {
+                const href = $(el).attr('href');
+                const text = $(el).text().trim();
+                if (href && !href.includes('ancestry') && !href.includes('http')) {
+                    const fullUrl = `https://freepages.rootsweb.com/~ajac/genealogy/${href}`;
+                    countyLinks.push({
+                        url: fullUrl,
+                        text: text,
+                        state: this.extractStateFromHref(href)
+                    });
+                }
+            });
+
+            result.metadata = {
+                pageType: 'rootsweb_index',
+                countyLinksFound: countyLinks.length,
+                countyLinks: countyLinks,
+                isPrimarySource: true,
+                sourceYear: 1860
+            };
+
+            // Queue all county pages for processing
+            if (this.db && countyLinks.length > 0) {
+                console.log(`   📝 Queueing ${countyLinks.length} county pages for processing...`);
+                for (const link of countyLinks) {
+                    try {
+                        await this.db.query(`
+                            INSERT INTO scraping_queue (url, category, status, priority, metadata)
+                            VALUES ($1, 'rootsweb_census', 'pending', 10, $2::jsonb)
+                            ON CONFLICT (url) DO NOTHING
+                        `, [link.url, JSON.stringify({ state: link.state, countyName: link.text })]);
+                    } catch (err) {
+                        // Ignore duplicates
+                    }
+                }
+            }
+
+        } else if (isCountyPage) {
+            // County page - extract slaveholder data
+            console.log('   📊 Processing county page - extracting slaveholder data...');
+
+            // Extract county and state from title
+            const title = $('title').text() || '';
+            const h1 = $('p:contains("COUNTY")').first().text() || $('strong:contains("COUNTY")').first().text() || '';
+
+            let county = '';
+            let state = '';
+
+            // Parse title like "Dallas County Alabama 1860 slaveholders..."
+            const titleMatch = title.match(/(\w+)\s+County[,]?\s+(\w+)/i) ||
+                               h1.match(/(\w+)\s+COUNTY,?\s+(\w+)/i);
+            if (titleMatch) {
+                county = titleMatch[1];
+                state = titleMatch[2];
+            }
+
+            // Extract slaveholder entries
+            // Format: "NAME, # slaves, Location, page #"
+            const bodyText = $('body').html() || '';
+
+            // Pattern for slaveholder entries in the HTML
+            // They appear as: <P><FONT FACE="Times New Roman">ADAMS, John, 98 slaves, Athens, page 19</FONT></P>
+            const slaveholderPattern = /([A-Z][A-Z]+(?:,?\s+(?:Est\.?|Dr\.?|Mrs\.?|Agt\.?)?)?),?\s+([A-Za-z][A-Za-z\s\.&]+),?\s+(\d+)\s+slaves?,\s+([^,]+),\s+page\s+(\d+[AB]?)/g;
+
+            let match;
+            const slaveholders = [];
+
+            while ((match = slaveholderPattern.exec(bodyText)) !== null) {
+                const lastName = match[1].trim();
+                const firstNamePart = match[2].trim();
+                const slaveCount = parseInt(match[3]);
+                const location = match[4].trim();
+                const pageRef = match[5].trim();
+
+                // Construct full name
+                let fullName = `${firstNamePart} ${lastName}`.replace(/\s+/g, ' ').trim();
+                // Handle "Est." entries (estates)
+                if (lastName.includes('Est') || firstNamePart.includes('Est')) {
+                    fullName = fullName.replace(/Est\.?/g, '').trim() + ' (Estate)';
+                }
+
+                const slaveholder = {
+                    fullName: fullName,
+                    lastName: lastName.replace(/,.*/, '').trim(),
+                    slaveCount: slaveCount,
+                    location: location,
+                    censusPage: pageRef,
+                    county: county,
+                    state: state,
+                    year: 1860
+                };
+
+                slaveholders.push(slaveholder);
+
+                // Add to result.owners as CONFIRMED (this is census data!)
+                result.owners.push({
+                    fullName: fullName,
+                    type: 'confirmed_owner',
+                    source: 'rootsweb_census_1860',
+                    sourceUrl: url,
+                    confidence: 0.98, // Census data = very high confidence
+                    birthYear: null,
+                    deathYear: null,
+                    locations: [`${location}, ${county} County, ${state}`],
+                    notes: `1860 Census: Held ${slaveCount} enslaved people. Census page ${pageRef}.`,
+                    slaveCount: slaveCount,
+                    censusReference: `1860 Slave Schedule, ${county} County, ${state}, page ${pageRef}`
+                });
+            }
+
+            // Also extract surname match data (African Americans in 1870 census)
+            // Format: "SURNAME, # in US, in State, in County, born in State, born and living in State, born in State and living in County"
+            const surnameSection = bodyText.includes('SURNAME MATCHES') || bodyText.includes('1870 CENSUS');
+
+            if (surnameSection) {
+                const surnamePattern = /([A-Z]+),\s+(\d+),\s+(\d+),\s+(\d+),\s+(\d+),\s+(\d+),\s+(\d+)/g;
+
+                while ((match = surnamePattern.exec(bodyText)) !== null) {
+                    const surname = match[1];
+                    const inUS = parseInt(match[2]);
+                    const inState = parseInt(match[3]);
+                    const inCounty = parseInt(match[4]);
+
+                    // This suggests enslaved people who took slaveholder surnames
+                    if (inCounty > 0) {
+                        result.enslavedPeople.push({
+                            fullName: `${surname} (Surname Group - ${inCounty} in county)`,
+                            type: 'suspected_enslaved',
+                            source: 'rootsweb_census_1870_surname',
+                            sourceUrl: url,
+                            confidence: 0.7, // Surname matching is suggestive but not definitive
+                            location: `${county} County, ${state}`,
+                            notes: `1870 Census surname match: ${inCounty} African Americans in county, ${inState} in state, ${inUS} nationwide with surname ${surname}. May indicate former enslaved people who took slaveholder's surname.`,
+                            surnameData: {
+                                surname,
+                                inUS,
+                                inState,
+                                inCounty,
+                                bornInState: parseInt(match[5]),
+                                bornAndLivingInState: parseInt(match[6]),
+                                bornInStateAndLivingInCounty: parseInt(match[7])
+                            }
+                        });
+                    }
+                }
+            }
+
+            console.log(`   ✅ Extracted ${slaveholders.length} confirmed slaveholders from ${county} County, ${state}`);
+
+            result.metadata = {
+                pageType: 'rootsweb_county',
+                county: county,
+                state: state,
+                slaveholderCount: slaveholders.length,
+                totalEnslaved: slaveholders.reduce((sum, s) => sum + s.slaveCount, 0),
+                isPrimarySource: true,
+                sourceYear: 1860,
+                censusType: '1860 Slave Schedule'
+            };
+        }
+    }
+
+    /**
+     * Helper to extract state abbreviation from href
+     */
+    extractStateFromHref(href) {
+        const stateMap = {
+            'al': 'Alabama', 'ar': 'Arkansas', 'fl': 'Florida', 'ga': 'Georgia',
+            'la': 'Louisiana', 'md': 'Maryland', 'ms': 'Mississippi', 'nc': 'North Carolina',
+            'sc': 'South Carolina', 'tn': 'Tennessee', 'tx': 'Texas', 'va': 'Virginia'
+        };
+        const prefix = href.substring(0, 2).toLowerCase();
+        return stateMap[prefix] || 'Unknown';
     }
 
     /**
@@ -731,8 +937,59 @@ class UnifiedScraper {
         console.log('\n💾 Saving results to database...');
 
         try {
-            // Save owners to unconfirmed_persons table
+            // For confirmed owners from primary sources (census data), save directly to individuals table
             for (const owner of result.owners) {
+                const isConfirmed = owner.type === 'confirmed_owner' && owner.confidence >= 0.9;
+
+                if (isConfirmed) {
+                    // Save directly to individuals table (confirmed slaveholder)
+                    try {
+                        const insertResult = await this.db.query(`
+                            INSERT INTO individuals (
+                                full_name, birth_year, death_year, locations,
+                                source_documents, notes, created_at
+                            ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                            ON CONFLICT DO NOTHING
+                            RETURNING individual_id
+                        `, [
+                            owner.fullName,
+                            owner.birthYear || null,
+                            owner.deathYear || null,
+                            owner.locations || [],
+                            JSON.stringify([{ url: owner.sourceUrl, type: owner.source, isPrimary: true }]),
+                            owner.notes
+                        ]);
+
+                        if (insertResult.rows.length > 0) {
+                            const individualId = insertResult.rows[0].individual_id;
+
+                            // Also record in slaveholder_records if we have slave count
+                            if (owner.slaveCount) {
+                                await this.db.query(`
+                                    INSERT INTO slaveholder_records (
+                                        individual_id, census_year, state, county,
+                                        total_enslaved, source_reference, created_at
+                                    ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+                                    ON CONFLICT DO NOTHING
+                                `, [
+                                    individualId,
+                                    1860,
+                                    owner.locations?.[0]?.split(',').pop()?.trim() || null,
+                                    owner.locations?.[0]?.split(',')[1]?.replace('County', '').trim() || null,
+                                    owner.slaveCount,
+                                    owner.censusReference || owner.sourceUrl
+                                ]).catch(() => {}); // Table might not exist yet
+                            }
+
+                            console.log(`   ✅ CONFIRMED owner saved to individuals: ${owner.fullName} (${owner.slaveCount || 'unknown'} enslaved)`);
+                        }
+                    } catch (err) {
+                        // If individuals insert fails, fall back to unconfirmed_persons
+                        console.log(`   ⚠️ Falling back to unconfirmed_persons for ${owner.fullName}: ${err.message}`);
+                    }
+                }
+
+                // Always also save to unconfirmed_persons for tracking
                 await this.db.query(`
                     INSERT INTO unconfirmed_persons (
                         full_name, person_type, birth_year, death_year,
