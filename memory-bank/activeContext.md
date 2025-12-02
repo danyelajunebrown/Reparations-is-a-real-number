@@ -1,243 +1,192 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 1, 2025
-**Current Phase:** Document Upload Pipeline Enhancement Complete
+**Last Updated:** December 2, 2025
+**Current Phase:** Refactoring Fixes Complete - All Systems Operational
 **Active Branch:** main
 
 ---
 
-## Recent Major Changes (Dec 1, 2025)
+## Recent Major Changes (Dec 2, 2025)
 
-### 8. Document Upload Pipeline COMPLETED ✅ (Dec 1, 2025)
-**Problem Solved:** Fixed all import paths, middleware issues, and CORS problems.
+### 9. Major Refactoring Fixes COMPLETED ✅ (Dec 2, 2025)
+**Problem Solved:** Fixed critical issues caused by server refactoring where `src/server.js` was missing many endpoints that existed in legacy `server.js`.
+
+**Root Cause Analysis:**
+- Render deployment uses `npm start` which runs `node src/server.js`
+- The refactored `src/server.js` was missing ~15 endpoints that the frontend relied on
+- Document viewer was constrained inside `.widget-forest` container
+- Frontend was initially pointing to wrong Render service URL
 
 **Implementation Complete:**
-1. **All Middleware Created:**
-   - Created missing middleware files (validation, auth, error-handler, rate-limit, file-validation)
-   - Fixed all import paths throughout the system
-   - Added proper Joi validation schemas
 
-2. **Server Running Successfully:**
-   - Refactored server (src/server.js) running on port 3000
-   - Database connection working with correct PostgreSQL credentials
-   - Redis connected for Bull job queues
-   - CORS properly configured
+#### 1. Fixed Frontend API_BASE_URL
+- Confirmed single Render service: `reparations-platform.onrender.com`
+- Updated all frontend files to use correct URL:
+  - `index.html`
+  - `portal.html`
+  - `contribute.html`
 
-3. **Test Pages Created:**
-   - test-upload.html - Full featured upload form with job status tracking
-   - test-viewer.html - Document search and viewing interface
-   - Both accessible at http://localhost:3000/test-*.html
+#### 2. Restored Missing API Endpoints to `src/server.js`
+Added all missing legacy endpoints:
+
+**Document Endpoints:**
+- `GET /api/documents` - List all documents with pagination
+- `GET /api/search-documents` - Search across owner names, FamilySearch IDs
+
+**Queue/Scraping Endpoints (for contribute.html):**
+- `POST /api/submit-url` - Submit URL for scraping queue
+- `GET /api/queue-stats` - Queue statistics (pending, processing, completed)
+- `GET /api/population-stats` - Population/progress stats toward 393,975 goal
+- `POST /api/trigger-queue-processing` - Trigger background URL processing
+
+**Portal Endpoints (for portal.html):**
+- `POST /api/search-reparations` - Search by name/year/ID
+- `POST /api/get-descendants` - Get descendants for a person
+
+**Carousel/Frontend Endpoints:**
+- `GET /api/carousel-data` - Returns documents for carousel display
+- `GET /api/beyond-kin/pending` - Beyond Kin review queue
+- `POST /api/beyond-kin/:id/approve|reject|needs-document`
+- `POST /api/process-individual-metadata`
+
+**Utility Endpoints:**
+- `GET /api/cors-test` - CORS diagnostic
+- `GET /api` - API info
+
+#### 3. Fixed Document Viewer Overlay
+**Problem:** Document viewer was nested inside `.widget-forest` and used `position: absolute`, causing it to be constrained to the widget size instead of full screen.
+
+**Solution:**
+- Changed CSS from `position: absolute` to `position: fixed`
+- Changed dimensions from `100%` to `100vw/100vh`
+- Increased `z-index` from 100 to 9999
+- **Moved document viewer HTML from inside `.widget-forest` to body level**
+
+#### 4. Deleted Broken Database Entries
+Successfully deleted 4 orphaned document entries:
+- `900cf66201885c3124a8ea81`
+- `e1ba74d24afaf8e15e847bb0`
+- `2f00968ac93ef39f47e74d49`
+- `d94180c70274f7bf25b735a8`
+
+#### 5. Updated S3 Region Configuration
+- Updated `config.js` default region from `us-east-1` to `us-east-2`
+- Updated `.env.example` to use `us-east-2`
+- Local `.env` already had correct `S3_REGION=us-east-2`
 
 **Current Status:**
-- ✅ Server running locally at http://localhost:3000
-- ✅ All enhanced features working (S3, async OCR, job queues)
-- ✅ Test pages created and functional
-- ⚠️ Changes not yet committed to Git
-- ⚠️ Backend cannot run on GitHub Pages (needs cloud hosting)
-
-**Next Steps:**
-1. Test the system locally at localhost:3000
-2. Commit changes to Git for version control
-3. Deploy backend to cloud service (Render, Heroku, etc.)
-4. Update frontend to connect to deployed backend API
+- ✅ All API endpoints working and tested
+- ✅ Document viewer displays as full-screen overlay
+- ✅ Downloads working correctly
+- ✅ S3 presigned URLs generating correctly
+- ✅ Database cleaned up
+- ✅ All changes committed and pushed to GitHub
+- ✅ Render auto-deployed with latest code
 
 ---
 
-## Recent Major Changes (Nov 30, 2025)
+## Current Production Environment
 
-### 7. Document Upload Pipeline Enhancement ✅ (Nov 30, 2025)
-**Problem:** Persistent issues with file download/display from database.
+### Render Services
+- **Backend:** `reparations-platform.onrender.com` (Node.js)
+- **Database:** `reparations-db` (PostgreSQL 17, Virginia)
 
-**Root Causes Identified:**
-- File type corruption (trusting extensions)
-- Synchronous OCR processing blocking API
-- No proper error handling or logging
-- Limited file size support (50MB)
-- No job queue for async processing
-
-**Solution Implemented:**
-1. **Enhanced File Type Detection:**
-   - Created `FileTypeDetector.js` with magic number detection
-   - Supports PDF, JPEG, PNG, TIFF, HEIC, text files
-   - Fallback detection for unrecognized types
-
-2. **Advanced S3 Storage:**
-   - Created `S3StorageAdapter.js` with multipart uploads
-   - Generates unique, sanitized file paths
-   - Comprehensive error handling and progress tracking
-   - Uses AWS SDK v3 for better performance
-
-3. **Robust OCR Processing:**
-   - Created `OCRProcessor.js` with dual-service strategy
-   - Google Vision API primary (90-95% accuracy)
-   - Tesseract.js fallback (60-80% accuracy)
-   - Confidence-based service selection
-
-4. **Asynchronous Processing:**
-   - Created `EnhancedDocumentProcessor.js` with Bull job queues
-   - Separate queues for upload and OCR processing
-   - Job status tracking with `/upload-status/:jobId` endpoint
-   - Immediate API response with job tracking
-
-**Files Created/Modified:**
-- `src/services/document/EnhancedDocumentProcessor.js` (new)
-- `src/services/document/FileTypeDetector.js` (new)
-- `src/services/document/S3StorageAdapter.js` (new)
-- `src/services/document/OCRProcessor.js` (new)
-- `src/api/routes/documents.js` (updated)
-- `package.json` (added Bull dependency)
-- `.env` (added AWS credentials)
-- `config.js` (added S3 credentials)
-
-**Configuration Added:**
-```bash
-# S3 Storage
-S3_ENABLED=true
-S3_BUCKET=reparations-them
-S3_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIAU7BYZX2VYR6CS73L
-AWS_SECRET_ACCESS_KEY=[configured]
-
-# OCR Services
-GOOGLE_VISION_API_KEY=AIzaSyDYVe9vG4AqrsBN2xuSDkCbolHQrLc9SMo
+### Working Endpoints (Verified Dec 2, 2025)
+```
+GET  /api                           - API info
+GET  /api/health                    - Health check
+GET  /api/documents                 - List documents
+GET  /api/documents/:id             - Get document metadata
+GET  /api/documents/:id/access      - Get presigned S3 URL
+GET  /api/documents/:id/file        - Download document
+DELETE /api/documents/:id           - Delete document
+GET  /api/documents/owner/:name     - Get documents by owner
+GET  /api/search-documents          - Search documents
+GET  /api/carousel-data             - Carousel display data
+GET  /api/queue-stats               - Scraping queue stats
+GET  /api/population-stats          - Progress statistics
+POST /api/submit-url                - Submit URL for scraping
+POST /api/trigger-queue-processing  - Process queue
+POST /api/search-reparations        - Search reparations
+POST /api/get-descendants           - Get descendants
+GET  /api/beyond-kin/pending        - Beyond Kin queue
+POST /api/beyond-kin/:id/approve    - Approve Beyond Kin
+POST /api/beyond-kin/:id/reject     - Reject Beyond Kin
+GET  /api/cors-test                 - CORS diagnostic
 ```
 
-**Impact:**
-- ✅ Prevents file corruption with magic number detection
-- ✅ Supports files up to 100MB
-- ✅ Non-blocking OCR processing
-- ✅ Better error handling and retry mechanisms
-- ✅ Comprehensive logging throughout pipeline
-
-**Current Status:**
-- Legacy server.js running on port 3000
-- Database connection issue (role "user" doesn't exist)
-- Need to switch to refactored src/server.js for new features
-- Bull queue requires Redis installation
+### Current Database Stats
+- **Documents:** 7 total
+- **Queue:** 691 pending, 5 processing, 2,862 completed
+- **Individuals:** 28 total
 
 ---
 
-## Recent Major Changes (Nov 19-30, 2025)
+## Architecture Notes
 
-### 1-6. [Previous changes remain as documented]
+### Server Structure (IMPORTANT)
+The project has TWO server files:
+1. **`server.js` (root)** - Legacy server with all endpoints (2,400+ lines)
+2. **`src/server.js`** - Refactored modular server (800+ lines after fixes)
 
----
+**Render uses `src/server.js`** via `npm start` → `node src/server.js`
 
-## Current Database State
+The refactored server uses:
+- `src/api/routes/documents.js` - Document routes
+- `src/api/routes/research.js` - Research/LLM routes
+- `src/api/routes/health.js` - Health check routes
+- `src/api/routes/errors.js` - Error logging routes
 
-### Database Connection Issue
-- **Error:** role "user" does not exist
-- **Fix Needed:** Update DATABASE_URL in .env with actual PostgreSQL credentials
+Plus inline legacy endpoints added directly to `src/server.js` for frontend compatibility.
 
-### Documents Pipeline
-- Enhanced upload flow ready but needs:
-  1. Redis for Bull job queues
-  2. Database credentials fix
-  3. Switch to refactored server
+### Frontend Files
+- `index.html` - Main dashboard with carousel and document viewer
+- `portal.html` - Reparations search portal
+- `contribute.html` - URL submission for research
+
+All use `API_BASE_URL = 'https://reparations-platform.onrender.com'`
 
 ---
 
 ## Known Issues & Limitations
 
-### Immediate Issues
-1. **Database Connection** 🔴
-   - Generic "user" role doesn't exist
-   - Need actual PostgreSQL credentials
-   - **Fix:** Update DATABASE_URL in .env
+### Resolved Issues ✅
+1. ~~Document viewer constrained by widget container~~ - FIXED
+2. ~~Missing API endpoints after refactoring~~ - FIXED
+3. ~~S3 region mismatch~~ - FIXED
+4. ~~Orphaned database entries~~ - DELETED
 
-2. **Redis Not Installed** 🔴
-   - Bull queue requires Redis
-   - **Fix:** Install and configure Redis
-
-3. **Wrong Server Running** 🟡
-   - npm start uses legacy server.js
-   - New features in src/server.js
-   - **Fix:** Update package.json or use different command
-
-### High Priority (Existing)
-[Previous high priority items remain]
+### Remaining Issues
+1. **No Authentication** 🔴 - API completely open
+2. **No Rate Limiting Active** 🟡 - Middleware installed but not all endpoints protected
+3. **No Input Validation** 🟡 - Joi installed but not fully implemented
+4. **Console.log Overuse** 🟢 - Should use Winston logger consistently
 
 ---
 
-## Immediate Next Steps
+## Commits from This Session
 
-### To Enable Enhanced Upload Pipeline
-1. **Fix Database Connection:**
-   ```bash
-   # Update .env with actual PostgreSQL credentials
-   DATABASE_URL=postgresql://[actual_user]:[actual_password]@localhost:5432/reparations
-   ```
-
-2. **Install Redis:**
-   ```bash
-   # macOS
-   brew install redis
-   brew services start redis
-   
-   # Or use Docker
-   docker run -d -p 6379:6379 redis
-   ```
-
-3. **Use Refactored Server:**
-   ```bash
-   # Option 1: Update package.json
-   "start": "node src/server.js"
-   
-   # Option 2: Run directly
-   node src/server.js
-   ```
-
-4. **Test Enhanced Upload:**
-   ```bash
-   # Upload document
-   POST /api/documents/upload
-   
-   # Check status
-   GET /api/documents/upload-status/:jobId
-   ```
+1. `6632ad2` - Add DELETE endpoint for document cleanup
+2. `5b40ccf` - Fix frontend API_BASE_URL and add document DELETE endpoint
+3. `a1c578b` - Revert API_BASE_URL to reparations-platform.onrender.com
+4. `3d7e90e` - Add missing legacy endpoints to src/server.js for frontend compatibility
+5. `945bdff` - Restore all missing legacy endpoints to src/server.js
+6. `af72c02` - Fix document viewer to use full-screen overlay at body level
 
 ---
 
-## Development Environment Setup
+## Next Steps
 
-### Additional Requirements for Enhanced Pipeline
-- Redis 6+ (for Bull job queues)
-- AWS credentials configured
-- Google Vision API key
+### Immediate
+1. Monitor document viewer functionality on production
+2. Test all restored endpoints from frontend
+3. Verify carousel loads correctly
 
-### Quick Start (Updated)
-```bash
-# Clone repository
-git clone [repository-url]
-cd reparations-is-a-real-number-main
-
-# Install dependencies
-npm install
-
-# Install Redis
-brew install redis
-brew services start redis
-
-# Configure environment
-cp .env.example .env
-# Edit .env with credentials including AWS and Google Vision
-
-# Initialize database
-npm run init-db
-
-# Start with enhanced server
-node src/server.js
-```
-
----
-
-## Active Monitoring
-
-### Enhanced Upload Pipeline
-- **Job Queues:** Bull dashboard at localhost:3000/admin/queues (if configured)
-- **S3 Uploads:** Monitor AWS S3 console
-- **OCR Processing:** Check logs for Google Vision/Tesseract activity
-- **Error Tracking:** Winston logs in console
+### Short Term
+1. Implement JWT authentication
+2. Add rate limiting to sensitive endpoints
+3. Add Joi validation to POST bodies
+4. Set up error tracking (Sentry)
 
 ---
 
