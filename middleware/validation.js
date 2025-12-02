@@ -1,209 +1,118 @@
-/**
- * Input Validation Middleware
- * Uses Joi for schema validation
- */
-
+const multer = require('multer');
+const path = require('path');
 const Joi = require('joi');
 
-// Validation schemas for different endpoints
-const schemas = {
+// File upload validation
+const fileUploadValidation = multer({
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/tiff',
+      'image/heic',
+      'text/plain'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`), false);
+    }
+  }
+});
+
+// Request validation middleware
+const validateRequest = (schema) => {
+  return (req, res, next) => {
+    const { error } = schema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+    next();
+  };
+};
+
+// Validate document metadata
+const validateDocumentMetadata = async (metadata) => {
+  // Ensure required fields are present
+  const required = ['ownerName', 'documentType'];
+  for (const field of required) {
+    if (!metadata[field]) {
+      throw new Error(`Missing required field: ${field}`);
+    }
+  }
+
+  // Validate document type
+  const validTypes = ['will', 'deed', 'inventory', 'letter', 'legal', 'other'];
+  if (!validTypes.includes(metadata.documentType)) {
+    throw new Error(`Invalid document type: ${metadata.documentType}`);
+  }
+
+  // Clean and format metadata
+  return {
+    ownerName: metadata.ownerName.trim(),
+    documentType: metadata.documentType,
+    storageProvider: metadata.storageProvider || 's3',
+    notes: metadata.notes || '',
+    uploadedAt: new Date().toISOString()
+  };
+};
+
+// Validation schemas
+const validationSchemas = {
   uploadDocument: Joi.object({
-    // Subject type determines required fields
-    subjectType: Joi.string().valid('owner', 'enslaved').optional().default('owner'),
-
-    // Owner fields (required if subjectType='owner')
-    ownerName: Joi.string().min(2).max(100).when('subjectType', {
-      is: 'owner',
-      then: Joi.required(),
-      otherwise: Joi.optional().allow(null, '')
-    }),
-
-    // Enslaved person fields (required if subjectType='enslaved')
-    enslavedPersonName: Joi.string().min(2).max(500).when('subjectType', {
-      is: 'enslaved',
-      then: Joi.required(),
-      otherwise: Joi.optional().allow(null, '')
-    }),
-    spouseName: Joi.string().max(500).optional().allow(null, ''),
-
-    documentType: Joi.string()
-      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'tombstone', 'other')
-      .required(),
-    birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
-    deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
-    location: Joi.string().max(200).optional().allow(null, ''),
-    pageNumber: Joi.number().integer().min(1).optional(),
-    totalPages: Joi.number().integer().min(1).optional(),
-    isMultiPage: Joi.boolean().optional(),
-    parentDocumentId: Joi.string().alphanum().optional(),
-    precompletedOCR: Joi.string().max(500000).optional().allow(null, ''),
-    ocrSource: Joi.string().max(200).optional().allow(null, ''),
-    accompanyingText: Joi.string().max(500000).optional().allow(null, ''),
-    textSource: Joi.string().max(200).optional().allow(null, '')
-  }),
-
-  processMetadata: Joi.object({
-    documentId: Joi.string().required(),
-    fileName: Joi.string().optional(),
-    fullName: Joi.string().min(2).max(100).required(),
-    birthYear: Joi.number().integer().min(1600).max(2100).optional().allow(null),
-    deathYear: Joi.number().integer().min(1600).max(2100).optional().allow(null),
-    gender: Joi.string().valid('Male', 'Female', 'Unknown').optional().allow(null),
-    locations: Joi.alternatives().try(
-      Joi.string(),
-      Joi.array().items(Joi.string())
-    ).optional(),
-    spouses: Joi.array().items(Joi.object({
-      name: Joi.string().required(),
-      birthYear: Joi.number().integer().optional(),
-      deathYear: Joi.number().integer().optional(),
-      gender: Joi.string().optional()
-    })).optional(),
-    children: Joi.array().items(Joi.object({
-      name: Joi.string().required(),
-      birthYear: Joi.number().integer().optional(),
-      deathYear: Joi.number().integer().optional(),
-      gender: Joi.string().optional()
-    })).optional(),
-    parents: Joi.array().items(Joi.object({
-      name: Joi.string().required(),
-      birthYear: Joi.number().integer().optional(),
-      deathYear: Joi.number().integer().optional(),
-      gender: Joi.string().optional()
-    })).optional(),
-    notes: Joi.string().max(5000).optional().allow(null, '')
-  }),
-
-  addEnslavedDescendant: Joi.object({
-    fullName: Joi.string().min(2).max(100).required(),
-    birthYear: Joi.number().integer().min(1600).max(2100).optional(),
-    deathYear: Joi.number().integer().min(1600).max(2100).optional(),
-    gender: Joi.string().valid('Male', 'Female', 'Unknown').optional(),
-    enslavedBy: Joi.string().optional(),
-    freedomYear: Joi.number().integer().min(1600).max(1900).optional(),
-    directReparations: Joi.number().min(0).optional(),
-    parentIds: Joi.array().items(Joi.string()).optional(),
-    notes: Joi.string().max(5000).optional()
-  }),
-
-  calculateDebt: Joi.object({
-    perpetratorId: Joi.string().required(),
-    originalDebt: Joi.number().positive().max(1e15).required()
-  }),
-
-  calculateCredit: Joi.object({
-    ancestorId: Joi.string().required(),
-    originalCredit: Joi.number().positive().max(1e15).required()
-  }),
-
-  recordPayment: Joi.object({
-    payerId: Joi.string().required(),
-    recipientId: Joi.string().required(),
-    amount: Joi.number().positive().max(1e15).required(),
-    txHash: Joi.string().pattern(/^0x[a-fA-F0-9]{64}$/).optional().allow(null),
-    blockNumber: Joi.number().integer().positive().optional().allow(null),
-    networkId: Joi.number().integer().valid(1, 5, 11155111, 1337, 31337).optional().allow(null)
-  }),
-
-  llmQuery: Joi.object({
-    query: Joi.string().min(1).max(500).required(),
-    sessionId: Joi.string().max(100).optional()
-  }),
-
-  clearChat: Joi.object({
-    sessionId: Joi.string().max(100).optional()
-  }),
-
-  uploadDocumentWithText: Joi.object({
     ownerName: Joi.string().min(2).max(100).required(),
-    documentType: Joi.string()
-      .valid('will', 'probate', 'census', 'slave_schedule', 'slave_manifest', 'estate_inventory', 'correspondence', 'deed', 'ship_manifest', 'sale_record', 'tombstone', 'other')
-      .required(),
-    textContent: Joi.string().min(10).max(500000).optional().allow(null, ''),
-    textSource: Joi.string().valid('ocr', 'transcription', 'manual', 'archive', 'website').optional(),
-    birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(null),
-    deathYear: Joi.number().integer().min(1600).max(2000).optional().allow(null),
-    location: Joi.string().max(200).optional().allow(null, ''),
-    pageNumber: Joi.number().integer().min(1).optional(),
-    totalPages: Joi.number().integer().min(1).optional(),
-    isMultiPage: Joi.boolean().optional(),
-    parentDocumentId: Joi.string().alphanum().optional(),
-    notes: Joi.string().max(5000).optional().allow(null, '')
+    documentType: Joi.string().valid('will', 'deed', 'inventory', 'letter', 'legal', 'other').required(),
+    notes: Joi.string().max(500).optional(),
+    storageProvider: Joi.string().valid('local', 's3').optional()
   }),
-
-  getDescendants: Joi.object({
-    personName: Joi.string().min(2).max(100).required(),
-    personType: Joi.string().valid('owner', 'enslaved').required(),
-    generations: Joi.number().integer().min(1).max(3).optional().default(2)
+  
+  searchDocuments: Joi.object({
+    ownerName: Joi.string().min(1).max(100).optional(),
+    documentType: Joi.string().valid('will', 'deed', 'inventory', 'letter', 'legal', 'other').optional(),
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    keyword: Joi.string().max(100).optional(),
+    limit: Joi.number().integer().min(1).max(100).optional(),
+    offset: Joi.number().integer().min(0).optional()
   })
 };
 
-/**
- * Validation middleware factory
- * @param {string} schemaName - Name of the schema to use
- * @returns {Function} Express middleware
- */
-function validate(schemaName) {
+// Validation function
+const validate = (schemaName) => {
   return (req, res, next) => {
-    const schema = schemas[schemaName];
-
+    const schema = validationSchemas[schemaName];
     if (!schema) {
-      console.warn(`No validation schema found for: ${schemaName}`);
-      return next();
-    }
-
-    const { error, value } = schema.validate(req.body, {
-      abortEarly: false, // Get all errors, not just first
-      stripUnknown: true  // Remove unknown fields
-    });
-
-    if (error) {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
-        error: 'Validation failed',
-        details: error.details.map(d => ({
-          field: d.path.join('.'),
-          message: d.message
-        }))
+        error: `Validation schema '${schemaName}' not found`
       });
     }
 
-    // Replace body with validated (and sanitized) data
+    const { error, value } = schema.validate(req.body);
+    
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
+    }
+
     req.validatedBody = value;
     next();
   };
-}
+};
 
-/**
- * Validate query parameters
- */
-function validateQuery(schemaName) {
-  return (req, res, next) => {
-    const schema = schemas[schemaName];
-
-    if (!schema) {
-      return next();
-    }
-
-    const { error, value } = schema.validate(req.query, {
-      abortEarly: false,
-      stripUnknown: true
-    });
-
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        error: 'Query validation failed',
-        details: error.details.map(d => ({
-          field: d.path.join('.'),
-          message: d.message
-        }))
-      });
-    }
-
-    req.validatedQuery = value;
-    next();
-  };
-}
-
-module.exports = { validate, validateQuery, schemas };
+module.exports = {
+  fileUploadValidation,
+  validateRequest,
+  validateDocumentMetadata,
+  validate
+};
