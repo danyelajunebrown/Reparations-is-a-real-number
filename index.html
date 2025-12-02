@@ -499,17 +499,17 @@
             display: none;
         }
 
-        /* Document Viewer Styles */
+        /* Document Viewer Styles - Full screen overlay */
         .document-viewer-container {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             background: rgba(10, 14, 39, 0.98);
             display: none;
             flex-direction: row;
-            z-index: 100;
+            z-index: 9999;
             opacity: 0;
             transition: opacity 0.3s ease;
         }
@@ -832,91 +832,6 @@
                 <button class="control-btn" onclick="rotateCarousel(1)">Next →</button>
             </div>
 
-            <!-- Document Viewer Overlay -->
-            <div class="document-viewer-container" id="documentViewer">
-                <!-- Main Document Display Area -->
-                <div class="document-main-area" id="documentMainArea">
-                    <!-- Document Controls -->
-                    <div class="document-controls">
-                        <button class="doc-control-btn" onclick="zoomIn()" title="Zoom In (Ctrl++)">🔍+</button>
-                        <button class="doc-control-btn" onclick="zoomOut()" title="Zoom Out (Ctrl+-)">🔍-</button>
-                        <button class="doc-control-btn" onclick="resetZoom()" title="Reset View">↺ Reset</button>
-                        <button class="doc-control-btn" onclick="downloadCurrentDocument()" title="Download">⬇️ Download</button>
-                        <button class="doc-control-btn close" onclick="closeDocumentViewer()" title="Close (ESC)">✕ Close</button>
-                    </div>
-
-                    <!-- Document Content (will be populated dynamically) -->
-                    <div id="documentContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-                        <div class="document-loading">Loading document...</div>
-                    </div>
-
-                    <!-- Document Navigation (for multiple documents) -->
-                    <div class="document-navigation" id="documentNavigation">
-                        <button class="doc-nav-btn" id="prevDocBtn" onclick="previousDocument()">← Previous</button>
-                        <span class="doc-nav-counter" id="docCounter">Document 1 of 1</span>
-                        <button class="doc-nav-btn" id="nextDocBtn" onclick="nextDocument()">Next →</button>
-                    </div>
-                </div>
-
-                <!-- Metadata Panel -->
-                <div class="metadata-panel" id="metadataPanel">
-                    <h3>📋 Document Details</h3>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Document Type</div>
-                        <div class="metadata-value">
-                            <span class="metadata-badge" id="docTypeBadge">WILL</span>
-                        </div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Owner Name</div>
-                        <div class="metadata-value" id="docOwnerName">Loading...</div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Location</div>
-                        <div class="metadata-value" id="docLocation">-</div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Life Span</div>
-                        <div class="metadata-value" id="docLifeSpan">-</div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Upload Date</div>
-                        <div class="metadata-value" id="docUploadDate">-</div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">File Info</div>
-                        <div class="metadata-value" id="docFileInfo">-</div>
-                    </div>
-
-                    <div class="metadata-item" id="enslavedCountSection">
-                        <div class="metadata-label">Enslaved People Identified</div>
-                        <div class="metadata-value" id="docEnslavedCount" style="color: #ffaa00; font-weight: bold;">0</div>
-                    </div>
-
-                    <div class="metadata-item" id="enslavedListSection" style="display: none;">
-                        <div class="metadata-label">Names</div>
-                        <div class="enslaved-list" id="docEnslavedList">
-                            <!-- Will be populated dynamically -->
-                        </div>
-                    </div>
-
-                    <div class="metadata-item" id="reparationsSection">
-                        <div class="metadata-label">Reparations Calculated</div>
-                        <div class="metadata-value" id="docReparations" style="color: #64ff64; font-weight: bold;">$0</div>
-                    </div>
-
-                    <div class="metadata-item">
-                        <div class="metadata-label">Document ID</div>
-                        <div class="metadata-value" id="docId" style="font-family: monospace; font-size: 0.8em; color: #9aa5b1;">-</div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <!-- Bottom Row: 3 Widgets -->
@@ -3233,5 +3148,91 @@ function skipMetadata() {
         </div>
     </div>
     </div> <!-- Close dashboard -->
+
+    <!-- Document Viewer Overlay - Full Screen at Body Level -->
+    <div class="document-viewer-container" id="documentViewer">
+        <!-- Main Document Display Area -->
+        <div class="document-main-area" id="documentMainArea">
+            <!-- Document Controls -->
+            <div class="document-controls">
+                <button class="doc-control-btn" onclick="zoomIn()" title="Zoom In (Ctrl++)">🔍+</button>
+                <button class="doc-control-btn" onclick="zoomOut()" title="Zoom Out (Ctrl+-)">🔍-</button>
+                <button class="doc-control-btn" onclick="resetZoom()" title="Reset View">↺ Reset</button>
+                <button class="doc-control-btn" onclick="downloadCurrentDocument()" title="Download">⬇️ Download</button>
+                <button class="doc-control-btn close" onclick="closeDocumentViewer()" title="Close (ESC)">✕ Close</button>
+            </div>
+
+            <!-- Document Content (will be populated dynamically) -->
+            <div id="documentContent" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                <div class="document-loading">Loading document...</div>
+            </div>
+
+            <!-- Document Navigation (for multiple documents) -->
+            <div class="document-navigation" id="documentNavigation">
+                <button class="doc-nav-btn" id="prevDocBtn" onclick="previousDocument()">← Previous</button>
+                <span class="doc-nav-counter" id="docCounter">Document 1 of 1</span>
+                <button class="doc-nav-btn" id="nextDocBtn" onclick="nextDocument()">Next →</button>
+            </div>
+        </div>
+
+        <!-- Metadata Panel -->
+        <div class="metadata-panel" id="metadataPanel">
+            <h3>📋 Document Details</h3>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Document Type</div>
+                <div class="metadata-value">
+                    <span class="metadata-badge" id="docTypeBadge">WILL</span>
+                </div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Owner Name</div>
+                <div class="metadata-value" id="docOwnerName">Loading...</div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Location</div>
+                <div class="metadata-value" id="docLocation">-</div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Life Span</div>
+                <div class="metadata-value" id="docLifeSpan">-</div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Upload Date</div>
+                <div class="metadata-value" id="docUploadDate">-</div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">File Info</div>
+                <div class="metadata-value" id="docFileInfo">-</div>
+            </div>
+
+            <div class="metadata-item" id="enslavedCountSection">
+                <div class="metadata-label">Enslaved People Identified</div>
+                <div class="metadata-value" id="docEnslavedCount" style="color: #ffaa00; font-weight: bold;">0</div>
+            </div>
+
+            <div class="metadata-item" id="enslavedListSection" style="display: none;">
+                <div class="metadata-label">Names</div>
+                <div class="enslaved-list" id="docEnslavedList">
+                    <!-- Will be populated dynamically -->
+                </div>
+            </div>
+
+            <div class="metadata-item" id="reparationsSection">
+                <div class="metadata-label">Reparations Calculated</div>
+                <div class="metadata-value" id="docReparations" style="color: #64ff64; font-weight: bold;">$0</div>
+            </div>
+
+            <div class="metadata-item">
+                <div class="metadata-label">Document ID</div>
+                <div class="metadata-value" id="docId" style="font-family: monospace; font-size: 0.8em; color: #9aa5b1;">-</div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
