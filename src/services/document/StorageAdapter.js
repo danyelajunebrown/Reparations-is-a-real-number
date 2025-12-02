@@ -17,7 +17,7 @@ class StorageAdapter {
     if (this.s3Enabled) {
       this.s3Bucket = config.storage.s3.bucket;
       this.s3Region = config.storage.s3.region;
-      this.s3 = new S3Client({ region: this.s3Region }); // credentials read from env or IAM role
+      this.s3 = new S3Client({ region: this.s3Region, followRegionRedirects: true }); // credentials read from env or IAM role
     }
   }
 

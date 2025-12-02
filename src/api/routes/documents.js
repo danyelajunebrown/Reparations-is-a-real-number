@@ -79,7 +79,8 @@ router.post('/upload',
           credentials: {
             accessKeyId: config.storage.s3.accessKeyId,
             secretAccessKey: config.storage.s3.secretAccessKey
-          }
+          },
+          followRegionRedirects: true
         });
 
         const uploadCommand = new PutObjectCommand({

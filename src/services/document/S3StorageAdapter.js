@@ -15,7 +15,8 @@ class S3StorageAdapter {
       credentials: {
         accessKeyId: config.storage.s3.accessKeyId,
         secretAccessKey: config.storage.s3.secretAccessKey
-      }
+      },
+      followRegionRedirects: true
     });
 
     this.bucket = config.storage.s3.bucket;
