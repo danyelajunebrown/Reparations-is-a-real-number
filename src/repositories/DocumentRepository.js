@@ -52,38 +52,30 @@ class DocumentRepository extends BaseRepository {
   }
 
   /**
-   * Get document with enslaved people and reparations breakdown
+   * Get document with enslaved people
    * @param {string} documentId - Document ID
    * @returns {Promise<Object|null>} Document with relations
    */
   async findByIdWithRelations(documentId) {
-    const query = `
-      SELECT
-        d.*,
-        json_agg(DISTINCT jsonb_build_object(
-          'id', ep.id,
-          'name', ep.name,
-          'gender', ep.gender,
-          'age', ep.age,
-          'individualReparations', ep.individual_reparations
-        )) FILTER (WHERE ep.id IS NOT NULL) as enslaved_people,
-        json_agg(DISTINCT jsonb_build_object(
-          'id', rb.id,
-          'wageTheft', rb.wage_theft,
-          'damages', rb.damages,
-          'profitShare', rb.profit_share,
-          'compoundInterest', rb.compound_interest,
-          'penalty', rb.penalty
-        )) FILTER (WHERE rb.id IS NOT NULL) as reparations_breakdown
-      FROM documents d
-      LEFT JOIN enslaved_people ep ON d.document_id = ep.document_id
-      LEFT JOIN reparations_breakdown rb ON d.document_id = rb.document_id
-      WHERE d.document_id = $1
-      GROUP BY d.document_id
-    `;
+    // First get the document
+    const doc = await this.findById(documentId);
+    if (!doc) return null;
 
-    const result = await this.raw(query, [documentId]);
-    return result[0] || null;
+    // Try to get enslaved people if the table exists
+    try {
+      const enslavedQuery = `
+        SELECT id, name, gender, age, individual_reparations
+        FROM enslaved_people
+        WHERE document_id = $1
+      `;
+      const enslaved = await this.raw(enslavedQuery, [documentId]);
+      doc.enslaved_people = enslaved || [];
+    } catch (err) {
+      // Table might not exist, that's ok
+      doc.enslaved_people = [];
+    }
+
+    return doc;
   }
 
   /**
