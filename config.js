@@ -21,7 +21,7 @@ module.exports = {
     s3: {
       enabled: process.env.S3_ENABLED === 'true',
       bucket: process.env.S3_BUCKET || '',
-      region: process.env.S3_REGION || 'us-east-1',
+      region: process.env.S3_REGION || 'us-east-2',
       accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
       secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
       // Credentials via env AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY recommended
