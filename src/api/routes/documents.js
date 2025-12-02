@@ -686,12 +686,13 @@ router.post('/search',
 
 /**
  * GET /api/documents/view/:documentId
- * View/download document file
+ * View/download document file - redirects to presigned URL for S3 files
  */
 router.get('/view/:documentId',
   moderateLimiter,
   asyncHandler(async (req, res) => {
     const { documentId } = req.params;
+    const download = req.query.download === 'true';
 
     const document = await DocumentService.getDocumentById(documentId);
 
@@ -714,8 +715,6 @@ router.get('/view/:documentId',
     // Check if S3 path or local path
     if (filePath.startsWith('./') || filePath.startsWith('/')) {
       // Local file
-      const fs = require('fs');
-      const path = require('path');
       const absolutePath = path.resolve(filePath);
 
       if (!fs.existsSync(absolutePath)) {
@@ -725,37 +724,54 @@ router.get('/view/:documentId',
         });
       }
 
+      res.setHeader('Content-Type', document.mime_type || 'application/pdf');
+      res.setHeader('Content-Disposition',
+        download
+          ? `attachment; filename="${document.filename}"`
+          : `inline; filename="${document.filename}"`
+      );
       res.sendFile(absolutePath);
     } else {
-      // S3 file - stream from S3
-      const config = require('../../../config');
-      const AWS = require('aws-sdk');
-
-      const s3 = new AWS.S3({
-        accessKeyId: config.storage.s3.accessKeyId,
-        secretAccessKey: config.storage.s3.secretAccessKey,
-        region: config.storage.s3.region
-      });
-
-      const params = {
-        Bucket: config.storage.s3.bucket,
-        Key: filePath
-      };
-
-      const stream = s3.getObject(params).createReadStream();
-
-      stream.on('error', (err) => {
-        logger.error('S3 stream error', { error: err.message, filePath });
-        res.status(500).json({
+      // S3 file - use S3Service to generate presigned URL and redirect
+      if (!S3Service.isEnabled()) {
+        return res.status(500).json({
           success: false,
-          error: 'Failed to retrieve file from storage'
+          error: 'S3 storage is not enabled'
         });
-      });
+      }
 
-      res.setHeader('Content-Type', document.mime_type || 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${document.filename}"`);
+      const s3Key = S3Service.constructor.normalizeS3Key(filePath);
+      const checkResult = await S3Service.objectExists(s3Key);
 
-      stream.pipe(res);
+      if (!checkResult.exists) {
+        return res.status(404).json({
+          success: false,
+          error: 'File not found in S3',
+          s3Key,
+          bucket: config.storage.s3.bucket
+        });
+      }
+
+      try {
+        // Generate presigned URL and redirect
+        const url = download
+          ? await S3Service.getDownloadUrl(s3Key, 900, document.filename)
+          : await S3Service.getViewUrl(s3Key, 900, document.filename);
+
+        logger.info('/view endpoint: redirecting to S3 presigned URL', { documentId, s3Key });
+        return res.redirect(302, url);
+      } catch (urlError) {
+        logger.error('S3 presigned URL generation failed', {
+          error: urlError.message,
+          s3Key,
+          documentId
+        });
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to generate access URL',
+          details: urlError.message
+        });
+      }
     }
   })
 );
