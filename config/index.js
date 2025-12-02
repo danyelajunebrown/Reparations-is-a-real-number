@@ -49,7 +49,7 @@ const envSchema = Joi.object({
       otherwise: Joi.optional()
     }),
   S3_REGION: Joi.string()
-    .default('us-east-1'),
+    .default('us-west-2'),
   AWS_ACCESS_KEY_ID: Joi.string()
     .when('S3_ENABLED', {
       is: true,
