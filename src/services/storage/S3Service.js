@@ -24,7 +24,8 @@ class S3Service {
       credentials: {
         accessKeyId: config.storage.s3.accessKeyId,
         secretAccessKey: config.storage.s3.secretAccessKey
-      }
+      },
+      followRegionRedirects: true
     });
     this.bucket = config.storage.s3.bucket;
     this.region = config.storage.s3.region;
