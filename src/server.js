@@ -538,6 +538,121 @@ app.post('/api/trigger-queue-processing', async (req, res) => {
   }
 });
 
+// Process ALL pending URLs in the queue (auto-process full backlog)
+app.post('/api/process-full-backlog', async (req, res) => {
+  try {
+    // Get count of pending items
+    const countResult = await db.query(
+      `SELECT COUNT(*) as count FROM scraping_queue WHERE status = 'pending'`
+    );
+    const pendingCount = parseInt(countResult.rows[0].count);
+
+    if (pendingCount === 0) {
+      return res.json({
+        success: true,
+        message: 'No pending URLs in queue',
+        processed: 0
+      });
+    }
+
+    // Get all pending URLs, prioritized
+    const result = await db.query(
+      `SELECT * FROM scraping_queue
+       WHERE status = 'pending'
+       ORDER BY priority DESC, submitted_at ASC`
+    );
+
+    // Respond immediately with count
+    res.json({
+      success: true,
+      message: `Processing ALL ${result.rows.length} pending URLs in background`,
+      queuedCount: result.rows.length,
+      estimatedTime: `${Math.ceil(result.rows.length * 5 / 60)} minutes (at ~5s per URL)`
+    });
+
+    // Process in background with rate limiting
+    processFullBacklog(result.rows).catch(error => {
+      logger.error('Full backlog processing error', { error: error.message });
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Background processing for full backlog with rate limiting
+async function processFullBacklog(entries) {
+  const UnifiedScraper = require('./services/scraping/UnifiedScraper');
+  const scraper = new UnifiedScraper(db);
+
+  let processed = 0;
+  let failed = 0;
+  const startTime = Date.now();
+
+  logger.info(`Starting full backlog processing: ${entries.length} URLs`);
+
+  for (const entry of entries) {
+    try {
+      logger.info(`[${processed + 1}/${entries.length}] Processing: ${entry.url}`);
+
+      await db.query(
+        `UPDATE scraping_queue SET status = 'processing', processing_started_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        [entry.id]
+      );
+
+      const result = await scraper.scrapeURL(entry.url, {
+        category: entry.category,
+        queueEntryId: entry.id,
+        submittedBy: entry.submitted_by
+      });
+
+      await db.query(
+        `UPDATE scraping_queue
+         SET status = $1,
+             processing_completed_at = CURRENT_TIMESTAMP,
+             metadata = jsonb_set(
+               COALESCE(metadata, '{}'::jsonb),
+               '{result}',
+               $2::jsonb
+             )
+         WHERE id = $3`,
+        [
+          result.success ? 'completed' : 'failed',
+          JSON.stringify({
+            ownersFound: result.owners.length,
+            enslavedFound: result.enslavedPeople.length,
+            duration: result.duration,
+            errors: result.errors
+          }),
+          entry.id
+        ]
+      );
+
+      processed++;
+      logger.info(`   ✅ Complete: ${result.owners.length} owners, ${result.enslavedPeople.length} enslaved`);
+
+      // Rate limit: wait 1 second between requests to be polite to source servers
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+    } catch (error) {
+      failed++;
+      logger.error(`   ❌ Failed: ${entry.url}`, { error: error.message });
+      await db.query(
+        `UPDATE scraping_queue SET status = 'failed', error_message = $1 WHERE id = $2`,
+        [error.message, entry.id]
+      );
+    }
+  }
+
+  const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
+  logger.info(`\n${'='.repeat(60)}`);
+  logger.info(`BACKLOG PROCESSING COMPLETE`);
+  logger.info(`   Total: ${entries.length}`);
+  logger.info(`   Processed: ${processed}`);
+  logger.info(`   Failed: ${failed}`);
+  logger.info(`   Duration: ${duration} minutes`);
+  logger.info(`${'='.repeat(60)}\n`);
+}
+
 // Background processing function - Uses UnifiedScraper
 async function processQueueInBackground(entries) {
   try {
