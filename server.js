@@ -2316,6 +2316,60 @@ app.post('/api/beyond-kin/:id/needs-document',
   })
 );
 
+// ========================================
+// DELETE DOCUMENT ENDPOINT
+// ========================================
+app.delete('/api/documents/:documentId',
+  moderateLimiter,
+  asyncHandler(async (req, res) => {
+    const { documentId } = req.params;
+
+    console.log(`Deleting document: ${documentId}`);
+
+    try {
+      // Delete from enslaved_people first (foreign key)
+      await database.query(
+        'DELETE FROM enslaved_people WHERE document_id = $1',
+        [documentId]
+      );
+
+      // Delete from document_individuals (foreign key)
+      await database.query(
+        'DELETE FROM document_individuals WHERE document_id = $1',
+        [documentId]
+      );
+
+      // Delete from documents table
+      const result = await database.query(
+        'DELETE FROM documents WHERE document_id = $1 RETURNING document_id',
+        [documentId]
+      );
+
+      if (result.rows.length > 0) {
+        console.log(`✓ Document deleted: ${documentId}`);
+        res.json({
+          success: true,
+          message: 'Document deleted',
+          documentId
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          error: 'Document not found',
+          documentId
+        });
+      }
+    } catch (error) {
+      console.error('Failed to delete document:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete document',
+        details: error.message
+      });
+    }
+  })
+);
+
 // SECURITY: Use error handler middleware (must be last)
 app.use(errorHandler);
 
