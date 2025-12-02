@@ -178,7 +178,12 @@ router.post('/upload',
       res.status(500).json({
         success: false,
         error: 'Failed to upload document',
-        details: error.message
+        details: error.message,
+        debug: {
+          configuredRegion: config.storage.s3.region,
+          bucket: config.storage.s3.bucket,
+          s3Enabled: config.storage.s3.enabled
+        }
       });
     }
   })
