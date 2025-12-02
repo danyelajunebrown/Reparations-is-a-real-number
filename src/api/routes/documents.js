@@ -30,7 +30,7 @@ const upload = multer({
 
 /**
  * POST /api/documents/upload
- * Upload and process a single document
+ * Upload and process a single document (synchronous, no Redis required)
  */
 router.post('/upload',
   uploadLimiter,
@@ -54,24 +54,130 @@ router.post('/upload',
     });
 
     try {
-      // Use enhanced document processor for async upload
-      const uploadJob = await EnhancedDocumentProcessor.uploadDocument(file, metadata);
+      // Direct S3 upload (no Redis/Bull queue required)
+      const crypto = require('crypto');
+      const documentId = crypto.randomBytes(12).toString('hex');
 
-      res.json({
-        success: true,
-        jobId: uploadJob.jobId,
-        status: uploadJob.status,
-        message: 'Document upload queued for processing'
-      });
+      // Sanitize owner name for S3 key
+      const sanitizedOwner = metadata.ownerName
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-');
+
+      // Determine file extension
+      const ext = path.extname(file.originalname) || '.pdf';
+
+      // Create S3 key
+      const s3Key = `owners/${sanitizedOwner}/${metadata.documentType}/${sanitizedOwner}-${metadata.documentType}-${Date.now()}${ext}`;
+
+      // Upload to S3
+      if (S3Service.isEnabled()) {
+        const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
+        const s3Client = new S3Client({
+          region: config.storage.s3.region,
+          credentials: {
+            accessKeyId: config.storage.s3.accessKeyId,
+            secretAccessKey: config.storage.s3.secretAccessKey
+          }
+        });
+
+        const uploadCommand = new PutObjectCommand({
+          Bucket: config.storage.s3.bucket,
+          Key: s3Key,
+          Body: file.buffer,
+          ContentType: file.mimetype
+        });
+
+        await s3Client.send(uploadCommand);
+
+        logger.info('File uploaded to S3', { s3Key, bucket: config.storage.s3.bucket });
+
+        // Save to database
+        const DocumentRepository = require('../../repositories/DocumentRepository');
+        await DocumentRepository.create({
+          document_id: documentId,
+          owner_name: metadata.ownerName,
+          doc_type: metadata.documentType,
+          filename: file.originalname,
+          file_path: s3Key,
+          file_size: file.size,
+          mime_type: file.mimetype,
+          stored_at: new Date().toISOString(),
+          uploaded_by: 'web-upload',
+          verification_status: 'pending',
+          needs_human_review: true
+        });
+
+        res.json({
+          success: true,
+          documentId: documentId,
+          s3Key: s3Key,
+          message: 'Document uploaded successfully to S3',
+          result: {
+            documentId: documentId,
+            filename: file.originalname,
+            storageType: 's3'
+          }
+        });
+
+      } else {
+        // Fallback to local storage
+        const localDir = path.join(config.storage.root, 'owners', sanitizedOwner, metadata.documentType);
+        const localPath = path.join(localDir, `${sanitizedOwner}-${metadata.documentType}-${Date.now()}${ext}`);
+
+        // Create directory
+        const fsPromises = require('fs').promises;
+        await fsPromises.mkdir(localDir, { recursive: true });
+        await fsPromises.writeFile(localPath, file.buffer);
+
+        logger.info('File saved locally', { localPath });
+
+        // Save to database
+        const DocumentRepository = require('../../repositories/DocumentRepository');
+        await DocumentRepository.create({
+          document_id: documentId,
+          owner_name: metadata.ownerName,
+          doc_type: metadata.documentType,
+          filename: file.originalname,
+          file_path: localPath,
+          file_size: file.size,
+          mime_type: file.mimetype,
+          stored_at: new Date().toISOString(),
+          uploaded_by: 'web-upload',
+          verification_status: 'pending',
+          needs_human_review: true
+        });
+
+        res.json({
+          success: true,
+          documentId: documentId,
+          message: 'Document uploaded successfully (local storage)',
+          result: {
+            documentId: documentId,
+            filename: file.originalname,
+            storageType: 'local'
+          }
+        });
+      }
+
     } catch (error) {
       logger.error('Document upload failed', {
         error: error.message,
+        stack: error.stack,
         filename: file.originalname
+      });
+
+      await ErrorLogger.logDocumentError({
+        type: 'UPLOAD_FAILED',
+        message: error.message,
+        filename: file.originalname,
+        ownerName: metadata.ownerName
       });
 
       res.status(500).json({
         success: false,
-        error: 'Failed to queue document upload',
+        error: 'Failed to upload document',
         details: error.message
       });
     }
