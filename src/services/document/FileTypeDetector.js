@@ -21,8 +21,19 @@ class FileTypeDetector {
    */
   async detect(buffer) {
     try {
-      // Use file-type to detect based on magic numbers
-      const detectedType = await fileType.fromBuffer(buffer);
+      // file-type v12 uses synchronous API: fileType(buffer)
+      // v16+ uses async: fileType.fromBuffer(buffer)
+      let detectedType;
+
+      if (typeof fileType === 'function') {
+        // Old API (v12 and below) - synchronous
+        detectedType = fileType(buffer);
+      } else if (fileType.fromBuffer) {
+        // New API (v16+) - async
+        detectedType = await fileType.fromBuffer(buffer);
+      } else {
+        throw new Error('Unsupported file-type package version');
+      }
 
       // If file-type can't detect, try content-based detection
       if (!detectedType) {
