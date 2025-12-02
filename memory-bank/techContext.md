@@ -30,6 +30,11 @@
 - **PDF Parsing:** pdf-parse 1.1.1
 - **Image Processing:** Sharp 0.33.1
 
+### Web Scraping
+- **HTTP Client:** Axios
+- **HTML Parser:** Cheerio
+- **Browser Automation:** Puppeteer (for JavaScript-rendered pages)
+
 ### Blockchain
 - **Network:** Ethereum (local Ganache for testing)
 - **Smart Contract Language:** Solidity 0.8.19
@@ -54,7 +59,7 @@ The project has TWO server files - understanding this is critical:
    - Contains ALL endpoints in one file
    - NOT used in production
 
-2. **`src/server.js`** - Refactored modular server (~800 lines)
+2. **`src/server.js`** - Refactored modular server (~900 lines)
    - **THIS IS USED IN PRODUCTION**
    - Uses modular routes from `src/api/routes/`
    - Plus inline legacy endpoints for frontend compatibility
@@ -78,16 +83,84 @@ app.get('/api/queue-stats', ...)
 app.get('/api/population-stats', ...)
 app.post('/api/submit-url', ...)
 app.post('/api/trigger-queue-processing', ...)
+app.post('/api/process-full-backlog', ...)      // ⭐ NEW
 app.post('/api/search-reparations', ...)
 app.post('/api/get-descendants', ...)
 app.get('/api/beyond-kin/pending', ...)
-app.post('/api/beyond-kin/:id/approve', ...)
-app.post('/api/beyond-kin/:id/reject', ...)
-app.post('/api/beyond-kin/:id/needs-document', ...)
-app.post('/api/process-individual-metadata', ...)
-app.get('/api/cors-test', ...)
-app.get('/api', ...)
+// ... more endpoints
 ```
+
+---
+
+## Scraping System Architecture ⭐ NEW
+
+### UnifiedScraper.js (`src/services/scraping/UnifiedScraper.js`)
+
+The main scraping engine with 8 site-type handlers:
+
+```javascript
+class UnifiedScraper {
+    constructor(database, config = {}) {
+        this.db = database;
+        this.config = { timeout: 30000, ... };
+    }
+
+    // Main entry point
+    async scrapeURL(url, options = {}) {
+        const category = options.category || this.detectCategory(url);
+        // Routes to appropriate handler based on category
+    }
+
+    // Category detection from URL
+    detectCategory(url) {
+        if (url.includes('freepages.rootsweb.com')) return 'rootsweb_census';
+        if (url.includes('beyondkin.org')) return 'beyondkin';
+        if (url.includes('civilwardc.org')) return 'civilwardc';
+        // ... more patterns
+        return 'generic';
+    }
+
+    // Site-specific handlers
+    async scrapeRootswebCensus(url, result, options) { ... }
+    async scrapeBeyondKin(url, result, options) { ... }
+    async scrapeCivilWarDC(url, result, options) { ... }
+    async scrapeWikipedia(url, result, options) { ... }
+    async scrapeFindAGrave(url, result, options) { ... }
+    async scrapeFamilySearch(url, result, options) { ... }
+    async scrapeArchive(url, result, options) { ... }
+    async scrapeGeneric(url, result, options) { ... }
+
+    // Database saving
+    async saveResults(result, options) {
+        // Confirmed owners → individuals table
+        // All data → unconfirmed_persons table
+    }
+}
+```
+
+### Confidence Scores by Source Type
+
+| Source Type | Confidence | Target Table |
+|-------------|------------|--------------|
+| Census (rootsweb_census) | 0.98 | `individuals` (direct) |
+| DC Petitions (civilwardc) | 0.95 | `individuals` (direct) |
+| Beyond Kin | 0.60 | `unconfirmed_persons` |
+| FamilySearch | 0.65 | `unconfirmed_persons` |
+| Wikipedia | 0.50 | `unconfirmed_persons` |
+| Find A Grave | 0.50 | `unconfirmed_persons` |
+| Archive.org | 0.50 | `unconfirmed_persons` |
+| Generic | 0.40 | `unconfirmed_persons` |
+
+### Rootsweb Census Scraper Details
+
+Handles Tom Blake's "Large Slaveholders of 1860" data:
+- **Main Index:** Extracts all county page links, queues them
+- **County Pages:** Parses slaveholder entries in format:
+  ```
+  NAME, # slaves, Location, page #
+  Example: ADAMS, John, 98 slaves, Athens, page 19
+  ```
+- **Surname Matches:** Extracts 1870 African American surname data
 
 ---
 
@@ -101,30 +174,22 @@ GET    /api/documents/:id             - Get document metadata
 GET    /api/documents/:id/access      - Get presigned S3 URL for viewing
 GET    /api/documents/:id/file        - Download document file
 DELETE /api/documents/:id             - Delete document
-GET    /api/documents/owner/:name     - Get documents by owner name
-GET    /api/documents/stats/global    - Global statistics
 GET    /api/search-documents          - Search by name/FamilySearch ID
-```
-
-### Carousel & Frontend
-```
-GET    /api/carousel-data             - Get cards for carousel display
-GET    /api/population-stats          - Progress toward 393,975 goal
 ```
 
 ### Queue & Scraping
 ```
-POST   /api/submit-url                - Submit URL for scraping
+POST   /api/submit-url                - Submit URL for scraping (with metadata)
 GET    /api/queue-stats               - Queue statistics
-POST   /api/trigger-queue-processing  - Trigger background processing
+POST   /api/trigger-queue-processing  - Trigger batch processing (3-5 URLs)
+POST   /api/process-full-backlog      - Process ALL pending URLs ⭐ NEW
 ```
 
 ### Reparations & Genealogy
 ```
 POST   /api/search-reparations        - Search by name/year/ID
 POST   /api/get-descendants           - Get descendants for a person
-POST   /api/llm-query                 - Research assistant query
-POST   /api/clear-session             - Clear research session
+GET    /api/population-stats          - Progress toward 393,975 goal
 ```
 
 ### Beyond Kin Review
@@ -139,9 +204,8 @@ POST   /api/beyond-kin/:id/needs-document - Request documentation
 ```
 GET    /api                           - API info
 GET    /api/health                    - Health check
-GET    /health                        - Legacy health (redirects)
+GET    /api/carousel-data             - Carousel display data
 GET    /api/cors-test                 - CORS diagnostic
-POST   /api/errors/log                - Client error logging
 ```
 
 ---
@@ -163,29 +227,9 @@ AWS_SECRET_ACCESS_KEY=your_secret_access_key
 # Google Cloud Vision API (for OCR)
 GOOGLE_VISION_API_KEY=your_api_key_here
 
-# IPFS (Optional)
-IPFS_ENABLED=false
-IPFS_GATEWAY=https://ipfs.io/ipfs/
-
 # Server Configuration
 PORT=3000
 NODE_ENV=production
-
-# Security (Optional)
-JWT_SECRET=your_jwt_secret_here
-```
-
-### Configuration Loading (config.js)
-```javascript
-module.exports = {
-  storage: {
-    s3: {
-      enabled: process.env.S3_ENABLED === 'true',
-      bucket: process.env.S3_BUCKET || '',
-      region: process.env.S3_REGION || 'us-east-2'  // Default updated to us-east-2
-    }
-  }
-};
 ```
 
 ---
@@ -206,7 +250,6 @@ module.exports = {
 - **Name:** reparations-db
 - **Platform:** Render PostgreSQL 17
 - **Region:** Virginia (us-east)
-- **SSL:** Required
 
 **Storage:**
 - **Platform:** AWS S3
@@ -220,44 +263,59 @@ module.exports = {
 
 ---
 
-## Frontend Configuration
-
-### API_BASE_URL Setting
-All frontend files use the same API base:
-
-```javascript
-// In index.html, portal.html, contribute.html
-const API_BASE_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:3000'
-    : 'https://reparations-platform.onrender.com';
-```
-
-### Document Viewer CSS (Critical)
-The document viewer must use these styles for proper full-screen overlay:
-
-```css
-.document-viewer-container {
-    position: fixed;           /* NOT absolute */
-    top: 0;
-    left: 0;
-    width: 100vw;              /* NOT 100% */
-    height: 100vh;             /* NOT 100% */
-    background: rgba(10, 14, 39, 0.98);
-    display: none;
-    flex-direction: row;
-    z-index: 9999;             /* High value to overlay everything */
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-```
-
-**Important:** The document viewer HTML must be at body level, NOT nested inside other containers.
-
----
-
 ## Database Schema
 
 ### Core Tables
+
+**individuals** (confirmed persons)
+```sql
+CREATE TABLE individuals (
+  individual_id SERIAL PRIMARY KEY,
+  full_name VARCHAR(255),
+  birth_year INTEGER,
+  death_year INTEGER,
+  locations TEXT[],
+  source_documents JSONB,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**unconfirmed_persons** (staging table)
+```sql
+CREATE TABLE unconfirmed_persons (
+  id SERIAL PRIMARY KEY,
+  full_name VARCHAR(255),
+  person_type VARCHAR(50),          -- 'owner', 'suspected_owner', 'enslaved', 'suspected_enslaved'
+  birth_year INTEGER,
+  death_year INTEGER,
+  locations TEXT[],
+  source_url TEXT,
+  source_type VARCHAR(100),
+  confidence_score NUMERIC(3,2),
+  context_text TEXT,
+  relationships JSONB,
+  status VARCHAR(50),               -- 'pending', 'reviewing', 'confirmed'
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**scraping_queue**
+```sql
+CREATE TABLE scraping_queue (
+  id SERIAL PRIMARY KEY,
+  url TEXT NOT NULL UNIQUE,
+  category VARCHAR(100),
+  submitted_by VARCHAR(255),
+  status VARCHAR(50) DEFAULT 'pending',
+  priority INTEGER DEFAULT 5,
+  metadata JSONB,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processing_started_at TIMESTAMP,
+  processing_completed_at TIMESTAMP,
+  error_message TEXT
+);
+```
 
 **documents**
 ```sql
@@ -267,31 +325,12 @@ CREATE TABLE documents (
   doc_type VARCHAR(100),
   file_path VARCHAR(500),
   filename VARCHAR(255),
-  file_size BIGINT,
-  mime_type VARCHAR(100),
   storage_type VARCHAR(50) DEFAULT 'local',
   total_enslaved INTEGER DEFAULT 0,
   total_reparations DECIMAL(15,2) DEFAULT 0,
   ocr_text TEXT,
-  ocr_confidence NUMERIC(5,2),
   verification_status VARCHAR(50) DEFAULT 'pending',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**scraping_queue**
-```sql
-CREATE TABLE scraping_queue (
-  id SERIAL PRIMARY KEY,
-  url TEXT NOT NULL,
-  category VARCHAR(100),
-  submitted_by VARCHAR(255),
-  status VARCHAR(50) DEFAULT 'pending',
-  priority INTEGER DEFAULT 5,
-  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  processing_started_at TIMESTAMP,
-  processing_completed_at TIMESTAMP,
-  error_message TEXT
 );
 ```
 
@@ -313,10 +352,10 @@ reparations-is-a-real-number/
 │   │   ├── document/
 │   │   │   ├── EnhancedDocumentProcessor.js
 │   │   │   ├── S3StorageAdapter.js
-│   │   │   ├── FileTypeDetector.js
 │   │   │   └── OCRProcessor.js
 │   │   └── scraping/
-│   │       └── Orchestrator.js
+│   │       ├── UnifiedScraper.js # ⭐ MAIN SCRAPER (8 handlers)
+│   │       └── Orchestrator.js   # Legacy (broken dependencies)
 │   ├── database/
 │   │   └── connection.js
 │   └── utils/
@@ -332,7 +371,7 @@ reparations-is-a-real-number/
 │
 ├── index.html                    # Main dashboard
 ├── portal.html                   # Reparations search
-├── contribute.html               # URL submission
+├── contribute.html               # URL submission (enhanced with metadata)
 │
 ├── memory-bank/                  # AI context persistence
 │   ├── projectbrief.md
@@ -349,8 +388,7 @@ reparations-is-a-real-number/
 │   └── truffle-config.js
 │
 ├── package.json
-├── .env                          # Environment variables (gitignored)
-└── .env.example                  # Example configuration
+└── .env                          # Environment variables (gitignored)
 ```
 
 ---
@@ -371,9 +409,40 @@ reparations-is-a-real-number/
 **Cause:** S3 bucket in us-east-2 but config defaulting to us-east-1
 **Solution:** Update `S3_REGION=us-east-2` in .env and config.js default
 
-### Issue: Frontend Calling Wrong Backend
-**Cause:** API_BASE_URL pointing to non-existent Render service
-**Solution:** Ensure all frontend files use `https://reparations-platform.onrender.com`
+### Issue: Scraper Not Saving to Individuals Table
+**Cause:** Only unconfirmed_persons was being populated
+**Solution:** In UnifiedScraper.saveResults(), check if confidence >= 0.9 and save directly to individuals table
+
+### Issue: Backlog Not Processing
+**Cause:** No auto-processing endpoint
+**Solution:** Added `POST /api/process-full-backlog` endpoint with rate limiting
+
+---
+
+## Scraping Data Flow
+
+```
+User submits URL (contribute.html)
+         ↓
+POST /api/submit-url (with category + metadata)
+         ↓
+scraping_queue table (status: pending)
+         ↓
+POST /api/process-full-backlog (or /api/trigger-queue-processing)
+         ↓
+UnifiedScraper.scrapeURL()
+         ↓
+detectCategory() → route to handler
+         ↓
+Handler extracts: owners[], enslavedPeople[], relationships[]
+         ↓
+saveResults()
+    ├── if confidence >= 0.9 → individuals table ✅
+    ├── all data → unconfirmed_persons table
+    └── if slaveCount → slaveholder_records table
+         ↓
+scraping_queue updated (status: completed)
+```
 
 ---
 
