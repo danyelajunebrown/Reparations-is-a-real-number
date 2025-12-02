@@ -264,6 +264,460 @@ app.post('/api/process-individual-metadata', async (req, res) => {
 });
 
 // =============================================================================
+// Document Listing and Search Endpoints
+// =============================================================================
+
+// List all documents with pagination
+app.get('/api/documents', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const documents = await db.query(
+      `SELECT document_id, owner_name, doc_type, filename, file_size,
+              mime_type, owner_location, created_at, total_enslaved
+       FROM documents
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    const countResult = await db.query('SELECT COUNT(*) FROM documents');
+    const totalCount = parseInt(countResult.rows[0].count);
+
+    res.json({
+      success: true,
+      count: documents.rows.length,
+      total: totalCount,
+      limit,
+      offset,
+      documents: documents.rows
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Search documents across multiple fields
+app.get('/api/search-documents', async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search query is required'
+      });
+    }
+
+    const searchTerm = query.trim();
+    const normalizedSearch = searchTerm
+      .toLowerCase()
+      .replace(/['\s-]/g, '')
+      .replace(/^de/, 'd');
+
+    logger.info(`Searching for: "${searchTerm}"`);
+
+    const searchQuery = `
+      SELECT DISTINCT
+        d.document_id,
+        d.owner_name,
+        d.filename,
+        d.doc_type,
+        d.file_size,
+        d.mime_type,
+        d.owner_location,
+        d.owner_birth_year,
+        d.owner_death_year,
+        d.owner_familysearch_id,
+        d.total_enslaved,
+        d.total_reparations,
+        d.created_at
+      FROM documents d
+      WHERE
+        LOWER(d.owner_name) LIKE '%' || LOWER($1) || '%'
+        OR LOWER(REPLACE(REPLACE(REPLACE(d.owner_name, '''', ''), ' ', ''), '-', ''))
+           LIKE '%' || $2 || '%'
+        OR d.owner_familysearch_id = $1
+      ORDER BY d.created_at DESC
+      LIMIT 100
+    `;
+
+    const results = await db.query(searchQuery, [searchTerm, normalizedSearch]);
+
+    res.json({
+      success: true,
+      query: searchTerm,
+      count: results.rows.length,
+      documents: results.rows
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// Queue and Scraping Endpoints (for contribute.html)
+// =============================================================================
+
+// Submit URL for scraping
+app.post('/api/submit-url', async (req, res) => {
+  try {
+    const { url, category, submittedBy } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid URL format' });
+    }
+
+    // Check if URL already in queue
+    const existingCheck = await db.query(
+      `SELECT id, status FROM scraping_queue
+       WHERE url = $1 AND status IN ('pending', 'processing')
+       LIMIT 1`,
+      [url]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      return res.json({
+        success: true,
+        message: 'This URL is already in the queue!',
+        queueId: existingCheck.rows[0].id,
+        status: existingCheck.rows[0].status
+      });
+    }
+
+    const priority = category === 'beyondkin' ? 10 : 5;
+
+    const result = await db.query(
+      `INSERT INTO scraping_queue (url, category, submitted_by, status, priority)
+       VALUES ($1, $2, $3, 'pending', $4)
+       RETURNING id, url, status, submitted_at, priority`,
+      [url, category || 'other', submittedBy || 'anonymous', priority]
+    );
+
+    res.json({
+      success: true,
+      message: category === 'beyondkin'
+        ? 'Beyond Kin submission received! High priority.'
+        : 'URL submitted successfully!',
+      queueEntry: result.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get queue statistics
+app.get('/api/queue-stats', async (req, res) => {
+  try {
+    const stats = await db.query(`SELECT * FROM queue_stats LIMIT 1`);
+    const docsResult = await db.query(`
+      SELECT COUNT(*) as count FROM scraping_sessions
+      WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+    `);
+
+    res.json({
+      pending_urls: stats.rows[0]?.pending_urls || 0,
+      processing_urls: stats.rows[0]?.processing_urls || 0,
+      completed_urls: stats.rows[0]?.completed_urls || 0,
+      failed_urls: stats.rows[0]?.failed_urls || 0,
+      persons_24h: stats.rows[0]?.persons_24h || 0,
+      documents_24h: docsResult.rows[0]?.count || 0
+    });
+  } catch (error) {
+    // Return zeros if tables don't exist
+    res.json({
+      pending_urls: 0,
+      processing_urls: 0,
+      completed_urls: 0,
+      failed_urls: 0,
+      persons_24h: 0,
+      documents_24h: 0
+    });
+  }
+});
+
+// Get population statistics
+app.get('/api/population-stats', async (req, res) => {
+  try {
+    const totalResult = await db.query(`SELECT COUNT(*) as total FROM individuals`);
+    const slaveholdersResult = await db.query(`
+      SELECT COUNT(DISTINCT individual_id) as count FROM individuals
+      WHERE total_enslaved > 0
+    `);
+    const enslavedResult = await db.query(`SELECT COUNT(*) as count FROM enslaved_people`);
+
+    const totalIndividuals = parseInt(totalResult.rows[0]?.total) || 0;
+    const slaveholdersFound = parseInt(slaveholdersResult.rows[0]?.count) || 0;
+    const enslavedFound = parseInt(enslavedResult.rows[0]?.count) || 0;
+    const targetSlaveholders = 393975;
+
+    res.json({
+      total_individuals: totalIndividuals,
+      slaveholders_found: slaveholdersFound,
+      enslaved_found: enslavedFound,
+      target_slaveholders: targetSlaveholders,
+      progress_percent: ((slaveholdersFound / targetSlaveholders) * 100).toFixed(4)
+    });
+  } catch (error) {
+    res.json({
+      total_individuals: 0,
+      slaveholders_found: 0,
+      enslaved_found: 0,
+      target_slaveholders: 393975,
+      progress_percent: '0.0000'
+    });
+  }
+});
+
+// Trigger queue processing
+app.post('/api/trigger-queue-processing', async (req, res) => {
+  try {
+    const batchSize = Math.min(parseInt(req.body.batchSize) || 3, 5);
+
+    const result = await db.query(
+      `SELECT * FROM scraping_queue
+       WHERE status = 'pending'
+       ORDER BY priority DESC, submitted_at ASC
+       LIMIT $1`,
+      [batchSize]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No pending URLs in queue',
+        processed: 0
+      });
+    }
+
+    // Respond immediately
+    res.json({
+      success: true,
+      message: `Processing ${result.rows.length} URLs in background`,
+      queuedCount: result.rows.length
+    });
+
+    // Process in background (don't await)
+    processQueueInBackground(result.rows).catch(error => {
+      logger.error('Background queue processing error', { error: error.message });
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Background processing function
+async function processQueueInBackground(entries) {
+  try {
+    const AutonomousResearchOrchestrator = require('./services/scraping/Orchestrator');
+    const orchestrator = new AutonomousResearchOrchestrator(db);
+
+    for (const entry of entries) {
+      try {
+        logger.info(`Processing queue entry: ${entry.url}`);
+
+        await db.query(
+          `UPDATE scraping_queue SET status = 'processing', processing_started_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [entry.id]
+        );
+
+        const startTime = Date.now();
+        const processResult = await orchestrator.processURL(entry.url, {
+          category: entry.category,
+          isBeyondKin: entry.category === 'beyondkin',
+          queueEntryId: entry.id
+        });
+
+        await db.query(
+          `UPDATE scraping_queue SET status = 'completed', processing_completed_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          [entry.id]
+        );
+
+        logger.info(`Completed processing: ${entry.url} in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+      } catch (error) {
+        logger.error(`Failed processing: ${entry.url}`, { error: error.message });
+        await db.query(
+          `UPDATE scraping_queue SET status = 'failed', error_message = $1 WHERE id = $2`,
+          [error.message, entry.id]
+        );
+      }
+    }
+  } catch (error) {
+    logger.error('Orchestrator not available', { error: error.message });
+  }
+}
+
+// =============================================================================
+// Reparations Portal Endpoints (for portal.html)
+// =============================================================================
+
+// Search for reparations
+app.post('/api/search-reparations', async (req, res) => {
+  try {
+    const { searchType, searchValue } = req.body;
+
+    if (!searchType || !searchValue) {
+      return res.status(400).json({ success: false, error: 'Search type and value required' });
+    }
+
+    let searchQuery;
+    let queryParams;
+
+    if (searchType === 'name') {
+      searchQuery = `
+        SELECT i.individual_id, i.full_name, i.birth_year, i.death_year,
+               i.locations, COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE LOWER(i.full_name) LIKE LOWER($1)
+        GROUP BY i.individual_id
+        ORDER BY total_reparations DESC LIMIT 50
+      `;
+      queryParams = [`%${searchValue}%`];
+    } else if (searchType === 'year') {
+      searchQuery = `
+        SELECT i.individual_id, i.full_name, i.birth_year, i.death_year,
+               i.locations, COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE i.birth_year = $1
+        GROUP BY i.individual_id
+        ORDER BY total_reparations DESC LIMIT 50
+      `;
+      queryParams = [parseInt(searchValue)];
+    } else if (searchType === 'id') {
+      searchQuery = `
+        SELECT i.individual_id, i.full_name, i.birth_year, i.death_year,
+               i.locations, COALESCE(SUM(r.total_reparations), 0) as total_reparations
+        FROM individuals i
+        LEFT JOIN reparations_breakdown r ON i.individual_id = r.individual_id
+        WHERE i.individual_id = $1
+        GROUP BY i.individual_id LIMIT 1
+      `;
+      queryParams = [searchValue];
+    } else {
+      return res.status(400).json({ success: false, error: 'Invalid search type' });
+    }
+
+    const results = await db.query(searchQuery, queryParams);
+
+    if (results.rows.length === 0) {
+      return res.json({
+        success: false,
+        error: 'No records found for this search.'
+      });
+    }
+
+    const totalReparations = results.rows.reduce((sum, p) => sum + parseFloat(p.total_reparations || 0), 0);
+
+    const ancestors = results.rows.map(person => ({
+      name: person.full_name,
+      birthYear: person.birth_year,
+      deathYear: person.death_year,
+      location: person.locations ? person.locations[0] : null,
+      reparations: parseFloat(person.total_reparations || 0),
+      documents: []
+    }));
+
+    res.json({
+      success: true,
+      results: {
+        searchedFor: searchValue,
+        totalReparations,
+        ancestors,
+        breakdown: {
+          'Total Ancestors Found': ancestors.length,
+          'Documented with Primary Sources': 0,
+          'Average Reparations per Ancestor': ancestors.length > 0 ? totalReparations / ancestors.length : 0
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get descendants for a person
+app.post('/api/get-descendants', async (req, res) => {
+  try {
+    const { personName, personType, generations } = req.body;
+    const maxGenerations = Math.min(generations || 2, 3);
+
+    // Simplified query - just get children from relationships
+    const result = await db.query(`
+      SELECT i.individual_id, i.full_name, i.birth_year, i.death_year
+      FROM individuals i
+      JOIN relationships r ON i.individual_id = r.individual_id_2
+      JOIN individuals parent ON r.individual_id_1 = parent.individual_id
+      WHERE LOWER(parent.full_name) = LOWER($1)
+        AND r.relationship_type = 'parent-child'
+      LIMIT 50
+    `, [personName]);
+
+    const descendants = result.rows.map(row => ({
+      name: row.full_name,
+      birthYear: row.birth_year,
+      deathYear: row.death_year,
+      generation: 1,
+      inheritedDebt: 0
+    }));
+
+    res.json({
+      success: true,
+      personName,
+      personType,
+      descendants,
+      generationCount: descendants.length > 0 ? 1 : 0
+    });
+  } catch (error) {
+    res.json({
+      success: true,
+      personName: req.body.personName,
+      personType: req.body.personType,
+      descendants: [],
+      generationCount: 0
+    });
+  }
+});
+
+// =============================================================================
+// Utility Endpoints
+// =============================================================================
+
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working!',
+    yourOrigin: req.headers.origin || 'NO ORIGIN HEADER',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// API info endpoint
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'Reparations Platform API',
+    version: '2.0.0',
+    endpoints: {
+      documents: '/api/documents',
+      search: '/api/search-documents',
+      upload: '/api/documents/upload',
+      carousel: '/api/carousel-data',
+      health: '/api/health'
+    }
+  });
+});
+
+// =============================================================================
 // Error Handling
 // =============================================================================
 
