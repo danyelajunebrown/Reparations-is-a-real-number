@@ -792,4 +792,42 @@ router.get('/stats/global',
   })
 );
 
+/**
+ * DELETE /api/documents/:documentId
+ * Delete a document by ID
+ */
+router.delete('/:documentId',
+  moderateLimiter,
+  asyncHandler(async (req, res) => {
+    const { documentId } = req.params;
+
+    try {
+      const DocumentRepository = require('../../repositories/DocumentRepository');
+      const result = await DocumentRepository.delete(documentId);
+
+      if (result) {
+        logger.info('Document deleted', { documentId });
+        res.json({
+          success: true,
+          message: 'Document deleted',
+          documentId
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          error: 'Document not found',
+          documentId
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to delete document', { documentId, error: error.message });
+      res.status(500).json({
+        success: false,
+        error: 'Failed to delete document',
+        details: error.message
+      });
+    }
+  })
+);
+
 module.exports = router;
