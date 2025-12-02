@@ -115,8 +115,9 @@ logger.stream = {
  * @param {Object} metadata - Additional metadata to include in all logs
  * @returns {winston.Logger} Child logger
  */
-logger.child = (metadata) => {
-  return logger.child(metadata);
+const originalChild = logger.child.bind(logger);
+logger.childLogger = (metadata) => {
+  return originalChild(metadata);
 };
 
 /**
@@ -193,7 +194,7 @@ logger.middleware = (req, res, next) => {
   req.requestId = requestId;
 
   // Create a child logger with request ID
-  req.logger = logger.child({ requestId });
+  req.logger = logger.childLogger({ requestId });
 
   // Log the start of the request
   const start = Date.now();
