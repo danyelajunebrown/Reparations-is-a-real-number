@@ -266,18 +266,78 @@
             </div>
 
             <div class="form-group">
-                <label for="category">Category (Optional)</label>
-                <select id="category" name="category">
+                <label for="category">Data Source Category</label>
+                <select id="category" name="category" onchange="showCategoryFields()">
                     <option value="other">Other / Unknown</option>
-                    <option value="beyondkin">Beyond Kin Project (High Priority)</option>
-                    <option value="wikipedia">Wikipedia Article</option>
-                    <option value="findagrave">FindAGrave Memorial</option>
-                    <option value="ancestry">Ancestry Profile (requires HTML upload)</option>
-                    <option value="familysearch">FamilySearch (requires HTML upload)</option>
+                    <option value="beyondkin">Beyond Kin Project (Suspected Owners/Enslaved)</option>
+                    <option value="civilwardc">Civil War DC Petitions (Confirmed Owners/Enslaved)</option>
+                    <option value="slaveholders1860">Large Slaveholders of 1860 (Confirmed Owners)</option>
+                    <option value="surnames1870">African American Surname Matches 1870 (Suspected Enslaved)</option>
+                    <option value="wikipedia">Wikipedia Article (Suspected)</option>
+                    <option value="findagrave">FindAGrave Memorial (Suspected)</option>
+                    <option value="ancestry">Ancestry Profile</option>
+                    <option value="familysearch">FamilySearch</option>
                     <option value="archive">Archive.org Document</option>
                     <option value="newspaper">Newspaper Archive</option>
                     <option value="academic">Academic/Historical Site</option>
+                    <option value="custom">Custom New Source (Advanced)</option>
                 </select>
+            </div>
+
+            <!-- Advanced fields for new data sources -->
+            <div id="advancedFields" style="display: none; background: #f0f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h4 style="margin-bottom: 15px; color: #2d3748;">📋 Source Configuration</h4>
+
+                <div class="form-group">
+                    <label for="sourceType">Source Type (Primary/Secondary/Tertiary)</label>
+                    <select id="sourceType" name="sourceType">
+                        <option value="secondary">Secondary (genealogy sites, databases)</option>
+                        <option value="primary">Primary (original documents, petitions, census)</option>
+                        <option value="tertiary">Tertiary (Wikipedia, encyclopedias)</option>
+                    </select>
+                    <small style="color: #718096;">Primary sources can CONFIRM slaveholder/enslaved status</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="dataType">Data Contains</label>
+                    <select id="dataType" name="dataType" multiple style="height: 80px;">
+                        <option value="owners">Slaveholder Names</option>
+                        <option value="enslaved">Enslaved People Names</option>
+                        <option value="relationships">Owner-Enslaved Relationships</option>
+                        <option value="locations">Locations/States</option>
+                        <option value="dates">Birth/Death Years</option>
+                        <option value="documents">Downloadable Documents</option>
+                    </select>
+                    <small style="color: #718096;">Hold Ctrl/Cmd to select multiple</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="listingPage">Is this a listing/index page with multiple records?</label>
+                    <select id="listingPage" name="listingPage">
+                        <option value="no">No - Single person/record page</option>
+                        <option value="yes">Yes - Index page with links to individual records</option>
+                    </select>
+                </div>
+
+                <div id="listingConfig" style="display: none;">
+                    <div class="form-group">
+                        <label for="recordLinkPattern">Link pattern to individual records (CSS selector or regex)</label>
+                        <input type="text" id="recordLinkPattern" name="recordLinkPattern"
+                               placeholder="e.g., a[href*='/person/'] or \.person-link">
+                        <small style="color: #718096;">How to find links to individual record pages</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="totalPages">Estimated total pages (for pagination)</label>
+                        <input type="number" id="totalPages" name="totalPages" placeholder="e.g., 50" min="1">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="notes">Additional Notes for Scraper</label>
+                    <textarea id="notes" name="notes" rows="3"
+                              placeholder="Any special instructions or patterns to look for..."
+                              style="width: 100%; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px;"></textarea>
+                </div>
             </div>
 
             <div class="form-group">
@@ -292,6 +352,39 @@
 
             <button type="submit" id="submitBtn">Submit for Research</button>
         </form>
+
+        <script>
+            function showCategoryFields() {
+                const category = document.getElementById('category').value;
+                const advancedFields = document.getElementById('advancedFields');
+                const listingConfig = document.getElementById('listingConfig');
+
+                // Show advanced fields for custom sources
+                if (category === 'custom') {
+                    advancedFields.style.display = 'block';
+                } else {
+                    advancedFields.style.display = 'none';
+                }
+
+                // Pre-configure known sources
+                const sourceConfigs = {
+                    'civilwardc': { sourceType: 'primary', dataType: ['owners', 'enslaved', 'relationships', 'documents'] },
+                    'slaveholders1860': { sourceType: 'primary', dataType: ['owners', 'locations'], listing: true },
+                    'surnames1870': { sourceType: 'secondary', dataType: ['enslaved', 'locations'], listing: true },
+                    'beyondkin': { sourceType: 'secondary', dataType: ['owners', 'enslaved', 'relationships'] },
+                    'wikipedia': { sourceType: 'tertiary', dataType: ['owners', 'enslaved'] }
+                };
+
+                if (sourceConfigs[category]) {
+                    document.getElementById('sourceType').value = sourceConfigs[category].sourceType;
+                }
+            }
+
+            document.getElementById('listingPage').addEventListener('change', function() {
+                document.getElementById('listingConfig').style.display =
+                    this.value === 'yes' ? 'block' : 'none';
+            });
+        </script>
 
         <div class="examples">
             <h4>Example URLs You Can Submit:</h4>
@@ -373,6 +466,36 @@
             const category = document.getElementById('category').value;
             const submittedBy = document.getElementById('submittedBy').value || 'anonymous';
 
+            // Get advanced fields if visible
+            const advancedFields = document.getElementById('advancedFields');
+            let metadata = {};
+
+            if (advancedFields.style.display !== 'none' || category === 'custom') {
+                const dataTypeSelect = document.getElementById('dataType');
+                const selectedDataTypes = Array.from(dataTypeSelect.selectedOptions).map(opt => opt.value);
+
+                metadata = {
+                    sourceType: document.getElementById('sourceType')?.value || 'secondary',
+                    dataTypes: selectedDataTypes,
+                    isListingPage: document.getElementById('listingPage')?.value === 'yes',
+                    recordLinkPattern: document.getElementById('recordLinkPattern')?.value || null,
+                    totalPages: document.getElementById('totalPages')?.value || null,
+                    notes: document.getElementById('notes')?.value || null
+                };
+            }
+
+            // Pre-set metadata for known sources
+            const sourceMetadata = {
+                'civilwardc': { sourceType: 'primary', dataTypes: ['owners', 'enslaved', 'relationships', 'documents'], isPrimary: true },
+                'slaveholders1860': { sourceType: 'primary', dataTypes: ['owners', 'locations'], isPrimary: true, isListingPage: true },
+                'surnames1870': { sourceType: 'secondary', dataTypes: ['enslaved', 'locations'], isListingPage: true },
+                'beyondkin': { sourceType: 'secondary', dataTypes: ['owners', 'enslaved', 'relationships'] }
+            };
+
+            if (sourceMetadata[category]) {
+                metadata = { ...metadata, ...sourceMetadata[category] };
+            }
+
             // Disable button
             submitBtn.disabled = true;
             submitBtn.textContent = 'Submitting...';
@@ -383,7 +506,7 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ url, category, submittedBy })
+                    body: JSON.stringify({ url, category, submittedBy, metadata })
                 });
 
                 const data = await response.json();
@@ -391,6 +514,7 @@
                 if (data.success) {
                     showAlert('success', data.message || 'URL submitted successfully! Our research agent will process it soon.');
                     document.getElementById('submitForm').reset();
+                    document.getElementById('advancedFields').style.display = 'none';
                     loadStats(); // Refresh stats
                 } else {
                     showAlert('error', data.error || 'Failed to submit URL. Please try again.');
