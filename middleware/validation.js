@@ -69,9 +69,18 @@ const validateDocumentMetadata = async (metadata) => {
 const validationSchemas = {
   uploadDocument: Joi.object({
     ownerName: Joi.string().min(2).max(100).required(),
-    documentType: Joi.string().valid('will', 'deed', 'inventory', 'letter', 'legal', 'other').required(),
+    documentType: Joi.string().valid(
+      'will', 'deed', 'inventory', 'letter', 'legal', 'other',
+      'probate', 'census', 'slave_schedule', 'slave_manifest',
+      'estate_inventory', 'correspondence', 'ship_manifest',
+      'sale_record', 'tombstone'
+    ).required(),
     notes: Joi.string().max(500).optional(),
-    storageProvider: Joi.string().valid('local', 's3').optional()
+    storageProvider: Joi.string().valid('local', 's3').optional(),
+    // Additional optional fields from frontend form
+    location: Joi.string().max(200).optional().allow(''),
+    birthYear: Joi.number().integer().min(1600).max(1900).optional().allow(''),
+    deathYear: Joi.number().integer().min(1600).max(1950).optional().allow('')
   }),
   
   searchDocuments: Joi.object({
