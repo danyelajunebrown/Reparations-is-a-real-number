@@ -2734,7 +2734,7 @@ async function uploadSelectedFiles() {
             formData.append('ownerName', 'Unknown Owner'); // Can be updated later
             formData.append('location', 'United States');
 
-            const response = await fetch(`${API_BASE_URL}/api/upload-document`, {
+            const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
                 method: 'POST',
                 body: formData
             });
@@ -3066,7 +3066,7 @@ function skipMetadata() {
             searchResultsList.innerHTML = '<div style="color: #9aa5b1; text-align: center; padding: 20px;">⏳ Searching documents...</div>';
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/search-documents?query=${encodeURIComponent(query)}`);
+                const response = await fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(query)}`);
                 const data = await response.json();
 
                 if (!data.success) {
@@ -3092,9 +3092,8 @@ function skipMetadata() {
                 // Display results
                 let html = '';
                 for (const doc of data.documents) {
-                    const fileSize = (doc.file_size / 1024).toFixed(1);
-                    const uploadDate = new Date(doc.created_at).toLocaleDateString();
-                    const matchTypes = doc.matches.map(m => m.type).join(', ');
+                    const fileSize = doc.file_size ? (doc.file_size / 1024).toFixed(1) : 'Unknown';
+                    const uploadDate = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : 'Unknown';
 
                     html += `
                         <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
@@ -3108,7 +3107,7 @@ function skipMetadata() {
                                         ${doc.owner_name || 'Unknown Owner'}
                                     </div>
                                     <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 5px;">
-                                        📄 ${doc.filename}
+                                        📄 ${doc.filename || 'Unknown file'}
                                     </div>
                                     <div style="color: #9aa5b1; font-size: 0.85em;">
                                         Type: ${(doc.doc_type || 'unknown').toUpperCase()} •
@@ -3120,9 +3119,6 @@ function skipMetadata() {
                                             📍 ${doc.owner_location}
                                         </div>
                                     ` : ''}
-                                    <div style="color: #ffaa00; font-size: 0.85em; margin-top: 5px;">
-                                        🔖 Matched: ${matchTypes}
-                                    </div>
                                 </div>
                             </div>
 
