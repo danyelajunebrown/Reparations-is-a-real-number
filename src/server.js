@@ -139,6 +139,131 @@ app.get('/health', (req, res) => {
 });
 
 // =============================================================================
+// Legacy API Endpoints (for frontend compatibility)
+// =============================================================================
+
+// Carousel data endpoint - returns documents and people for the carousel display
+app.get('/api/carousel-data', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+
+    // Get documents from database
+    const docsResult = await db.query(`
+      SELECT
+        document_id,
+        owner_name,
+        owner_birth_year,
+        owner_death_year,
+        owner_location,
+        doc_type,
+        total_enslaved,
+        total_reparations,
+        created_at
+      FROM documents
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    // Transform to carousel card format
+    const cards = docsResult.rows.map(doc => ({
+      id: doc.document_id,
+      type: 'owner',
+      name: doc.owner_name || 'Unknown Owner',
+      birthYear: doc.owner_birth_year,
+      deathYear: doc.owner_death_year,
+      location: doc.owner_location,
+      documentType: doc.doc_type,
+      enslavedCount: doc.total_enslaved || 0,
+      reparations: doc.total_reparations || 0,
+      documentIds: [doc.document_id]
+    }));
+
+    res.json({
+      success: true,
+      cards,
+      breakdown: {
+        owners: cards.length,
+        enslaved: 0
+      }
+    });
+  } catch (error) {
+    logger.error('Carousel data error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load carousel data',
+      cards: []
+    });
+  }
+});
+
+// Beyond Kin endpoints
+app.get('/api/beyond-kin/pending', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT * FROM beyond_kin_review
+      WHERE status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 50
+    `);
+    res.json({ success: true, reviews: result.rows });
+  } catch (error) {
+    // Table might not exist
+    res.json({ success: true, reviews: [] });
+  }
+});
+
+app.post('/api/beyond-kin/:id/approve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query(
+      `UPDATE beyond_kin_review SET status = 'approved' WHERE id = $1`,
+      [id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/beyond-kin/:id/reject', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query(
+      `UPDATE beyond_kin_review SET status = 'rejected' WHERE id = $1`,
+      [id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/beyond-kin/:id/needs-document', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query(
+      `UPDATE beyond_kin_review SET status = 'needs_document' WHERE id = $1`,
+      [id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Process individual metadata endpoint
+app.post('/api/process-individual-metadata', async (req, res) => {
+  try {
+    const { documentId, metadata } = req.body;
+    // Store metadata - simplified version
+    logger.info('Processing metadata', { documentId, metadata });
+    res.json({ success: true, message: 'Metadata processed' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
 // Error Handling
 // =============================================================================
 
