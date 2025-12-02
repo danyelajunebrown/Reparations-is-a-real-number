@@ -363,7 +363,7 @@ app.get('/api/search-documents', async (req, res) => {
 // Submit URL for scraping
 app.post('/api/submit-url', async (req, res) => {
   try {
-    const { url, category, submittedBy } = req.body;
+    const { url, category, submittedBy, metadata } = req.body;
 
     if (!url) {
       return res.status(400).json({ success: false, error: 'URL is required' });
@@ -393,20 +393,44 @@ app.post('/api/submit-url', async (req, res) => {
       });
     }
 
-    const priority = category === 'beyondkin' ? 10 : 5;
+    // Set priority based on category and source type
+    let priority = 5;
+    if (category === 'beyondkin') priority = 10;
+    if (category === 'civilwardc') priority = 10; // Primary source
+    if (category === 'slaveholders1860') priority = 10; // Primary source
+    if (metadata?.isPrimary) priority = 10;
+
+    // Build metadata object for scraper
+    const scraperMetadata = {
+      ...metadata,
+      category,
+      submittedAt: new Date().toISOString()
+    };
 
     const result = await db.query(
-      `INSERT INTO scraping_queue (url, category, submitted_by, status, priority)
-       VALUES ($1, $2, $3, 'pending', $4)
+      `INSERT INTO scraping_queue (url, category, submitted_by, status, priority, metadata)
+       VALUES ($1, $2, $3, 'pending', $4, $5::jsonb)
        RETURNING id, url, status, submitted_at, priority`,
-      [url, category || 'other', submittedBy || 'anonymous', priority]
+      [url, category || 'other', submittedBy || 'anonymous', priority, JSON.stringify(scraperMetadata)]
     );
+
+    // Generate appropriate message based on source type
+    let message = 'URL submitted successfully!';
+    if (category === 'beyondkin') {
+      message = 'Beyond Kin submission received! High priority - suspected owners/enslaved.';
+    } else if (category === 'civilwardc') {
+      message = 'Civil War DC petition submitted! Primary source - confirmed owners/enslaved.';
+    } else if (category === 'slaveholders1860') {
+      message = 'Large Slaveholders 1860 submitted! Primary source - confirmed owners.';
+    } else if (category === 'surnames1870') {
+      message = 'Surname Matches 1870 submitted! Suspected enslaved descendants.';
+    } else if (metadata?.isPrimary) {
+      message = 'Primary source submitted! Can confirm owner/enslaved status.';
+    }
 
     res.json({
       success: true,
-      message: category === 'beyondkin'
-        ? 'Beyond Kin submission received! High priority.'
-        : 'URL submitted successfully!',
+      message,
       queueEntry: result.rows[0]
     });
   } catch (error) {
@@ -514,15 +538,15 @@ app.post('/api/trigger-queue-processing', async (req, res) => {
   }
 });
 
-// Background processing function
+// Background processing function - Uses UnifiedScraper
 async function processQueueInBackground(entries) {
   try {
-    const AutonomousResearchOrchestrator = require('./services/scraping/Orchestrator');
-    const orchestrator = new AutonomousResearchOrchestrator(db);
+    const UnifiedScraper = require('./services/scraping/UnifiedScraper');
+    const scraper = new UnifiedScraper(db);
 
     for (const entry of entries) {
       try {
-        logger.info(`Processing queue entry: ${entry.url}`);
+        logger.info(`Processing queue entry: ${entry.url} (category: ${entry.category})`);
 
         await db.query(
           `UPDATE scraping_queue SET status = 'processing', processing_started_at = CURRENT_TIMESTAMP WHERE id = $1`,
@@ -530,18 +554,38 @@ async function processQueueInBackground(entries) {
         );
 
         const startTime = Date.now();
-        const processResult = await orchestrator.processURL(entry.url, {
+        const result = await scraper.scrapeURL(entry.url, {
           category: entry.category,
-          isBeyondKin: entry.category === 'beyondkin',
-          queueEntryId: entry.id
+          queueEntryId: entry.id,
+          submittedBy: entry.submitted_by
         });
 
+        // Update queue with results
         await db.query(
-          `UPDATE scraping_queue SET status = 'completed', processing_completed_at = CURRENT_TIMESTAMP WHERE id = $1`,
-          [entry.id]
+          `UPDATE scraping_queue
+           SET status = $1,
+               processing_completed_at = CURRENT_TIMESTAMP,
+               metadata = jsonb_set(
+                 COALESCE(metadata, '{}'::jsonb),
+                 '{result}',
+                 $2::jsonb
+               )
+           WHERE id = $3`,
+          [
+            result.success ? 'completed' : 'failed',
+            JSON.stringify({
+              ownersFound: result.owners.length,
+              enslavedFound: result.enslavedPeople.length,
+              duration: result.duration,
+              errors: result.errors
+            }),
+            entry.id
+          ]
         );
 
-        logger.info(`Completed processing: ${entry.url} in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+        logger.info(`Completed: ${entry.url} in ${duration}s - ${result.owners.length} owners, ${result.enslavedPeople.length} enslaved`);
+
       } catch (error) {
         logger.error(`Failed processing: ${entry.url}`, { error: error.message });
         await db.query(
@@ -551,7 +595,7 @@ async function processQueueInBackground(entries) {
       }
     }
   } catch (error) {
-    logger.error('Orchestrator not available', { error: error.message });
+    logger.error('UnifiedScraper not available', { error: error.message });
   }
 }
 
