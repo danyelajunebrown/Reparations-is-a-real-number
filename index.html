@@ -1093,7 +1093,7 @@
                 try {
                     console.log(`Pinging backend (attempt ${retries + 1}/${maxRetries})...`);
 
-                    const response = await fetch(`${API_BASE_URL}/health`, {
+                    const response = await fetch(`${API_BASE_URL}/api/health`, {
                         method: 'GET',
                         mode: 'cors',
                         cache: 'no-cache'
@@ -1101,7 +1101,7 @@
 
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.status === 'ok' && data.database === 'connected') {
+                        if (data.status === 'ok') {
                             console.log('✓ Backend is awake and ready!');
                             backendReady = true;
 
@@ -2011,66 +2011,69 @@ async function uploadMultiPageDocument() {
     closeDocumentMetadataForm(false);  // CRITICAL: Don't clear files yet!
 
     const subjectName = metadata.subjectType === 'owner' ? metadata.ownerName : metadata.enslavedPersonName;
-    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + '-page document: "' + subjectName + '" (' + metadata.documentType + ')...');
+    addChatMessage('assistant', '📤 Uploading ' + selectedDocumentFiles.length + ' file(s) for "' + subjectName + '" (' + metadata.documentType + ')...');
+
+    // Upload files sequentially to /api/documents/upload
+    let successCount = 0;
+    let failCount = 0;
+    const uploadedDocs = [];
 
     try {
-        const formData = new FormData();
-
-        // Add all files
         for (let i = 0; i < selectedDocumentFiles.length; i++) {
-            formData.append('pages', selectedDocumentFiles[i]);
-            console.log('Adding file ' + (i + 1) + ': ' + selectedDocumentFiles[i].name);
-        }
+            const file = selectedDocumentFiles[i];
+            console.log('Uploading file ' + (i + 1) + '/' + selectedDocumentFiles.length + ': ' + file.name);
 
-        // Add metadata
-        formData.append('subjectType', metadata.subjectType);
-        formData.append('documentType', metadata.documentType);
+            const formData = new FormData();
+            formData.append('document', file);  // Backend expects 'document' field
+            formData.append('documentType', metadata.documentType);
+            formData.append('ownerName', metadata.ownerName || metadata.enslavedPersonName || 'Unknown');
 
-        // Add name fields
-        if (metadata.ownerName) formData.append('ownerName', metadata.ownerName);
-        if (metadata.enslavedPersonName) formData.append('enslavedPersonName', metadata.enslavedPersonName);
-        if (metadata.spouseName) formData.append('spouseName', metadata.spouseName);
+            // Add optional fields
+            if (metadata.location) formData.append('location', metadata.location);
+            if (metadata.birthYear) formData.append('birthYear', metadata.birthYear);
+            if (metadata.deathYear) formData.append('deathYear', metadata.deathYear);
 
-        // Only append year fields if they have valid values
-        if (metadata.birthYear) formData.append('birthYear', metadata.birthYear);
-        if (metadata.deathYear) formData.append('deathYear', metadata.deathYear);
-        if (metadata.location) formData.append('location', metadata.location);
+            try {
+                const response = await fetch(API_BASE_URL + '/api/documents/upload', {
+                    method: 'POST',
+                    body: formData
+                });
 
-        // OCR Enhancement fields (optional)
-        if (metadata.precompletedOCR) formData.append('precompletedOCR', metadata.precompletedOCR);
-        if (metadata.ocrSource) formData.append('ocrSource', metadata.ocrSource);
-        if (metadata.accompanyingText) formData.append('accompanyingText', metadata.accompanyingText);
-        if (metadata.textSource) formData.append('textSource', metadata.textSource);
+                console.log('Response status for ' + file.name + ':', response.status);
 
-        formData.append('pageCount', selectedDocumentFiles.length);
-        
-        console.log('Sending upload request...');
-        
-        const response = await fetch(API_BASE_URL + '/api/upload-multi-page-document', {
-            method: 'POST',
-            body: formData
-        });
-        
-        console.log('Response status:', response.status);
-        
-        const result = await response.json();
-        console.log('Response data:', result);
-        
-        if (result.success) {
-            addChatMessage('assistant', '✅ Document uploaded!\n\n📄 ID: ' + result.documentId + '\n📑 Pages: ' + result.pageCount + '\n⛓️ Enslaved: ' + (result.totalEnslaved || 0));
-            
-            // Trigger metadata collection if function exists
-            if (result.documentId && result.documentId !== 'N/A') {
-                setTimeout(function() {
-                    if (typeof openMetadataModal === 'function') {
-                        openMetadataModal(result.documentId, '', metadata.ownerName);
-                    }
-                }, 1000);
+                const result = await response.json();
+                console.log('Response data:', result);
+
+                if (result.success) {
+                    successCount++;
+                    uploadedDocs.push({
+                        documentId: result.documentId || result.result?.documentId,
+                        fileName: file.name
+                    });
+                    addChatMessage('assistant', '✅ ' + file.name + ' uploaded (ID: ' + (result.documentId || result.result?.documentId || 'N/A') + ')');
+                } else {
+                    failCount++;
+                    addChatMessage('assistant', '❌ ' + file.name + ' failed: ' + (result.message || result.error || 'Unknown error'));
+                }
+            } catch (fileError) {
+                failCount++;
+                console.error('Error uploading ' + file.name + ':', fileError);
+                addChatMessage('assistant', '❌ ' + file.name + ' failed: ' + fileError.message);
             }
-        } else {
-            addChatMessage('assistant', '❌ Upload failed: ' + (result.message || result.error));
+
+            // Small delay between uploads
+            if (i < selectedDocumentFiles.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         }
-        
+
+        // Final summary
+        addChatMessage('assistant', '🎉 Upload complete! ' + successCount + ' succeeded, ' + failCount + ' failed.');
+
+        if (uploadedDocs.length > 0) {
+            addChatMessage('assistant', '📄 Document IDs:\n' + uploadedDocs.map(d => '  • ' + d.documentId + ' (' + d.fileName + ')').join('\n'));
+        }
+
     } catch (error) {
         console.error('Upload error:', error);
         addChatMessage('assistant', '❌ Upload error: ' + error.message);
