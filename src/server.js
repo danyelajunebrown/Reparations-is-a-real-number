@@ -26,6 +26,7 @@ const documentsRouter = require('./api/routes/documents');
 const researchRouter = require('./api/routes/research');
 const healthRouter = require('./api/routes/health');
 const errorsRouter = require('./api/routes/errors');
+const { router: contributeRouter, initializeService: initContribute } = require('./api/routes/contribute');
 
 // Initialize Express app
 const app = express();
@@ -93,6 +94,11 @@ app.get('/test-viewer.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'test-viewer.html'));
 });
 
+// Serve the new conversational contribute page
+app.get('/contribute-v2.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'contribute-v2.html'));
+});
+
 // Rate limiting
 app.use('/api', generalLimiter);
 
@@ -122,6 +128,10 @@ app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/errors', errorsRouter);
+
+// Initialize contribution service with database and mount routes
+initContribute(db);
+app.use('/api/contribute', contributeRouter);
 
 // Legacy compatibility routes (redirect to new routes)
 app.post('/api/upload-document', (req, res) => {
@@ -659,6 +669,155 @@ app.post('/api/process-full-backlog', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// Intelligent Scraping Endpoints (NEW)
+// =============================================================================
+
+// Submit URL for intelligent scraping
+app.post('/api/intelligent-submit', async (req, res) => {
+  try {
+    const { url, metadata = {}, useMLAnalysis = true } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch (e) {
+      return res.status(400).json({ success: false, error: 'Invalid URL format' });
+    }
+
+    // Import intelligent orchestrator
+    const { IntelligentOrchestrator } = require('./services/scraping');
+    const orchestrator = new IntelligentOrchestrator(db);
+
+    // Process URL with intelligent scraping
+    const results = await orchestrator.processURL(url, metadata);
+
+    res.json({
+      success: true,
+      message: 'URL processed with intelligent scraper',
+      results: {
+        ownersFound: results.formattedResults.owners.length,
+        enslavedFound: results.formattedResults.enslavedPeople.length,
+        documentsFound: results.scrapingResults.documents.length,
+        confidence: results.mlAnalysis.confidence,
+        knowledgeUpdated: results.knowledgeUpdated,
+        analysisDuration: results.scrapingResults.duration,
+        mlAnalysis: {
+          sourceType: results.mlAnalysis.sourceType,
+          documentType: results.mlAnalysis.documentType,
+          contentQuality: results.mlAnalysis.contentQuality
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Intelligent scraping error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process URL with intelligent scraper',
+      details: error.message
+    });
+  }
+});
+
+// Get scraping knowledge statistics
+app.get('/api/scraping-knowledge', async (req, res) => {
+  try {
+    const { KnowledgeManager } = require('./services/scraping');
+    const knowledgeManager = new KnowledgeManager();
+
+    res.json({
+      success: true,
+      statistics: knowledgeManager.getLearningStatistics(),
+      sitesLearned: Object.keys(knowledgeManager.getAllSites()).length,
+      topSites: knowledgeManager.getTopPerformingSites(5),
+      knowledgeUpdated: new Date().toISOString()
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get scraping knowledge',
+      details: error.message
+    });
+  }
+});
+
+// Get ML analysis for a URL
+app.post('/api/ml-analysis', async (req, res) => {
+  try {
+    const { url, text } = req.body;
+
+    if (!url && !text) {
+      return res.status(400).json({ success: false, error: 'URL or text is required' });
+    }
+
+    const { MLAnalyzer } = require('./services/scraping');
+    const mlAnalyzer = new MLAnalyzer();
+
+    const analysis = await mlAnalyzer.analyzePageContent(text || '', url || '');
+
+    res.json({
+      success: true,
+      analysis: {
+        entities: analysis.entities,
+        sentiment: analysis.sentiment,
+        keywords: analysis.keywords,
+        confidence: analysis.confidence,
+        sourceType: analysis.sourceType,
+        documentType: analysis.documentType,
+        isPrimarySource: analysis.isPrimarySource,
+        contentQuality: analysis.contentQuality
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to perform ML analysis',
+      details: error.message
+    });
+  }
+});
+
+// Get knowledge for specific site
+app.get('/api/site-knowledge/:domain', async (req, res) => {
+  try {
+    const { domain } = req.params;
+
+    const { KnowledgeManager } = require('./services/scraping');
+    const knowledgeManager = new KnowledgeManager();
+
+    const siteKnowledge = knowledgeManager.getSiteKnowledge(`https://${domain}`);
+
+    if (!siteKnowledge) {
+      return res.json({
+        success: true,
+        domain,
+        knowledge: null,
+        message: 'No knowledge available for this site'
+      });
+    }
+
+    res.json({
+      success: true,
+      domain,
+      knowledge: siteKnowledge
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get site knowledge',
+      details: error.message
+    });
   }
 });
 

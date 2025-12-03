@@ -1,0 +1,166 @@
+{
+  "sites": {
+    "freepages.rootsweb.com": {
+      "type": "census",
+      "patterns": {
+        "slaveholder": "([A-Z]+),\\s+([A-Za-z]+),\\s+(\\d+)\\s+slaves",
+        "location": "page\\s+(\\d+[AB]?)",
+        "surname": "([A-Z]+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+)"
+      },
+      "confidence": 0.98,
+      "lastUpdated": "2025-12-02",
+      "firstSeen": "2025-12-02",
+      "successRate": 0.95,
+      "attempts": 10,
+      "successes": 9,
+      "sourceType": "primary",
+      "description": "Tom Blake's Large Slaveholders of 1860 census data"
+    },
+    "civilwardc.org": {
+      "type": "petition",
+      "patterns": {
+        "petitioner": "petition\\s+of\\s+(.+)",
+        "enslaved": "negro\\s+(?:man|woman|boy|girl)\\s+named\\s+([A-Z][a-z]+)",
+        "document": "href=[\"']([^\"']+\\.(?:pdf|jpg|png))[\"']"
+      },
+      "confidence": 0.95,
+      "lastUpdated": "2025-12-02",
+      "firstSeen": "2025-12-02",
+      "successRate": 0.92,
+      "attempts": 8,
+      "successes": 7,
+      "sourceType": "primary",
+      "description": "DC Compensated Emancipation Petitions - primary government documents"
+    },
+    "beyondkin.org": {
+      "type": "directory",
+      "patterns": {
+        "slaveholder": "class=[\"']pdb-field-name[\"'].*?([A-Z][a-z]+\\s+[A-Z][a-z]+)",
+        "enslaved": "class=[\"']enslaved-list[\"'].*?([A-Z][a-z]+)",
+        "relationship": "slaveholder.*?([A-Z][a-z]+).*?enslaved.*?([A-Z][a-z]+)"
+      },
+      "confidence": 0.7,
+      "lastUpdated": "2025-12-02",
+      "firstSeen": "2025-12-02",
+      "successRate": 0.85,
+      "attempts": 20,
+      "successes": 17,
+      "sourceType": "secondary",
+      "description": "Beyond Kin Enslaved Populations Directory - suspected owners and enslaved"
+    },
+    "wikipedia.org": {
+      "type": "encyclopedia",
+      "patterns": {
+        "owner": "([A-Z][a-z]+\\s+[A-Z][a-z]+).*?(slaveholder|owner|plantation)",
+        "enslaved": "enslaved.*?([A-Z][a-z]+)",
+        "date": "(born|died).*?(\\d{4})"
+      },
+      "confidence": 0.5,
+      "lastUpdated": "2025-12-02",
+      "firstSeen": "2025-12-02",
+      "successRate": 0.75,
+      "attempts": 15,
+      "successes": 11,
+      "sourceType": "tertiary",
+      "description": "Wikipedia articles - requires verification with primary sources"
+    },
+    "msa.maryland.gov": {
+      "type": "slave_statistics",
+      "patterns": {
+        "owner": {},
+        "enslaved": {},
+        "location": {},
+        "date": {}
+      },
+      "confidence": 0.4,
+      "sourceType": "unknown",
+      "description": "Maryland Slave Statistics with iframe PDF handling",
+      "iframeHandling": true,
+      "extractionMethod": "pdf-lib + OCR",
+      "successRate": 1,
+      "attempts": 1,
+      "successes": 1,
+      "lastUpdated": "2025-12-03T03:32:03.232Z",
+      "firstSeen": "2025-12-03T03:32:03.238Z"
+    }
+  },
+  "generalPatterns": {
+    "ownerNames": [
+      "slaveholder",
+      "owner",
+      "estate",
+      "plantation",
+      "master",
+      "proprietor"
+    ],
+    "enslavedNames": [
+      "enslaved",
+      "slave",
+      "servant",
+      "negro",
+      "colored",
+      "bondsperson"
+    ],
+    "locationPatterns": [
+      "in\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
+      "at\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
+      "from\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
+      "County,\\s*([A-Z]{2})"
+    ],
+    "datePatterns": [
+      "born\\s+(\\d{4})",
+      "died\\s+(\\d{4})",
+      "date\\s+(\\d{4})",
+      "(\\d{1,2})\\s+(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{4})"
+    ],
+    "relationshipPatterns": [
+      "owned\\s+by\\s+([A-Z][a-z]+)",
+      "enslaved\\s+by\\s+([A-Z][a-z]+)",
+      "servant\\s+of\\s+([A-Z][a-z]+)"
+    ]
+  },
+  "metadataSchema": {
+    "sourceType": [
+      "primary",
+      "secondary",
+      "tertiary"
+    ],
+    "dataTypes": [
+      "owners",
+      "enslaved",
+      "relationships",
+      "locations",
+      "dates",
+      "documents"
+    ],
+    "listingPage": [
+      "yes",
+      "no"
+    ],
+    "confidenceLevels": {
+      "primary": 0.9,
+      "secondary": 0.7,
+      "tertiary": 0.5,
+      "generic": 0.4
+    },
+    "documentTypes": [
+      "petition",
+      "census",
+      "directory",
+      "article",
+      "memorial",
+      "archive"
+    ],
+    "priorityLevels": {
+      "high": 10,
+      "medium": 5,
+      "low": 1
+    }
+  },
+  "learningStatistics": {
+    "totalSitesLearned": 5,
+    "totalPatternsLearned": 25,
+    "averageSuccessRate": 0.8940000000000001,
+    "lastUpdate": "2025-12-03T03:32:03.238Z"
+  }
+}
