@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contribute Research - Guided Extraction</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95em;
+        }
+
+        /* Main layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            max-height: calc(100vh - 100px);
+        }
+
+        /* Chat panel */
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #333;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #16213e;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.system {
+            background: #1a1a2e;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .message.user {
+            background: #0f3460;
+            border-left: 4px solid #e94560;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+            margin-left: 40px;
+        }
+
+        .message.assistant {
+            background: #1a1a2e;
+            border-left: 4px solid #00d9ff;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .message-header {
+            font-size: 0.8em;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .message-content {
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .message-content strong {
+            color: #00d9ff;
+        }
+
+        .message-content code {
+            background: #0f3460;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        /* Input area */
+        .chat-input-area {
+            padding: 20px;
+            background: #1a1a2e;
+            border-top: 1px solid #333;
+        }
+
+        .url-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .url-input-group input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 14px;
+        }
+
+        .url-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .url-input-group button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .url-input-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .url-input-group button:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-group textarea {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 14px;
+            resize: none;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .chat-input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .chat-input-group button {
+            padding: 12px 25px;
+            background: #00d9ff;
+            border: none;
+            border-radius: 8px;
+            color: #1a1a2e;
+            font-weight: 600;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        .chat-input-group button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        /* Quick response buttons */
+        .quick-responses {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .quick-response {
+            padding: 8px 15px;
+            background: #0f3460;
+            border: 1px solid #333;
+            border-radius: 20px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .quick-response:hover {
+            background: #667eea;
+            border-color: #667eea;
+        }
+
+        /* Questions panel */
+        .questions-panel {
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .questions-panel h4 {
+            margin-bottom: 12px;
+            color: #00d9ff;
+        }
+
+        .question-group {
+            margin-bottom: 15px;
+        }
+
+        .question-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .question-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .question-option {
+            padding: 8px 15px;
+            background: #16213e;
+            border: 2px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .question-option:hover {
+            border-color: #667eea;
+        }
+
+        .question-option.selected {
+            background: #667eea;
+            border-color: #667eea;
+        }
+
+        /* Side panel */
+        .side-panel {
+            width: 350px;
+            background: #16213e;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .panel-section {
+            margin-bottom: 25px;
+        }
+
+        .panel-section h3 {
+            font-size: 1em;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+            color: #00d9ff;
+        }
+
+        /* Progress indicator */
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #1a1a2e;
+            opacity: 0.5;
+        }
+
+        .progress-step.active {
+            opacity: 1;
+            background: #0f3460;
+            border-left: 3px solid #00d9ff;
+        }
+
+        .progress-step.completed {
+            opacity: 1;
+        }
+
+        .progress-step .step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+        }
+
+        .progress-step.completed .step-icon {
+            background: #38a169;
+        }
+
+        .progress-step.active .step-icon {
+            background: #00d9ff;
+            color: #1a1a2e;
+        }
+
+        /* Source info */
+        .source-info {
+            background: #1a1a2e;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .source-info .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .source-info .info-label {
+            opacity: 0.7;
+        }
+
+        .source-info .info-value {
+            color: #00d9ff;
+            text-align: right;
+            max-width: 60%;
+            word-break: break-all;
+        }
+
+        /* Extraction options */
+        .extraction-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .extraction-option {
+            background: #1a1a2e;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .extraction-option:hover {
+            border-color: #667eea;
+        }
+
+        .extraction-option.recommended {
+            border-color: #38a169;
+        }
+
+        .extraction-option.recommended::before {
+            content: 'Recommended';
+            display: inline-block;
+            background: #38a169;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            margin-bottom: 8px;
+        }
+
+        .extraction-option h4 {
+            margin-bottom: 5px;
+        }
+
+        .extraction-option p {
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+
+        /* Column structure display */
+        .column-structure {
+            background: #1a1a2e;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        .column-structure table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+
+        .column-structure th,
+        .column-structure td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #333;
+        }
+
+        .column-structure th {
+            color: #00d9ff;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #333;
+            border-top-color: #00d9ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main-container {
+                flex-direction: column;
+            }
+
+            .side-panel {
+                width: 100%;
+                max-height: 300px;
+                order: -1;
+            }
+
+            .chat-panel {
+                border-right: none;
+                border-top: 1px solid #333;
+            }
+        }
+
+        /* Back link */
+        .back-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Guided Research Contribution</h1>
+        <p>I'll help you extract data from historical documents - just describe what you see</p>
+        <a href="contribute.html" class="back-link">&larr; Back to simple submission</a>
+    </div>
+
+    <div class="main-container">
+        <div class="chat-panel">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    <div class="message-header">System</div>
+                    <div class="message-content">Welcome! Paste a URL to a historical document and I'll guide you through extracting the data.
+
+I work best with:
+- Scanned census records
+- Slave schedules and petitions
+- Estate inventories and wills
+- Any document listing enslaved people and their owners
+
+<strong>Paste a URL to get started.</strong></div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="url-input-group" id="urlInputGroup">
+                    <input type="url" id="urlInput" placeholder="Paste URL here (e.g., https://msa.maryland.gov/...)" />
+                    <button id="startBtn" onclick="startSession()">Analyze</button>
+                </div>
+
+                <div class="chat-input-group" id="chatInputGroup" style="display: none;">
+                    <textarea id="chatInput" placeholder="Describe what you see, or answer my questions..." onkeydown="handleKeyDown(event)"></textarea>
+                    <button id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+
+                <div class="quick-responses" id="quickResponses"></div>
+
+                <div class="questions-panel" id="questionsPanel" style="display: none;">
+                    <h4>Quick Questions</h4>
+                    <div id="questionsList"></div>
+                    <button onclick="submitAnswers()" style="margin-top: 15px; padding: 10px 20px; background: #667eea; border: none; border-radius: 8px; color: white; cursor: pointer;">Submit Answers</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="side-panel">
+            <div class="panel-section">
+                <h3>Progress</h3>
+                <div class="progress-steps" id="progressSteps">
+                    <div class="progress-step active" data-stage="url_analysis">
+                        <div class="step-icon">1</div>
+                        <span>Analyze URL</span>
+                    </div>
+                    <div class="progress-step" data-stage="content_description">
+                        <div class="step-icon">2</div>
+                        <span>Describe Content</span>
+                    </div>
+                    <div class="progress-step" data-stage="structure_confirmation">
+                        <div class="step-icon">3</div>
+                        <span>Confirm Structure</span>
+                    </div>
+                    <div class="progress-step" data-stage="extraction_strategy">
+                        <div class="step-icon">4</div>
+                        <span>Choose Method</span>
+                    </div>
+                    <div class="progress-step" data-stage="extraction_in_progress">
+                        <div class="step-icon">5</div>
+                        <span>Extract Data</span>
+                    </div>
+                    <div class="progress-step" data-stage="human_review">
+                        <div class="step-icon">6</div>
+                        <span>Review & Correct</span>
+                    </div>
+                    <div class="progress-step" data-stage="complete">
+                        <div class="step-icon">7</div>
+                        <span>Complete</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section" id="sourceInfoSection" style="display: none;">
+                <h3>Source Information</h3>
+                <div class="source-info" id="sourceInfo"></div>
+            </div>
+
+            <div class="panel-section" id="columnStructureSection" style="display: none;">
+                <h3>Detected Structure</h3>
+                <div class="column-structure" id="columnStructure"></div>
+            </div>
+
+            <div class="panel-section" id="extractionOptionsSection" style="display: none;">
+                <h3>Extraction Method</h3>
+                <div class="extraction-options" id="extractionOptions"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API configuration
+        const API_BASE = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        // Session state
+        let sessionId = null;
+        let currentStage = 'url_analysis';
+        let pendingQuestions = [];
+        let selectedAnswers = {};
+
+        // Start a new session
+        async function startSession() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+
+            // Disable button and show loading
+            const btn = document.getElementById('startBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionId = data.sessionId;
+                    currentStage = data.stage;
+
+                    // Add assistant message
+                    addMessage('assistant', data.message);
+
+                    // Update UI
+                    updateProgress(data.stage);
+                    showSourceInfo(data.analysis);
+
+                    // Show questions if any
+                    if (data.questions && data.questions.length > 0) {
+                        showQuestions(data.questions);
+                    }
+
+                    // Switch to chat input
+                    document.getElementById('urlInputGroup').style.display = 'none';
+                    document.getElementById('chatInputGroup').style.display = 'flex';
+
+                } else {
+                    addMessage('system', `Error: ${data.error}`);
+                }
+
+            } catch (error) {
+                addMessage('system', `Connection error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze';
+            }
+        }
+
+        // Send chat message
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || !sessionId) return;
+
+            // Add user message
+            addMessage('user', message);
+            input.value = '';
+
+            // Disable send button
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Add assistant response
+                    if (data.message) {
+                        addMessage('assistant', data.message);
+                    }
+
+                    // Update stage
+                    if (data.stage) {
+                        currentStage = data.stage;
+                        updateProgress(data.stage);
+                    }
+
+                    // Show questions if any
+                    if (data.questions && data.questions.length > 0) {
+                        showQuestions(data.questions);
+                    } else {
+                        hideQuestions();
+                    }
+
+                    // Show extraction options if available
+                    if (data.extractionOptions) {
+                        showExtractionOptions(data.extractionOptions);
+                    }
+
+                    // Update column structure if available
+                    if (data.session?.contentStructure?.columns) {
+                        showColumnStructure(data.session.contentStructure.columns);
+                    }
+
+                } else {
+                    addMessage('system', `Error: ${data.error}`);
+                }
+
+            } catch (error) {
+                addMessage('system', `Connection error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Submit answers to structured questions
+        async function submitAnswers() {
+            if (Object.keys(selectedAnswers).length === 0) {
+                alert('Please answer at least one question');
+                return;
+            }
+
+            // Build description from answers
+            let description = '';
+            for (const [questionId, answer] of Object.entries(selectedAnswers)) {
+                description += `${questionId}: ${answer}. `;
+            }
+
+            // Add user message showing their selections
+            addMessage('user', `My answers:\n${Object.entries(selectedAnswers).map(([k, v]) => `- ${k}: ${v}`).join('\n')}`);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/describe`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ answers: selectedAnswers })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    addMessage('assistant', data.message);
+
+                    if (data.stage) {
+                        currentStage = data.stage;
+                        updateProgress(data.stage);
+                    }
+
+                    if (data.questions && data.questions.length > 0) {
+                        showQuestions(data.questions);
+                    } else {
+                        hideQuestions();
+                    }
+
+                    // Clear answers for next round
+                    selectedAnswers = {};
+                }
+
+            } catch (error) {
+                addMessage('system', `Error: ${error.message}`);
+            }
+        }
+
+        // Select extraction method
+        async function selectExtractionMethod(method) {
+            addMessage('user', `I'll use: ${method}`);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/extract`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    addMessage('assistant', data.message);
+                    updateProgress(data.stage);
+
+                    // Start polling for extraction status if auto_ocr
+                    if (method === 'auto_ocr' && data.extractionId) {
+                        pollExtractionStatus(data.extractionId);
+                    }
+                }
+
+            } catch (error) {
+                addMessage('system', `Error: ${error.message}`);
+            }
+        }
+
+        // Poll extraction status
+        async function pollExtractionStatus(extractionId) {
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/status`
+                    );
+                    const data = await response.json();
+
+                    if (data.success) {
+                        const extraction = data.extraction;
+
+                        if (extraction.status === 'completed') {
+                            clearInterval(pollInterval);
+                            addMessage('assistant', `Extraction complete! Found ${extraction.rowCount} rows with ${(extraction.avgConfidence * 100).toFixed(0)}% average confidence.`);
+                            updateProgress('human_review');
+                        } else if (extraction.status === 'failed') {
+                            clearInterval(pollInterval);
+                            addMessage('system', `Extraction failed: ${extraction.error}`);
+                        } else {
+                            // Show progress update
+                            console.log(`Extraction progress: ${extraction.progress}%`);
+                        }
+                    }
+
+                } catch (error) {
+                    console.error('Poll error:', error);
+                }
+            }, 2000);
+        }
+
+        // Add message to chat
+        function addMessage(role, content) {
+            const messages = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = `message ${role}`;
+
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            header.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = formatMessage(content);
+
+            msg.appendChild(header);
+            msg.appendChild(contentDiv);
+            messages.appendChild(msg);
+
+            // Scroll to bottom
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Format message with markdown-like syntax
+        function formatMessage(text) {
+            return text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`(.+?)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // Update progress indicator
+        function updateProgress(stage) {
+            const steps = document.querySelectorAll('.progress-step');
+            let foundActive = false;
+
+            steps.forEach(step => {
+                const stepStage = step.dataset.stage;
+
+                if (stepStage === stage) {
+                    step.classList.add('active');
+                    step.classList.remove('completed');
+                    foundActive = true;
+                } else if (!foundActive) {
+                    step.classList.remove('active');
+                    step.classList.add('completed');
+                    step.querySelector('.step-icon').textContent = '✓';
+                } else {
+                    step.classList.remove('active', 'completed');
+                }
+            });
+        }
+
+        // Show source info in side panel
+        function showSourceInfo(analysis) {
+            const section = document.getElementById('sourceInfoSection');
+            const info = document.getElementById('sourceInfo');
+
+            section.style.display = 'block';
+
+            info.innerHTML = `
+                <div class="info-row">
+                    <span class="info-label">Domain</span>
+                    <span class="info-value">${analysis.domain || 'Unknown'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Archive</span>
+                    <span class="info-value">${analysis.archiveName || 'Unknown'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Source Type</span>
+                    <span class="info-value">${analysis.sourceType || 'Unknown'}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Content</span>
+                    <span class="info-value">${analysis.contentType || 'Unknown'}</span>
+                </div>
+                ${analysis.documentTitle ? `
+                <div class="info-row">
+                    <span class="info-label">Title</span>
+                    <span class="info-value">${analysis.documentTitle}</span>
+                </div>
+                ` : ''}
+                ${analysis.pagination?.detected ? `
+                <div class="info-row">
+                    <span class="info-label">Page</span>
+                    <span class="info-value">${analysis.pagination.currentPage || '?'} (multi-page)</span>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        // Show structured questions
+        function showQuestions(questions) {
+            const panel = document.getElementById('questionsPanel');
+            const list = document.getElementById('questionsList');
+
+            list.innerHTML = '';
+            pendingQuestions = questions;
+
+            questions.forEach(q => {
+                const group = document.createElement('div');
+                group.className = 'question-group';
+
+                const label = document.createElement('label');
+                label.textContent = q.question;
+                group.appendChild(label);
+
+                const options = document.createElement('div');
+                options.className = 'question-options';
+
+                q.options.forEach(opt => {
+                    const btn = document.createElement('button');
+                    btn.className = 'question-option';
+                    btn.textContent = opt.label;
+                    btn.onclick = () => selectAnswer(q.id, opt.value, btn);
+                    options.appendChild(btn);
+                });
+
+                group.appendChild(options);
+                list.appendChild(group);
+            });
+
+            panel.style.display = 'block';
+        }
+
+        function hideQuestions() {
+            document.getElementById('questionsPanel').style.display = 'none';
+        }
+
+        function selectAnswer(questionId, value, btn) {
+            // Deselect siblings
+            btn.parentElement.querySelectorAll('.question-option').forEach(b => {
+                b.classList.remove('selected');
+            });
+
+            // Select this one
+            btn.classList.add('selected');
+            selectedAnswers[questionId] = value;
+        }
+
+        // Show column structure
+        function showColumnStructure(columns) {
+            const section = document.getElementById('columnStructureSection');
+            const container = document.getElementById('columnStructure');
+
+            section.style.display = 'block';
+
+            let html = '<table><thead><tr><th>#</th><th>Type</th><th>Header</th></tr></thead><tbody>';
+            columns.forEach(col => {
+                html += `<tr>
+                    <td>${col.position}</td>
+                    <td>${col.dataType || 'unknown'}</td>
+                    <td>${col.headerGuess || '-'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+
+            container.innerHTML = html;
+        }
+
+        // Show extraction options
+        function showExtractionOptions(options) {
+            const section = document.getElementById('extractionOptionsSection');
+            const container = document.getElementById('extractionOptions');
+
+            section.style.display = 'block';
+
+            container.innerHTML = options.map(opt => `
+                <div class="extraction-option ${opt.recommended ? 'recommended' : ''}"
+                     onclick="selectExtractionMethod('${opt.id}')">
+                    <h4>${opt.label}</h4>
+                    <p>${opt.description}</p>
+                    <small style="opacity: 0.6;">Best for: ${opt.bestFor}</small>
+                </div>
+            `).join('');
+        }
+
+        // Handle Enter key in chat input
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Quick response click
+        function quickResponse(text) {
+            document.getElementById('chatInput').value = text;
+            sendMessage();
+        }
+    </script>
+</body>
+</html>
