@@ -501,6 +501,89 @@ app.get('/api/population-stats', async (req, res) => {
   }
 });
 
+// Get detailed extraction statistics (confirmed vs suspected)
+app.get('/api/extraction-stats', async (req, res) => {
+  try {
+    // Query unconfirmed_persons table for breakdown by person_type and status
+    const unconfirmedStats = await db.query(`
+      SELECT
+        person_type,
+        status,
+        COUNT(*) as count
+      FROM unconfirmed_persons
+      GROUP BY person_type, status
+      ORDER BY person_type, status
+    `);
+
+    // Query individuals table (confirmed slaveholders)
+    const confirmedIndividuals = await db.query(`
+      SELECT COUNT(*) as count FROM individuals
+    `);
+
+    // Query enslaved_individuals table if it exists
+    let confirmedEnslaved = { rows: [{ count: 0 }] };
+    try {
+      confirmedEnslaved = await db.query(`
+        SELECT COUNT(*) as count FROM enslaved_individuals
+      `);
+    } catch (e) {
+      // Table might not exist
+    }
+
+    // Build breakdown
+    const breakdown = {
+      confirmed_owners: parseInt(confirmedIndividuals.rows[0]?.count) || 0,
+      confirmed_enslaved: parseInt(confirmedEnslaved.rows[0]?.count) || 0,
+      suspected_owners: 0,
+      suspected_enslaved: 0,
+      pending_review: 0,
+      total_unconfirmed: 0
+    };
+
+    // Parse unconfirmed_persons results
+    const byType = {};
+    unconfirmedStats.rows.forEach(row => {
+      const key = `${row.person_type}_${row.status}`;
+      byType[key] = parseInt(row.count) || 0;
+      breakdown.total_unconfirmed += parseInt(row.count) || 0;
+
+      if (row.person_type === 'suspected_owner' || row.person_type === 'owner') {
+        if (row.status === 'pending' || row.status === 'reviewing') {
+          breakdown.suspected_owners += parseInt(row.count) || 0;
+        }
+      }
+      if (row.person_type === 'suspected_enslaved' || row.person_type === 'enslaved') {
+        if (row.status === 'pending' || row.status === 'reviewing') {
+          breakdown.suspected_enslaved += parseInt(row.count) || 0;
+        }
+      }
+      if (row.status === 'pending') {
+        breakdown.pending_review += parseInt(row.count) || 0;
+      }
+    });
+
+    res.json({
+      success: true,
+      breakdown,
+      detailed: byType,
+      raw: unconfirmedStats.rows
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      breakdown: {
+        confirmed_owners: 0,
+        confirmed_enslaved: 0,
+        suspected_owners: 0,
+        suspected_enslaved: 0,
+        pending_review: 0,
+        total_unconfirmed: 0
+      }
+    });
+  }
+});
+
 // Trigger queue processing
 app.post('/api/trigger-queue-processing', async (req, res) => {
   try {
