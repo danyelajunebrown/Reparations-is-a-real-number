@@ -931,6 +931,229 @@ app.post('/api/get-descendants', async (req, res) => {
 });
 
 // =============================================================================
+// Data Integrity & Notification Endpoints
+// =============================================================================
+
+// Check data integrity - find documents without S3 files, persons without evidence, etc.
+app.get('/api/integrity-check', async (req, res) => {
+  try {
+    const issues = [];
+
+    // 1. Check for documents that reference files not in S3
+    const docsResult = await db.query(`
+      SELECT document_id, owner_name, doc_type, filename, file_path, storage_type
+      FROM documents
+      WHERE storage_type = 's3' OR file_path LIKE 'storage/%' OR file_path LIKE 'owners/%'
+    `);
+
+    const { S3Client, HeadObjectCommand } = require('@aws-sdk/client-s3');
+    const s3Client = new S3Client({
+      region: process.env.S3_REGION || 'us-east-2',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+      }
+    });
+
+    const bucket = process.env.S3_BUCKET || 'reparations-them';
+
+    for (const doc of docsResult.rows) {
+      // Determine S3 key from file_path
+      let s3Key = doc.file_path;
+      if (s3Key && !s3Key.startsWith('storage/') && !s3Key.startsWith('owners/')) {
+        s3Key = `owners/${doc.owner_name?.replace(/[^a-zA-Z0-9-]/g, '-')}/${doc.doc_type}/${doc.filename}`;
+      }
+
+      if (s3Key) {
+        try {
+          await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: s3Key }));
+        } catch (err) {
+          if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+            issues.push({
+              type: 'missing_file',
+              severity: 'high',
+              documentId: doc.document_id,
+              ownerName: doc.owner_name,
+              docType: doc.doc_type,
+              filename: doc.filename,
+              expectedPath: s3Key,
+              message: `Document "${doc.filename}" for ${doc.owner_name} is missing from S3 storage. Please re-upload.`
+            });
+          }
+        }
+      }
+    }
+
+    // 2. Check for confirmed individuals without any linked documents
+    const orphanedIndividuals = await db.query(`
+      SELECT i.individual_id, i.full_name, i.locations
+      FROM individuals i
+      LEFT JOIN document_individuals di ON i.individual_id = di.individual_id
+      WHERE di.document_id IS NULL
+    `).catch(() => ({ rows: [] }));
+
+    orphanedIndividuals.rows.forEach(ind => {
+      issues.push({
+        type: 'unlinked_individual',
+        severity: 'medium',
+        individualId: ind.individual_id,
+        name: ind.full_name,
+        locations: ind.locations,
+        message: `${ind.full_name} is listed as confirmed but has no linked documents. Evidence upload needed.`
+      });
+    });
+
+    // 3. Check for enslaved individuals without linked evidence
+    const orphanedEnslaved = await db.query(`
+      SELECT ei.enslaved_id, ei.full_name, ei.enslaved_by_individual_id
+      FROM enslaved_individuals ei
+      LEFT JOIN evidence_person_links epl ON ei.enslaved_id = epl.person_id
+      WHERE epl.evidence_id IS NULL
+    `).catch(() => ({ rows: [] }));
+
+    orphanedEnslaved.rows.forEach(ens => {
+      issues.push({
+        type: 'unlinked_enslaved',
+        severity: 'medium',
+        enslavedId: ens.enslaved_id,
+        name: ens.full_name,
+        message: `${ens.full_name} is recorded as enslaved but has no linked evidence. Documentation needed.`
+      });
+    });
+
+    // 4. Get counts for summary
+    const summary = {
+      missingFiles: issues.filter(i => i.type === 'missing_file').length,
+      unlinkedIndividuals: issues.filter(i => i.type === 'unlinked_individual').length,
+      unlinkedEnslaved: issues.filter(i => i.type === 'unlinked_enslaved').length,
+      totalIssues: issues.length,
+      lastChecked: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      healthy: issues.length === 0,
+      summary,
+      issues: issues.slice(0, 50) // Limit to first 50 issues
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      healthy: false,
+      summary: { totalIssues: -1, lastChecked: new Date().toISOString() },
+      issues: []
+    });
+  }
+});
+
+// Get notification/alert data for frontend banner
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const notifications = [];
+
+    // Check for pending reviews (high priority items needing attention)
+    const pendingBeyondKin = await db.query(`
+      SELECT COUNT(*) as count FROM beyond_kin_review_queue WHERE review_status = 'pending'
+    `).catch(() => ({ rows: [{ count: 0 }] }));
+
+    if (parseInt(pendingBeyondKin.rows[0]?.count) > 0) {
+      notifications.push({
+        type: 'pending_review',
+        priority: 'info',
+        count: parseInt(pendingBeyondKin.rows[0].count),
+        message: `${pendingBeyondKin.rows[0].count} Beyond Kin submissions awaiting review`,
+        action: 'Review submissions',
+        actionUrl: '/review.html'
+      });
+    }
+
+    // Check for documents needing re-upload (quick check without S3 calls)
+    const recentDocsWithIssues = await db.query(`
+      SELECT COUNT(*) as count FROM documents
+      WHERE (storage_type IS NULL OR storage_type = '')
+        AND created_at < NOW() - INTERVAL '1 day'
+    `).catch(() => ({ rows: [{ count: 0 }] }));
+
+    if (parseInt(recentDocsWithIssues.rows[0]?.count) > 0) {
+      notifications.push({
+        type: 'storage_issue',
+        priority: 'warning',
+        count: parseInt(recentDocsWithIssues.rows[0].count),
+        message: `${recentDocsWithIssues.rows[0].count} documents may have storage issues`,
+        action: 'Run integrity check',
+        actionUrl: '/api/integrity-check'
+      });
+    }
+
+    // Check queue status
+    const queueStats = await db.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'failed') as failed,
+        COUNT(*) FILTER (WHERE status = 'processing' AND processing_started_at < NOW() - INTERVAL '10 minutes') as stuck
+      FROM scraping_queue
+    `).catch(() => ({ rows: [{ failed: 0, stuck: 0 }] }));
+
+    const failedCount = parseInt(queueStats.rows[0]?.failed) || 0;
+    const stuckCount = parseInt(queueStats.rows[0]?.stuck) || 0;
+
+    if (failedCount > 0) {
+      notifications.push({
+        type: 'scraping_failed',
+        priority: 'warning',
+        count: failedCount,
+        message: `${failedCount} URLs failed to scrape`,
+        action: 'View failed URLs',
+        actionUrl: '/contribute.html'
+      });
+    }
+
+    if (stuckCount > 0) {
+      notifications.push({
+        type: 'scraping_stuck',
+        priority: 'error',
+        count: stuckCount,
+        message: `${stuckCount} URLs appear stuck in processing`,
+        action: 'Restart processing',
+        actionUrl: '/api/trigger-queue-processing'
+      });
+    }
+
+    // Check for high-confidence unconfirmed persons ready for promotion
+    const readyForPromotion = await db.query(`
+      SELECT COUNT(*) as count FROM unconfirmed_persons
+      WHERE confidence_score >= 0.9 AND status = 'pending'
+    `).catch(() => ({ rows: [{ count: 0 }] }));
+
+    if (parseInt(readyForPromotion.rows[0]?.count) > 10) {
+      notifications.push({
+        type: 'ready_for_promotion',
+        priority: 'info',
+        count: parseInt(readyForPromotion.rows[0].count),
+        message: `${readyForPromotion.rows[0].count} high-confidence records ready for confirmation`,
+        action: 'Review records',
+        actionUrl: '/review.html'
+      });
+    }
+
+    res.json({
+      success: true,
+      hasNotifications: notifications.length > 0,
+      count: notifications.length,
+      notifications
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      hasNotifications: false,
+      count: 0,
+      notifications: [],
+      error: error.message
+    });
+  }
+});
+
+// =============================================================================
 // Utility Endpoints
 // =============================================================================
 
