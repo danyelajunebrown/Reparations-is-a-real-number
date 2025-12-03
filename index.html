@@ -2201,7 +2201,24 @@ function closeDocumentMetadataForm(clearFiles = true) {
         }
     }
 }
+javascript// Add to existing frontend/public/app.js
+window.meshNode = new BrowserMeshNode();
 
+// Modify existing document upload
+async function uploadDocument(file, metadata) {
+  // Store locally in browser first
+  const documentId = generateDocumentId();
+  await window.meshNode.storeDocument(documentId, file);
+  
+  // Only upload to S3 if no mesh peers available
+  if (window.meshNode.connections.size < 2) {
+    console.log('Mesh insufficient, falling back to S3');
+    return await uploadToS3(file, metadata);
+  }
+  
+  console.log(`Document stored across ${window.meshNode.connections.size} mesh peers`);
+  return { success: true, documentId, storage: 'mesh' };
+}
 // Toggle between owner and enslaved person fields
 function updateSubjectFields() {
     const subjectType = document.querySelector('input[name="subjectType"]:checked').value;
