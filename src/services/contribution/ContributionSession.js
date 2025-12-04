@@ -53,39 +53,77 @@ class ContributionSession {
         };
 
         // Known archive patterns for auto-detection
+        // NOTE: sourceType describes the ARCHIVE TYPE, not confirmation status
+        // Confirmation is ONLY determined by actual document content analysis
         this.archivePatterns = {
             'msa.maryland.gov': {
                 archiveName: 'Maryland State Archives',
-                sourceType: 'primary',
+                sourceType: 'primary',  // Government archive - MAY contain primary docs
                 contentAccess: 'pdf_link',
                 pdfPattern: /\.\.\/pdf\/([^"']+\.pdf)/
             },
             'civilwardc.org': {
                 archiveName: 'Civil War Washington DC',
-                sourceType: 'primary',
+                sourceType: 'primary',  // Government archive - MAY contain primary docs
                 contentAccess: 'direct'
             },
             'ancestry.com': {
                 archiveName: 'Ancestry.com',
-                sourceType: 'secondary',
+                sourceType: 'secondary',  // Genealogy database
                 contentAccess: 'auth_required'
             },
             'familysearch.org': {
                 archiveName: 'FamilySearch',
-                sourceType: 'secondary',
+                sourceType: 'secondary',  // Genealogy database
                 contentAccess: 'mixed'
             },
             'findagrave.com': {
                 archiveName: 'Find A Grave',
-                sourceType: 'secondary',
+                sourceType: 'secondary',  // Memorial database
                 contentAccess: 'direct'
             },
             'wikipedia.org': {
                 archiveName: 'Wikipedia',
-                sourceType: 'tertiary',
+                sourceType: 'tertiary',  // Encyclopedia
                 contentAccess: 'direct'
             }
         };
+
+        // Confirmatory channels - ways that data can be confirmed
+        // This list is designed to grow as new confirmation methods are added
+        this.confirmatoryChannels = [
+            {
+                id: 'human_transcription',
+                name: 'Human Transcription',
+                description: 'User manually transcribed names from document',
+                confidenceWeight: 0.95
+            },
+            {
+                id: 'ocr_verified',
+                name: 'OCR + Human Verification',
+                description: 'OCR extraction reviewed and corrected by human',
+                confidenceWeight: 0.90
+            },
+            {
+                id: 'ocr_high_confidence',
+                name: 'High-Confidence OCR',
+                description: 'OCR extraction with >= 95% confidence score',
+                confidenceWeight: 0.75
+            },
+            {
+                id: 'page_metadata',
+                name: 'Page Metadata',
+                description: 'Structured data found on the hosting page',
+                confidenceWeight: 0.60
+            },
+            {
+                id: 'cross_reference',
+                name: 'Cross-Reference Match',
+                description: 'Name matches existing confirmed record',
+                confidenceWeight: 0.70
+            }
+            // Add new confirmatory channels here as they become available
+        ];
     }
 
     /**
@@ -442,14 +480,16 @@ class ContributionSession {
             response += `**Note:** Content is loaded in an iframe\n`;
         }
 
-        // Source type assessment
-        const typeEmoji = {
-            'primary': '**PRIMARY SOURCE** - Can CONFIRM slaveholder/enslaved relationships',
-            'secondary': '**SECONDARY SOURCE** - Needs verification with primary documents',
-            'tertiary': '**TERTIARY SOURCE** - Reference only, requires verification',
+        // Source type assessment - describes WHERE the document is from, NOT confirmation status
+        // Confirmation can ONLY come from actual document content (OCR, human input, etc.)
+        const typeDescriptions = {
+            'primary': '**GOVERNMENT/INSTITUTIONAL ARCHIVE** - May contain primary source documents',
+            'secondary': '**GENEALOGY DATABASE** - Compiled/indexed records',
+            'tertiary': '**REFERENCE SOURCE** - Encyclopedia or article',
             'unknown': '**UNKNOWN SOURCE TYPE** - Needs your help to classify'
         };
-        response += `\n${typeEmoji[analysis.sourceType] || typeEmoji.unknown}\n`;
+        response += `\n${typeDescriptions[analysis.sourceType] || typeDescriptions.unknown}\n`;
+        response += `\n*Note: Document confirmation status will be determined by the actual content, not the source domain.*\n`;
 
         if (analysis.pagination.detected) {
             response += `\n**Pagination:** This appears to be page ${analysis.pagination.currentPage || '?'} of a multi-page document\n`;
@@ -543,7 +583,7 @@ class ContributionSession {
         // Add user message to conversation
         this.addToConversation(session, 'user', userInput);
 
-        // Parse the description
+        // Parse the description - captures EVERYTHING
         const parsed = this.parseContentDescription(userInput);
 
         // Initialize content structure if not exists
@@ -554,12 +594,64 @@ class ContributionSession {
                 scanQuality: null,
                 handwritingType: null,
                 visibleArea: {},
-                orientation: 'normal'
+                orientation: 'normal',
+                physicalDescription: {},
+                auxiliaryData: {},
+                humanReadings: [],
+                rawInputHistory: []
             };
         }
 
-        // Merge parsed info
-        Object.assign(session.contentStructure, parsed);
+        // CRITICAL: Store the raw input - never lose human-provided data
+        session.contentStructure.rawInputHistory = session.contentStructure.rawInputHistory || [];
+        session.contentStructure.rawInputHistory.push({
+            input: userInput,
+            timestamp: new Date().toISOString(),
+            parsed: parsed
+        });
+
+        // Merge parsed info (preserving arrays by concatenation)
+        if (parsed.columns && parsed.columns.length > 0) {
+            session.contentStructure.columns = parsed.columns;
+        }
+        if (parsed.layoutType) session.contentStructure.layoutType = parsed.layoutType;
+        if (parsed.scanQuality) session.contentStructure.scanQuality = parsed.scanQuality;
+        if (parsed.handwritingType) session.contentStructure.handwritingType = parsed.handwritingType;
+        if (parsed.visibleArea) session.contentStructure.visibleArea = parsed.visibleArea;
+        if (parsed.hasPartialView) session.contentStructure.hasPartialView = parsed.hasPartialView;
+
+        // Merge physical description
+        if (parsed.physicalDescription) {
+            session.contentStructure.physicalDescription = {
+                ...session.contentStructure.physicalDescription,
+                ...parsed.physicalDescription
+            };
+        }
+
+        // Merge auxiliary data (deep merge to preserve all collected info)
+        if (parsed.auxiliaryData) {
+            session.contentStructure.auxiliaryData = this.deepMerge(
+                session.contentStructure.auxiliaryData || {},
+                parsed.auxiliaryData
+            );
+        }
+
+        // Append human readings (never overwrite - accumulate)
+        if (parsed.humanReadings && parsed.humanReadings.length > 0) {
+            session.contentStructure.humanReadings = [
+                ...(session.contentStructure.humanReadings || []),
+                ...parsed.humanReadings
+            ];
+        }
+
+        // Merge keywords (unique only)
+        if (parsed.keywords && parsed.keywords.length > 0) {
+            const existingKeywords = session.contentStructure.keywords || [];
+            session.contentStructure.keywords = [...new Set([...existingKeywords, ...parsed.keywords])];
+        }
+
+        // Stockpile auxiliary data to database for future use
+        await this.stockpileAuxiliaryData(session, parsed);
 
         // Generate follow-up questions based on what we learned
         const followUp = this.generateFollowUpQuestions(session);
@@ -586,17 +678,116 @@ class ContributionSession {
     }
 
     /**
+     * Deep merge two objects, concatenating arrays
+     */
+    deepMerge(target, source) {
+        const result = { ...target };
+        for (const key of Object.keys(source)) {
+            if (Array.isArray(source[key])) {
+                result[key] = [...(target[key] || []), ...source[key]];
+            } else if (source[key] && typeof source[key] === 'object') {
+                result[key] = this.deepMerge(target[key] || {}, source[key]);
+            } else {
+                result[key] = source[key];
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Stockpile auxiliary data to database for future reference
+     * This preserves ALL human-provided information, even if not immediately used
+     */
+    async stockpileAuxiliaryData(session, parsed) {
+        try {
+            // Store raw human input as OCR training data
+            if (parsed.humanReadings && parsed.humanReadings.length > 0) {
+                for (const reading of parsed.humanReadings) {
+                    await this.db.query(`
+                        INSERT INTO human_readings
+                        (session_id, document_url, reading_type, exact_text, confidence, metadata, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                        ON CONFLICT DO NOTHING
+                    `, [
+                        session.sessionId,
+                        session.url,
+                        reading.type,
+                        JSON.stringify(reading.exactText),
+                        reading.confidence,
+                        JSON.stringify(reading)
+                    ]);
+                }
+            }
+
+            // Store auxiliary data for the document
+            if (parsed.auxiliaryData && Object.keys(parsed.auxiliaryData).length > 0) {
+                await this.db.query(`
+                    INSERT INTO document_auxiliary_data
+                    (session_id, document_url, data_type, data_content, raw_input, created_at)
+                    VALUES ($1, $2, 'parsed_auxiliary', $3, $4, NOW())
+                `, [
+                    session.sessionId,
+                    session.url,
+                    JSON.stringify(parsed.auxiliaryData),
+                    parsed.rawHumanInput
+                ]);
+            }
+
+            // Store physical description
+            if (parsed.physicalDescription && Object.keys(parsed.physicalDescription).length > 0) {
+                await this.db.query(`
+                    INSERT INTO document_auxiliary_data
+                    (session_id, document_url, data_type, data_content, raw_input, created_at)
+                    VALUES ($1, $2, 'physical_description', $3, $4, NOW())
+                `, [
+                    session.sessionId,
+                    session.url,
+                    JSON.stringify(parsed.physicalDescription),
+                    parsed.rawHumanInput
+                ]);
+            }
+        } catch (error) {
+            // Log but don't fail - stockpiling is enhancement, not critical path
+            console.error('Error stockpiling auxiliary data:', error.message);
+            // Tables might not exist yet - that's okay
+        }
+    }
+
+    /**
      * Parse natural language content description
+     *
+     * DESIGN PRINCIPLE: Every piece of human-provided information is precious.
+     * We capture EVERYTHING - even details we don't immediately use - because:
+     * 1. Human readings serve as ground truth for OCR validation/training
+     * 2. "Irrelevant" details (printers, dimensions, military columns) may be
+     *    invaluable for future research, cross-referencing, or system improvements
+     * 3. The human took time to provide this - never discard it
      */
     parseContentDescription(text) {
         const parsed = {
+            // Always store the raw input - this is sacred
+            rawHumanInput: text,
+            rawInputTimestamp: new Date().toISOString(),
+
+            // Structured extractions
             columns: [],
-            keywords: []
+            keywords: [],
+
+            // Document physical characteristics
+            physicalDescription: {},
+
+            // All extracted details, even "unused" ones
+            auxiliaryData: {},
+
+            // Human-provided exact text (OCR ground truth)
+            humanReadings: []
         };
 
         const lower = text.toLowerCase();
 
-        // Detect layout type
+        // ========================================
+        // LAYOUT DETECTION
+        // ========================================
         if (lower.includes('table') || lower.includes('column') || lower.includes('row')) {
             parsed.layoutType = 'table';
         } else if (lower.includes('list')) {
@@ -605,60 +796,221 @@ class ContributionSession {
             parsed.layoutType = 'prose';
         }
 
-        // Parse column descriptions
-        // Pattern: "first column is X", "second column is Y", etc.
-        const columnPattern = /(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th|column\s*\d+)\s+(?:column\s+)?(?:is\s+)?(?:(?:a\s+)?(?:narrow|wide|thin)\s+)?(?:(?:column\s+)?(?:for|of|with|called|labeled|named|titled|contains?)?\s*)?([^,.]+)/gi;
+        // Detect book/page layout
+        if (lower.includes('open book') || lower.includes('two pages') || lower.includes('spread')) {
+            parsed.physicalDescription.layout = 'book_spread';
+            parsed.physicalDescription.pagesVisible = 2;
+        }
+        if (lower.includes('spine')) {
+            parsed.physicalDescription.hasSpine = true;
+        }
+        if (lower.includes('spreads across') || lower.includes('spans both')) {
+            parsed.physicalDescription.contentSpansBothPages = true;
+        }
 
-        let match;
-        while ((match = columnPattern.exec(text)) !== null) {
-            const position = this.parseColumnPosition(match[1]);
-            const description = match[2].trim();
-
-            parsed.columns.push({
-                position,
-                description,
-                dataType: this.inferDataType(description),
-                headerGuess: this.extractHeaderGuess(description)
+        // ========================================
+        // COLUMN HEADER EXTRACTION (EXACT TEXT)
+        // ========================================
+        // Look for quoted column headers - these are GROUND TRUTH
+        const quotedHeaders = text.match(/"([^"]+)"/g);
+        if (quotedHeaders) {
+            parsed.humanReadings.push({
+                type: 'column_headers',
+                exactText: quotedHeaders.map(h => h.replace(/"/g, '')),
+                confidence: 'human_provided'
             });
         }
 
-        // Detect specific data types mentioned
-        if (lower.includes('owner') || lower.includes('slaveholder')) {
-            parsed.keywords.push('owner');
-        }
-        if (lower.includes('slave') || lower.includes('enslaved')) {
-            parsed.keywords.push('enslaved');
-        }
-        if (lower.includes('date')) {
-            parsed.keywords.push('date');
-        }
-        if (lower.includes('age')) {
-            parsed.keywords.push('age');
-        }
-        if (lower.includes('name')) {
-            parsed.keywords.push('name');
+        // Parse column headers from structured lists (e.g., "from left to right: X. Y. Z.")
+        const headerListMatch = text.match(/(?:from left to right|columns?(?:\s+are)?|headings?(?:\s+are)?)[:\s]+([^#\n]+)/i);
+        if (headerListMatch) {
+            // Split by common delimiters: periods, commas, semicolons
+            const headerText = headerListMatch[1];
+            const headers = headerText.split(/[.;]/)
+                .map(h => h.trim())
+                .filter(h => h.length > 0 && h.length < 100);
+
+            if (headers.length > 0) {
+                parsed.columns = headers.map((header, idx) => ({
+                    position: idx + 1,
+                    headerExact: header,
+                    headerGuess: header,
+                    dataType: this.inferDataType(header),
+                    humanProvided: true
+                }));
+
+                parsed.humanReadings.push({
+                    type: 'column_header_sequence',
+                    exactText: headers,
+                    confidence: 'human_provided'
+                });
+            }
         }
 
-        // Detect quality indicators
+        // Detect subcolumns (e.g., "(sub columns Day. Month. Year.)")
+        const subcolumnMatch = text.match(/\(sub\s*columns?\s+([^)]+)\)/gi);
+        if (subcolumnMatch) {
+            subcolumnMatch.forEach(match => {
+                const subCols = match.match(/\(sub\s*columns?\s+([^)]+)\)/i);
+                if (subCols) {
+                    const parentContext = text.substring(
+                        Math.max(0, text.indexOf(match) - 100),
+                        text.indexOf(match)
+                    );
+
+                    parsed.auxiliaryData.subcolumns = parsed.auxiliaryData.subcolumns || [];
+                    parsed.auxiliaryData.subcolumns.push({
+                        parentContext: parentContext.trim(),
+                        subcolumnNames: subCols[1].split(/[.,]/).map(s => s.trim()).filter(s => s)
+                    });
+                }
+            });
+        }
+
+        // ========================================
+        // PHYSICAL DIMENSIONS
+        // ========================================
+        const dimensionMatch = text.match(/(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(inches?|in|cm|mm|pixels?|px)?/i);
+        if (dimensionMatch) {
+            parsed.physicalDescription.dimensions = {
+                width: parseFloat(dimensionMatch[1]),
+                height: parseFloat(dimensionMatch[2]),
+                unit: dimensionMatch[3] || 'unknown'
+            };
+        }
+
+        // ========================================
+        // PRINTER/PUBLISHER INFORMATION
+        // ========================================
+        const printerMatch = text.match(/(?:printer|publisher|printed by|published by)[:\s]+([^.;\n]+)/i);
+        if (printerMatch) {
+            parsed.auxiliaryData.printer = printerMatch[1].trim();
+        }
+
+        // Also catch inline mentions like "Murphy & Co Printers"
+        const printerInlineMatch = text.match(/([A-Z][a-z]+(?:\s*&\s*[A-Z][a-z]+)?(?:\s+(?:Printers?|Publishers?|Stationers?|Co\.?))+[^.]*)/);
+        if (printerInlineMatch) {
+            parsed.auxiliaryData.printer = parsed.auxiliaryData.printer || printerInlineMatch[1].trim();
+            parsed.humanReadings.push({
+                type: 'printer_text',
+                exactText: printerInlineMatch[1].trim(),
+                confidence: 'human_provided',
+                note: 'Fine print detected'
+            });
+        }
+
+        // ========================================
+        // QUALITY & LEGIBILITY DETAILS
+        // ========================================
         if (lower.includes('faded') || lower.includes('hard to read')) {
             parsed.scanQuality = 'fair';
         }
-        if (lower.includes('illegible') || lower.includes('can\'t read')) {
+        if (lower.includes('illegible') || lower.includes('can\'t read') || lower.includes('cannot read')) {
             parsed.scanQuality = 'poor';
         }
         if (lower.includes('clear') || lower.includes('readable')) {
             parsed.scanQuality = 'good';
         }
+        if (lower.includes('excellent') || lower.includes('very clear')) {
+            parsed.scanQuality = 'excellent';
+        }
 
-        // Detect handwriting
+        // Capture specific legibility notes
+        const legibilityMatch = text.match(/(?:only|except|but)\s+(?:the\s+)?([^.]+?)(?:gets?\s+)?(?:blurry|faded|illegible|hard to read)/i);
+        if (legibilityMatch) {
+            parsed.auxiliaryData.legibilityNotes = parsed.auxiliaryData.legibilityNotes || [];
+            parsed.auxiliaryData.legibilityNotes.push({
+                issue: 'partial_illegibility',
+                description: legibilityMatch[1].trim(),
+                fullContext: legibilityMatch[0]
+            });
+        }
+
+        // ========================================
+        // HANDWRITING TYPE
+        // ========================================
         if (lower.includes('handwritten') || lower.includes('cursive')) {
             parsed.handwritingType = 'cursive';
         }
-        if (lower.includes('printed') || lower.includes('typed')) {
+        if (lower.includes('printed') || lower.includes('typed') || lower.includes('typewritten')) {
             parsed.handwritingType = 'printed';
         }
 
-        // Detect partial visibility
+        // Detect mixed (e.g., "entries are handwritten, column titles are typewritten")
+        if ((lower.includes('entries') || lower.includes('data')) &&
+            (lower.includes('handwritten') || lower.includes('cursive')) &&
+            (lower.includes('titles') || lower.includes('headers') || lower.includes('headings')) &&
+            (lower.includes('printed') || lower.includes('typed'))) {
+            parsed.handwritingType = 'mixed';
+            parsed.auxiliaryData.handwritingDetails = {
+                entries: 'handwritten',
+                headers: 'printed'
+            };
+        }
+
+        // ========================================
+        // MILITARY / CIVIL WAR SPECIFIC DATA
+        // ========================================
+        const militaryKeywords = ['military', 'regiment', 'enlisted', 'u.s. service', 'compensation', 'servitude'];
+        const foundMilitaryKeywords = militaryKeywords.filter(kw => lower.includes(kw));
+        if (foundMilitaryKeywords.length > 0) {
+            parsed.auxiliaryData.militaryContext = {
+                detected: true,
+                keywords: foundMilitaryKeywords
+            };
+
+            // This is likely a Civil War compensation record
+            if (lower.includes('compensation') && lower.includes('military')) {
+                parsed.auxiliaryData.documentSubtype = 'civil_war_compensation_record';
+            }
+        }
+
+        // ========================================
+        // DATE DETECTION
+        // ========================================
+        const datePatterns = [
+            /\b(18\d{2})\b/g,  // Years like 1860
+            /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s*\d{4}/gi
+        ];
+
+        parsed.auxiliaryData.datesFound = [];
+        for (const pattern of datePatterns) {
+            let dateMatch;
+            while ((dateMatch = pattern.exec(text)) !== null) {
+                parsed.auxiliaryData.datesFound.push(dateMatch[0]);
+            }
+        }
+
+        // ========================================
+        // KEYWORD EXTRACTION (EXPANDED)
+        // ========================================
+        const keywordMap = {
+            'owner': ['owner', 'slaveholder', 'master', 'former ownership'],
+            'enslaved': ['slave', 'enslaved', 'servant', 'negro', 'colored'],
+            'date': ['date', 'day', 'month', 'year', 'when'],
+            'age': ['age', 'years old'],
+            'name': ['name'],
+            'location': ['location', 'county', 'place', 'residence', 'address'],
+            'gender': ['sex', 'gender', 'male', 'female', 'm', 'f'],
+            'physical': ['physical', 'condition', 'description', 'complexion', 'height'],
+            'military': ['military', 'regiment', 'enlisted', 'service'],
+            'compensation': ['compensation', 'payment', 'received', 'amount'],
+            'witness': ['witness', 'proven', 'attested', 'sworn']
+        };
+
+        for (const [category, terms] of Object.entries(keywordMap)) {
+            for (const term of terms) {
+                if (lower.includes(term)) {
+                    if (!parsed.keywords.includes(category)) {
+                        parsed.keywords.push(category);
+                    }
+                }
+            }
+        }
+
+        // ========================================
+        // PARTIAL VISIBILITY
+        // ========================================
         const partialMatch = lower.match(/(\d+(?:\.\d+)?)\s*columns?/);
         if (partialMatch) {
             parsed.visibleArea = {
@@ -667,6 +1019,19 @@ class ContributionSession {
         }
         if (lower.includes('partial') || lower.includes('can only see') || lower.includes('sliver')) {
             parsed.hasPartialView = true;
+        }
+
+        // ========================================
+        // ANNOTATION MARKERS (for special sections)
+        // ========================================
+        // Detect user's structured markers like #LAYOUT#, #QUALITY#, etc.
+        const markerPattern = /#([A-Z]+)#\s*([^#]+?)(?=#[A-Z]+#|$)/gi;
+        let markerMatch;
+        while ((markerMatch = markerPattern.exec(text)) !== null) {
+            const markerName = markerMatch[1].toLowerCase();
+            const markerContent = markerMatch[2].trim();
+            parsed.auxiliaryData.userMarkers = parsed.auxiliaryData.userMarkers || {};
+            parsed.auxiliaryData.userMarkers[markerName] = markerContent;
         }
 
         return parsed;

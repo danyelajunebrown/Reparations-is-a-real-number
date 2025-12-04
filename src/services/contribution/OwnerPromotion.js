@@ -1,24 +1,18 @@
 /**
- * OwnerPromotion - Auto-promote slave owners from federal documents
+ * OwnerPromotion - Promote slave owners based on CONTENT-BASED confirmation
  *
- * This service handles the promotion of slave owners extracted from
- * PRIMARY federal/government sources to the confirmed `individuals` table.
+ * IMPORTANT: Promotion is based on ACTUAL DOCUMENT CONTENT, not source domain.
+ * A .gov URL does NOT automatically mean the data is confirmed.
  *
- * Promotion criteria:
- * 1. Source must be a FEDERAL/GOVERNMENT document (census, petition, court record, etc.)
- * 2. Person type must be 'owner' or 'slaveholder'
- * 3. Confidence score >= 0.85 OR human-verified
- * 4. Name must be parseable (not just "illegible" or "unknown")
+ * Confirmation can ONLY come from:
+ * 1. Human transcription of names from the document
+ * 2. OCR extraction that has been human-verified
+ * 3. High-confidence OCR (>= 95%) from a document the user confirmed contains owner/slave data
+ * 4. Structured metadata parsed from the page that user confirmed as accurate
+ * 5. Cross-reference with existing confirmed records
  *
- * Federal document domains that trigger auto-promotion:
- * - msa.maryland.gov (Maryland State Archives)
- * - archives.gov (National Archives)
- * - loc.gov (Library of Congress)
- * - civilwardc.org (DC Emancipation Petitions)
- * - familysearch.org/ark (when linked to federal records)
- * - ancestry.com (when viewing census/federal records)
- * - fold3.com (military/federal records)
- * - Any .gov domain
+ * The source domain (government archive, genealogy site, etc.) provides CONTEXT
+ * about where to look for documents, but does NOT confirm the data itself.
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -27,25 +21,45 @@ class OwnerPromotion {
     constructor(database) {
         this.db = database;
 
-        // Federal/government domains that qualify for auto-promotion
-        this.federalDomains = [
-            'msa.maryland.gov',
-            'archives.gov',
-            'nara.gov',
-            'loc.gov',
-            'civilwardc.org',
-            'fold3.com',
-            'accessgenealogy.com',
-            // State archives
-            'virginiamemory.com',
-            'digital.ncdcr.gov',
-            'sos.ga.gov',
-            'mdhistory.msa.maryland.gov',
-            // Any .gov domain is federal
-        ];
+        // Confirmatory channels - the ONLY ways data can be confirmed
+        // This is designed to grow as new confirmation methods are added
+        this.confirmatoryChannels = {
+            'human_transcription': {
+                name: 'Human Transcription',
+                description: 'User manually transcribed names from document',
+                minConfidence: 0.90,
+                requiresHumanInput: true
+            },
+            'ocr_human_verified': {
+                name: 'OCR + Human Verification',
+                description: 'OCR extraction reviewed and corrected by human',
+                minConfidence: 0.85,
+                requiresHumanInput: true
+            },
+            'ocr_high_confidence': {
+                name: 'High-Confidence OCR',
+                description: 'OCR with >= 95% confidence from user-confirmed document',
+                minConfidence: 0.95,
+                requiresHumanInput: false  // But requires user to confirm doc type
+            },
+            'structured_metadata': {
+                name: 'Structured Page Metadata',
+                description: 'Data parsed from page that user confirmed as accurate',
+                minConfidence: 0.80,
+                requiresHumanInput: true
+            },
+            'cross_reference': {
+                name: 'Cross-Reference Match',
+                description: 'Name matches existing confirmed record from different source',
+                minConfidence: 0.85,
+                requiresHumanInput: false
+            }
+            // ADD NEW CHANNELS HERE as they become available
+        };
 
-        // Document types that are federal/primary sources
-        this.federalDocumentTypes = [
+        // Document types that CAN contain confirmatory data (when extracted properly)
+        // These are just hints for the UI - they don't auto-confirm anything
+        this.documentTypesWithOwnerData = [
             'slave_schedule',
             'census',
             'compensation_petition',
@@ -53,53 +67,61 @@ class OwnerPromotion {
             'court_record',
             'tax_record',
             'slave_manifest',
-            'military_record',
-            'pension_record',
-            'land_grant',
-            'freedmens_bureau'
+            'estate_inventory',
+            'will_testament',
+            'bill_of_sale',
+            'plantation_record'
         ];
-
-        // Minimum confidence for auto-promotion (without human verification)
-        this.autoPromoteThreshold = 0.90;
-
-        // Minimum confidence for promotion with human verification
-        this.humanVerifiedThreshold = 0.70;
     }
 
     /**
-     * Check if a source URL qualifies as a federal document
+     * Check if a source domain is a government/institutional archive
+     * NOTE: This does NOT confirm data - it just provides context about the source
      */
-    isFederalSource(url, documentType = null) {
+    isGovernmentArchive(url) {
         if (!url) return false;
-
         const lowerUrl = url.toLowerCase();
+        return lowerUrl.includes('.gov') ||
+               lowerUrl.includes('archives') ||
+               lowerUrl.includes('msa.maryland') ||
+               lowerUrl.includes('civilwardc.org');
+    }
 
-        // Any .gov domain is federal
-        if (lowerUrl.includes('.gov')) {
-            return true;
+    /**
+     * Get list of available confirmatory channels
+     */
+    getConfirmatoryChannels() {
+        return Object.entries(this.confirmatoryChannels).map(([id, channel]) => ({
+            id,
+            ...channel
+        }));
+    }
+
+    /**
+     * Add a new confirmatory channel (for extensibility)
+     */
+    addConfirmatoryChannel(id, config) {
+        if (this.confirmatoryChannels[id]) {
+            throw new Error(`Confirmatory channel '${id}' already exists`);
         }
-
-        // Check known federal domains
-        for (const domain of this.federalDomains) {
-            if (lowerUrl.includes(domain)) {
-                return true;
-            }
-        }
-
-        // Check document type
-        if (documentType && this.federalDocumentTypes.includes(documentType.toLowerCase())) {
-            return true;
-        }
-
-        return false;
+        this.confirmatoryChannels[id] = {
+            name: config.name,
+            description: config.description,
+            minConfidence: config.minConfidence || 0.85,
+            requiresHumanInput: config.requiresHumanInput !== false
+        };
+        console.log(`Added new confirmatory channel: ${id}`);
     }
 
     /**
      * Check if a person qualifies for promotion
+     *
+     * CRITICAL: Promotion requires CONTENT-BASED confirmation, not just source domain
      */
-    qualifiesForPromotion(person, sourceMetadata, humanVerified = false) {
+    qualifiesForPromotion(person, sourceMetadata, confirmationChannel = null) {
         // Must be an owner type
-        if (!['owner', 'slaveholder', 'slave_owner'].includes(person.person_type?.toLowerCase())) {
+        const personType = person.person_type?.toLowerCase() || person.type?.toLowerCase();
+        if (!['owner', 'slaveholder', 'slave_owner'].includes(personType)) {
             return { qualifies: false, reason: 'Not an owner type' };
         }
 
@@ -114,59 +136,56 @@ class OwnerPromotion {
             return { qualifies: false, reason: 'Name is illegible or unknown' };
         }
 
-        // Must be from federal source
-        const isFederal = this.isFederalSource(
-            sourceMetadata?.url || person.source_url,
-            sourceMetadata?.documentType || person.document_type
-        );
-
-        if (!isFederal) {
-            return { qualifies: false, reason: 'Not a federal/government source' };
+        // CRITICAL: Must have a valid confirmatory channel
+        if (!confirmationChannel) {
+            return {
+                qualifies: false,
+                reason: 'No confirmatory channel specified. Data must be confirmed via human transcription, verified OCR, or other valid channel.',
+                hint: 'Available channels: ' + Object.keys(this.confirmatoryChannels).join(', ')
+            };
         }
 
-        // Check confidence threshold
+        const channel = this.confirmatoryChannels[confirmationChannel];
+        if (!channel) {
+            return {
+                qualifies: false,
+                reason: `Unknown confirmatory channel: ${confirmationChannel}`,
+                hint: 'Available channels: ' + Object.keys(this.confirmatoryChannels).join(', ')
+            };
+        }
+
+        // Check confidence against channel's minimum
         const confidence = parseFloat(person.confidence_score) || 0;
-
-        if (humanVerified && confidence >= this.humanVerifiedThreshold) {
+        if (confidence < channel.minConfidence) {
             return {
-                qualifies: true,
-                reason: 'Human-verified federal document owner',
-                confidence,
-                promotionType: 'human_verified'
+                qualifies: false,
+                reason: `Confidence ${(confidence * 100).toFixed(0)}% below ${channel.name} threshold of ${(channel.minConfidence * 100).toFixed(0)}%`,
+                confidence
             };
         }
 
-        if (confidence >= this.autoPromoteThreshold) {
-            return {
-                qualifies: true,
-                reason: 'High-confidence federal document owner',
-                confidence,
-                promotionType: 'auto_high_confidence'
-            };
-        }
-
+        // All checks passed
         return {
-            qualifies: false,
-            reason: `Confidence ${(confidence * 100).toFixed(0)}% below threshold`,
-            confidence
+            qualifies: true,
+            reason: `Confirmed via ${channel.name}`,
+            confidence,
+            confirmationChannel,
+            channelName: channel.name
         };
     }
 
     /**
      * Promote a single owner to the individuals table
      */
-    async promoteOwner(person, sourceMetadata, extractionId = null) {
-        const qualification = this.qualifiesForPromotion(
-            person,
-            sourceMetadata,
-            person.human_verified || false
-        );
+    async promoteOwner(person, sourceMetadata, confirmationChannel, extractionId = null) {
+        const qualification = this.qualifiesForPromotion(person, sourceMetadata, confirmationChannel);
 
         if (!qualification.qualifies) {
             console.log(`    ⚠️  Skipping ${person.full_name}: ${qualification.reason}`);
             return {
                 success: false,
                 reason: qualification.reason,
+                hint: qualification.hint,
                 person: person.full_name
             };
         }
@@ -196,7 +215,7 @@ class OwnerPromotion {
                         updated_at = CURRENT_TIMESTAMP
                     WHERE individual_id = $2
                 `, [
-                    `Additional source: ${sourceMetadata?.url || person.source_url} (${new Date().toISOString()})`,
+                    `Additional source (${new Date().toISOString()}): ${sourceMetadata?.url || person.source_url}\nConfirmation: ${qualification.channelName}`,
                     existingId
                 ]);
 
@@ -210,6 +229,15 @@ class OwnerPromotion {
                 };
             }
 
+            // Build notes with confirmation details
+            const notes = [
+                `Confirmed via: ${qualification.channelName}`,
+                `Source: ${sourceMetadata?.url || person.source_url}`,
+                `Confidence: ${(qualification.confidence * 100).toFixed(0)}%`,
+                `Extraction ID: ${extractionId || 'N/A'}`,
+                `Promoted: ${new Date().toISOString()}`
+            ].join('\n');
+
             // Insert new individual
             await this.db.query(`
                 INSERT INTO individuals (
@@ -221,13 +249,12 @@ class OwnerPromotion {
                     death_year,
                     location,
                     notes,
-                    source_type,
                     source_url,
                     confidence_score,
                     verified,
                     created_at,
                     updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `, [
                 individualId,
                 person.full_name,
@@ -236,11 +263,10 @@ class OwnerPromotion {
                 person.birth_year || null,
                 person.death_year || null,
                 Array.isArray(person.locations) ? person.locations.join(', ') : (person.location || null),
-                `Auto-promoted from federal document.\nSource: ${sourceMetadata?.url || person.source_url}\nDocument Type: ${sourceMetadata?.documentType || 'federal_record'}\nPromotion: ${qualification.promotionType}\nConfidence: ${(qualification.confidence * 100).toFixed(0)}%\nExtraction ID: ${extractionId || 'N/A'}`,
-                'primary',
+                notes,
                 sourceMetadata?.url || person.source_url,
                 qualification.confidence,
-                qualification.promotionType === 'human_verified'
+                true  // Verified because it passed confirmatory channel
             ]);
 
             // Log the promotion
@@ -254,7 +280,7 @@ class OwnerPromotion {
                 individualId,
                 person: person.full_name,
                 confidence: qualification.confidence,
-                promotionType: qualification.promotionType
+                confirmationChannel: qualification.confirmationChannel
             };
 
         } catch (error) {
@@ -304,44 +330,54 @@ class OwnerPromotion {
             await this.db.query(`
                 INSERT INTO promotion_log (
                     individual_id,
-                    original_lead_id,
-                    extraction_id,
                     full_name,
                     source_url,
                     confidence_score,
                     promotion_type,
                     promotion_reason,
                     promoted_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
             `, [
                 individualId,
-                person.lead_id || null,
-                extractionId,
                 person.full_name,
                 person.source_url,
                 qualification.confidence,
-                qualification.promotionType,
+                qualification.confirmationChannel,
                 qualification.reason
             ]);
         } catch (error) {
-            // Log table might not exist yet - that's okay
-            console.log(`    (Promotion log skipped: ${error.message})`);
+            // Log table might have different schema - that's okay
+            console.log(`    (Promotion log note: ${error.message})`);
         }
     }
 
     /**
      * Batch promote owners from an extraction job
+     * Requires specifying the confirmatory channel used
      */
-    async promoteFromExtraction(extractionId, sourceMetadata) {
-        console.log(`\n📍 Auto-promoting federal document owners from extraction ${extractionId}`);
+    async promoteFromExtraction(extractionId, sourceMetadata, confirmationChannel) {
+        console.log(`\n📍 Promoting owners from extraction ${extractionId}`);
+        console.log(`    Confirmation channel: ${confirmationChannel}`);
 
-        // Check if this is a federal source
-        if (!this.isFederalSource(sourceMetadata?.url, sourceMetadata?.documentType)) {
-            console.log(`    ⚠️  Not a federal source - skipping auto-promotion`);
-            return { promoted: 0, skipped: 0, errors: 0 };
+        if (!confirmationChannel) {
+            console.log(`    ✗ No confirmatory channel specified - cannot promote`);
+            return {
+                promoted: 0,
+                skipped: 0,
+                errors: 0,
+                error: 'Confirmatory channel is required'
+            };
         }
 
-        console.log(`    ✓ Federal source confirmed: ${sourceMetadata?.url}`);
+        if (!this.confirmatoryChannels[confirmationChannel]) {
+            console.log(`    ✗ Unknown confirmatory channel: ${confirmationChannel}`);
+            return {
+                promoted: 0,
+                skipped: 0,
+                errors: 0,
+                error: `Unknown channel. Available: ${Object.keys(this.confirmatoryChannels).join(', ')}`
+            };
+        }
 
         // Get extracted persons from the extraction job
         let persons = [];
@@ -357,22 +393,6 @@ class OwnerPromotion {
         } catch (error) {
             console.error(`    ✗ Failed to get extraction data: ${error.message}`);
             return { promoted: 0, skipped: 0, errors: 1 };
-        }
-
-        // Also check unconfirmed_persons linked to this session
-        try {
-            const unconfirmedResult = await this.db.query(`
-                SELECT * FROM unconfirmed_persons
-                WHERE source_url = $1
-                AND person_type IN ('owner', 'slaveholder')
-            `, [sourceMetadata?.url]);
-
-            if (unconfirmedResult.rows.length > 0) {
-                persons = [...persons, ...unconfirmedResult.rows];
-            }
-        } catch (error) {
-            // Table might not exist
-            console.log(`    (unconfirmed_persons check skipped)`);
         }
 
         if (persons.length === 0) {
@@ -406,11 +426,15 @@ class OwnerPromotion {
                 locations: owner.locations || (owner.columns?.location ? [owner.columns.location] : []),
                 source_url: sourceMetadata?.url || owner.source_url,
                 confidence_score: owner.confidence_score || owner.confidence || 0.85,
-                human_verified: owner.human_verified || owner.corrected || false,
                 lead_id: owner.lead_id
             };
 
-            const result = await this.promoteOwner(normalizedOwner, sourceMetadata, extractionId);
+            const result = await this.promoteOwner(
+                normalizedOwner,
+                sourceMetadata,
+                confirmationChannel,
+                extractionId
+            );
 
             if (result.success) {
                 promoted++;
@@ -430,9 +454,17 @@ class OwnerPromotion {
     }
 
     /**
-     * Manually promote a specific unconfirmed person
+     * Manually promote a specific unconfirmed person by lead ID
      */
-    async promoteById(leadId, verifiedBy = 'manual') {
+    async promoteById(leadId, confirmationChannel, verifiedBy = 'manual') {
+        if (!confirmationChannel) {
+            return {
+                success: false,
+                reason: 'Confirmatory channel is required',
+                hint: 'Available channels: ' + Object.keys(this.confirmatoryChannels).join(', ')
+            };
+        }
+
         try {
             const result = await this.db.query(`
                 SELECT * FROM unconfirmed_persons WHERE lead_id = $1
@@ -443,14 +475,17 @@ class OwnerPromotion {
             }
 
             const person = result.rows[0];
-            person.human_verified = true;
 
             const sourceMetadata = {
                 url: person.source_url,
-                documentType: person.document_type || 'federal_record'
+                documentType: person.document_type || 'unknown'
             };
 
-            const promotionResult = await this.promoteOwner(person, sourceMetadata);
+            const promotionResult = await this.promoteOwner(
+                person,
+                sourceMetadata,
+                confirmationChannel
+            );
 
             if (promotionResult.success) {
                 // Update the unconfirmed_persons record
@@ -477,7 +512,6 @@ class OwnerPromotion {
         try {
             const stats = await this.db.query(`
                 SELECT
-                    COUNT(*) FILTER (WHERE source_type = 'primary') as primary_source_count,
                     COUNT(*) FILTER (WHERE verified = true) as verified_count,
                     COUNT(*) as total_individuals
                 FROM individuals
@@ -485,23 +519,22 @@ class OwnerPromotion {
 
             const recentPromotions = await this.db.query(`
                 SELECT COUNT(*) as count
-                FROM individuals
-                WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
-                AND notes LIKE '%Auto-promoted%'
+                FROM promotion_log
+                WHERE promoted_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
             `);
 
             return {
                 totalIndividuals: parseInt(stats.rows[0]?.total_individuals || 0),
-                primarySourceCount: parseInt(stats.rows[0]?.primary_source_count || 0),
                 verifiedCount: parseInt(stats.rows[0]?.verified_count || 0),
-                promotedLast24h: parseInt(recentPromotions.rows[0]?.count || 0)
+                promotedLast24h: parseInt(recentPromotions.rows[0]?.count || 0),
+                availableChannels: Object.keys(this.confirmatoryChannels)
             };
         } catch (error) {
             return {
                 totalIndividuals: 0,
-                primarySourceCount: 0,
                 verifiedCount: 0,
                 promotedLast24h: 0,
+                availableChannels: Object.keys(this.confirmatoryChannels),
                 error: error.message
             };
         }

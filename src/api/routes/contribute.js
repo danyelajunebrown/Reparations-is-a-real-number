@@ -485,11 +485,23 @@ router.post('/:sessionId/extraction/:extractionId/correct', async (req, res) => 
 
 /**
  * POST /api/contribute/:sessionId/extraction/:extractionId/promote
- * Promote qualifying owners from a federal document extraction to the individuals table
+ * Promote qualifying owners to the individuals table
+ * REQUIRES a confirmatory channel - domain alone does NOT confirm data
  */
 router.post('/:sessionId/extraction/:extractionId/promote', async (req, res) => {
     try {
         const { sessionId, extractionId } = req.params;
+        const { confirmationChannel } = req.body;
+
+        // CRITICAL: Must specify how the data was confirmed
+        if (!confirmationChannel) {
+            return res.status(400).json({
+                success: false,
+                error: 'Confirmatory channel is required',
+                hint: 'Data must be confirmed via human transcription, verified OCR, or other valid channel.',
+                availableChannels: promotionService.getConfirmatoryChannels()
+            });
+        }
 
         // Get session to retrieve source metadata
         const session = await contributionService.getSession(sessionId);
@@ -500,23 +512,25 @@ router.post('/:sessionId/extraction/:extractionId/promote', async (req, res) => 
             });
         }
 
-        // Check if this is a federal source
         const sourceMetadata = session.sourceMetadata;
 
-        if (!promotionService.isFederalSource(sourceMetadata?.url, sourceMetadata?.documentType)) {
+        // Run promotion with the specified confirmatory channel
+        const result = await promotionService.promoteFromExtraction(
+            extractionId,
+            sourceMetadata,
+            confirmationChannel
+        );
+
+        if (result.error) {
             return res.status(400).json({
                 success: false,
-                error: 'Only federal/government documents qualify for auto-promotion',
-                hint: 'This source does not appear to be a federal document (census, petition, court record, etc.)'
+                error: result.error
             });
         }
 
-        // Run promotion
-        const result = await promotionService.promoteFromExtraction(extractionId, sourceMetadata);
-
         res.json({
             success: true,
-            message: `Promoted ${result.promoted} slave owners to the confirmed database`,
+            message: `Promoted ${result.promoted} slave owners via ${confirmationChannel}`,
             ...result
         });
 
