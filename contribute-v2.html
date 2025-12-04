@@ -921,18 +921,53 @@ I work best with:
                 label.textContent = q.question;
                 group.appendChild(label);
 
-                const options = document.createElement('div');
-                options.className = 'question-options';
+                // Handle different question types
+                if (q.type === 'number') {
+                    // Render number input for numeric questions
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = '1';
+                    input.max = '50';
+                    input.style.cssText = 'padding: 8px 12px; background: #16213e; border: 2px solid #333; border-radius: 8px; color: #eee; font-size: 14px; width: 80px; margin-top: 8px;';
+                    input.onchange = () => {
+                        selectedAnswers[q.id] = input.value;
+                    };
+                    group.appendChild(input);
+                } else if (q.type === 'text') {
+                    // Render text input for free-form questions
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.style.cssText = 'padding: 8px 12px; background: #16213e; border: 2px solid #333; border-radius: 8px; color: #eee; font-size: 14px; width: 100%; margin-top: 8px;';
+                    input.onchange = () => {
+                        selectedAnswers[q.id] = input.value;
+                    };
+                    group.appendChild(input);
+                } else if (q.options && Array.isArray(q.options)) {
+                    // Render option buttons for multiple choice questions
+                    const options = document.createElement('div');
+                    options.className = 'question-options';
 
-                q.options.forEach(opt => {
-                    const btn = document.createElement('button');
-                    btn.className = 'question-option';
-                    btn.textContent = opt.label;
-                    btn.onclick = () => selectAnswer(q.id, opt.value, btn);
-                    options.appendChild(btn);
-                });
+                    q.options.forEach(opt => {
+                        const btn = document.createElement('button');
+                        btn.className = 'question-option';
+                        btn.textContent = opt.label;
+                        btn.onclick = () => selectAnswer(q.id, opt.value, btn);
+                        options.appendChild(btn);
+                    });
 
-                group.appendChild(options);
+                    group.appendChild(options);
+                } else {
+                    // Fallback: render as text input if question type is unknown
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.placeholder = 'Type your answer...';
+                    input.style.cssText = 'padding: 8px 12px; background: #16213e; border: 2px solid #333; border-radius: 8px; color: #eee; font-size: 14px; width: 100%; margin-top: 8px;';
+                    input.onchange = () => {
+                        selectedAnswers[q.id] = input.value;
+                    };
+                    group.appendChild(input);
+                }
+
                 list.appendChild(group);
             });
 
