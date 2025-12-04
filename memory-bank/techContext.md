@@ -1,6 +1,6 @@
 # Technical Context: Reparations Is A Real Number
 
-**Last Updated:** December 2, 2025
+**Last Updated:** December 4, 2025
 
 ## Technology Stack
 
@@ -443,6 +443,148 @@ saveResults()
          ↓
 scraping_queue updated (status: completed)
 ```
+
+---
+
+## Contribution Pipeline Architecture ⭐ NEW (Dec 2025)
+
+### ContributionSession.js (`src/services/contribution/ContributionSession.js`)
+
+Manages conversational contribution flow:
+
+```javascript
+class ContributionSession {
+    stages = [
+        'url_analysis',
+        'content_description',
+        'structure_confirmation',
+        'extraction_strategy',
+        'extraction_in_progress',
+        'human_review',
+        'complete'
+    ];
+
+    // Confirmatory channels - ways data can be confirmed
+    confirmatoryChannels = [
+        { id: 'human_transcription', confidenceWeight: 0.95 },
+        { id: 'ocr_verified', confidenceWeight: 0.90 },
+        { id: 'ocr_high_confidence', confidenceWeight: 0.75 },
+        { id: 'page_metadata', confidenceWeight: 0.60 },
+        { id: 'cross_reference', confidenceWeight: 0.70 }
+    ];
+
+    async analyzeUrl(sessionId) { ... }
+    async processContentDescription(sessionId, userInput) { ... }
+    async confirmStructure(sessionId, userConfirmation) { ... }
+    async startExtraction(sessionId, method, options) { ... }
+}
+```
+
+### OwnerPromotion.js (`src/services/contribution/OwnerPromotion.js`)
+
+Content-based promotion with confirmatory channels:
+
+```javascript
+class OwnerPromotion {
+    // CRITICAL: Promotion requires a confirmatory channel
+    confirmatoryChannels = {
+        'human_transcription': { minConfidence: 0.90 },
+        'ocr_human_verified': { minConfidence: 0.85 },
+        'ocr_high_confidence': { minConfidence: 0.95 },
+        'structured_metadata': { minConfidence: 0.80 },
+        'cross_reference': { minConfidence: 0.85 }
+    };
+
+    // Domain does NOT confirm - only provides context
+    qualifiesForPromotion(person, sourceMetadata, confirmationChannel) {
+        if (!confirmationChannel) {
+            return { qualifies: false, reason: 'No confirmatory channel' };
+        }
+        // ...
+    }
+
+    async promoteOwner(person, sourceMetadata, confirmationChannel) { ... }
+}
+```
+
+### Contribution API Endpoints
+
+```
+POST /api/contribute/start              - Start session with URL
+POST /api/contribute/:id/chat           - Natural language interaction
+POST /api/contribute/:id/describe       - Process content description
+POST /api/contribute/:id/confirm        - Confirm structure
+POST /api/contribute/:id/extract        - Start extraction
+POST /api/contribute/:id/sample         - Submit sample extractions
+GET  /api/contribute/:id                - Get session state
+POST /api/contribute/:id/extraction/:eid/promote - Promote (REQUIRES confirmationChannel)
+POST /api/contribute/promote/:leadId    - Manual promotion
+GET  /api/contribute/promotion-stats    - Statistics
+```
+
+### Contribution Database Tables
+
+```sql
+-- Conversation state
+CREATE TABLE contribution_sessions (
+    session_id UUID PRIMARY KEY,
+    url TEXT NOT NULL,
+    contributor_id TEXT,
+    current_stage TEXT DEFAULT 'url_analysis',
+    conversation_history JSONB,
+    source_metadata JSONB,
+    content_structure JSONB,
+    extraction_guidance JSONB,
+    status TEXT DEFAULT 'in_progress',
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Extraction jobs
+CREATE TABLE extraction_jobs (
+    extraction_id UUID PRIMARY KEY,
+    session_id UUID REFERENCES contribution_sessions,
+    content_url TEXT,
+    method TEXT,  -- 'auto_ocr', 'guided_entry', 'sample_learn', 'csv_upload'
+    status TEXT DEFAULT 'pending',
+    parsed_rows JSONB,
+    avg_confidence DECIMAL,
+    human_corrections INTEGER DEFAULT 0
+);
+
+-- Promotion audit trail
+CREATE TABLE promotion_log (
+    promotion_id SERIAL PRIMARY KEY,
+    individual_id TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    source_url TEXT,
+    confidence_score DECIMAL,
+    promotion_type TEXT,  -- confirmatory channel used
+    promotion_reason TEXT,
+    promoted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Confirmation Logic (CRITICAL)
+
+```
+Source Domain (.gov, genealogy site, etc.)
+    → Provides CONTEXT about where to look
+    → Does NOT confirm data
+
+Confirmation can ONLY come from:
+    1. human_transcription - User manually typed names
+    2. ocr_human_verified - OCR + human corrections
+    3. ocr_high_confidence - >= 95% OCR confidence
+    4. structured_metadata - Parsed data user confirmed
+    5. cross_reference - Matches existing confirmed record
+```
+
+### End-to-End Test
+
+Run with: `node test-contribution-pipeline-e2e.js`
+
+Tests 3 description styles against the full pipeline, validates question structure, verifies all stages complete.
 
 ---
 
