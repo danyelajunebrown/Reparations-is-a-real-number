@@ -268,6 +268,8 @@ class ContributionSession {
             hasIframe: false,
             hasPdfLink: false,
             pageTitle: null,
+            contentType: 'unknown',
+            pagination: { detected: false, currentPage: null, totalPages: null },
             errors: []
         };
 
@@ -491,7 +493,7 @@ class ContributionSession {
         response += `\n${typeDescriptions[analysis.sourceType] || typeDescriptions.unknown}\n`;
         response += `\n*Note: Document confirmation status will be determined by the actual content, not the source domain.*\n`;
 
-        if (analysis.pagination.detected) {
+        if (analysis.pagination?.detected) {
             response += `\n**Pagination:** This appears to be page ${analysis.pagination.currentPage || '?'} of a multi-page document\n`;
         }
 
@@ -812,38 +814,53 @@ class ContributionSession {
         // COLUMN HEADER EXTRACTION (EXACT TEXT)
         // ========================================
         // Look for quoted column headers - these are GROUND TRUTH
+        // This is the preferred parsing method when user uses quotes
         const quotedHeaders = text.match(/"([^"]+)"/g);
-        if (quotedHeaders) {
+        if (quotedHeaders && quotedHeaders.length > 0) {
+            const headers = quotedHeaders.map(h => h.replace(/"/g, '').trim());
+
             parsed.humanReadings.push({
                 type: 'column_headers',
-                exactText: quotedHeaders.map(h => h.replace(/"/g, '')),
+                exactText: headers,
                 confidence: 'human_provided'
             });
+
+            // Use quoted headers as column definitions (prioritize over unquoted parsing)
+            parsed.columns = headers.map((header, idx) => ({
+                position: idx + 1,
+                headerExact: header,
+                headerGuess: header,
+                dataType: this.inferDataType(header),
+                humanProvided: true
+            }));
         }
 
-        // Parse column headers from structured lists (e.g., "from left to right: X. Y. Z.")
-        const headerListMatch = text.match(/(?:from left to right|columns?(?:\s+are)?|headings?(?:\s+are)?)[:\s]+([^#\n]+)/i);
-        if (headerListMatch) {
-            // Split by common delimiters: periods, commas, semicolons
-            const headerText = headerListMatch[1];
-            const headers = headerText.split(/[.;]/)
-                .map(h => h.trim())
-                .filter(h => h.length > 0 && h.length < 100);
+        // Parse column headers from structured lists ONLY if no quoted headers found
+        // (e.g., "from left to right: Date, Owner, Slave")
+        if (parsed.columns.length === 0) {
+            const headerListMatch = text.match(/(?:from left to right|columns?(?:\s+are)?|headings?(?:\s+are)?)[:\s]+([^#\n]+)/i);
+            if (headerListMatch) {
+                const headerText = headerListMatch[1];
+                // Split by comma or semicolon (NOT period - too common in abbreviations)
+                const headers = headerText.split(/[,;]/)
+                    .map(h => h.trim())
+                    .filter(h => h.length > 0 && h.length < 100);
 
-            if (headers.length > 0) {
-                parsed.columns = headers.map((header, idx) => ({
-                    position: idx + 1,
-                    headerExact: header,
-                    headerGuess: header,
-                    dataType: this.inferDataType(header),
-                    humanProvided: true
-                }));
+                if (headers.length > 0) {
+                    parsed.columns = headers.map((header, idx) => ({
+                        position: idx + 1,
+                        headerExact: header,
+                        headerGuess: header,
+                        dataType: this.inferDataType(header),
+                        humanProvided: true
+                    }));
 
-                parsed.humanReadings.push({
-                    type: 'column_header_sequence',
-                    exactText: headers,
-                    confidence: 'human_provided'
-                });
+                    parsed.humanReadings.push({
+                        type: 'column_header_sequence',
+                        exactText: headers,
+                        confidence: 'human_provided'
+                    });
+                }
             }
         }
 
@@ -1052,34 +1069,62 @@ class ContributionSession {
     }
 
     /**
-     * Infer data type from description
+     * Infer data type from description/header text
      */
     inferDataType(description) {
         const lower = description.toLowerCase();
 
+        // Owner/slaveholder identification
         if (lower.includes('owner') || lower.includes('slaveholder') || lower.includes('master')) {
             return 'owner_name';
         }
+        // Enslaved person identification
         if (lower.includes('slave') || lower.includes('enslaved')) {
             return 'enslaved_name';
         }
-        if (lower.includes('date') || lower.includes('year') || lower.includes('when')) {
+        // Date fields
+        if (lower.includes('date') || lower === 'day' || lower === 'month' || lower === 'year' || lower.includes('when')) {
             return 'date';
         }
+        // Age
         if (lower.includes('age') || lower.includes('old')) {
             return 'age';
         }
+        // Gender/Sex
+        if (lower.includes('gender') || lower === 'sex' || lower === 'sex.') {
+            return 'gender';
+        }
+        // Physical condition/description
+        if (lower.includes('physical') || lower.includes('condition') || lower.includes('complexion') || lower.includes('description')) {
+            return 'physical_condition';
+        }
+        // Term of service/servitude
+        if (lower.includes('term') || lower.includes('servitude') || lower.includes('service')) {
+            return 'term_of_service';
+        }
+        // Military/regiment
+        if (lower.includes('regiment') || lower.includes('military') || lower.includes('enlisted') || lower.includes('u.s. service')) {
+            return 'military';
+        }
+        // Compensation
+        if (lower.includes('compensation') || lower.includes('payment') || lower.includes('received')) {
+            return 'compensation';
+        }
+        // Witness/proof
+        if (lower.includes('witness') || lower.includes('proven') || lower.includes('ownership proven') || lower.includes('by whom')) {
+            return 'witness';
+        }
+        // Generic name field
         if (lower.includes('name')) {
             return 'name';
         }
+        // Location
         if (lower.includes('location') || lower.includes('county') || lower.includes('place')) {
             return 'location';
         }
+        // Remarks/notes
         if (lower.includes('remark') || lower.includes('note') || lower.includes('comment')) {
             return 'remarks';
-        }
-        if (lower.includes('gender') || lower.includes('sex') || lower.includes('male') || lower.includes('female')) {
-            return 'gender';
         }
 
         return 'unknown';
@@ -1110,7 +1155,7 @@ class ContributionSession {
         if (!cs.layoutType) return false;
 
         // For tables, need at least some column info
-        if (cs.layoutType === 'table' && cs.columns.length === 0) return false;
+        if (cs.layoutType === 'table' && (!cs.columns || cs.columns.length === 0)) return false;
 
         return true;
     }
@@ -1122,8 +1167,13 @@ class ContributionSession {
         const questions = [];
         const cs = session.contentStructure;
 
+        // Safety check - ensure contentStructure exists
+        if (!cs) {
+            return { questions: [], complete: false };
+        }
+
         // If table layout but no columns defined
-        if (cs.layoutType === 'table' && cs.columns.length === 0) {
+        if (cs.layoutType === 'table' && (!cs.columns || cs.columns.length === 0)) {
             questions.push({
                 id: 'column_count',
                 question: 'How many columns can you see (fully or partially)?',
@@ -1132,22 +1182,28 @@ class ContributionSession {
             });
         }
 
-        // If columns defined but types unknown
-        const unknownColumns = cs.columns.filter(c => c.dataType === 'unknown');
+        // If columns defined but types unknown - limit to first 3 unknown columns
+        // to avoid overwhelming the user with too many questions
+        const unknownColumns = (cs.columns || []).filter(c => c.dataType === 'unknown').slice(0, 3);
         for (const col of unknownColumns) {
+            const headerHint = col.headerGuess ? ` ("${col.headerGuess}")` : '';
             questions.push({
                 id: `column_${col.position}_type`,
-                question: `What does column ${col.position} contain?`,
+                question: `What does column ${col.position}${headerHint} contain?`,
                 options: [
                     { value: 'owner_name', label: 'Slaveholder/Owner names' },
                     { value: 'enslaved_name', label: 'Enslaved person names' },
                     { value: 'date', label: 'Dates' },
                     { value: 'age', label: 'Ages' },
+                    { value: 'gender', label: 'Gender/Sex' },
                     { value: 'location', label: 'Locations' },
+                    { value: 'physical_condition', label: 'Physical condition' },
+                    { value: 'military', label: 'Military/Regiment info' },
+                    { value: 'compensation', label: 'Compensation amounts' },
                     { value: 'remarks', label: 'Remarks/Notes' },
-                    { value: 'other', label: 'Something else' }
+                    { value: 'other', label: 'Something else (can ignore)' }
                 ],
-                required: true
+                required: false  // Not required - user can skip if unclear
             });
         }
 
