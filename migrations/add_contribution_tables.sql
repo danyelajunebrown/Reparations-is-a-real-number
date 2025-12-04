@@ -289,3 +289,127 @@ COMMENT ON TABLE contributed_extractions IS
 
 COMMENT ON TABLE promotion_log IS
     'Audit trail for slave owners auto-promoted from federal documents to the individuals table';
+
+-- =============================================================================
+-- HUMAN KNOWLEDGE PRESERVATION TABLES
+-- =============================================================================
+-- These tables capture ALL human-provided information, even details not
+-- immediately used by the system. Principle: Human input is precious training
+-- data and research context that should NEVER be discarded.
+
+-- Human readings: Ground truth for OCR training
+CREATE TABLE IF NOT EXISTS human_readings (
+    id SERIAL PRIMARY KEY,
+    session_id UUID REFERENCES contribution_sessions(session_id) ON DELETE SET NULL,
+    document_url TEXT NOT NULL,
+
+    -- What the human read
+    reading_type TEXT NOT NULL,     -- 'column_headers', 'row_entry', 'name', 'date', 'printer_text', etc.
+    exact_text JSONB NOT NULL,      -- The exact text as provided by human (can be string or array)
+    confidence TEXT DEFAULT 'human_provided',
+
+    -- Full context
+    metadata JSONB,                 -- Any additional context about the reading
+    image_region TEXT,              -- If available: base64 of the image region for ML training
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_human_readings_url ON human_readings(document_url);
+CREATE INDEX IF NOT EXISTS idx_human_readings_type ON human_readings(reading_type);
+CREATE INDEX IF NOT EXISTS idx_human_readings_session ON human_readings(session_id);
+
+COMMENT ON TABLE human_readings IS
+    'Ground truth human readings of document text - used for OCR validation and training';
+
+-- Document auxiliary data: Stockpile of all captured information
+CREATE TABLE IF NOT EXISTS document_auxiliary_data (
+    id SERIAL PRIMARY KEY,
+    session_id UUID REFERENCES contribution_sessions(session_id) ON DELETE SET NULL,
+    document_url TEXT NOT NULL,
+
+    -- What type of data this is
+    data_type TEXT NOT NULL,        -- 'parsed_auxiliary', 'physical_description', 'military_context', etc.
+    data_content JSONB NOT NULL,    -- The structured data
+
+    -- Raw human input that produced this (sacred - never modified)
+    raw_input TEXT,
+
+    -- For linking related data
+    individual_id TEXT,             -- If this data relates to a specific person
+    document_page INTEGER,          -- If this data is page-specific
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_aux_url ON document_auxiliary_data(document_url);
+CREATE INDEX IF NOT EXISTS idx_doc_aux_type ON document_auxiliary_data(data_type);
+CREATE INDEX IF NOT EXISTS idx_doc_aux_individual ON document_auxiliary_data(individual_id)
+    WHERE individual_id IS NOT NULL;
+
+COMMENT ON TABLE document_auxiliary_data IS
+    'Stockpile of all auxiliary data from documents - printers, dimensions, military columns, etc. - for future use';
+
+-- Document structure templates: Learned document layouts
+CREATE TABLE IF NOT EXISTS document_templates (
+    template_id SERIAL PRIMARY KEY,
+    template_name TEXT NOT NULL,
+
+    -- Source pattern matching
+    domain_pattern TEXT,            -- e.g., 'msa.maryland.gov'
+    document_type TEXT,             -- e.g., 'slave_compensation_record'
+
+    -- Structure definition
+    column_structure JSONB,         -- Array of {position, name, dataType, subcolumns}
+    physical_layout JSONB,          -- Page layout, dimensions, etc.
+
+    -- Source of this template
+    derived_from_session UUID REFERENCES contribution_sessions(session_id),
+    human_confirmed BOOLEAN DEFAULT false,
+
+    -- Usage tracking
+    times_used INTEGER DEFAULT 0,
+    success_rate DECIMAL(3,2),
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_templates_domain ON document_templates(domain_pattern);
+CREATE INDEX IF NOT EXISTS idx_templates_type ON document_templates(document_type);
+
+COMMENT ON TABLE document_templates IS
+    'Learned document structure templates from human descriptions - speeds up future extractions of similar documents';
+
+-- OCR training pairs: Human reading vs OCR output for model improvement
+CREATE TABLE IF NOT EXISTS ocr_training_pairs (
+    id SERIAL PRIMARY KEY,
+    document_url TEXT,
+    image_hash TEXT,                -- Hash of the image region for deduplication
+
+    -- The pair
+    ocr_output TEXT NOT NULL,       -- What the OCR engine produced
+    human_reading TEXT NOT NULL,    -- What the human said it should be
+
+    -- Context
+    ocr_engine TEXT,                -- 'tesseract', 'google_vision', etc.
+    field_type TEXT,                -- 'name', 'date', 'location', etc.
+    handwriting_type TEXT,          -- 'cursive', 'print', 'mixed'
+
+    -- Quality metrics
+    edit_distance INTEGER,          -- Levenshtein distance between OCR and human
+    character_error_rate DECIMAL(5,4),
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ocr_training_engine ON ocr_training_pairs(ocr_engine);
+CREATE INDEX IF NOT EXISTS idx_ocr_training_field ON ocr_training_pairs(field_type);
+CREATE INDEX IF NOT EXISTS idx_ocr_training_handwriting ON ocr_training_pairs(handwriting_type);
+
+COMMENT ON TABLE ocr_training_pairs IS
+    'Pairs of OCR output vs human corrections - training data for improving OCR accuracy';
