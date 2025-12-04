@@ -1,84 +1,99 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 2, 2025
-**Current Phase:** Unified Scraping System Live - Full Backlog Processing
+**Last Updated:** December 4, 2025
+**Current Phase:** Conversational Contribution Pipeline with Content-Based Confirmation
 **Active Branch:** main
 
 ---
 
-## Recent Major Changes (Dec 2, 2025)
+## Recent Major Changes (Dec 4, 2025)
 
-### 10. Unified Scraping System & Backlog Processing LIVE (Dec 2, 2025)
+### 11. Conversational Contribution Pipeline LIVE (Dec 4, 2025)
 
-**Problem Solved:** Fragmented scraping system with broken dependencies rebuilt into unified system with full backlog auto-processing.
+**Problem Solved:** Built a human-guided contribution flow where users can describe documents in natural language and the system extracts structured data. Critical fix: confirmation is now based on **document content**, NOT source domain.
 
-**Root Cause Analysis:**
-- Old `Orchestrator.js` required non-existent files (`autonomous-web-scraper.js`, `genealogy-entity-extractor.js`, `llm-page-analyzer.js`)
-- Scripts in `scripts/scrapers/` required `./database` which doesn't exist
-- No connection between contribute page and actual scraping
-- Data was being extracted but not flowing to main `individuals` table
+**Key Principle:** Source domain (e.g., .gov) provides CONTEXT about where to look for documents, but does NOT confirm the data itself. Confirmation can ONLY come from:
+1. Human transcription of names from document
+2. OCR extraction that has been human-verified
+3. High-confidence OCR (>= 95%) from user-confirmed document
+4. Structured metadata parsed from page that user confirmed as accurate
+5. Cross-reference with existing confirmed records
 
 **Implementation Complete:**
 
-#### 1. Created UnifiedScraper.js (`src/services/scraping/UnifiedScraper.js`)
-Complete working scraper with handlers for multiple site types:
+#### 1. ContributionSession.js (`src/services/contribution/ContributionSession.js`)
+Conversational service managing the contribution flow:
+- **Stages:** url_analysis → content_description → structure_confirmation → extraction_strategy → extraction_in_progress → human_review → complete
+- **URL Analysis:** Fetches page, detects archive type, PDF links, iframes, pagination
+- **Content Description Parsing:** Extracts columns, quality, handwriting type from natural language
+- **Column Header Parsing:** Prioritizes quoted headers ("DATE." "NAME.") over period-split parsing
+- **Expanded inferDataType():** Recognizes 15+ column types (owner, enslaved, date, age, gender, physical_condition, military, compensation, witness, etc.)
 
-| Category | Source | Confidence | Data Extracted |
-|----------|--------|------------|----------------|
-| `rootsweb_census` | 1860 Census data | 0.98 | Confirmed slaveholders with slave counts |
-| `civilwardc` | DC Emancipation Petitions | 0.95 | Confirmed owners + enslaved people |
-| `beyondkin` | Beyond Kin directory | 0.60 | Suspected slaveholders + enslaved |
-| `wikipedia` | Wikipedia articles | 0.50 | Suspected owners |
-| `findagrave` | Find A Grave | 0.50 | Suspected owners |
-| `familysearch` | FamilySearch | 0.65 | Family relationships |
-| `archive` | Archive.org | 0.50 | Documents + names |
-| `generic` | Any webpage | 0.40 | Keyword-based extraction |
-
-#### 2. Rootsweb Census Scraper (PRIMARY SOURCE)
-Specialized handler for Tom Blake's "Large Slaveholders of 1860" data:
-- URL: `https://freepages.rootsweb.com/~ajac/genealogy/`
-- Extracts confirmed slaveholders from census records
-- Parses format: `NAME, # slaves, Location, page #`
-- Auto-queues all county pages from main index
-- Confidence: 0.98 (census data = gold standard)
-- **Saves directly to `individuals` table** (not just unconfirmed_persons)
-
-#### 3. Full Backlog Processing Endpoint
-New endpoint: `POST /api/process-full-backlog`
-- Processes ALL pending URLs in queue
-- Rate-limited (1 second between requests)
-- Logs progress and completion stats
-- Currently processing 691 URLs
-
-#### 4. Data Flow Fixed
-- Confirmed owners (confidence >= 0.9) → `individuals` table
-- All extractions → `unconfirmed_persons` table (for tracking)
-- Slaveholder records → `slaveholder_records` table (with slave counts)
-
-#### 5. Updated Contribute Page
-Enhanced `contribute.html` with:
-- New categories: civilwardc, slaveholders1860, surnames1870, custom
-- Advanced metadata fields for custom sources
-- Source type selection (primary/secondary/tertiary)
-
-**Current Processing Status (LIVE):**
+#### 2. OwnerPromotion.js (`src/services/contribution/OwnerPromotion.js`)
+Content-based promotion service with **confirmatory channels**:
+```javascript
+confirmatoryChannels = {
+    'human_transcription': { minConfidence: 0.90 },
+    'ocr_human_verified': { minConfidence: 0.85 },
+    'ocr_high_confidence': { minConfidence: 0.95 },
+    'structured_metadata': { minConfidence: 0.80 },
+    'cross_reference': { minConfidence: 0.85 }
+}
 ```
-Pending:     610 URLs (down from 691)
-Processing:  5 concurrent
-Completed:   2,943 (up from 2,862)
-Persons 24h: 5,105+ extracted
+- Promotion REQUIRES specifying a confirmatory channel
+- `.gov` domain alone does NOT auto-confirm anything
+- Extensible via `addConfirmatoryChannel()` method
+
+#### 3. API Routes (`src/api/routes/contribute.js`)
 ```
+POST /api/contribute/start              - Start session with URL
+POST /api/contribute/:sessionId/describe - Describe document content
+POST /api/contribute/:sessionId/confirm  - Confirm structure
+POST /api/contribute/:sessionId/extract  - Start extraction
+POST /api/contribute/:sessionId/chat     - Natural language interaction
+POST /api/contribute/:sessionId/sample   - Submit sample extractions
+GET  /api/contribute/:sessionId          - Get session state
+POST /api/contribute/:sessionId/extraction/:extractionId/promote - Promote to individuals (REQUIRES confirmationChannel)
+POST /api/contribute/promote/:leadId     - Manual promotion
+GET  /api/contribute/promotion-stats     - Statistics
+```
+
+#### 4. Frontend (`contribute-v2.html`)
+Chat-based UI with:
+- URL input to start session
+- Chat interface for natural language
+- Side panel showing progress, source info, extraction options
+- Questions panel for structured input
+
+#### 5. Database Tables (on Render PostgreSQL)
+- `contribution_sessions` - Conversation state and metadata
+- `extraction_jobs` - OCR/extraction job tracking
+- `extraction_corrections` - Human corrections (training data)
+- `promotion_log` - Audit trail for promotions
+- `human_readings` - Ground truth from human input
+- `document_auxiliary_data` - Stockpiled auxiliary information
+
+#### 6. End-to-End Test (`test-contribution-pipeline-e2e.js`)
+Comprehensive test simulating real user flow:
+- Tests 3 description styles (detailed, simple, minimal)
+- Validates questions have proper structure
+- Verifies all stages complete successfully
+- Run with: `node test-contribution-pipeline-e2e.js`
+
+**Bugs Fixed (Dec 4):**
+1. `pagination.detected` undefined - Initialize pagination in analysis object
+2. Column header parsing - Prioritize quoted headers over period-split
+3. Missing data type recognition - Added 15+ column types
+4. Null safety - Added checks for contentStructure and columns arrays
+5. Incorrect confirmation messaging - Changed from "Can CONFIRM" to "May contain"
 
 ---
 
-### 9. Major Refactoring Fixes (Earlier Dec 2, 2025) ✅
+### 10. Unified Scraping System & Backlog Processing LIVE (Dec 2, 2025)
 
-Fixed critical issues from server refactoring:
-- Restored 15+ missing API endpoints to `src/server.js`
-- Fixed document viewer CSS (position: fixed, z-index: 9999)
-- Moved document viewer HTML to body level
-- Deleted 4 orphaned database entries
-- Updated S3 region default to us-east-2
+**Problem Solved:** Fragmented scraping system rebuilt into unified system.
+
+See previous activeContext.md for full details.
 
 ---
 
@@ -86,127 +101,109 @@ Fixed critical issues from server refactoring:
 
 ### Render Services
 - **Backend:** `reparations-platform.onrender.com` (Node.js)
-- **Database:** `reparations-db` (PostgreSQL 17, Virginia)
+- **Database:** Render PostgreSQL 17 (Virginia) - contains contribution tables
 
-### Working Endpoints (Verified Dec 2, 2025)
+### Database Credentials (Render PostgreSQL)
 ```
-GET  /api                           - API info
-GET  /api/health                    - Health check
-GET  /api/documents                 - List documents
-GET  /api/documents/:id             - Get document metadata
-GET  /api/documents/:id/access      - Get presigned S3 URL
-GET  /api/documents/:id/file        - Download document
-DELETE /api/documents/:id           - Delete document
-GET  /api/search-documents          - Search documents
-GET  /api/carousel-data             - Carousel display data
-GET  /api/queue-stats               - Scraping queue stats
-GET  /api/population-stats          - Progress statistics
-POST /api/submit-url                - Submit URL for scraping
-POST /api/trigger-queue-processing  - Process batch (3-5 URLs)
-POST /api/process-full-backlog      - Process ALL pending URLs ⭐ NEW
-POST /api/search-reparations        - Search reparations
-POST /api/get-descendants           - Get descendants
-GET  /api/beyond-kin/pending        - Beyond Kin queue
-GET  /api/cors-test                 - CORS diagnostic
+Host: dpg-d3v78f7diees73epc4k0-a.oregon-postgres.render.com
+Database: reparations
+User: reparations_user
+Password: hjEMn35Kw7p712q1SYJnBxZqIYRdahHv
 ```
 
-### Current Database Stats
-- **Documents:** 7 total
-- **Queue:** 610 pending, 5 processing, 2,943 completed
-- **Individuals:** 28 (will grow as census data processes)
-- **Persons extracted (24h):** 5,105+
+### Working Contribution Endpoints (Verified Dec 4, 2025)
+```
+POST /api/contribute/start              ✅ Working
+POST /api/contribute/:id/chat           ✅ Working
+POST /api/contribute/:id/describe       ✅ Working
+POST /api/contribute/:id/confirm        ✅ Working
+POST /api/contribute/:id/extract        ✅ Working
+GET  /api/contribute/:id                ✅ Working
+```
 
 ---
 
 ## Architecture Notes
 
-### Server Structure (IMPORTANT)
-The project has TWO server files:
-1. **`server.js` (root)** - Legacy server (NOT used in production)
-2. **`src/server.js`** - Production server (used by Render)
-
-**Render uses `src/server.js`** via `npm start` → `node src/server.js`
-
-### Scraping System Structure
+### Contribution Pipeline Flow
 ```
-src/services/scraping/
-├── UnifiedScraper.js    # ⭐ MAIN SCRAPER (working)
-└── Orchestrator.js      # Old orchestrator (broken dependencies)
+User pastes URL → /api/contribute/start
+         ↓
+URL Analysis (source type, PDF detection, pagination)
+         ↓
+User describes content → /api/contribute/:id/chat
+         ↓
+Parse description (columns, quality, handwriting)
+         ↓
+Confirm structure → /api/contribute/:id/confirm
+         ↓
+Choose extraction method → /api/contribute/:id/extract
+         ↓
+Extraction runs (OCR or guided entry)
+         ↓
+Human review/corrections
+         ↓
+Promotion (REQUIRES confirmatory channel)
+         ↓
+individuals table (confirmed only)
 ```
 
-**UnifiedScraper.js** is the working scraper with:
-- Site-specific handlers for each source type
-- Automatic category detection from URL
-- Dual-table saving (individuals + unconfirmed_persons)
-- Census reference tracking
+### Confirmation Logic (CRITICAL)
+```
+Source Domain → Provides CONTEXT (government archive, genealogy site, etc.)
+                Does NOT confirm data
+
+Confirmation → Can ONLY come from:
+  1. human_transcription - User typed what they see
+  2. ocr_human_verified - OCR + human corrections
+  3. ocr_high_confidence - >= 95% OCR confidence
+  4. structured_metadata - Parsed + user confirmed
+  5. cross_reference - Matches existing confirmed record
+```
 
 ---
 
 ## Known Issues & Limitations
 
 ### Resolved Issues ✅
-1. ~~Fragmented scraping system~~ - FIXED with UnifiedScraper
-2. ~~Data not flowing to individuals table~~ - FIXED for confirmed sources
-3. ~~Rootsweb census not being scraped~~ - FIXED with specialized handler
-4. ~~No auto-processing~~ - FIXED with /api/process-full-backlog
-5. ~~Document viewer constrained~~ - FIXED
-6. ~~Missing API endpoints~~ - FIXED
+1. ~~"Can CONFIRM" based on .gov domain~~ - FIXED: Now says "May contain"
+2. ~~pagination.detected undefined~~ - FIXED: Initialize in analysis object
+3. ~~Column parsing breaks on periods~~ - FIXED: Prioritize quoted headers
+4. ~~Limited column type recognition~~ - FIXED: Added 15+ types
+5. ~~Questions causing frontend crash~~ - FIXED: Null safety added
 
 ### Remaining Issues
 1. **No Authentication** - API completely open
-2. **`slaveholder_records` table may not exist** - Falls back gracefully
-3. **Rate limiting not on all endpoints**
+2. **OCR not implemented** - Extraction methods stub only
+3. **Guided entry not implemented** - UI exists but backend incomplete
+4. **No progress notifications** - Long-running extractions silent
 
 ---
 
-## Commits from This Session
+## Commits from This Session (Dec 4, 2025)
 
-1. `a2ca268` - Add unified scraping system with dynamic site handlers
-2. `b9a3e16` - Add rootsweb census scraper and full backlog auto-processing
+1. `261f097` - Fix confirmation logic: use content-based confirmation, not domain-based
+2. `2132989` - Fix multiple contribution pipeline bugs found by e2e testing
+3. `0544589` - Add end-to-end test for contribution pipeline
 
-Previous session commits:
-- `6632ad2` - Add DELETE endpoint for document cleanup
-- `af72c02` - Fix document viewer to use full-screen overlay at body level
-
----
-
-## Data Sources Status
-
-### Primary Sources (Confidence 0.9+)
-| Source | Status | Notes |
-|--------|--------|-------|
-| Rootsweb Census 1860 | ✅ SCRAPER LIVE | Auto-queues county pages |
-| Civil War DC Petitions | ✅ SCRAPER READY | Needs URLs in queue |
-
-### Secondary Sources (Confidence 0.6-0.8)
-| Source | Status | Notes |
-|--------|--------|-------|
-| Beyond Kin | ✅ SCRAPER READY | 691 URLs in queue |
-| FamilySearch | ✅ SCRAPER READY | HTML pages only |
-
-### Pending Sources
-| Source | Status | Notes |
-|--------|--------|-------|
-| Large Slaveholders 1860 | 🔄 PROCESSING | Main index queued |
-| African American Surnames 1870 | ⏳ WAITING | User to provide URL |
+Previous session commits (Dec 2):
+- `36c3e02` - Add conversational contribution pipeline with federal owner auto-promotion
+- `b9a3e16` - Add rootsweb census scraper and full backlog auto-processing
+- `a2ca268` - Add unified scraping system with dynamic site handlers
 
 ---
 
 ## Next Steps
 
-### Immediate (Auto-running)
-1. ✅ Full backlog processing in progress (~58 min estimated)
-2. Monitor `individuals` table growth as census data processes
-3. Watch for rootsweb county pages being auto-queued
-
-### User Action Needed
-1. Provide URL for "African American Surname Matches from 1870"
-2. Monitor Render logs for processing progress
+### Immediate
+1. Implement actual OCR extraction (currently stub)
+2. Build guided entry UI for high-difficulty documents
+3. Add progress notifications for long-running extractions
 
 ### Short Term
-1. Verify `slaveholder_records` table exists
-2. Add more Civil War DC petition URLs
-3. Consider adding more census sources
+1. Add authentication to protect API
+2. Build verification queue for human review
+3. Add more confirmatory channels as needed
 
 ---
 
