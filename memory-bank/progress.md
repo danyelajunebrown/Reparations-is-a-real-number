@@ -1,8 +1,8 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Unified Scraping System Live - Full Backlog Processing
-**Last Updated:** December 2, 2025
+**Current Phase:** Conversational Contribution Pipeline with Content-Based Confirmation
+**Last Updated:** December 4, 2025
 
 ---
 
@@ -63,7 +63,7 @@
 
 ---
 
-### Phase 5: Unified Scraping System (Dec 2025) ✅ NEW
+### Phase 5: Unified Scraping System (Dec 2025) ✅
 **Goal:** Build working scraping pipeline from contribute page to database
 
 **Completed Features:**
@@ -77,7 +77,49 @@
 
 ---
 
+### Phase 6: Conversational Contribution Pipeline (Dec 2025) ✅ NEW
+**Goal:** Build human-guided contribution flow with content-based confirmation
+
+**Completed Features:**
+- ✅ ContributionSession.js - Conversational service with 7 stages
+- ✅ OwnerPromotion.js - Content-based confirmation with confirmatory channels
+- ✅ API routes for full contribution flow
+- ✅ contribute-v2.html - Chat-based UI
+- ✅ Database tables (contribution_sessions, extraction_jobs, etc.)
+- ✅ End-to-end test suite (test-contribution-pipeline-e2e.js)
+- ✅ Natural language parsing for document descriptions
+- ✅ Column header extraction from quoted text
+
+**Critical Design Decision:**
+Source domain (.gov, etc.) provides CONTEXT, not confirmation. Confirmation can ONLY come from:
+1. Human transcription
+2. OCR + human verification
+3. High-confidence OCR (>= 95%)
+4. Structured metadata (user confirmed)
+5. Cross-reference with existing confirmed records
+
+---
+
 ## Recent Achievements
+
+### Week of Dec 4, 2025 ✅ NEW
+**Focus:** Conversational Contribution Pipeline & Content-Based Confirmation
+
+**Completed:**
+1. ✅ Created conversational contribution flow with 7 stages
+2. ✅ Built OwnerPromotion with confirmatory channels architecture
+3. ✅ Fixed critical bug: confirmation based on content, not domain
+4. ✅ Created end-to-end test suite (3 tests, all passing)
+5. ✅ Fixed column header parsing (quoted headers priority)
+6. ✅ Added 15+ column type recognitions
+7. ✅ Fixed pagination.detected undefined error
+
+**Commits:**
+- `0544589` - Add end-to-end test for contribution pipeline
+- `2132989` - Fix multiple contribution pipeline bugs found by e2e testing
+- `261f097` - Fix confirmation logic: use content-based confirmation, not domain-based
+
+---
 
 ### Week of Dec 2, 2025 ✅
 **Focus:** Unified Scraping System & Full Backlog Processing
