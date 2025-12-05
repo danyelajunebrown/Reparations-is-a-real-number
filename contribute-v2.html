@@ -571,10 +571,29 @@ I work best with:
                 <div class="column-structure" id="columnStructure"></div>
             </div>
 
-            <div class="panel-section" id="extractionOptionsSection" style="display: none;">
-                <h3>Extraction Method</h3>
-                <div class="extraction-options" id="extractionOptions"></div>
+        <div class="panel-section" id="extractionOptionsSection" style="display: none;">
+            <h3>Extraction Method</h3>
+            <div class="extraction-options" id="extractionOptions"></div>
+        </div>
+
+        <div class="panel-section" id="extractionResultsSection" style="display: none;">
+            <h3>Extraction Results</h3>
+            <div id="extractionResults"></div>
+        </div>
+
+        <div class="panel-section" id="alternativeMethodsSection" style="display: none;">
+            <h3>Alternative Methods</h3>
+            <div id="alternativeMethods">
+                <div class="alternative-method" onclick="showTextCopyInterface()">
+                    <h4>📝 Text Copy Method</h4>
+                    <p>Copy and paste text manually</p>
+                </div>
+                <div class="alternative-method" onclick="showScreenshotUpload()">
+                    <h4>📸 Screenshot Upload</h4>
+                    <p>Upload screenshots of the document</p>
+                </div>
             </div>
+        </div>
         </div>
     </div>
 
@@ -1182,6 +1201,201 @@ I work best with:
         function quickResponse(text) {
             document.getElementById('chatInput').value = text;
             sendMessage();
+        }
+
+        // Show text copy interface
+        function showTextCopyInterface() {
+            const section = document.getElementById('alternativeMethodsSection');
+            section.style.display = 'block';
+
+            const container = document.getElementById('alternativeMethods');
+            container.innerHTML = `
+                <div style="background: #1a1a2e; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4>📝 Text Copy Method</h4>
+                    <p>Since this document is protected, please copy the text manually:</p>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Highlight and copy text from the document</li>
+                        <li>Paste it in the box below</li>
+                        <li>Click "Process Text"</li>
+                    </ol>
+                    <textarea id="manualTextInput" placeholder="Paste document text here..."
+                              style="width: 100%; height: 150px; padding: 10px; background: #16213e; border: 2px solid #333; border-radius: 5px; color: #eee; margin: 10px 0; resize: vertical;"></textarea>
+                    <button onclick="processManualText()" style="padding: 10px 20px; background: #667eea; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                        Process Text
+                    </button>
+                    <div id="textProcessingStatus" style="margin-top: 10px; font-size: 0.85em;"></div>
+                </div>
+                <button onclick="showAlternativeMethods()" style="padding: 8px 15px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer;">
+                    Back to Methods
+                </button>
+            `;
+        }
+
+        // Process manual text input
+        async function processManualText() {
+            const text = document.getElementById('manualTextInput').value.trim();
+            const statusDiv = document.getElementById('textProcessingStatus');
+
+            if (!text) {
+                statusDiv.textContent = 'Please paste some text';
+                statusDiv.style.color = '#e94560';
+                return;
+            }
+
+            statusDiv.textContent = 'Processing text...';
+            statusDiv.style.color = '#00d9ff';
+
+            try {
+                // Get current session to find extraction ID
+                const sessionResponse = await fetch(`${API_BASE}/api/contribute/${sessionId}`);
+                const sessionData = await sessionResponse.json();
+
+                if (!sessionData.success || !sessionData.session?.processingInstructions?.extractionId) {
+                    throw new Error('Could not find extraction ID');
+                }
+
+                const extractionId = sessionData.session.processingInstructions.extractionId;
+
+                // Submit manual text for processing
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/manual-text`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: text,
+                            method: 'manual_text'
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.textContent = `Text processed! Found ${data.rowCount} rows.`;
+                    statusDiv.style.color = '#38a169';
+
+                    // Show results
+                    if (data.parsedRows && data.parsedRows.length > 0) {
+                        displayParsedRows(data.parsedRows);
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to process text');
+                }
+
+            } catch (error) {
+                statusDiv.textContent = `Error: ${error.message}`;
+                statusDiv.style.color = '#e94560';
+                console.error('Manual text processing error:', error);
+            }
+        }
+
+        // Show screenshot upload interface
+        function showScreenshotUpload() {
+            const section = document.getElementById('alternativeMethodsSection');
+            section.style.display = 'block';
+
+            const container = document.getElementById('alternativeMethods');
+            container.innerHTML = `
+                <div style="background: #1a1a2e; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4>📸 Screenshot Upload</h4>
+                    <p>Upload screenshots of the document pages:</p>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Take screenshots of each page</li>
+                        <li>Upload them below</li>
+                        <li>We'll process each image</li>
+                    </ol>
+                    <input type="file" id="screenshotUpload" accept="image/*" multiple
+                           style="margin: 10px 0; display: block;">
+                    <button onclick="uploadScreenshots()" style="padding: 10px 20px; background: #667eea; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                        Upload & Process
+                    </button>
+                    <div id="screenshotUploadStatus" style="margin-top: 10px; font-size: 0.85em;"></div>
+                </div>
+                <button onclick="showAlternativeMethods()" style="padding: 8px 15px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer;">
+                    Back to Methods
+                </button>
+            `;
+        }
+
+        // Upload and process screenshots
+        async function uploadScreenshots() {
+            const input = document.getElementById('screenshotUpload');
+            const files = input.files;
+            const statusDiv = document.getElementById('screenshotUploadStatus');
+
+            if (!files || files.length === 0) {
+                statusDiv.textContent = 'Please select at least one image';
+                statusDiv.style.color = '#e94560';
+                return;
+            }
+
+            statusDiv.textContent = `Uploading ${files.length} images...`;
+            statusDiv.style.color = '#00d9ff';
+
+            try {
+                // Get current session to find extraction ID
+                const sessionResponse = await fetch(`${API_BASE}/api/contribute/${sessionId}`);
+                const sessionData = await sessionResponse.json();
+
+                if (!sessionData.success || !sessionData.session?.processingInstructions?.extractionId) {
+                    throw new Error('Could not find extraction ID');
+                }
+
+                const extractionId = sessionData.session.processingInstructions.extractionId;
+
+                // Create form data for file upload
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('images', files[i]);
+                }
+
+                // Upload images
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/screenshots`,
+                    {
+                        method: 'POST',
+                        body: formData
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.textContent = `Processed ${files.length} images! Found ${data.rowCount} rows.`;
+                    statusDiv.style.color = '#38a169';
+
+                    // Show results
+                    if (data.parsedRows && data.parsedRows.length > 0) {
+                        displayParsedRows(data.parsedRows);
+                    }
+                } else {
+                    throw new Error(data.error || 'Failed to process screenshots');
+                }
+
+            } catch (error) {
+                statusDiv.textContent = `Error: ${error.message}`;
+                statusDiv.style.color = '#e94560';
+                console.error('Screenshot upload error:', error);
+            }
+        }
+
+        // Show alternative methods menu
+        function showAlternativeMethods() {
+            const section = document.getElementById('alternativeMethodsSection');
+            section.style.display = 'block';
+
+            const container = document.getElementById('alternativeMethods');
+            container.innerHTML = `
+                <div class="alternative-method" onclick="showTextCopyInterface()">
+                    <h4>📝 Text Copy Method</h4>
+                    <p>Copy and paste text manually</p>
+                </div>
+                <div class="alternative-method" onclick="showScreenshotUpload()">
+                    <h4>📸 Screenshot Upload</h4>
+                    <p>Upload screenshots of the document</p>
+                </div>
+            `;
         }
     </script>
 </body>

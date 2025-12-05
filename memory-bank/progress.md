@@ -77,7 +77,7 @@
 
 ---
 
-### Phase 6: Conversational Contribution Pipeline (Dec 2025) ✅ NEW
+### Phase 6: Conversational Contribution Pipeline (Dec 2025) ✅
 **Goal:** Build human-guided contribution flow with content-based confirmation
 
 **Completed Features:**
@@ -100,9 +100,57 @@ Source domain (.gov, etc.) provides CONTEXT, not confirmation. Confirmation can 
 
 ---
 
+### Phase 7: Bibliography & Intellectual Property System (Dec 2025) ✅ NEW
+**Goal:** Track all intellectual sources, databases, archives, researchers, and contributors
+
+**Completed Features:**
+- ✅ BibliographyManager (`src/utils/bibliography-manager.js`) - Core citation management
+- ✅ IP Tracker (`src/utils/ip-tracker.js`) - Copy/paste and reference detection
+- ✅ Bibliography API routes (`src/api/routes/bibliography.js`) - Full CRUD + analysis
+- ✅ Frontend page (`bibliography.html`) - Comprehensive UI with search/filter/export
+- ✅ Database tables (bibliography, pending_citations, participants, etc.)
+- ✅ Memory bank index (`memory-bank/bibliography-index.md`)
+- ✅ Pre-populated with 14 sources (archives, databases, technologies, participants)
+- ✅ Citation formatting (APA, Chicago, MLA, BibTeX)
+
+**Key Feature - Pending Citations:**
+System flags copy/pasted content for citation later, without prompting immediately.
+
+---
+
 ## Recent Achievements
 
-### Week of Dec 4, 2025 ✅ NEW
+### Week of Dec 4, 2025 (Later) ✅ NEW
+**Focus:** Bibliography & Intellectual Property Tracking System
+
+**Completed:**
+1. ✅ Created comprehensive bibliography system for tracking all sources
+2. ✅ Built BibliographyManager with citation formatting (APA, Chicago, MLA, BibTeX)
+3. ✅ Created IP Tracker for detecting copy/paste content needing citation
+4. ✅ Built full API routes for bibliography CRUD and analysis
+5. ✅ Created bibliography.html frontend with search, filter, export
+6. ✅ Ran database migration - 6 tables, 12 indexes, 14 initial entries
+7. ✅ Added navigation links from main index.html
+8. ✅ Created memory-bank/bibliography-index.md for living documentation
+
+**Files Created:**
+- `bibliography.html` - Frontend page
+- `src/utils/bibliography-manager.js` - Core management class
+- `src/utils/ip-tracker.js` - Copy/paste detection
+- `src/api/routes/bibliography.js` - API endpoints
+- `migrations/add-bibliography-tables.sql` - Database schema
+- `memory-bank/bibliography-index.md` - Source index
+
+**Pre-populated Sources:**
+- Maryland State Archives, Civil War DC, NARA, Library of Virginia
+- FamilySearch, Ancestry, Find A Grave
+- Tom Blake's 1860, Beyond Kin
+- Google Vision, Tesseract, OpenZeppelin
+- Danyela Brown, Tom Blake (participants)
+
+---
+
+### Week of Dec 4, 2025 (Earlier) ✅
 **Focus:** Conversational Contribution Pipeline & Content-Based Confirmation
 
 **Completed:**
