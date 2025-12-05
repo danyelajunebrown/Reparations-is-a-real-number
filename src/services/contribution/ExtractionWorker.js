@@ -13,6 +13,7 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const OCRProcessor = require('../document/OCRProcessor');
 const logger = require('../../utils/logger');
+const { chromium } = require('playwright');
 
 class ExtractionWorker {
     /**
@@ -132,6 +133,7 @@ class ExtractionWorker {
      */
     async downloadPdf(url) {
         try {
+            // First try direct download
             const response = await axios.get(url, {
                 responseType: 'arraybuffer',
                 timeout: 60000,
@@ -151,7 +153,57 @@ class ExtractionWorker {
                 url,
                 error: error.message
             });
+
+            // If it's a 403 error, try browser-based approach
+            if (error.message.includes('403') || error.message.includes('Forbidden')) {
+                logger.info('403 detected, switching to browser-based OCR');
+                return this.browserBasedOCR(url);
+            }
+
             throw new Error(`Failed to download PDF: ${error.message}`);
+        }
+    }
+
+    /**
+     * Browser-based OCR for protected documents
+     * @param {string} url - URL to process
+     * @returns {Promise<Buffer>} Screenshot buffer for OCR
+     */
+    async browserBasedOCR(url) {
+        try {
+            logger.info('Starting browser-based OCR for protected document', { url });
+
+            // Launch browser
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+
+            // Set user agent to mimic normal browser
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+
+            // Navigate to URL
+            await page.goto(url, {
+                waitUntil: 'networkidle',
+                timeout: 120000
+            });
+
+            // Take full page screenshot
+            const screenshot = await page.screenshot({
+                fullPage: true,
+                type: 'jpeg',
+                quality: 90
+            });
+
+            await browser.close();
+
+            logger.info('Browser-based OCR completed successfully', { url });
+            return Buffer.from(screenshot, 'base64');
+
+        } catch (error) {
+            logger.error('Browser-based OCR failed', {
+                url,
+                error: error.message
+            });
+            throw new Error(`Browser-based OCR failed: ${error.message}`);
         }
     }
 

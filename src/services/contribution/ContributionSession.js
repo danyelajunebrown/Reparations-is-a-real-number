@@ -1520,6 +1520,148 @@ class ContributionSession {
     }
 
     // ========================================
+    // ALTERNATIVE EXTRACTION METHODS
+    // ========================================
+
+    /**
+     * Process manually copied text when PDF download fails
+     */
+    async processManualText(extractionId, text) {
+        try {
+            // Get extraction job
+            const jobResult = await this.db.query(`
+                SELECT * FROM extraction_jobs WHERE extraction_id = $1
+            `, [extractionId]);
+
+            if (jobResult.rows.length === 0) {
+                throw new Error('Extraction job not found');
+            }
+
+            const job = jobResult.rows[0];
+            const session = await this.getSession(job.session_id);
+
+            // Get column structure
+            const columns = session.contentStructure?.columns || [];
+
+            // Process text using OCR processor
+            const ocrResults = await this.extractionWorker.runOCR(Buffer.from(text, 'utf8'));
+
+            // Parse OCR text into rows
+            const parsedRows = await this.extractionWorker.parseOCRtoRows(ocrResults.text, columns);
+
+            // Calculate average confidence
+            const avgConfidence = parsedRows.length > 0
+                ? parsedRows.reduce((sum, row) => sum + row.confidence, 0) / parsedRows.length
+                : 0;
+
+            // Update job with results
+            await this.db.query(`
+                UPDATE extraction_jobs
+                SET
+                    status = 'completed',
+                    progress = 100,
+                    raw_ocr_text = $1,
+                    parsed_rows = $2,
+                    row_count = $3,
+                    avg_confidence = $4,
+                    completed_at = NOW()
+                WHERE extraction_id = $5
+            `, [
+                ocrResults.text,
+                JSON.stringify(parsedRows),
+                parsedRows.length,
+                parseFloat(avgConfidence.toFixed(2)),
+                extractionId
+            ]);
+
+            return {
+                success: true,
+                rowCount: parsedRows.length,
+                avgConfidence,
+                parsedRows
+            };
+
+        } catch (error) {
+            console.error('Manual text processing error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Process uploaded screenshots when PDF download fails
+     */
+    async processScreenshots(extractionId, imageFiles) {
+        try {
+            // Get extraction job
+            const jobResult = await this.db.query(`
+                SELECT * FROM extraction_jobs WHERE extraction_id = $1
+            `, [extractionId]);
+
+            if (jobResult.rows.length === 0) {
+                throw new Error('Extraction job not found');
+            }
+
+            const job = jobResult.rows[0];
+            const session = await this.getSession(job.session_id);
+
+            // Get column structure
+            const columns = session.contentStructure?.columns || [];
+
+            // Process each image
+            const allParsedRows = [];
+            let combinedText = '';
+
+            for (const file of imageFiles) {
+                // Process image using OCR processor
+                const ocrResults = await this.extractionWorker.runOCR(file.buffer);
+
+                // Parse OCR text into rows
+                const parsedRows = await this.extractionWorker.parseOCRtoRows(ocrResults.text, columns);
+
+                // Add to combined results
+                allParsedRows.push(...parsedRows);
+                combinedText += ocrResults.text + '\n\n';
+            }
+
+            // Calculate average confidence
+            const avgConfidence = allParsedRows.length > 0
+                ? allParsedRows.reduce((sum, row) => sum + row.confidence, 0) / allParsedRows.length
+                : 0;
+
+            // Update job with results
+            await this.db.query(`
+                UPDATE extraction_jobs
+                SET
+                    status = 'completed',
+                    progress = 100,
+                    raw_ocr_text = $1,
+                    parsed_rows = $2,
+                    row_count = $3,
+                    avg_confidence = $4,
+                    completed_at = NOW()
+                WHERE extraction_id = $5
+            `, [
+                combinedText,
+                JSON.stringify(allParsedRows),
+                allParsedRows.length,
+                parseFloat(avgConfidence.toFixed(2)),
+                extractionId
+            ]);
+
+            return {
+                success: true,
+                rowCount: allParsedRows.length,
+                avgConfidence,
+                parsedRows: allParsedRows
+            };
+
+        } catch (error) {
+            console.error('Screenshot processing error:', error);
+            throw error;
+        }
+    }
+
+    // ========================================
     // UTILITY METHODS
     // ========================================
 
