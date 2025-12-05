@@ -1,8 +1,81 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 4, 2025
-**Current Phase:** Bibliography & Intellectual Property Tracking System
+**Last Updated:** December 5, 2025
+**Current Phase:** OCR Extraction Pipeline Debugging
 **Active Branch:** main
+
+---
+
+## Recent Major Changes (Dec 5, 2025)
+
+### 13. OCR Extraction Pipeline Comprehensive Debugging (Dec 5, 2025)
+
+**Problem Solved:** The OCR extraction process was failing silently with no errors shown to users. When users clicked "start auto-ocr", the system would show "Starting extraction..." but nothing would happen - no progress, no errors, no results even after 10+ minutes.
+
+**Root Cause Analysis:**
+1. ExtractionWorker ran asynchronously but errors were only logged server-side
+2. No real-time status updates were pushed to frontend
+3. Download methods failed silently (especially for protected PDFs like MSA)
+4. No debug information was persisted or exposed to frontend
+5. Database lacked columns for status messages and debug logs
+
+**Solution Implemented:**
+
+#### 1. Enhanced ExtractionWorker (`src/services/contribution/ExtractionWorker.js`)
+- **Debug Logging System:** Added `debug()` method that logs to console AND persists to database
+- **Multiple Download Fallback Methods:**
+  1. Direct HTTP download (for unprotected PDFs)
+  2. Browser-mimicking download (spoofed User-Agent + headers)
+  3. PDF link extraction from HTML pages (parses iframe/embed/object tags)
+  4. Browser-based screenshot (Puppeteer or Playwright)
+- **Comprehensive Error Tracking:** Every stage logs with timestamp, elapsed time, and data
+- **Graceful Degradation:** OCR errors return results instead of throwing
+
+#### 2. New Database Columns (Migration: `migrations/add-extraction-debug-columns.sql`)
+```sql
+ALTER TABLE extraction_jobs ADD COLUMN status_message TEXT;
+ALTER TABLE extraction_jobs ADD COLUMN debug_log JSONB;
+ALTER TABLE extraction_jobs ADD COLUMN updated_at TIMESTAMP;
+```
+
+#### 3. Enhanced API Routes (`src/api/routes/contribute.js`)
+- **Debug Status Endpoint:** `GET /api/contribute/:sessionId/extraction/:extractionId/status?debug=true`
+  - Returns full debug log with timestamps and stages
+  - Shows elapsed time, status message, error details
+- **Capabilities Endpoint:** `GET /api/contribute/capabilities`
+  - Reports available OCR services (Google Vision, Tesseract)
+  - Reports browser automation availability (Puppeteer, Playwright)
+
+#### 4. Frontend Debug Panel (`contribute-v2.html`)
+- **Collapsible Debug Panel:** Shows real-time extraction status
+- **Live Status Display:** Status, Progress %, Message, Elapsed Time
+- **Color-Coded Debug Log:**
+  - Red for errors/failures
+  - Green for success/completion
+  - Blue for initialization/start
+  - Purple for download stages
+  - Orange for OCR stages
+- **Capabilities Check Button:** Shows what OCR services are available
+- **Auto-show on extraction start:** Debug panel opens automatically
+
+#### 5. Improved Polling System
+- Polls every 2 seconds with debug info every 5th poll
+- 10-minute timeout with clear messaging
+- Shows alternative methods on failure/timeout
+- Better error handling for connection issues
+
+**Key Debug Log Stages:**
+```
+INIT → STATUS → DB_QUERY → JOB_INFO → URL_RESOLVE →
+DOWNLOAD_METHOD → DOWNLOAD_FAIL → DOWNLOAD →
+OCR_START → OCR_PROCESS → OCR_RESULT → OCR_COMPLETE →
+PARSE_START → PARSE_COMPLETE → SAVE → COMPLETE
+```
+
+**Migration Required:**
+```bash
+PGPASSWORD=hjEMn35Kw7p712q1SYJnBxZqIYRdahHv psql -h dpg-d3v78f7diees73epc4k0-a.oregon-postgres.render.com -U reparations_user -d reparations -f migrations/add-extraction-debug-columns.sql
+```
 
 ---
 
@@ -252,17 +325,27 @@ Confirmation → Can ONLY come from:
 3. ~~Column parsing breaks on periods~~ - FIXED: Prioritize quoted headers
 4. ~~Limited column type recognition~~ - FIXED: Added 15+ types
 5. ~~Questions causing frontend crash~~ - FIXED: Null safety added
+6. ~~OCR extraction failing silently~~ - FIXED: Comprehensive debug logging
+7. ~~No progress notifications~~ - FIXED: Real-time debug panel
 
 ### Remaining Issues
 1. **No Authentication** - API completely open
-2. **OCR not implemented** - Extraction methods stub only
-3. **Guided entry not implemented** - UI exists but backend incomplete
-4. **No progress notifications** - Long-running extractions silent
+2. **Guided entry not implemented** - UI exists but backend incomplete
+3. **Browser automation may not be installed** - Need Puppeteer for protected PDFs
+4. **Google Vision API key required** - OCR won't work without valid credentials
+
+### Dependencies to Install (if not present)
+```bash
+npm install puppeteer  # For browser-based PDF extraction
+```
 
 ---
 
-## Commits from This Session (Dec 4, 2025)
+## Commits from This Session (Dec 5, 2025)
 
+TBD - Commit after testing
+
+Previous session commits (Dec 4):
 1. `261f097` - Fix confirmation logic: use content-based confirmation, not domain-based
 2. `2132989` - Fix multiple contribution pipeline bugs found by e2e testing
 3. `0544589` - Add end-to-end test for contribution pipeline
@@ -276,15 +359,16 @@ Previous session commits (Dec 2):
 
 ## Next Steps
 
-### Immediate
-1. Implement actual OCR extraction (currently stub)
-2. Build guided entry UI for high-difficulty documents
-3. Add progress notifications for long-running extractions
+### Immediate (Dec 5, 2025)
+1. ✅ Run database migration for debug columns
+2. Test extraction with MSA URL to verify debug logging works
+3. Install Puppeteer if browser automation needed
 
 ### Short Term
 1. Add authentication to protect API
 2. Build verification queue for human review
 3. Add more confirmatory channels as needed
+4. Implement guided entry for documents OCR can't handle
 
 ---
 

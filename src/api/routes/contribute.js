@@ -366,19 +366,21 @@ router.post('/:sessionId/sample', async (req, res) => {
 
 /**
  * GET /api/contribute/:sessionId/extraction/:extractionId/status
- * Get extraction job status
+ * Get extraction job status with full debug information
  */
 router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
     try {
         const { sessionId, extractionId } = req.params;
+        const includeDebug = req.query.debug === 'true';
 
-        // Query extraction job status
+        // Query extraction job status including debug log
         const result = await contributionService.db.query(`
             SELECT
                 extraction_id,
                 method,
                 status,
                 progress,
+                status_message,
                 row_count,
                 avg_confidence,
                 human_corrections,
@@ -386,8 +388,10 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
                 error_message,
                 started_at,
                 completed_at,
+                updated_at,
                 parsed_rows,
-                raw_ocr_text
+                raw_ocr_text,
+                debug_log
             FROM extraction_jobs
             WHERE extraction_id = $1 AND session_id = $2
         `, [extractionId, sessionId]);
@@ -401,27 +405,107 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
 
         const job = result.rows[0];
 
+        // Parse debug log if present
+        let debugLog = null;
+        if (includeDebug && job.debug_log) {
+            try {
+                debugLog = typeof job.debug_log === 'string' ? JSON.parse(job.debug_log) : job.debug_log;
+            } catch (e) {
+                debugLog = [{ error: 'Failed to parse debug log' }];
+            }
+        }
+
+        // Parse parsed_rows if present
+        let parsedRows = null;
+        if (job.parsed_rows) {
+            try {
+                parsedRows = typeof job.parsed_rows === 'string' ? JSON.parse(job.parsed_rows) : job.parsed_rows;
+            } catch (e) {
+                parsedRows = null;
+            }
+        }
+
         res.json({
             success: true,
             extraction: {
                 id: job.extraction_id,
                 method: job.method,
                 status: job.status,
-                progress: job.progress,
-                rowCount: job.row_count,
-                avgConfidence: job.avg_confidence,
-                humanCorrections: job.human_corrections,
-                illegibleCount: job.illegible_count,
+                progress: job.progress || 0,
+                statusMessage: job.status_message || '',
+                rowCount: job.row_count || 0,
+                avgConfidence: job.avg_confidence || 0,
+                humanCorrections: job.human_corrections || 0,
+                illegibleCount: job.illegible_count || 0,
                 error: job.error_message,
                 startedAt: job.started_at,
                 completedAt: job.completed_at,
-                parsedRows: job.parsed_rows ? JSON.parse(job.parsed_rows) : null,
-                rawOcrText: job.raw_ocr_text
+                updatedAt: job.updated_at,
+                parsedRows: parsedRows,
+                rawOcrText: job.raw_ocr_text,
+                debugLog: debugLog,
+                // Calculate time elapsed
+                elapsedMs: job.started_at ? Date.now() - new Date(job.started_at).getTime() : 0
             }
         });
 
     } catch (error) {
         console.error('Extraction status error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/contribute/capabilities
+ * Get system capabilities for OCR extraction
+ */
+router.get('/capabilities', async (req, res) => {
+    try {
+        // Get extraction worker capabilities if available
+        let capabilities = {
+            ocrProcessor: false,
+            puppeteer: false,
+            playwright: false,
+            browserAutomation: false
+        };
+
+        // Try to get real capabilities from the extraction worker
+        // This requires accessing the worker instance through the service
+        if (contributionService && contributionService.extractionWorker) {
+            capabilities = contributionService.extractionWorker.getCapabilities();
+        }
+
+        // Check for common dependencies
+        const checks = {
+            googleVision: false,
+            tesseract: false
+        };
+
+        try {
+            require('@google-cloud/vision');
+            checks.googleVision = true;
+        } catch (e) {}
+
+        try {
+            require('tesseract.js');
+            checks.tesseract = true;
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            capabilities: {
+                ...capabilities,
+                ...checks
+            },
+            message: capabilities.browserAutomation
+                ? 'Full extraction capabilities available'
+                : 'Limited extraction - browser automation not available (install puppeteer)'
+        });
+
+    } catch (error) {
         res.status(500).json({
             success: false,
             error: error.message
