@@ -1,0 +1,132 @@
+{
+  "slaveOwners": [
+    {
+      "name": "Maryland State Archives",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Tell Us What You",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Think About",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Maryland State Archives Website",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Home Page",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Maryland Manual On",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Maryland Online\n\t\n\n\nGovernor    \nGeneral",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Assembly    Judiciary     Maryland",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Gov\n\n\n\n\n\nAn Archives",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "Copyright \nNovember",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    },
+    {
+      "name": "State Archives",
+      "enslaved": [
+        "Unknown slaves"
+      ],
+      "count": 0
+    }
+  ],
+  "totalOwners": 11,
+  "totalEnslaved": 0,
+  "rawText": "\n\n\n\n\n\t\n\t\n\t\n\t\n\n\n\n\t\t\n    \n      \n        \n        \n          \n r c h i v e s   o f   M a r y l a n d   O n l i n e\n\n\t\n\n\n\n\t\n\t\t\n\t\t\n\t\t     \n\t\t    Maryland State Archives |\n\t\t    Index |  \t\t\t\t\n\t\t    Help |    \t\t\t\t\n\t\t    Search \t\n\n\t\t    search \n\n\t\n\t\n\t\n\t\n\n      \n\n             this volume\n             all volumes\n\n       \n\t\n\tfor:\n\t \n\t\n\t\n\t\n\n\n\n\n\n\n\nMontgomery County Slave Statistics, 1867-1868\n\n\t\n\n\t\n\t    \n\t    Volume  812, Page 1  \n\nView pdf image \n\n\t\n\t\n\t\n\t\n\n\t Jump to\npagevolume \n \n \n\n\n  << PREVIOUS  NEXT >>\n\n\n\t\t\n\t\n\t\n\t\n\n\n\n\t\n\t\n\t\n\t\n\n\n\t\n \n\t\n\t\n\t\n\t\n\t\n\t\n\nMontgomery County Slave Statistics, 1867-1868\n\n\t\n\n\t\n\t    \n\t    Volume  812, Page 1  \n\nView pdf image \n\n\t\n\t\n\t\n\t\n\n\t Jump to\npagevolume \n \n \n\n\n  << PREVIOUS  NEXT >>\n\n\n\t\t\n\t\n\t\n\t\n\n\n\n\n\n\n\n\nThis web site is presented for reference purposes under the doctrine of fair use.  When this material is used, in whole or in part, proper citation and credit must be attributed to the Maryland State Archives. PLEASE NOTE: The site may contain material from other sources which may be under copyright. Rights assessment, and full originating source citation, is the responsibility of the user.\n\n\n\nTell Us What You Think About the Maryland State Archives Website!\n\n\n\n\t\n\t\nArchives' Home Page   |   \n\t\nMaryland Manual On-Line   |   \n\t\nReference & Research   |   \n\nSearch the Archives   |   \n\nStudents & Teachers   |   \n\nArchives of Maryland Online\n\t\n\n\nGovernor    \nGeneral Assembly    Judiciary     Maryland.Gov\n\n\n\n\n\nAn Archives of Maryland electronic publication. For information contact \nmdlegal@mdarchives.state.md.us.\n©Copyright \nNovember 18, 2025Maryland State Archives\n\n\n\n\n",
+  "mlAnalysis": {
+    "entities": {
+      "owners": [
+        "Maryland State Archives",
+        "Tell Us What You",
+        "Think About",
+        "Maryland State Archives Website",
+        "Home Page",
+        "Maryland Manual On",
+        "Maryland Online\n\t\n\n\nGovernor    \nGeneral",
+        "Assembly    Judiciary     Maryland",
+        "Gov\n\n\n\n\n\nAn Archives",
+        "Copyright \nNovember",
+        "State Archives"
+      ],
+      "enslaved": [],
+      "locations": [
+        "Maryland"
+      ],
+      "dates": [],
+      "relationships": []
+    },
+    "sentiment": "positive",
+    "keywords": [
+      {
+        "term": "1860",
+        "tfidf": 1.916290731874155
+      },
+      {
+        "term": "slaveholder",
+        "tfidf": 1.916290731874155
+      },
+      {
+        "term": "records",
+        "tfidf": 1.916290731874155
+      },
+      {
+        "term": "census",
+        "tfidf": 1.916290731874155
+      }
+    ],
+    "confidence": 0.48000000000000004,
+    "sourceType": "unknown",
+    "documentType": "generic",
+    "isPrimarySource": false,
+    "contentQuality": 0.8999999999999999,
+    "analysisDuration": 6
+  }
+}

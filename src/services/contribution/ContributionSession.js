@@ -18,9 +18,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 class ContributionSession {
-    constructor(database) {
+    constructor(database, extractionWorker = null) {
         this.db = database;
         this.sessions = new Map(); // In-memory session cache
+        this.extractionWorker = extractionWorker;
 
         // Stage definitions
         this.stages = [
@@ -1493,6 +1494,20 @@ class ContributionSession {
         };
 
         await this.updateSession(session);
+
+        // Trigger actual OCR extraction if method is auto_ocr and worker is available
+        if (method === 'auto_ocr' && this.extractionWorker) {
+            // Don't await - let it run async
+            this.extractionWorker.processExtraction(extractionId).catch(err => {
+                console.error('Extraction failed:', err);
+                // Update job status to failed
+                this.db.query(`
+                    UPDATE extraction_jobs
+                    SET status = 'failed', error_message = $1
+                    WHERE extraction_id = $2
+                `, [err.message, extractionId]).catch(console.error);
+            });
+        }
 
         // Return immediately - extraction happens async
         return {

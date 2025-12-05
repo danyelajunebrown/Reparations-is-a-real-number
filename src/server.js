@@ -27,6 +27,7 @@ const researchRouter = require('./api/routes/research');
 const healthRouter = require('./api/routes/health');
 const errorsRouter = require('./api/routes/errors');
 const { router: contributeRouter, initializeService: initContribute } = require('./api/routes/contribute');
+const bibliographyRouter = require('./api/routes/bibliography');
 
 // Initialize Express app
 const app = express();
@@ -99,6 +100,11 @@ app.get('/contribute-v2.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'contribute-v2.html'));
 });
 
+// Serve the bibliography page
+app.get('/bibliography.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'bibliography.html'));
+});
+
 // Rate limiting
 app.use('/api', generalLimiter);
 
@@ -128,9 +134,15 @@ app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/errors', errorsRouter);
+app.use('/api/bibliography', bibliographyRouter);
+
+// Make database pool available to routes (for bibliography manager)
+app.set('pool', db);
 
 // Initialize contribution service with database and mount routes
-initContribute(db);
+const ExtractionWorker = require('./services/contribution/ExtractionWorker');
+const extractionWorker = new ExtractionWorker(db);
+initContribute(db, extractionWorker);
 app.use('/api/contribute', contributeRouter);
 
 // Legacy compatibility routes (redirect to new routes)

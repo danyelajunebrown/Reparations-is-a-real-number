@@ -798,6 +798,12 @@ I work best with:
                         if (extraction.status === 'completed') {
                             clearInterval(pollInterval);
                             addMessage('assistant', `Extraction complete! Found ${extraction.rowCount} rows with ${(extraction.avgConfidence * 100).toFixed(0)}% average confidence.`);
+
+                            // Display parsed rows if available
+                            if (extraction.parsedRows && extraction.parsedRows.length > 0) {
+                                displayParsedRows(extraction.parsedRows);
+                            }
+
                             updateProgress('human_review');
                         } else if (extraction.status === 'failed') {
                             clearInterval(pollInterval);
@@ -812,6 +818,144 @@ I work best with:
                     console.error('Poll error:', error);
                 }
             }, 2000);
+        }
+
+        // Display parsed rows in a table format
+        function displayParsedRows(rows) {
+            const section = document.getElementById('extractionResultsSection');
+            if (!section) {
+                // Create results section if it doesn't exist
+                const resultsSection = document.createElement('div');
+                resultsSection.id = 'extractionResultsSection';
+                resultsSection.className = 'panel-section';
+                resultsSection.innerHTML = `
+                    <h3>Extraction Results</h3>
+                    <div id="extractionResults"></div>
+                `;
+                document.querySelector('.side-panel').appendChild(resultsSection);
+            }
+
+            const container = document.getElementById('extractionResults');
+            if (!container) return;
+
+            // Create table header
+            let html = '<table class="extraction-results-table"><thead><tr><th>Row</th>';
+
+            // Get all unique column headers
+            const headers = new Set();
+            rows.forEach(row => {
+                if (row.columns) {
+                    Object.keys(row.columns).forEach(header => {
+                        headers.add(header);
+                    });
+                }
+            });
+
+            // Add headers to table
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '<th>Confidence</th></tr></thead><tbody>';
+
+            // Add rows
+            rows.forEach((row, index) => {
+                html += `<tr><td>${index + 1}</td>`;
+                headers.forEach(header => {
+                    const value = row.columns?.[header] || '';
+                    html += `<td>${value}</td>`;
+                });
+                html += `<td>${(row.confidence * 100).toFixed(0)}%</td></tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            // Add correction interface
+            html += `
+                <div style="margin-top: 15px; padding: 10px; background: #1a1a2e; border-radius: 5px;">
+                    <button onclick="showCorrectionInterface()" style="padding: 8px 15px; background: #667eea; border: none; border-radius: 5px; color: white; cursor: pointer;">
+                        Correct Mistakes
+                    </button>
+                    <div id="correctionInterface" style="display: none; margin-top: 10px;"></div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Show correction interface
+        function showCorrectionInterface() {
+            const interface = document.getElementById('correctionInterface');
+            if (!interface) return;
+
+            interface.innerHTML = `
+                <div style="margin-bottom: 10px; font-weight: 500;">Correct OCR Results</div>
+                <div style="margin-bottom: 10px;">
+                    <input type="number" id="correctionRowIndex" placeholder="Row #" style="padding: 5px; width: 60px; margin-right: 5px;">
+                    <input type="text" id="correctionFieldName" placeholder="Field name" style="padding: 5px; width: 120px; margin-right: 5px;">
+                    <input type="text" id="correctionNewValue" placeholder="Corrected value" style="padding: 5px; width: 150px; margin-right: 5px;">
+                    <button onclick="submitCorrection()" style="padding: 5px 12px; background: #38a169; border: none; border-radius: 5px; color: white; cursor: pointer;">Submit</button>
+                </div>
+                <div id="correctionStatus" style="font-size: 0.85em; margin-top: 5px;"></div>
+            `;
+            interface.style.display = 'block';
+        }
+
+        // Submit correction
+        async function submitCorrection() {
+            const rowIndex = parseInt(document.getElementById('correctionRowIndex').value);
+            const fieldName = document.getElementById('correctionFieldName').value.trim();
+            const newValue = document.getElementById('correctionNewValue').value.trim();
+            const statusDiv = document.getElementById('correctionStatus');
+
+            if (!rowIndex || !fieldName || !newValue) {
+                statusDiv.textContent = 'Please fill all fields';
+                statusDiv.style.color = '#e94560';
+                return;
+            }
+
+            try {
+                // Get current session to find extraction ID
+                const sessionResponse = await fetch(`${API_BASE}/api/contribute/${sessionId}`);
+                const sessionData = await sessionResponse.json();
+
+                if (!sessionData.success || !sessionData.session?.processingInstructions?.extractionId) {
+                    throw new Error('Could not find extraction ID');
+                }
+
+                const extractionId = sessionData.session.processingInstructions.extractionId;
+
+                // Submit correction
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/correct`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            corrections: [{
+                                rowIndex: rowIndex - 1, // Convert to 0-based index
+                                field: fieldName,
+                                originalValue: '', // Would need to fetch current value
+                                correctedValue: newValue,
+                                correctedBy: 'user'
+                            }]
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.textContent = `Correction applied! ${data.correctionCount} changes saved.`;
+                    statusDiv.style.color = '#38a169';
+                } else {
+                    throw new Error(data.error || 'Failed to apply correction');
+                }
+
+            } catch (error) {
+                statusDiv.textContent = `Error: ${error.message}`;
+                statusDiv.style.color = '#e94560';
+                console.error('Correction error:', error);
+            }
         }
 
         // Add message to chat
