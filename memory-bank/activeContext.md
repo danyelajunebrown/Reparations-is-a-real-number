@@ -1,12 +1,93 @@
 # Active Context: Current Development State
 
 **Last Updated:** December 4, 2025
-**Current Phase:** Conversational Contribution Pipeline with Content-Based Confirmation
+**Current Phase:** Bibliography & Intellectual Property Tracking System
 **Active Branch:** main
 
 ---
 
 ## Recent Major Changes (Dec 4, 2025)
+
+### 12. Bibliography & Intellectual Property System LIVE (Dec 4, 2025)
+
+**Problem Solved:** The project needed a comprehensive system to track all intellectual sources, databases, archives, researchers, and contributors. Users copy/paste content without full citations, and sources need proper academic attribution.
+
+**Solution Implemented:**
+
+#### 1. BibliographyManager (`src/utils/bibliography-manager.js`)
+Core management class with:
+- Citation formatting (APA, Chicago, MLA, BibTeX)
+- Known archive patterns (MSA, FamilySearch, Ancestry, Civil War DC, etc.)
+- Copy/paste content detection
+- Pending citation flagging
+- Participant/contributor tracking
+- Database and in-memory storage support
+
+#### 2. IP Tracker (`src/utils/ip-tracker.js`)
+Intellectual property tracker with:
+- Automatic URL detection and archive identification
+- Long text/quote detection
+- Academic citation pattern recognition
+- Census/statistical data detection
+- Session-based reference tracking
+- Integration hooks for contribution pipeline
+
+#### 3. Bibliography API Routes (`src/api/routes/bibliography.js`)
+```
+GET    /api/bibliography              - Get all entries + pending + participants
+GET    /api/bibliography/stats        - Statistics
+GET    /api/bibliography/export       - Export (json, bibtex, apa, chicago)
+GET    /api/bibliography/pending      - Pending citations
+POST   /api/bibliography/pending      - Flag pending citation
+PUT    /api/bibliography/pending/:id  - Resolve pending
+GET    /api/bibliography/participants - Get participants
+POST   /api/bibliography/participants - Add participant
+POST   /api/bibliography              - Add entry
+POST   /api/bibliography/analyze      - Analyze text for copy/paste
+POST   /api/bibliography/from-url     - Generate citation from URL
+```
+
+#### 4. Frontend (`bibliography.html`)
+Full-featured bibliography page with:
+- Tabbed sections: Sources, Technologies, Intellectual Leaders, Participants, Pending
+- Search and filter functionality
+- Expandable category cards with formatted citations
+- Forms to add participants and flag pending citations
+- Export functionality (JSON)
+- Pre-populated with 10+ known sources
+
+#### 5. Database Tables (LIVE on Render PostgreSQL)
+```sql
+bibliography              - Main citations table
+pending_citations         - Sources needing full citation
+participants              - Contributors and researchers
+copy_paste_flags          - Detected references
+citation_relationships    - Source relationships
+bibliography_exports      - Export history
+```
+
+#### 6. Memory Bank Index (`memory-bank/bibliography-index.md`)
+Living documentation tracking all sources with:
+- Quick statistics
+- Full source inventory by category
+- How-to guides for adding sources
+- Source type definitions
+
+**Pre-populated Sources (14 entries):**
+- 4 Government Archives (MSA, Civil War DC, NARA, Library of Virginia)
+- 3 Genealogy Databases (FamilySearch, Ancestry, Find A Grave)
+- 2 Research Compilations (Tom Blake's 1860, Beyond Kin)
+- 3 Technologies (Google Vision, Tesseract, OpenZeppelin)
+- 2 Participants (Danyela Brown, Tom Blake)
+
+**Key Feature - Pending Citations:**
+When content is copy/pasted or referenced without full citation:
+1. The IP Tracker can flag it automatically
+2. Entry appears in `/api/bibliography/pending`
+3. Shows on bibliography.html under "Pending Citations" tab
+4. User completes citation details later (NOT prompted immediately)
+
+---
 
 ### 11. Conversational Contribution Pipeline LIVE (Dec 4, 2025)
 

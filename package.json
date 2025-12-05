@@ -53,6 +53,7 @@
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
     "pg": "^8.11.3",
+    "playwright": "^1.57.0",
     "puppeteer": "^24.31.0",
     "sharp": "^0.33.1",
     "tesseract.js": "^5.1.1",

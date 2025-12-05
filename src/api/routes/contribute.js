@@ -429,59 +429,130 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
     }
 });
 
-/**
- * POST /api/contribute/:sessionId/extraction/:extractionId/correct
- * Submit corrections to extracted data
- */
-router.post('/:sessionId/extraction/:extractionId/correct', async (req, res) => {
-    try {
-        const { sessionId, extractionId } = req.params;
-        const { corrections } = req.body;
+    /**
+     * POST /api/contribute/:sessionId/extraction/:extractionId/correct
+     * Submit corrections to extracted data
+     */
+    router.post('/:sessionId/extraction/:extractionId/correct', async (req, res) => {
+        try {
+            const { sessionId, extractionId } = req.params;
+            const { corrections } = req.body;
 
-        if (!corrections || !Array.isArray(corrections)) {
-            return res.status(400).json({
+            if (!corrections || !Array.isArray(corrections)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Corrections array required'
+                });
+            }
+
+            // Store each correction
+            for (const correction of corrections) {
+                await contributionService.db.query(`
+                    INSERT INTO extraction_corrections
+                    (extraction_id, row_index, field_name, original_value, corrected_value, corrected_by)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                `, [
+                    extractionId,
+                    correction.rowIndex,
+                    correction.field,
+                    correction.originalValue,
+                    correction.correctedValue,
+                    correction.correctedBy || 'anonymous'
+                ]);
+            }
+
+            // Update extraction job correction count
+            await contributionService.db.query(`
+                UPDATE extraction_jobs
+                SET human_corrections = human_corrections + $1
+                WHERE extraction_id = $2
+            `, [corrections.length, extractionId]);
+
+            res.json({
+                success: true,
+                message: `Applied ${corrections.length} corrections`,
+                correctionCount: corrections.length
+            });
+
+        } catch (error) {
+            console.error('Correction error:', error);
+            res.status(500).json({
                 success: false,
-                error: 'Corrections array required'
+                error: error.message
             });
         }
+    });
 
-        // Store each correction
-        for (const correction of corrections) {
-            await contributionService.db.query(`
-                INSERT INTO extraction_corrections
-                (extraction_id, row_index, field_name, original_value, corrected_value, corrected_by)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [
-                extractionId,
-                correction.rowIndex,
-                correction.field,
-                correction.originalValue,
-                correction.correctedValue,
-                correction.correctedBy || 'anonymous'
-            ]);
+    /**
+     * POST /api/contribute/:sessionId/extraction/:extractionId/manual-text
+     * Process manually copied text when PDF download fails
+     */
+    router.post('/:sessionId/extraction/:extractionId/manual-text', async (req, res) => {
+        try {
+            const { sessionId, extractionId } = req.params;
+            const { text, method } = req.body;
+
+            if (!text || typeof text !== 'string') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Text content required'
+                });
+            }
+
+            // Process text using OCR processor
+            const ocrResults = await contributionService.processManualText(extractionId, text);
+
+            res.json({
+                success: true,
+                message: `Processed manual text: ${ocrResults.rowCount} rows extracted`,
+                rowCount: ocrResults.rowCount,
+                avgConfidence: ocrResults.avgConfidence,
+                parsedRows: ocrResults.parsedRows
+            });
+
+        } catch (error) {
+            console.error('Manual text processing error:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
+    });
 
-        // Update extraction job correction count
-        await contributionService.db.query(`
-            UPDATE extraction_jobs
-            SET human_corrections = human_corrections + $1
-            WHERE extraction_id = $2
-        `, [corrections.length, extractionId]);
+    /**
+     * POST /api/contribute/:sessionId/extraction/:extractionId/screenshots
+     * Process uploaded screenshots when PDF download fails
+     */
+    router.post('/:sessionId/extraction/:extractionId/screenshots', async (req, res) => {
+        try {
+            const { sessionId, extractionId } = req.params;
 
-        res.json({
-            success: true,
-            message: `Applied ${corrections.length} corrections`,
-            correctionCount: corrections.length
-        });
+            if (!req.files || !req.files.images || req.files.images.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'At least one image file required'
+                });
+            }
 
-    } catch (error) {
-        console.error('Correction error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+            // Process screenshots using OCR processor
+            const ocrResults = await contributionService.processScreenshots(extractionId, req.files.images);
+
+            res.json({
+                success: true,
+                message: `Processed ${req.files.images.length} screenshots: ${ocrResults.rowCount} rows extracted`,
+                rowCount: ocrResults.rowCount,
+                avgConfidence: ocrResults.avgConfidence,
+                parsedRows: ocrResults.parsedRows
+            });
+
+        } catch (error) {
+            console.error('Screenshot processing error:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    });
 
 // =============================================================================
 // OWNER PROMOTION ENDPOINTS
