@@ -150,47 +150,48 @@ router.post('/:sessionId/confirm', async (req, res) => {
     }
 });
 
-/**
- * POST /api/contribute/:sessionId/extract
- * Start extraction with chosen method
- */
-router.post('/:sessionId/extract', async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const { method, options } = req.body;
+    /**
+     * POST /api/contribute/:sessionId/extract
+     * Start extraction with chosen method
+     */
+    router.post('/:sessionId/extract', async (req, res) => {
+        try {
+            const { sessionId } = req.params;
+            const { method, options } = req.body;
 
-        if (!method) {
-            return res.status(400).json({
+            if (!method) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Extraction method required'
+                });
+            }
+
+            const validMethods = ['auto_ocr', 'browser_based_ocr', 'manual_text', 'screenshot_upload', 'guided_entry', 'sample_learn', 'csv_upload'];
+            if (!validMethods.includes(method)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Invalid method. Must be one of: ${validMethods.join(', ')}`
+                });
+            }
+
+            const result = await contributionService.startExtraction(sessionId, method, options);
+
+            res.json({
+                success: true,
+                extractionId: result.extractionId,
+                method: result.method,
+                message: result.message,
+                stage: result.nextStage
+            });
+
+        } catch (error) {
+            console.error('Extract error:', error);
+            res.status(500).json({
                 success: false,
-                error: 'Extraction method required'
+                error: error.message
             });
         }
-
-        const validMethods = ['auto_ocr', 'guided_entry', 'sample_learn', 'csv_upload'];
-        if (!validMethods.includes(method)) {
-            return res.status(400).json({
-                success: false,
-                error: `Invalid method. Must be one of: ${validMethods.join(', ')}`
-            });
-        }
-
-        const result = await contributionService.startExtraction(sessionId, method, options);
-
-        res.json({
-            success: true,
-            extractionId: result.extractionId,
-            message: result.message,
-            stage: result.nextStage
-        });
-
-    } catch (error) {
-        console.error('Extract error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+    });
 
 /**
  * GET /api/contribute/:sessionId

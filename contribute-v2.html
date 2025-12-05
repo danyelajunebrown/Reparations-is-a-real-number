@@ -1418,7 +1418,13 @@ I work best with:
 
             section.style.display = 'block';
 
-            container.innerHTML = options.map(opt => `
+            // Add clear guidance at the top
+            container.innerHTML = `
+                <div style="background: #0f3460; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9em;">
+                    <strong>📋 Choose an extraction method:</strong>
+                    <p style="margin-top: 8px; opacity: 0.8;">Click on any method below to proceed. Recommended methods are highlighted.</p>
+                </div>
+            ` + options.map(opt => `
                 <div class="extraction-option ${opt.recommended ? 'recommended' : ''}"
                      onclick="selectExtractionMethod('${opt.id}')">
                     <h4>${opt.label}</h4>

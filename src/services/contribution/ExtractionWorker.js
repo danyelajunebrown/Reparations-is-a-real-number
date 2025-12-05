@@ -91,7 +91,7 @@ class ExtractionWorker {
     }
 
     /**
-     * Main method to process an extraction job
+     * Process an extraction job from start to finish
      * @param {string} extractionId - The extraction job ID
      */
     async processExtraction(extractionId) {
@@ -820,6 +820,186 @@ class ExtractionWorker {
             playwright: !!chromium,
             browserAutomation: !!(puppeteer || chromium)
         };
+    }
+
+    /**
+     * Process browser-based extraction (for protected URLs)
+     * @param {string} extractionId - The extraction job ID
+     */
+    async processBrowserBasedExtraction(extractionId) {
+        // Initialize debug state
+        this.currentExtractionId = extractionId;
+        this.debugLog = [];
+        this.startTime = Date.now();
+
+        this.debug('INIT', 'Starting browser-based extraction process', { extractionId });
+
+        try {
+            // Update status to processing
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 5 });
+            this.debug('STATUS', 'Updated status to processing');
+
+            // Get extraction job details
+            this.debug('DB_QUERY', 'Fetching extraction job details');
+            const jobResult = await this.db.query(`
+                SELECT ej.*, cs.content_structure, cs.source_metadata, cs.url as session_url
+                FROM extraction_jobs ej
+                JOIN contribution_sessions cs ON ej.session_id = cs.session_id
+                WHERE ej.extraction_id = $1
+            `, [extractionId]);
+
+            if (jobResult.rows.length === 0) {
+                this.debug('ERROR', 'Extraction job not found in database');
+                throw new Error('Extraction job not found');
+            }
+
+            const job = jobResult.rows[0];
+            const contentUrl = job.content_url;
+            const sourceMetadata = job.source_metadata ? (typeof job.source_metadata === 'string' ? JSON.parse(job.source_metadata) : job.source_metadata) : {};
+            const contentStructure = job.content_structure ? (typeof job.content_structure === 'string' ? JSON.parse(job.content_structure) : job.content_structure) : {};
+            const columns = contentStructure?.columns || [];
+            const sessionUrl = job.session_url;
+
+            this.debug('JOB_INFO', 'Retrieved job details for browser-based extraction', {
+                contentUrl: contentUrl || 'NOT SET',
+                sessionUrl,
+                sourceType: sourceMetadata?.sourceType,
+                archiveName: sourceMetadata?.archiveName,
+                contentType: sourceMetadata?.contentType,
+                columnCount: columns.length
+            });
+
+            // Update progress
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 10 });
+
+            // Determine the best URL to fetch
+            const fetchUrl = contentUrl || sourceMetadata?.contentUrl || sessionUrl;
+            if (!fetchUrl) {
+                this.debug('ERROR', 'No valid URL found to fetch content', { contentUrl, sessionUrl });
+                throw new Error('No content URL available for extraction');
+            }
+
+            this.debug('URL_RESOLVE', 'Determined fetch URL for browser-based extraction', { fetchUrl });
+
+            // Use browser-based screenshot method
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 20, status_message: 'Launching browser...' });
+            const screenshotResult = await this.tryBrowserScreenshot(fetchUrl);
+
+            if (!screenshotResult.success) {
+                this.debug('ERROR', 'Browser-based screenshot failed', {
+                    error: screenshotResult.error
+                });
+                throw new Error(`Browser-based screenshot failed: ${screenshotResult.error}`);
+            }
+
+            this.debug('BROWSER_SUCCESS', 'Browser-based screenshot successful', {
+                method: screenshotResult.method,
+                contentType: screenshotResult.contentType,
+                size: screenshotResult.buffer?.length || 0
+            });
+
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 50, status_message: 'Running OCR on screenshot...' });
+
+            // Run OCR on the screenshot
+            this.debug('OCR_START', 'Starting OCR processing on screenshot', { contentType: screenshotResult.contentType });
+            const ocrResults = await this.runOCR(screenshotResult.buffer, screenshotResult.contentType);
+
+            this.debug('OCR_COMPLETE', 'OCR processing completed on screenshot', {
+                service: ocrResults.service,
+                confidence: ocrResults.confidence,
+                textLength: ocrResults.text?.length || 0,
+                textPreview: ocrResults.text?.substring(0, 200) || 'EMPTY'
+            });
+
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 70, status_message: 'Parsing results...' });
+
+            // Parse OCR text into rows
+            this.debug('PARSE_START', 'Parsing OCR text into rows', { columnCount: columns.length });
+            const parsedRows = await this.parseOCRtoRows(ocrResults.text, columns);
+
+            this.debug('PARSE_COMPLETE', 'Parsing completed', {
+                rowCount: parsedRows.length,
+                sampleRow: parsedRows[0] || null
+            });
+
+            await this.updateExtractionStatus(extractionId, 'processing', { progress: 90, status_message: 'Finalizing...' });
+
+            // Calculate average confidence
+            const avgConfidence = parsedRows.length > 0
+                ? parsedRows.reduce((sum, row) => sum + row.confidence, 0) / parsedRows.length
+                : 0;
+
+            // Update job with results
+            this.debug('SAVE', 'Saving browser-based extraction results to database');
+            await this.db.query(`
+                UPDATE extraction_jobs
+                SET
+                    status = 'completed',
+                    progress = 100,
+                    status_message = 'Browser-based extraction complete',
+                    raw_ocr_text = $1,
+                    parsed_rows = $2,
+                    row_count = $3,
+                    avg_confidence = $4,
+                    completed_at = NOW(),
+                    debug_log = $6,
+                    method = 'browser_based_ocr'
+                WHERE extraction_id = $5
+            `, [
+                ocrResults.text,
+                JSON.stringify(parsedRows),
+                parsedRows.length,
+                parseFloat(avgConfidence.toFixed(2)),
+                extractionId,
+                JSON.stringify(this.debugLog)
+            ]);
+
+            this.debug('COMPLETE', 'Browser-based extraction completed successfully', {
+                rowCount: parsedRows.length,
+                avgConfidence: avgConfidence.toFixed(2),
+                totalTime: Date.now() - this.startTime
+            });
+
+            logger.operation('Browser-based extraction completed successfully', {
+                extractionId,
+                rowCount: parsedRows.length,
+                avgConfidence: avgConfidence.toFixed(2)
+            });
+
+            return {
+                success: true,
+                extractionId,
+                rowCount: parsedRows.length,
+                avgConfidence,
+                status: 'completed'
+            };
+
+        } catch (error) {
+            this.debug('FATAL_ERROR', 'Browser-based extraction failed with error', {
+                error: error.message,
+                stack: error.stack
+            });
+
+            logger.error('Browser-based extraction failed', {
+                extractionId,
+                error: error.message,
+                stack: error.stack
+            });
+
+            // Update job status to failed with full debug log
+            await this.updateExtractionStatus(extractionId, 'failed', {
+                error_message: error.message,
+                debug_log: JSON.stringify(this.debugLog)
+            });
+
+            return {
+                success: false,
+                extractionId,
+                error: error.message,
+                status: 'failed',
+                debugLog: this.debugLog
+            };
+        }
     }
 }
 

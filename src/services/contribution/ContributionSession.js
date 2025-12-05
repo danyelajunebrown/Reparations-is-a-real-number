@@ -1427,36 +1427,68 @@ class ContributionSession {
         const eg = session.extractionGuidance;
         const recommended = eg.recommendedMethod;
 
+        // Check if this is a protected URL (like Maryland Archives)
+        const isProtectedUrl = session.sourceMetadata?.domain?.includes('msa.maryland.gov') ||
+                             session.sourceMetadata?.domain?.includes('ancestry.com');
+
         return [
             {
                 id: 'auto_ocr',
                 label: 'Auto-OCR',
                 description: 'I\'ll run OCR and show you results to correct',
                 recommended: recommended === 'auto_ocr' || recommended === 'auto_ocr_with_review',
-                bestFor: 'Clear, printed documents'
+                bestFor: 'Clear, printed documents from accessible URLs',
+                available: !isProtectedUrl // Not available for protected sites
+            },
+            {
+                id: 'browser_based_ocr',
+                label: 'Browser-Based OCR',
+                description: 'Use browser automation to access protected documents',
+                recommended: isProtectedUrl, // Recommended for protected URLs
+                bestFor: 'Websites that block direct downloads (like Maryland Archives)',
+                available: true
+            },
+            {
+                id: 'manual_text',
+                label: 'Manual Text Copy',
+                description: 'Copy and paste text from the document yourself',
+                recommended: false,
+                bestFor: 'When you can access the document but automation fails',
+                available: true
+            },
+            {
+                id: 'screenshot_upload',
+                label: 'Screenshot Upload',
+                description: 'Upload screenshots of the document pages',
+                recommended: false,
+                bestFor: 'Multi-page documents or complex layouts',
+                available: true
             },
             {
                 id: 'guided_entry',
                 label: 'Guided Entry',
                 description: 'I\'ll show you the image, you type what you see row by row',
                 recommended: recommended === 'guided_entry',
-                bestFor: 'Difficult handwriting, high-value documents'
+                bestFor: 'Difficult handwriting, high-value documents',
+                available: true
             },
             {
                 id: 'sample_learn',
                 label: 'Sample & Learn',
                 description: 'You give me 5-10 example rows, I learn the pattern and extract the rest',
                 recommended: false,
-                bestFor: 'Consistent formatting with quirks'
+                bestFor: 'Consistent formatting with quirks',
+                available: true
             },
             {
                 id: 'csv_upload',
                 label: 'CSV Upload',
                 description: 'You transcribe to a spreadsheet, I import it',
                 recommended: false,
-                bestFor: 'Already transcribed data'
+                bestFor: 'Already transcribed data',
+                available: true
             }
-        ];
+        ].filter(option => option.available !== false); // Filter out unavailable options
     }
 
     // ========================================
@@ -1495,18 +1527,47 @@ class ContributionSession {
 
         await this.updateSession(session);
 
-        // Trigger actual OCR extraction if method is auto_ocr and worker is available
-        if (method === 'auto_ocr' && this.extractionWorker) {
-            // Don't await - let it run async
-            this.extractionWorker.processExtraction(extractionId).catch(err => {
-                console.error('Extraction failed:', err);
-                // Update job status to failed
-                this.db.query(`
+        // Trigger actual OCR extraction based on method
+        if (this.extractionWorker) {
+            try {
+                if (method === 'auto_ocr') {
+                    // Don't await - let it run async
+                    this.extractionWorker.processExtraction(extractionId).catch(err => {
+                        console.error('Auto OCR extraction failed:', err);
+                        this.handleExtractionError(extractionId, err, method);
+                    });
+                }
+                else if (method === 'browser_based_ocr') {
+                    // Don't await - let it run async
+                    this.extractionWorker.processBrowserBasedExtraction(extractionId).catch(err => {
+                        console.error('Browser-based OCR extraction failed:', err);
+                        this.handleExtractionError(extractionId, err, method);
+                    });
+                }
+                else if (method === 'manual_text') {
+                    // Manual text processing will be handled separately
+                    await this.db.query(`
+                        UPDATE extraction_jobs
+                        SET status = 'awaiting_manual_input', status_message = 'Waiting for user to provide text'
+                        WHERE extraction_id = $1
+                    `, [extractionId]);
+                }
+                else if (method === 'screenshot_upload') {
+                    // Screenshot upload will be handled separately
+                    await this.db.query(`
+                        UPDATE extraction_jobs
+                        SET status = 'awaiting_upload', status_message = 'Waiting for user to upload screenshots'
+                        WHERE extraction_id = $1
+                    `, [extractionId]);
+                }
+            } catch (error) {
+                console.error('Extraction startup failed:', error);
+                await this.db.query(`
                     UPDATE extraction_jobs
                     SET status = 'failed', error_message = $1
                     WHERE extraction_id = $2
-                `, [err.message, extractionId]).catch(console.error);
-            });
+                `, [error.message, extractionId]);
+            }
         }
 
         // Return immediately - extraction happens async
@@ -1514,9 +1575,51 @@ class ContributionSession {
             session,
             extractionId,
             method,
-            message: `Starting ${method} extraction. I'll show you results as they come in.`,
+            message: this.generateExtractionStartMessage(method),
             nextStage: 'extraction_in_progress'
         };
+    }
+
+    /**
+     * Handle extraction errors and provide fallback options
+     */
+    async handleExtractionError(extractionId, error, attemptedMethod) {
+        const errorMessage = error.message || 'Unknown extraction error';
+
+        // Update job status
+        await this.db.query(`
+            UPDATE extraction_jobs
+            SET status = 'failed', error_message = $1
+            WHERE extraction_id = $2
+        `, [errorMessage, extractionId]);
+
+        // Check if this was a download failure (403)
+        if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+            // For protected URLs, suggest browser-based OCR
+            await this.db.query(`
+                UPDATE extraction_jobs
+                SET suggested_fallback = 'browser_based_ocr',
+                    status_message = 'Direct download failed. Try: browser_based_ocr'
+                WHERE extraction_id = $1
+            `, [extractionId]);
+        }
+    }
+
+    /**
+     * Generate appropriate start message for each extraction method
+     */
+    generateExtractionStartMessage(method) {
+        const messages = {
+            'auto_ocr': 'Starting auto-OCR extraction. I\'ll show you results as they come in.',
+            'browser_based_ocr': 'Starting browser-based OCR. This may take a moment as I navigate to the protected document...',
+            'manual_text': 'Ready for manual text input. Please copy and paste the document text when ready.',
+            'screenshot_upload': 'Ready for screenshot upload. Please upload document images when ready.',
+            'guided_entry': 'Starting guided entry mode. I\'ll show you the document and guide you through data entry.',
+            'sample_learn': 'Starting sample & learn mode. Please provide 5-10 example rows to teach me the pattern.',
+            'csv_upload': 'Ready for CSV upload. Please upload your transcribed spreadsheet when ready.'
+        };
+
+        return messages[method] || `Starting ${method} extraction. I'll show you results as they come in.`;
     }
 
     // ========================================
