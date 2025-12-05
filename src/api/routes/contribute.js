@@ -18,8 +18,8 @@ let promotionService = null;
 /**
  * Initialize the contribution service with database
  */
-function initializeService(database) {
-    contributionService = new ContributionSession(database);
+function initializeService(database, extractionWorker = null) {
+    contributionService = new ContributionSession(database, extractionWorker);
     promotionService = new OwnerPromotion(database);
 }
 
@@ -385,7 +385,9 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
                 illegible_count,
                 error_message,
                 started_at,
-                completed_at
+                completed_at,
+                parsed_rows,
+                raw_ocr_text
             FROM extraction_jobs
             WHERE extraction_id = $1 AND session_id = $2
         `, [extractionId, sessionId]);
@@ -412,7 +414,9 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
                 illegibleCount: job.illegible_count,
                 error: job.error_message,
                 startedAt: job.started_at,
-                completedAt: job.completed_at
+                completedAt: job.completed_at,
+                parsedRows: job.parsed_rows ? JSON.parse(job.parsed_rows) : null,
+                rawOcrText: job.raw_ocr_text
             }
         });
 
