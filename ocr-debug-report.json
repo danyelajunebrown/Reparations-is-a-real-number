@@ -1,0 +1,42 @@
+{
+  "stages": [],
+  "errors": [
+    {
+      "stage": "capabilities_check",
+      "error": "Request failed with status code 500"
+    },
+    {
+      "stage": "timeout",
+      "error": "Extraction did not complete within 60 seconds"
+    }
+  ],
+  "capabilities": null,
+  "databaseDebug": {
+    "columnsPresent": {
+      "status_message": true,
+      "debug_log": true,
+      "started_at": true,
+      "updated_at": true
+    },
+    "allRequiredColumns": true
+  },
+  "fallbackMethods": {
+    "directHttp": {
+      "success": false,
+      "error": "Request failed with status code 403",
+      "code": 403
+    },
+    "browserBased": {
+      "success": false,
+      "error": "page.setUserAgent is not a function"
+    },
+    "pdfLinkExtraction": {
+      "success": false,
+      "error": "Request failed with status code 403"
+    },
+    "screenshotMethod": {
+      "success": false,
+      "error": "page.viewport is not a function"
+    }
+  }
+}
