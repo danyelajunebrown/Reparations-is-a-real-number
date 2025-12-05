@@ -594,6 +594,42 @@ I work best with:
                 </div>
             </div>
         </div>
+
+        <div class="panel-section" id="debugPanelSection">
+            <h3>Extraction Debug <span id="debugToggle" onclick="toggleDebugPanel()" style="cursor:pointer; float:right; font-size:0.8em;">▼</span></h3>
+            <div id="debugPanel" style="display: none;">
+                <div id="extractionStatus" style="margin-bottom: 10px;">
+                    <div class="info-row">
+                        <span class="info-label">Status</span>
+                        <span class="info-value" id="debugStatus">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Progress</span>
+                        <span class="info-value" id="debugProgress">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Message</span>
+                        <span class="info-value" id="debugMessage">--</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Elapsed</span>
+                        <span class="info-value" id="debugElapsed">--</span>
+                    </div>
+                </div>
+                <div id="debugLogContainer" style="max-height: 300px; overflow-y: auto; background: #0a0a1a; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.75em;">
+                    <div id="debugLogEntries">No debug logs yet...</div>
+                </div>
+                <div style="margin-top: 10px;">
+                    <button onclick="fetchDebugLog()" style="padding: 5px 10px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer; font-size: 0.8em;">
+                        Refresh Debug Log
+                    </button>
+                    <button onclick="checkCapabilities()" style="padding: 5px 10px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer; font-size: 0.8em; margin-left: 5px;">
+                        Check Capabilities
+                    </button>
+                </div>
+                <div id="capabilitiesDisplay" style="margin-top: 10px; font-size: 0.8em; display: none;"></div>
+            </div>
+        </div>
         </div>
     </div>
 
@@ -802,20 +838,189 @@ I work best with:
             }
         }
 
-        // Poll extraction status
+        // Current extraction ID for debug panel
+        let currentExtractionId = null;
+        let pollIntervalId = null;
+
+        // Toggle debug panel visibility
+        function toggleDebugPanel() {
+            const panel = document.getElementById('debugPanel');
+            const toggle = document.getElementById('debugToggle');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                toggle.textContent = '▲';
+            } else {
+                panel.style.display = 'none';
+                toggle.textContent = '▼';
+            }
+        }
+
+        // Format elapsed time
+        function formatElapsed(ms) {
+            if (ms < 1000) return `${ms}ms`;
+            if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+            return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+        }
+
+        // Update debug panel with extraction status
+        function updateDebugPanel(extraction) {
+            document.getElementById('debugStatus').textContent = extraction.status || '--';
+            document.getElementById('debugProgress').textContent = `${extraction.progress || 0}%`;
+            document.getElementById('debugMessage').textContent = extraction.statusMessage || extraction.error || '--';
+            document.getElementById('debugElapsed').textContent = formatElapsed(extraction.elapsedMs || 0);
+
+            // Color-code status
+            const statusEl = document.getElementById('debugStatus');
+            if (extraction.status === 'completed') {
+                statusEl.style.color = '#38a169';
+            } else if (extraction.status === 'failed') {
+                statusEl.style.color = '#e94560';
+            } else if (extraction.status === 'processing') {
+                statusEl.style.color = '#00d9ff';
+            } else {
+                statusEl.style.color = '#eee';
+            }
+
+            // Update debug log entries if available
+            if (extraction.debugLog && Array.isArray(extraction.debugLog)) {
+                renderDebugLog(extraction.debugLog);
+            }
+        }
+
+        // Render debug log entries
+        function renderDebugLog(logs) {
+            const container = document.getElementById('debugLogEntries');
+            if (!logs || logs.length === 0) {
+                container.innerHTML = 'No debug logs yet...';
+                return;
+            }
+
+            const html = logs.map(entry => {
+                const time = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : '--';
+                const elapsed = entry.elapsed ? `+${formatElapsed(entry.elapsed)}` : '';
+                const stage = entry.stage || 'UNKNOWN';
+                const message = entry.message || '';
+                const data = entry.data ? JSON.stringify(entry.data, null, 2) : '';
+
+                // Color code by stage type
+                let color = '#aaa';
+                if (stage.includes('ERROR') || stage.includes('FAIL')) color = '#e94560';
+                else if (stage.includes('COMPLETE') || stage.includes('SUCCESS')) color = '#38a169';
+                else if (stage.includes('START') || stage.includes('INIT')) color = '#00d9ff';
+                else if (stage.includes('DOWNLOAD')) color = '#667eea';
+                else if (stage.includes('OCR')) color = '#f6ad55';
+
+                return `<div style="margin-bottom: 8px; border-left: 2px solid ${color}; padding-left: 8px;">
+                    <div style="color: ${color}; font-weight: bold;">[${time}] ${stage} ${elapsed}</div>
+                    <div style="color: #ddd;">${message}</div>
+                    ${data ? `<pre style="color: #888; font-size: 0.9em; margin: 4px 0; white-space: pre-wrap; word-break: break-all;">${data}</pre>` : ''}
+                </div>`;
+            }).join('');
+
+            container.innerHTML = html;
+
+            // Auto-scroll to bottom
+            const logContainer = document.getElementById('debugLogContainer');
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Fetch debug log manually
+        async function fetchDebugLog() {
+            if (!sessionId || !currentExtractionId) {
+                alert('No active extraction to debug');
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${currentExtractionId}/status?debug=true`
+                );
+                const data = await response.json();
+
+                if (data.success) {
+                    updateDebugPanel(data.extraction);
+
+                    // Show the debug panel if hidden
+                    document.getElementById('debugPanel').style.display = 'block';
+                    document.getElementById('debugToggle').textContent = '▲';
+                } else {
+                    alert(`Failed to fetch debug log: ${data.error}`);
+                }
+            } catch (error) {
+                alert(`Error fetching debug log: ${error.message}`);
+            }
+        }
+
+        // Check system capabilities
+        async function checkCapabilities() {
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/capabilities`);
+                const data = await response.json();
+
+                const display = document.getElementById('capabilitiesDisplay');
+                display.style.display = 'block';
+
+                if (data.success) {
+                    const caps = data.capabilities;
+                    display.innerHTML = `
+                        <div style="background: #0a0a1a; padding: 10px; border-radius: 5px;">
+                            <div style="margin-bottom: 5px; font-weight: bold;">System Capabilities:</div>
+                            <div>OCR Processor: ${caps.ocrProcessor ? '✅' : '❌'}</div>
+                            <div>Google Vision: ${caps.googleVision ? '✅' : '❌'}</div>
+                            <div>Tesseract: ${caps.tesseract ? '✅' : '❌'}</div>
+                            <div>Puppeteer: ${caps.puppeteer ? '✅' : '❌'}</div>
+                            <div>Playwright: ${caps.playwright ? '✅' : '❌'}</div>
+                            <div style="margin-top: 5px; color: ${caps.browserAutomation ? '#38a169' : '#e94560'};">
+                                ${data.message}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    display.innerHTML = `<div style="color: #e94560;">Failed to check capabilities: ${data.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('capabilitiesDisplay').innerHTML =
+                    `<div style="color: #e94560;">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Poll extraction status with enhanced debugging
         async function pollExtractionStatus(extractionId) {
-            const pollInterval = setInterval(async () => {
+            currentExtractionId = extractionId;
+
+            // Show debug panel automatically when extraction starts
+            document.getElementById('debugPanel').style.display = 'block';
+            document.getElementById('debugToggle').textContent = '▲';
+
+            // Clear any existing poll interval
+            if (pollIntervalId) {
+                clearInterval(pollIntervalId);
+            }
+
+            let pollCount = 0;
+            const maxPolls = 300; // 10 minutes at 2-second intervals
+
+            pollIntervalId = setInterval(async () => {
+                pollCount++;
+
                 try {
+                    // Fetch with debug info every 5 polls, otherwise basic status
+                    const includeDebug = pollCount % 5 === 0 || pollCount <= 3;
                     const response = await fetch(
-                        `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/status`
+                        `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/status?debug=${includeDebug}`
                     );
                     const data = await response.json();
 
                     if (data.success) {
                         const extraction = data.extraction;
 
+                        // Always update debug panel
+                        updateDebugPanel(extraction);
+
                         if (extraction.status === 'completed') {
-                            clearInterval(pollInterval);
+                            clearInterval(pollIntervalId);
+                            pollIntervalId = null;
+
                             addMessage('assistant', `Extraction complete! Found ${extraction.rowCount} rows with ${(extraction.avgConfidence * 100).toFixed(0)}% average confidence.`);
 
                             // Display parsed rows if available
@@ -823,19 +1028,53 @@ I work best with:
                                 displayParsedRows(extraction.parsedRows);
                             }
 
+                            // Show alternative methods if no rows found
+                            if (extraction.rowCount === 0) {
+                                addMessage('system', 'No data could be extracted automatically. Please try an alternative method below.');
+                                showAlternativeMethods();
+                            }
+
                             updateProgress('human_review');
+
                         } else if (extraction.status === 'failed') {
-                            clearInterval(pollInterval);
-                            addMessage('system', `Extraction failed: ${extraction.error}`);
+                            clearInterval(pollIntervalId);
+                            pollIntervalId = null;
+
+                            addMessage('system', `Extraction failed: ${extraction.error || 'Unknown error'}`);
+                            addMessage('system', 'Check the debug panel for details, or try an alternative method.');
+
+                            // Show alternative methods
+                            showAlternativeMethods();
+
                         } else {
-                            // Show progress update
-                            console.log(`Extraction progress: ${extraction.progress}%`);
+                            // Show progress update in chat periodically
+                            if (pollCount % 10 === 0) {
+                                console.log(`Extraction progress: ${extraction.progress}% - ${extraction.statusMessage || 'Processing...'}`);
+                            }
                         }
+                    } else {
+                        console.error('Poll returned error:', data.error);
                     }
 
                 } catch (error) {
                     console.error('Poll error:', error);
+
+                    // After 3 consecutive errors, stop polling
+                    if (pollCount > 3) {
+                        clearInterval(pollIntervalId);
+                        pollIntervalId = null;
+                        addMessage('system', `Lost connection to extraction process. Error: ${error.message}`);
+                    }
                 }
+
+                // Stop polling after max polls
+                if (pollCount >= maxPolls) {
+                    clearInterval(pollIntervalId);
+                    pollIntervalId = null;
+                    addMessage('system', 'Extraction timed out after 10 minutes. Please try again or use an alternative method.');
+                    showAlternativeMethods();
+                }
+
             }, 2000);
         }
 
@@ -1387,16 +1626,44 @@ I work best with:
 
             const container = document.getElementById('alternativeMethods');
             container.innerHTML = `
-                <div class="alternative-method" onclick="showTextCopyInterface()">
-                    <h4>📝 Text Copy Method</h4>
-                    <p>Copy and paste text manually</p>
+                <div class="alternative-method" onclick="showTextCopyInterface()" style="cursor: pointer; padding: 15px; background: #1a1a2e; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333;">
+                    <h4 style="margin-bottom: 5px;">📝 Text Copy Method</h4>
+                    <p style="font-size: 0.85em; opacity: 0.8;">Copy and paste text from the document manually</p>
                 </div>
-                <div class="alternative-method" onclick="showScreenshotUpload()">
-                    <h4>📸 Screenshot Upload</h4>
-                    <p>Upload screenshots of the document</p>
+                <div class="alternative-method" onclick="showScreenshotUpload()" style="cursor: pointer; padding: 15px; background: #1a1a2e; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333;">
+                    <h4 style="margin-bottom: 5px;">📸 Screenshot Upload</h4>
+                    <p style="font-size: 0.85em; opacity: 0.8;">Upload screenshots of the document pages</p>
+                </div>
+                <div class="alternative-method" onclick="retryWithDifferentUrl()" style="cursor: pointer; padding: 15px; background: #1a1a2e; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333;">
+                    <h4 style="margin-bottom: 5px;">🔄 Try Different URL</h4>
+                    <p style="font-size: 0.85em; opacity: 0.8;">Paste a direct PDF link if available</p>
                 </div>
             `;
         }
+
+        // Retry with different URL
+        function retryWithDifferentUrl() {
+            const newUrl = prompt('Enter a direct URL to the PDF or image file:');
+            if (newUrl && newUrl.trim()) {
+                // Start a new extraction with the provided URL
+                addMessage('user', `Trying with URL: ${newUrl}`);
+                // Could implement direct extraction here
+                addMessage('system', 'This feature is coming soon. For now, please use the Text Copy or Screenshot Upload methods.');
+            }
+        }
+
+        // Auto-check capabilities on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Silently check capabilities in background
+            fetch(`${API_BASE}/api/contribute/capabilities`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && !data.capabilities.browserAutomation) {
+                        console.warn('Browser automation not available - some extraction methods may be limited');
+                    }
+                })
+                .catch(e => console.warn('Could not check capabilities:', e));
+        });
     </script>
 </body>
 </html>
