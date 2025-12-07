@@ -7,6 +7,11 @@ package-lock.json
 .env.local
 .env.production
 
+# Google Cloud credentials (NEVER commit!)
+google-credentials.json
+*-credentials.json
+*.pem
+
 # Uploaded files and storage
 uploads/
 storage/
