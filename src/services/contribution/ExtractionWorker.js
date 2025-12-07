@@ -300,6 +300,13 @@ class ExtractionWorker {
                 JSON.stringify(this.debugLog)
             ]);
 
+            // Persist findings to unconfirmed_persons table
+            await this.persistToUnconfirmedPersons(parsedRows, {
+                extractionId,
+                sourceUrl: job.content_url || job.session_url,
+                sourceType: job.source_type || 'secondary'
+            });
+
             this.debug('COMPLETE', 'Extraction completed successfully', {
                 rowCount: parsedRows.length,
                 avgConfidence: avgConfidence.toFixed(2),
@@ -1245,6 +1252,205 @@ class ExtractionWorker {
             playwright: !!chromium,
             browserAutomation: !!(puppeteer || chromium)
         };
+    }
+
+    /**
+     * Persist extracted findings to unconfirmed_persons table
+     * Creates records for both enslaved persons and slaveholders
+     * @param {Array} parsedRows - Extracted rows from OCR/narrative extraction
+     * @param {Object} options - Options including extractionId, sourceUrl, sourceType
+     */
+    async persistToUnconfirmedPersons(parsedRows, options = {}) {
+        const { extractionId, sourceUrl, sourceType = 'secondary' } = options;
+
+        if (!parsedRows || parsedRows.length === 0) {
+            this.debug('PERSIST_SKIP', 'No rows to persist');
+            return { inserted: 0, errors: [] };
+        }
+
+        this.debug('PERSIST_START', 'Persisting findings to unconfirmed_persons', {
+            rowCount: parsedRows.length,
+            sourceUrl,
+            sourceType
+        });
+
+        const inserted = [];
+        const errors = [];
+        const seenNames = new Set(); // Avoid duplicates within same extraction
+
+        for (const row of parsedRows) {
+            const columns = row.columns || {};
+            const confidence = row.confidence || 0.5;
+
+            try {
+                // Check for enslaved person (including suspected)
+                const enslavedName = columns['Enslaved Name'];
+                const ownerName = columns['Owner/Slaveholder'];
+
+                if (enslavedName && !seenNames.has(`enslaved:${enslavedName}:${ownerName || ''}`)) {
+                    seenNames.add(`enslaved:${enslavedName}:${ownerName || ''}`);
+
+                    // Build relationships JSON if we have an owner
+                    const relationships = ownerName ? [{
+                        type: 'enslaved_by',
+                        relatedPerson: ownerName,
+                        confidence: confidence
+                    }] : [];
+
+                    // Determine if this is a suspected record
+                    const isSuspected = row.isSuspected || enslavedName.includes('[Unknown');
+                    const recordType = isSuspected ? 'suspected_enslaved' : 'enslaved';
+
+                    // Extract any dates from columns
+                    const dateStr = columns['Date'] || columns['Year'] || '';
+                    let birthYear = null;
+                    let deathYear = null;
+
+                    // Try to parse year from date
+                    const yearMatch = dateStr.match(/\b(1[78]\d{2})\b/);
+                    if (yearMatch) {
+                        // For historical records, this is often the year of the transaction
+                        // We store it in context but don't assume it's birth/death
+                    }
+
+                    // Get gender if available
+                    const gender = columns['Gender'] || columns['Sex'] || null;
+
+                    // Get age if available
+                    const ageStr = columns['Age'] || '';
+                    const ageMatch = ageStr.match(/^(\d+)/);
+                    const age = ageMatch ? parseInt(ageMatch[1]) : null;
+
+                    // Build context text from all available columns
+                    const contextParts = [];
+                    for (const [key, value] of Object.entries(columns)) {
+                        if (value && key !== 'Enslaved Name') {
+                            contextParts.push(`${key}: ${value}`);
+                        }
+                    }
+                    const contextText = contextParts.join('; ') || row.rawText || null;
+
+                    // Insert enslaved person record
+                    const result = await this.db.query(`
+                        INSERT INTO unconfirmed_persons (
+                            full_name,
+                            person_type,
+                            birth_year,
+                            death_year,
+                            gender,
+                            source_url,
+                            source_page_title,
+                            extraction_method,
+                            context_text,
+                            confidence_score,
+                            relationships,
+                            status,
+                            source_type,
+                            created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+                        RETURNING lead_id
+                    `, [
+                        enslavedName,
+                        recordType,
+                        birthYear,
+                        deathYear,
+                        gender,
+                        sourceUrl,
+                        null, // source_page_title - could be extracted from metadata
+                        isSuspected ? 'narrative_count' : 'ocr_extraction',
+                        contextText,
+                        parseFloat(confidence.toFixed(2)),
+                        JSON.stringify(relationships),
+                        'pending',
+                        sourceType
+                    ]);
+
+                    inserted.push({
+                        type: recordType,
+                        name: enslavedName,
+                        leadId: result.rows[0]?.lead_id
+                    });
+
+                    this.debug('PERSIST_ENSLAVED', 'Inserted enslaved person record', {
+                        name: enslavedName,
+                        isSuspected,
+                        owner: ownerName,
+                        leadId: result.rows[0]?.lead_id
+                    });
+                }
+
+                // Check for slaveholder (only if no enslaved name - avoid duplicating from same row)
+                if (ownerName && !enslavedName && !seenNames.has(`slaveholder:${ownerName}`)) {
+                    seenNames.add(`slaveholder:${ownerName}`);
+
+                    // Build context text
+                    const contextParts = [];
+                    for (const [key, value] of Object.entries(columns)) {
+                        if (value && key !== 'Owner/Slaveholder') {
+                            contextParts.push(`${key}: ${value}`);
+                        }
+                    }
+                    const contextText = contextParts.join('; ') || row.rawText || null;
+
+                    // Insert slaveholder record
+                    const result = await this.db.query(`
+                        INSERT INTO unconfirmed_persons (
+                            full_name,
+                            person_type,
+                            source_url,
+                            extraction_method,
+                            context_text,
+                            confidence_score,
+                            status,
+                            source_type,
+                            created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                        RETURNING lead_id
+                    `, [
+                        ownerName,
+                        'slaveholder',
+                        sourceUrl,
+                        'narrative_extraction',
+                        contextText,
+                        parseFloat(confidence.toFixed(2)),
+                        'pending',
+                        sourceType
+                    ]);
+
+                    inserted.push({
+                        type: 'slaveholder',
+                        name: ownerName,
+                        leadId: result.rows[0]?.lead_id
+                    });
+
+                    this.debug('PERSIST_SLAVEHOLDER', 'Inserted slaveholder record', {
+                        name: ownerName,
+                        leadId: result.rows[0]?.lead_id
+                    });
+                }
+
+            } catch (error) {
+                errors.push({
+                    row: row,
+                    error: error.message
+                });
+                this.debug('PERSIST_ERROR', 'Failed to persist row', {
+                    error: error.message,
+                    columns: columns
+                });
+            }
+        }
+
+        this.debug('PERSIST_COMPLETE', 'Finished persisting to unconfirmed_persons', {
+            insertedCount: inserted.length,
+            errorCount: errors.length,
+            types: inserted.reduce((acc, i) => {
+                acc[i.type] = (acc[i.type] || 0) + 1;
+                return acc;
+            }, {})
+        });
+
+        return { inserted, errors };
     }
 
     /**
