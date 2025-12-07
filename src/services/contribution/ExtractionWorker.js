@@ -15,6 +15,7 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const OCRProcessor = require('../document/OCRProcessor');
+const NarrativeExtractor = require('./NarrativeExtractor');
 const logger = require('../../utils/logger');
 
 // Playwright is optional - may not be installed on all systems
@@ -41,6 +42,7 @@ class ExtractionWorker {
     constructor(database) {
         this.db = database;
         this.ocrProcessor = new OCRProcessor();
+        this.narrativeExtractor = new NarrativeExtractor();
 
         // Debug log buffer - stores detailed diagnostic info
         this.debugLog = [];
@@ -190,12 +192,70 @@ class ExtractionWorker {
 
             // Parse OCR text into rows
             this.debug('PARSE_START', 'Parsing OCR text into rows', { columnCount: columns.length });
-            const parsedRows = await this.parseOCRtoRows(ocrResults.text, columns);
+            let parsedRows = await this.parseOCRtoRows(ocrResults.text, columns);
 
-            this.debug('PARSE_COMPLETE', 'Parsing completed', {
+            this.debug('PARSE_COMPLETE', 'Table parsing completed', {
                 rowCount: parsedRows.length,
                 sampleRow: parsedRows[0] || null
             });
+
+            // Check if table parsing worked well
+            const avgTableConfidence = parsedRows.length > 0
+                ? parsedRows.reduce((sum, row) => sum + row.confidence, 0) / parsedRows.length
+                : 0;
+
+            // If table parsing has low confidence or few multi-column rows, try narrative extraction
+            const multiColumnRows = parsedRows.filter(r => Object.keys(r.columns).length >= 3).length;
+            const tableParsingWorked = avgTableConfidence > 0.5 && multiColumnRows > parsedRows.length * 0.3;
+
+            if (!tableParsingWorked && ocrResults.text && ocrResults.text.length > 500) {
+                this.debug('NARRATIVE_START', 'Table parsing insufficient, trying narrative extraction', {
+                    avgTableConfidence,
+                    multiColumnRows,
+                    totalRows: parsedRows.length
+                });
+
+                await this.updateExtractionStatus(extractionId, 'processing', {
+                    progress: 70,
+                    status_message: 'Extracting entities from narrative text...'
+                });
+
+                // Get target names from session context if available
+                const targetNames = this.extractTargetNamesFromContext(contentStructure);
+
+                // Run narrative extraction
+                const narrativeResults = await this.narrativeExtractor.extractFromNarrative(
+                    ocrResults.text,
+                    { targetNames }
+                );
+
+                this.debug('NARRATIVE_COMPLETE', 'Narrative extraction completed', {
+                    slaveholders: narrativeResults.slaveholders.length,
+                    enslaved: narrativeResults.enslavedPersons.length,
+                    transactions: narrativeResults.transactions.length,
+                    relationships: narrativeResults.relationships.length,
+                    confidence: narrativeResults.confidence
+                });
+
+                // Convert narrative results to row format
+                const narrativeRows = this.narrativeExtractor.toRowFormat(narrativeResults);
+
+                // If narrative extraction found meaningful data, use it instead or combine
+                if (narrativeRows.length > 0 && narrativeResults.confidence > avgTableConfidence) {
+                    this.debug('NARRATIVE_CHOSEN', 'Using narrative extraction results', {
+                        narrativeRows: narrativeRows.length,
+                        narrativeConfidence: narrativeResults.confidence,
+                        tableConfidence: avgTableConfidence
+                    });
+
+                    // Combine both results, narrative first
+                    parsedRows = [...narrativeRows, ...parsedRows.filter(r => Object.keys(r.columns).length >= 3)];
+                } else {
+                    // Add narrative insights as supplementary data
+                    this.debug('NARRATIVE_SUPPLEMENTARY', 'Adding narrative insights as supplement');
+                    parsedRows = [...parsedRows, ...narrativeRows];
+                }
+            }
 
             await this.updateExtractionStatus(extractionId, 'processing', { progress: 80, status_message: 'Finalizing...' });
 
@@ -1059,6 +1119,40 @@ class ExtractionWorker {
      */
     parseLineToColumns(line, columns) {
         return this.parseSmartWhitespace(line, columns, 0);
+    }
+
+    /**
+     * Extract target names from content structure (user's description)
+     * This helps the narrative extractor know who to look for
+     * @param {Object} contentStructure - Session's content structure
+     * @returns {string[]} List of names to search for
+     */
+    extractTargetNamesFromContext(contentStructure) {
+        const names = [];
+
+        if (!contentStructure) return names;
+
+        // Check for explicitly mentioned names in the description
+        const description = contentStructure.rawHumanInput || contentStructure.description || '';
+
+        // Extract capitalized names (2+ words starting with capitals)
+        const namePattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g;
+        let match;
+        while ((match = namePattern.exec(description)) !== null) {
+            names.push(match[1]);
+        }
+
+        // Check column headers for owner/slaveholder columns
+        const columns = contentStructure.columns || [];
+        for (const col of columns) {
+            const header = (col.headerExact || col.headerGuess || '').toLowerCase();
+            if (header.includes('owner') || header.includes('slaveholder') || header.includes('master')) {
+                // This is a slaveholder column - look for common slaveholding family names in region
+                // These would ideally come from a knowledge base
+            }
+        }
+
+        return [...new Set(names)];
     }
 
     /**
