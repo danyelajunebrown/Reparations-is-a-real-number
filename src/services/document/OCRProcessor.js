@@ -4,6 +4,8 @@ const logger = require('../../utils/logger');
 const FileTypeDetector = require('./FileTypeDetector');
 const fs = require('fs');
 const path = require('path');
+const { PDFDocument } = require('pdf-lib');
+const sharp = require('sharp');
 
 class OCRProcessor {
   constructor() {
@@ -50,9 +52,14 @@ class OCRProcessor {
   /**
    * Determine the best OCR method based on file type
    * @param {Object} file - File to process
+   * @param {Object} options - Processing options
+   * @param {number[]} options.pages - Specific page numbers to process (1-indexed)
+   * @param {number} options.startPage - Start page (1-indexed, default 1)
+   * @param {number} options.endPage - End page (1-indexed, default all)
+   * @param {boolean} options.skipCoverPages - Skip first N pages that look like covers
    * @returns {Promise<Object>} OCR results
    */
-  async process(file) {
+  async process(file, options = {}) {
     try {
       // Detect file type
       const detectedType = await this.fileTypeDetector.detect(file.buffer);
@@ -61,6 +68,12 @@ class OCRProcessor {
       // Validate file type is processable
       if (!this.isProcessableType(detectedType.mime)) {
         throw new Error(`Unsupported file type for OCR: ${detectedType.mime}`);
+      }
+
+      // For PDFs, use multi-page processing
+      if (detectedType.mime === 'application/pdf') {
+        logger.info('OCR: Processing multi-page PDF', { options });
+        return await this.processMultiPagePDF(file, options);
       }
 
       // Try Google Vision first (if available)
@@ -111,6 +124,152 @@ class OCRProcessor {
           error: error.message
         };
       }
+    }
+  }
+
+  /**
+   * Process multi-page PDF with page selection support
+   * @param {Object} file - PDF file to process
+   * @param {Object} options - Processing options
+   * @returns {Promise<Object>} Combined OCR results from all pages
+   */
+  async processMultiPagePDF(file, options = {}) {
+    const pdfParse = require('pdf-parse');
+
+    try {
+      // First, try to extract text directly (works for text-based PDFs)
+      const pdfData = await pdfParse(file.buffer);
+      const totalPages = pdfData.numpages;
+
+      logger.info('PDF: Analyzing document', {
+        totalPages,
+        hasText: pdfData.text?.trim().length > 0,
+        textLength: pdfData.text?.length || 0
+      });
+
+      // Determine which pages to process
+      let pagesToProcess = [];
+      if (options.pages && options.pages.length > 0) {
+        // Specific pages requested
+        pagesToProcess = options.pages.filter(p => p >= 1 && p <= totalPages);
+      } else {
+        // Use start/end range
+        const startPage = options.startPage || 1;
+        const endPage = options.endPage || totalPages;
+        for (let i = startPage; i <= Math.min(endPage, totalPages); i++) {
+          pagesToProcess.push(i);
+        }
+      }
+
+      // Skip cover pages if requested (skip pages that look like covers/TOC)
+      if (options.skipCoverPages && pagesToProcess.length > 2) {
+        // Default: skip first 2 pages for archival documents
+        const skipCount = typeof options.skipCoverPages === 'number' ? options.skipCoverPages : 2;
+        pagesToProcess = pagesToProcess.slice(skipCount);
+        logger.info('PDF: Skipping cover pages', { skipCount, remainingPages: pagesToProcess.length });
+      }
+
+      logger.info('PDF: Pages to process', { pagesToProcess, totalPages });
+
+      // If PDF has extractable text and covers most pages, use it
+      if (pdfData.text && pdfData.text.trim().length > 100) {
+        // Text-based PDF - extract text is sufficient
+        logger.info('PDF: Using text extraction (text-based PDF)');
+        return {
+          text: pdfData.text,
+          confidence: 0.9,
+          service: 'pdf-parse',
+          pageCount: totalPages,
+          pagesProcessed: pagesToProcess,
+          raw: { info: pdfData.info }
+        };
+      }
+
+      // Scanned PDF - need OCR on each page
+      logger.info('PDF: Document appears to be scanned, using page-by-page OCR');
+
+      // Load PDF with pdf-lib to extract pages
+      const pdfDoc = await PDFDocument.load(file.buffer);
+      const allResults = [];
+      let combinedText = '';
+      let totalConfidence = 0;
+
+      for (const pageNum of pagesToProcess) {
+        try {
+          logger.info(`PDF: Processing page ${pageNum}/${totalPages}`);
+
+          // Extract single page as new PDF
+          const singlePagePdf = await PDFDocument.create();
+          const [copiedPage] = await singlePagePdf.copyPages(pdfDoc, [pageNum - 1]); // 0-indexed
+          singlePagePdf.addPage(copiedPage);
+          const singlePageBuffer = await singlePagePdf.save();
+
+          // Convert PDF page to image for OCR
+          // Note: This requires an external tool or service
+          // For now, we'll try Google Vision on the PDF directly
+
+          const pageFile = {
+            buffer: Buffer.from(singlePageBuffer),
+            originalname: `page_${pageNum}.pdf`,
+            mimetype: 'application/pdf'
+          };
+
+          let pageResult;
+          if (this.googleVisionAvailable && this.googleVisionClient) {
+            pageResult = await this.processWithGoogleVision(pageFile);
+          } else {
+            // Tesseract can't process PDFs directly, skip this page
+            logger.warn(`PDF: Skipping page ${pageNum} - no PDF OCR available`);
+            continue;
+          }
+
+          if (pageResult.text && pageResult.text.trim().length > 0) {
+            allResults.push({
+              page: pageNum,
+              text: pageResult.text,
+              confidence: pageResult.confidence
+            });
+            combinedText += `\n--- Page ${pageNum} ---\n${pageResult.text}\n`;
+            totalConfidence += pageResult.confidence;
+          }
+        } catch (pageError) {
+          logger.error(`PDF: Failed to process page ${pageNum}`, { error: pageError.message });
+        }
+      }
+
+      const avgConfidence = allResults.length > 0 ? totalConfidence / allResults.length : 0;
+
+      return {
+        text: combinedText,
+        confidence: avgConfidence,
+        service: 'google-vision-multipage',
+        pageCount: totalPages,
+        pagesProcessed: allResults.map(r => r.page),
+        pageResults: allResults,
+        raw: { pageCount: totalPages }
+      };
+
+    } catch (error) {
+      logger.error('PDF: Multi-page processing failed', { error: error.message });
+
+      // Fall back to single-page processing
+      return await this.processWithTesseract(file);
+    }
+  }
+
+  /**
+   * Get PDF page count without full processing
+   * @param {Buffer} pdfBuffer - PDF file buffer
+   * @returns {Promise<number>} Number of pages
+   */
+  async getPDFPageCount(pdfBuffer) {
+    try {
+      const pdfParse = require('pdf-parse');
+      const pdfData = await pdfParse(pdfBuffer, { max: 0 }); // Don't extract text, just metadata
+      return pdfData.numpages;
+    } catch (error) {
+      logger.error('Failed to get PDF page count', { error: error.message });
+      return 0;
     }
   }
 

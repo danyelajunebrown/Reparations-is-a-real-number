@@ -223,6 +223,101 @@ router.post('/:sessionId/confirm', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/contribute/:sessionId/pdf-info
+ * Get PDF page count and info for page selection
+ */
+router.get('/:sessionId/pdf-info', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+
+        const session = await contributionService.getSession(sessionId);
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                error: 'Session not found'
+            });
+        }
+
+        // Get the PDF URL from session
+        const pdfUrl = session.sourceMetadata?.contentUrl || session.url;
+        if (!pdfUrl) {
+            return res.status(400).json({
+                success: false,
+                error: 'No PDF URL found in session'
+            });
+        }
+
+        // Check if it's a PDF
+        if (!pdfUrl.toLowerCase().includes('.pdf')) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL does not appear to be a PDF'
+            });
+        }
+
+        // Try to get page count by downloading and analyzing
+        try {
+            const axios = require('axios');
+            const pdfParse = require('pdf-parse');
+
+            // Fetch first few KB to get page count (PDF metadata is usually at start)
+            const response = await axios.get(pdfUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000,
+                headers: {
+                    'User-Agent': 'Reparations Research Bot (Historical Genealogy Research)',
+                    'Range': 'bytes=0-500000' // Get first 500KB for metadata
+                }
+            });
+
+            let pageCount = 0;
+            let fileSize = response.headers['content-length'] || 'unknown';
+
+            try {
+                const pdfData = await pdfParse(Buffer.from(response.data));
+                pageCount = pdfData.numpages || 0;
+            } catch (parseError) {
+                // If parsing fails, estimate from file size (rough: ~50KB per page for scanned docs)
+                const contentLength = parseInt(response.headers['content-length'] || '0');
+                pageCount = Math.max(1, Math.ceil(contentLength / 100000));
+            }
+
+            res.json({
+                success: true,
+                pdfInfo: {
+                    url: pdfUrl,
+                    pageCount,
+                    fileSize,
+                    suggestedSkip: 2, // Suggest skipping first 2 pages for cover/TOC
+                    archiveType: session.sourceMetadata?.archiveName || 'unknown'
+                }
+            });
+
+        } catch (fetchError) {
+            // If we can't fetch, return basic info
+            res.json({
+                success: true,
+                pdfInfo: {
+                    url: pdfUrl,
+                    pageCount: 0, // Unknown
+                    fileSize: 'unknown',
+                    suggestedSkip: 2,
+                    archiveType: session.sourceMetadata?.archiveName || 'unknown',
+                    note: 'Could not fetch PDF metadata. You can still specify page numbers manually.'
+                }
+            });
+        }
+
+    } catch (error) {
+        console.error('PDF info error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
     /**
      * POST /api/contribute/:sessionId/extract
      * Start extraction with chosen method

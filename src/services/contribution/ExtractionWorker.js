@@ -645,6 +645,7 @@ class ExtractionWorker {
 
     /**
      * Parse OCR text into structured rows based on column definitions
+     * Uses intelligent table detection and multiple parsing strategies
      * @param {string} ocrText - Raw OCR text
      * @param {Array} columns - Column definitions
      * @returns {Promise<Array>} Parsed rows
@@ -660,33 +661,78 @@ class ExtractionWorker {
                 return [];
             }
 
+            this.debug('PARSE_INIT', 'Starting OCR text parsing', {
+                textLength: ocrText.length,
+                columnCount: columns.length,
+                columnHeaders: columns.map(c => c.headerExact || c.headerGuess)
+            });
+
             // Split text into lines
             const lines = ocrText.split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
 
+            // Try to detect table structure
+            const tableStructure = this.detectTableStructure(lines, columns);
+            this.debug('PARSE_STRUCTURE', 'Table structure detected', tableStructure);
+
             const parsedRows = [];
+            let rowIndex = 0;
 
-            // Parse each line into columns
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
+            // Parse based on detected structure
+            if (tableStructure.type === 'tab_delimited') {
+                // Tab-separated values
+                for (const line of lines) {
+                    if (this.isHeaderLine(line, columns)) continue;
+                    if (this.isNoiseLine(line)) continue;
 
-                // Skip header lines that match column headers exactly
-                const headerMatch = columns.some(col =>
-                    line.includes(col.headerExact || col.headerGuess || '')
-                );
-
-                if (headerMatch && i === 0) {
-                    continue; // Skip header row
+                    const row = this.parseTabDelimited(line, columns, rowIndex++);
+                    if (row && Object.keys(row.columns).length >= 2) {
+                        parsedRows.push(row);
+                    }
                 }
+            } else if (tableStructure.type === 'fixed_width') {
+                // Fixed-width columns (common in historical records)
+                for (const line of lines) {
+                    if (this.isHeaderLine(line, columns)) continue;
+                    if (this.isNoiseLine(line)) continue;
 
-                // Parse line into columns
-                const row = this.parseLineToColumns(line, columns);
+                    const row = this.parseFixedWidth(line, columns, tableStructure.columnPositions, rowIndex++);
+                    if (row && Object.keys(row.columns).length >= 2) {
+                        parsedRows.push(row);
+                    }
+                }
+            } else if (tableStructure.type === 'pipe_delimited') {
+                // Pipe-separated values
+                for (const line of lines) {
+                    if (this.isHeaderLine(line, columns)) continue;
+                    if (this.isNoiseLine(line)) continue;
 
-                if (row && Object.keys(row.columns).length > 0) {
-                    parsedRows.push(row);
+                    const row = this.parsePipeDelimited(line, columns, rowIndex++);
+                    if (row && Object.keys(row.columns).length >= 2) {
+                        parsedRows.push(row);
+                    }
+                }
+            } else {
+                // Smart whitespace-based parsing
+                for (const line of lines) {
+                    if (this.isHeaderLine(line, columns)) continue;
+                    if (this.isNoiseLine(line)) continue;
+
+                    const row = this.parseSmartWhitespace(line, columns, rowIndex++);
+                    if (row && Object.keys(row.columns).length >= 2) {
+                        parsedRows.push(row);
+                    }
                 }
             }
+
+            this.debug('PARSE_COMPLETE', 'OCR parsing completed', {
+                lineCount: lines.length,
+                parsedRowCount: parsedRows.length,
+                avgConfidence: parsedRows.length > 0
+                    ? (parsedRows.reduce((sum, r) => sum + r.confidence, 0) / parsedRows.length).toFixed(2)
+                    : 0
+            });
 
             logger.operation('OCR text parsed into rows', {
                 lineCount: lines.length,
@@ -705,41 +751,308 @@ class ExtractionWorker {
     }
 
     /**
-     * Parse a single line into column values
+     * Detect the table structure from OCR text
+     * @param {string[]} lines - Text lines
+     * @param {Array} columns - Expected columns
+     * @returns {Object} Structure info
+     */
+    detectTableStructure(lines, columns) {
+        const structure = {
+            type: 'whitespace',
+            columnPositions: [],
+            delimiter: null,
+            confidence: 0.5
+        };
+
+        // Sample first 20 non-header lines
+        const sampleLines = lines.slice(0, 20).filter(l => !this.isNoiseLine(l));
+
+        if (sampleLines.length === 0) return structure;
+
+        // Check for tab delimiters
+        const tabCount = sampleLines.filter(l => l.includes('\t')).length;
+        if (tabCount / sampleLines.length > 0.5) {
+            structure.type = 'tab_delimited';
+            structure.delimiter = '\t';
+            structure.confidence = 0.9;
+            return structure;
+        }
+
+        // Check for pipe delimiters
+        const pipeCount = sampleLines.filter(l => l.includes('|')).length;
+        if (pipeCount / sampleLines.length > 0.5) {
+            structure.type = 'pipe_delimited';
+            structure.delimiter = '|';
+            structure.confidence = 0.9;
+            return structure;
+        }
+
+        // Check for fixed-width by analyzing spacing patterns
+        const columnPositions = this.detectFixedWidthColumns(sampleLines, columns.length);
+        if (columnPositions.length >= columns.length - 1) {
+            structure.type = 'fixed_width';
+            structure.columnPositions = columnPositions;
+            structure.confidence = 0.7;
+            return structure;
+        }
+
+        return structure;
+    }
+
+    /**
+     * Detect fixed-width column positions by analyzing whitespace patterns
+     * @param {string[]} lines - Sample lines
+     * @param {number} expectedColumns - Expected number of columns
+     * @returns {number[]} Column start positions
+     */
+    detectFixedWidthColumns(lines, expectedColumns) {
+        if (lines.length === 0) return [];
+
+        // Find the longest line to establish max width
+        const maxLength = Math.max(...lines.map(l => l.length));
+
+        // Count spaces at each position across all lines
+        const spaceFrequency = new Array(maxLength).fill(0);
+
+        for (const line of lines) {
+            for (let i = 0; i < line.length; i++) {
+                if (line[i] === ' ' && i > 0 && line[i-1] !== ' ') {
+                    // This is a transition from non-space to space
+                    spaceFrequency[i]++;
+                }
+            }
+        }
+
+        // Find positions with high space frequency (likely column boundaries)
+        const threshold = lines.length * 0.4;
+        const boundaries = [];
+
+        for (let i = 0; i < spaceFrequency.length; i++) {
+            if (spaceFrequency[i] >= threshold) {
+                // Merge nearby boundaries
+                if (boundaries.length === 0 || i - boundaries[boundaries.length - 1] > 3) {
+                    boundaries.push(i);
+                }
+            }
+        }
+
+        return boundaries;
+    }
+
+    /**
+     * Check if a line is a header line
+     * @param {string} line - Line to check
+     * @param {Array} columns - Column definitions
+     * @returns {boolean}
+     */
+    isHeaderLine(line, columns) {
+        const lineLower = line.toLowerCase();
+        let matchCount = 0;
+
+        for (const col of columns) {
+            const header = (col.headerExact || col.headerGuess || '').toLowerCase();
+            if (header && lineLower.includes(header)) {
+                matchCount++;
+            }
+        }
+
+        // If more than half of column headers match, it's a header line
+        return matchCount >= columns.length / 2;
+    }
+
+    /**
+     * Check if a line is noise (headers, footers, page numbers, etc.)
+     * @param {string} line - Line to check
+     * @returns {boolean}
+     */
+    isNoiseLine(line) {
+        // Skip very short lines
+        if (line.length < 5) return true;
+
+        // Skip page numbers
+        if (/^(page\s*)?\d+\s*$/i.test(line)) return true;
+
+        // Skip lines that are all dashes or equals (table borders)
+        if (/^[-=_|+]+$/.test(line)) return true;
+
+        // Skip lines with only special characters
+        if (/^[^a-zA-Z0-9]+$/.test(line)) return true;
+
+        // Skip common document noise
+        const noisePatterns = [
+            /^copyright/i,
+            /^all rights reserved/i,
+            /^continued/i,
+            /^total[:\s]/i,
+            /^\(continued\)/i,
+            /^maryland historical/i,
+            /^page \d+ of \d+/i,
+            /^--- page/i
+        ];
+
+        return noisePatterns.some(pattern => pattern.test(line));
+    }
+
+    /**
+     * Parse a tab-delimited line
+     */
+    parseTabDelimited(line, columns, rowIndex) {
+        const values = line.split('\t').map(v => v.trim());
+        return this.assignValuesToColumns(values, columns, line, rowIndex);
+    }
+
+    /**
+     * Parse a pipe-delimited line
+     */
+    parsePipeDelimited(line, columns, rowIndex) {
+        const values = line.split('|').map(v => v.trim()).filter(v => v.length > 0);
+        return this.assignValuesToColumns(values, columns, line, rowIndex);
+    }
+
+    /**
+     * Parse a fixed-width line
+     */
+    parseFixedWidth(line, columns, positions, rowIndex) {
+        const values = [];
+        let lastPos = 0;
+
+        for (const pos of positions) {
+            values.push(line.substring(lastPos, pos).trim());
+            lastPos = pos;
+        }
+        // Get the last column
+        values.push(line.substring(lastPos).trim());
+
+        return this.assignValuesToColumns(values.filter(v => v.length > 0), columns, line, rowIndex);
+    }
+
+    /**
+     * Smart whitespace-based parsing that looks for 2+ consecutive spaces
+     */
+    parseSmartWhitespace(line, columns, rowIndex) {
+        // Split by 2+ spaces (common in typed/printed documents)
+        const values = line.split(/\s{2,}/)
+            .map(v => v.trim())
+            .filter(v => v.length > 0);
+
+        // If we got reasonable number of values, use them
+        if (values.length >= 2) {
+            return this.assignValuesToColumns(values, columns, line, rowIndex);
+        }
+
+        // Otherwise, try splitting by single space but be smarter about it
+        // Look for capitalized words that might start new columns
+        const smartValues = this.intelligentSplit(line, columns);
+        return this.assignValuesToColumns(smartValues, columns, line, rowIndex);
+    }
+
+    /**
+     * Intelligent split based on expected column types
+     * @param {string} line - Line to split
+     * @param {Array} columns - Column definitions with data types
+     * @returns {string[]} Split values
+     */
+    intelligentSplit(line, columns) {
+        const values = [];
+        let remaining = line.trim();
+
+        for (let i = 0; i < columns.length && remaining.length > 0; i++) {
+            const col = columns[i];
+            const dataType = col.dataType;
+
+            let extracted = null;
+            let match = null;
+
+            // Try to extract based on expected data type
+            switch (dataType) {
+                case 'date':
+                    // Match date patterns: YYYY, MM/DD/YYYY, Month DD, YYYY, etc.
+                    match = remaining.match(/^(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4}|[A-Za-z]+\s+\d{4})\s*/);
+                    break;
+                case 'age':
+                    // Match age patterns: number or range
+                    match = remaining.match(/^(\d{1,3}(?:\s*-\s*\d{1,3})?(?:\s*(?:years?|yrs?|mos?|months?))?)\s*/i);
+                    break;
+                case 'gender':
+                    // Match gender: M, F, Male, Female, Man, Woman
+                    match = remaining.match(/^(M|F|Male|Female|Man|Woman|Boy|Girl)\s*/i);
+                    break;
+                case 'owner_name':
+                case 'enslaved_name':
+                case 'witness':
+                    // Match names: Capitalized words with possible suffixes
+                    match = remaining.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Jr\.?|Sr\.?|III?|IV|V))?)\s*/);
+                    break;
+                case 'compensation':
+                    // Match money: $XXX.XX or number
+                    match = remaining.match(/^(\$?\d+(?:\.\d{2})?|\d+\s*(?:dollars?|cts?|cents?))\s*/i);
+                    break;
+                default:
+                    // Generic: take until next large gap or end
+                    match = remaining.match(/^([^\s]{1,50}(?:\s[^\s]+){0,5}?)\s{2,}|^(.+)$/);
+            }
+
+            if (match) {
+                extracted = (match[1] || match[2] || '').trim();
+                remaining = remaining.substring(match[0].length).trim();
+            } else {
+                // Fall back: take first word
+                const spaceIdx = remaining.indexOf(' ');
+                if (spaceIdx > 0) {
+                    extracted = remaining.substring(0, spaceIdx);
+                    remaining = remaining.substring(spaceIdx + 1).trim();
+                } else {
+                    extracted = remaining;
+                    remaining = '';
+                }
+            }
+
+            if (extracted) {
+                values.push(extracted);
+            }
+        }
+
+        return values;
+    }
+
+    /**
+     * Assign extracted values to columns
+     */
+    assignValuesToColumns(values, columns, rawLine, rowIndex) {
+        const row = {
+            rowIndex,
+            columns: {},
+            confidence: 0,
+            rawText: rawLine
+        };
+
+        // Assign values to columns based on position
+        let assignedCount = 0;
+        for (let i = 0; i < Math.min(values.length, columns.length); i++) {
+            const column = columns[i];
+            const value = values[i];
+
+            if (column && value && value.length > 0) {
+                const headerName = column.headerExact || column.headerGuess || `Column ${column.position}`;
+                row.columns[headerName] = value;
+                assignedCount++;
+            }
+        }
+
+        // Calculate confidence based on column fill rate
+        row.confidence = assignedCount / columns.length;
+
+        return row;
+    }
+
+    /**
+     * Parse a single line into column values (legacy method for compatibility)
      * @param {string} line - Text line
      * @param {Array} columns - Column definitions
      * @returns {Object} Parsed row
      */
     parseLineToColumns(line, columns) {
-        const row = {
-            rowIndex: 0, // Will be set by caller
-            columns: {},
-            confidence: 0.85, // Default confidence
-            rawText: line
-        };
-
-        // Simple parsing: split by whitespace and assign to columns
-        const values = line.split(/\s{2,}/) // Split by 2+ spaces
-            .map(v => v.trim())
-            .filter(v => v.length > 0);
-
-        // Assign values to columns based on position
-        for (let i = 0; i < Math.min(values.length, columns.length); i++) {
-            const column = columns[i];
-            const value = values[i];
-
-            if (column && value) {
-                const headerName = column.headerExact || column.headerGuess || `Column ${column.position}`;
-                row.columns[headerName] = value;
-            }
-        }
-
-        // Calculate confidence based on line completeness
-        const filledColumns = Object.keys(row.columns).length;
-        const totalColumns = columns.length;
-        row.confidence = filledColumns / totalColumns;
-
-        return row;
+        return this.parseSmartWhitespace(line, columns, 0);
     }
 
     /**

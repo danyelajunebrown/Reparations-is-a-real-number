@@ -812,13 +812,29 @@ I work best with:
 
         // Select extraction method
         async function selectExtractionMethod(method) {
-            addMessage('user', `I'll use: ${method}`);
+            // Get page selection options if available
+            const pageOptions = getPageSelectionOptions();
+            const hasPageOptions = Object.keys(pageOptions).length > 0;
+
+            let displayMethod = method;
+            if (hasPageOptions) {
+                if (pageOptions.pages) {
+                    displayMethod += ` (pages: ${pageOptions.pages.join(', ')})`;
+                } else if (pageOptions.startPage) {
+                    displayMethod += ` (pages ${pageOptions.startPage}${pageOptions.endPage ? '-' + pageOptions.endPage : '+'})`;
+                }
+            }
+
+            addMessage('user', `I'll use: ${displayMethod}`);
 
             try {
                 const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/extract`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ method })
+                    body: JSON.stringify({
+                        method,
+                        options: hasPageOptions ? pageOptions : undefined
+                    })
                 });
 
                 const data = await response.json();
@@ -1427,14 +1443,14 @@ I work best with:
 
                 <!-- MANUAL OPTIONS - Always Available -->
                 <div style="margin-bottom: 20px; padding: 15px; background: #1a3a5c; border-radius: 8px; border: 2px solid #00d9ff;">
-                    <h4 style="color: #00d9ff; margin-bottom: 10px;">📌 Manual Methods (Always Work)</h4>
+                    <h4 style="color: #00d9ff; margin-bottom: 10px;">⭐ RECOMMENDED: Manual Methods (Always Work)</h4>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
-                        <div class="extraction-option" onclick="showScreenshotUpload()" style="background: #16213e; cursor: pointer;">
+                        <div class="extraction-option recommended" onclick="showScreenshotUpload()" style="background: #16213e; cursor: pointer;">
                             <h4>📸 Screenshot Upload</h4>
                             <p>Take screenshots of the document pages and upload them</p>
-                            <small style="opacity: 0.6;">Best for: Protected sites, complex layouts, any document</small>
+                            <small style="opacity: 0.6;">Best for: Protected sites, complex layouts, ANY document</small>
                         </div>
-                        <div class="extraction-option" onclick="showTextCopyInterface()" style="background: #16213e; cursor: pointer;">
+                        <div class="extraction-option recommended" onclick="showTextCopyInterface()" style="background: #16213e; cursor: pointer;">
                             <h4>📝 Copy & Paste Text</h4>
                             <p>Copy text from the document and paste it here</p>
                             <small style="opacity: 0.6;">Best for: When you can select text in the document</small>
@@ -1442,9 +1458,32 @@ I work best with:
                     </div>
                 </div>
 
+                <!-- PDF PAGE SELECTION (shown for PDFs) -->
+                <div id="pdfPageSelection" style="display: none; margin-bottom: 20px; padding: 15px; background: #0f3460; border-radius: 8px; border: 1px solid #667eea;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">📄 PDF Page Selection</h4>
+                    <p style="font-size: 0.9em; margin-bottom: 10px; opacity: 0.8;">
+                        Multi-page PDFs often have cover pages and table of contents. Specify which pages contain the actual data.
+                    </p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 0.85em;">Start Page:</label>
+                            <input type="number" id="pdfStartPage" value="3" min="1" style="width: 100%; padding: 8px; background: #16213e; border: 1px solid #333; border-radius: 4px; color: #eee;">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85em;">End Page:</label>
+                            <input type="number" id="pdfEndPage" value="" placeholder="All" min="1" style="width: 100%; padding: 8px; background: #16213e; border: 1px solid #333; border-radius: 4px; color: #eee;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 0.85em;">Or specific pages (comma-separated):</label>
+                        <input type="text" id="pdfSpecificPages" placeholder="e.g., 3,5,7,8,9" style="width: 100%; padding: 8px; background: #16213e; border: 1px solid #333; border-radius: 4px; color: #eee;">
+                    </div>
+                    <div id="pdfPageInfo" style="font-size: 0.85em; color: #00d9ff;"></div>
+                </div>
+
                 <!-- AUTOMATIC OPTIONS -->
                 <div style="margin-bottom: 10px;">
-                    <h4 style="color: #667eea; margin-bottom: 10px;">🤖 Automatic Methods</h4>
+                    <h4 style="color: #667eea; margin-bottom: 10px;">🤖 Automatic Methods (May Fail for Protected Sites)</h4>
                 </div>
             ` + options.map(opt => `
                 <div class="extraction-option ${opt.recommended ? 'recommended' : ''}"
@@ -1454,6 +1493,62 @@ I work best with:
                     <small style="opacity: 0.6;">Best for: ${opt.bestFor}</small>
                 </div>
             `).join('');
+
+            // Check if it's a PDF and show page selection
+            checkAndShowPdfPageSelection();
+        }
+
+        // Check if current document is a PDF and show page selection options
+        async function checkAndShowPdfPageSelection() {
+            if (!sessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/pdf-info`);
+                const data = await response.json();
+
+                if (data.success && data.pdfInfo) {
+                    const pdfSection = document.getElementById('pdfPageSelection');
+                    pdfSection.style.display = 'block';
+
+                    const infoDiv = document.getElementById('pdfPageInfo');
+                    if (data.pdfInfo.pageCount > 0) {
+                        infoDiv.innerHTML = `
+                            📊 Document has <strong>${data.pdfInfo.pageCount}</strong> pages.
+                            <br>💡 Tip: Many archival PDFs have cover pages. We suggest starting from page 3.
+                        `;
+                        document.getElementById('pdfEndPage').placeholder = data.pdfInfo.pageCount;
+                    } else if (data.pdfInfo.note) {
+                        infoDiv.innerHTML = `ℹ️ ${data.pdfInfo.note}`;
+                    }
+                }
+            } catch (error) {
+                console.log('PDF info check failed (may not be a PDF):', error.message);
+            }
+        }
+
+        // Get page selection options for extraction
+        function getPageSelectionOptions() {
+            const options = {};
+            const specificPages = document.getElementById('pdfSpecificPages')?.value?.trim();
+
+            if (specificPages) {
+                // Parse comma-separated page numbers
+                options.pages = specificPages.split(',')
+                    .map(p => parseInt(p.trim()))
+                    .filter(p => !isNaN(p) && p > 0);
+            } else {
+                const startPage = parseInt(document.getElementById('pdfStartPage')?.value);
+                const endPage = parseInt(document.getElementById('pdfEndPage')?.value);
+
+                if (startPage && !isNaN(startPage)) {
+                    options.startPage = startPage;
+                }
+                if (endPage && !isNaN(endPage)) {
+                    options.endPage = endPage;
+                }
+            }
+
+            return options;
         }
 
         // Handle Enter key in chat input
