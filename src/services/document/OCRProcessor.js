@@ -169,18 +169,65 @@ class OCRProcessor {
         logger.info('PDF: Skipping cover pages', { skipCount, remainingPages: pagesToProcess.length });
       }
 
-      logger.info('PDF: Pages to process', { pagesToProcess, totalPages });
+      logger.info('PDF: Pages to process', { pagesToProcess, totalPages, options });
 
-      // If PDF has extractable text and covers most pages, use it
+      // If PDF has extractable text, we still need to respect page selection
       if (pdfData.text && pdfData.text.trim().length > 100) {
-        // Text-based PDF - extract text is sufficient
-        logger.info('PDF: Using text extraction (text-based PDF)');
+        logger.info('PDF: Text-based PDF detected');
+
+        // Check if page selection is requested
+        const needsPageFilter = (options.startPage && options.startPage > 1) ||
+                               options.endPage ||
+                               (options.pages && options.pages.length > 0);
+
+        if (needsPageFilter) {
+          // Extract only selected pages using pdf-lib
+          logger.info('PDF: Page selection requested, extracting specific pages', { pagesToProcess });
+
+          try {
+            const pdfDoc = await PDFDocument.load(file.buffer);
+            const selectedPagesDoc = await PDFDocument.create();
+
+            // Copy only the selected pages
+            for (const pageNum of pagesToProcess) {
+              if (pageNum <= pdfDoc.getPageCount()) {
+                const [copiedPage] = await selectedPagesDoc.copyPages(pdfDoc, [pageNum - 1]); // 0-indexed
+                selectedPagesDoc.addPage(copiedPage);
+              }
+            }
+
+            const selectedPagesBuffer = await selectedPagesDoc.save();
+
+            // Parse text from selected pages only
+            const selectedPdfData = await pdfParse(Buffer.from(selectedPagesBuffer));
+
+            logger.info('PDF: Extracted text from selected pages', {
+              selectedPages: pagesToProcess.length,
+              textLength: selectedPdfData.text?.length || 0
+            });
+
+            return {
+              text: selectedPdfData.text,
+              confidence: 0.9,
+              service: 'pdf-parse-filtered',
+              pageCount: totalPages,
+              pagesProcessed: pagesToProcess,
+              raw: { info: selectedPdfData.info, totalPages, selectedPages: pagesToProcess }
+            };
+          } catch (pageFilterError) {
+            logger.error('PDF: Failed to filter pages, falling back to full text', { error: pageFilterError.message });
+            // Fall through to return full text
+          }
+        }
+
+        // No page selection or page filter failed - return full text
+        logger.info('PDF: Using full text extraction');
         return {
           text: pdfData.text,
           confidence: 0.9,
           service: 'pdf-parse',
           pageCount: totalPages,
-          pagesProcessed: pagesToProcess,
+          pagesProcessed: Array.from({ length: totalPages }, (_, i) => i + 1),
           raw: { info: pdfData.info }
         };
       }
