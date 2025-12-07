@@ -375,6 +375,99 @@ Uses OpenZeppelin: ReentrancyGuard, Ownable, Pausable
 5. Enable HTTPS/TLS
 6. Consider rate limiting on upload endpoints
 
+## Contribution & Extraction System (December 2024)
+
+The platform includes a crowdsourced document contribution pipeline for extracting historical slavery records from archives.
+
+### Key Services
+
+**Contribution Pipeline** (`src/services/contribution/`):
+- `ContributionSession.js` - Manages the multi-step contribution workflow
+- `ExtractionWorker.js` - OCR processing with debug logging and database persistence
+- `NarrativeExtractor.js` - AI-powered entity extraction from prose/narrative text
+
+### Contribution API Flow
+
+```
+POST /api/contribute/start
+  - Body: { url: string }
+  - Analyzes URL, identifies source type (government archive, etc.)
+  - Returns: { sessionId, analysis, questions }
+
+POST /api/contribute/:sessionId/describe
+  - Body: { description: string, answers: { layout_type, scan_quality, handwriting_type } }
+  - User describes document structure
+  - Returns: { columns, questions }
+
+POST /api/contribute/:sessionId/confirm
+  - Body: { corrections: {} }
+  - Confirms or corrects column structure
+  - Returns: { success, message }
+
+POST /api/contribute/:sessionId/extract
+  - Body: { method: "auto_ocr" | "manual" }
+  - Triggers OCR extraction
+  - Returns: { extractionId, stage: "extraction_in_progress" }
+
+GET /api/contribute/:sessionId/extraction/:extractionId/status
+  - Returns extraction progress, parsed rows, debug logs
+```
+
+### Narrative Extraction (NarrativeExtractor.js)
+
+Extracts entities from prose text using regex patterns:
+- **Slaveholders**: Names followed by "owned X slaves" patterns
+- **Slave Counts**: Word-to-number conversion ("ten slaves" → 10)
+- **Suspected Enslaved**: Creates placeholder records `[Unknown - 1 of N]` indexed to owners
+- **Name Filtering**: Rejects location words (mill, creek), conjunctions, non-name words
+
+### Database Persistence (ExtractionWorker.js)
+
+The `persistToUnconfirmedPersons()` method saves extracted findings:
+- Enslaved persons → `unconfirmed_persons` table with `person_type='enslaved'` or `'suspected_enslaved'`
+- Slaveholders → `unconfirmed_persons` table with `person_type='slaveholder'`
+- Relationships stored in JSONB field linking enslaved to owners
+- Confidence scores and source URLs tracked
+
+### Database Tables
+
+**`unconfirmed_persons`** - Pending human review:
+- `full_name`, `person_type` (enslaved/slaveholder/suspected_enslaved)
+- `source_url`, `extraction_method` (ocr_extraction/narrative_count/narrative_extraction)
+- `confidence_score` (0-1), `context_text`, `relationships` (JSONB)
+- `status` ('pending' for review)
+
+**`extraction_jobs`** - Extraction processing:
+- `extraction_id`, `session_id`, `status` (pending/processing/completed/failed)
+- `parsed_rows` (JSONB), `raw_ocr_text`, `debug_log` (JSONB)
+- `row_count`, `avg_confidence`
+
+**`contribution_sessions`** - Contribution workflow state:
+- `session_id`, `url`, `stage`, `source_metadata` (JSONB)
+- `content_structure` (JSONB with columns)
+
+### Testing Extractions
+
+```bash
+# Start a contribution session
+curl -X POST "https://reparations-platform.onrender.com/api/contribute/start" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://msa.maryland.gov/path/to/document.pdf"}'
+
+# Describe the document
+curl -X POST "https://reparations-platform.onrender.com/api/contribute/$SESSION_ID/describe" \
+  -H "Content-Type: application/json" \
+  -d '{"description":"Prose document", "answers":{"layout_type":"prose","scan_quality":"good","handwriting_type":"printed"}}'
+
+# Trigger extraction
+curl -X POST "https://reparations-platform.onrender.com/api/contribute/$SESSION_ID/extract" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"auto_ocr"}'
+
+# Check status
+curl "https://reparations-platform.onrender.com/api/contribute/$SESSION_ID/extraction/$EXTRACTION_ID/status"
+```
+
 ## Common Issues & Solutions
 
 **JavaScript Parser Errors Breaking Frontend**:
