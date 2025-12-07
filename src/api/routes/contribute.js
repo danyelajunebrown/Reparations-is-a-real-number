@@ -8,8 +8,26 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const ContributionSession = require('../../services/contribution/ContributionSession');
 const OwnerPromotion = require('../../services/contribution/OwnerPromotion');
+
+// Configure multer for file uploads (memory storage for processing)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max per file
+        files: 20 // Max 20 files at once
+    },
+    fileFilter: (req, file, cb) => {
+        // Accept only images
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed'), false);
+        }
+    }
+});
 
 // Will be initialized with database connection
 let contributionService = null;
@@ -607,24 +625,28 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
     /**
      * POST /api/contribute/:sessionId/extraction/:extractionId/screenshots
      * Process uploaded screenshots when PDF download fails
+     * Uses multer middleware for file uploads
      */
-    router.post('/:sessionId/extraction/:extractionId/screenshots', async (req, res) => {
+    router.post('/:sessionId/extraction/:extractionId/screenshots', upload.array('images', 20), async (req, res) => {
         try {
             const { sessionId, extractionId } = req.params;
 
-            if (!req.files || !req.files.images || req.files.images.length === 0) {
+            // req.files is an array when using upload.array()
+            if (!req.files || req.files.length === 0) {
                 return res.status(400).json({
                     success: false,
-                    error: 'At least one image file required'
+                    error: 'At least one image file required. Make sure to use form field name "images".'
                 });
             }
 
+            console.log(`Processing ${req.files.length} uploaded screenshots for extraction ${extractionId}`);
+
             // Process screenshots using OCR processor
-            const ocrResults = await contributionService.processScreenshots(extractionId, req.files.images);
+            const ocrResults = await contributionService.processScreenshots(extractionId, req.files);
 
             res.json({
                 success: true,
-                message: `Processed ${req.files.images.length} screenshots: ${ocrResults.rowCount} rows extracted`,
+                message: `Processed ${req.files.length} screenshots: ${ocrResults.rowCount} rows extracted`,
                 rowCount: ocrResults.rowCount,
                 avgConfidence: ocrResults.avgConfidence,
                 parsedRows: ocrResults.parsedRows
