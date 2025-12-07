@@ -1,8 +1,98 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 5, 2025
-**Current Phase:** OCR Extraction Pipeline Debugging
+**Last Updated:** December 6, 2025
+**Current Phase:** Comprehensive Historical Data Model
 **Active Branch:** main
+
+---
+
+## Recent Major Changes (Dec 6, 2025)
+
+### 14. Comprehensive Historical Data Model Enhancement (Dec 6, 2025)
+
+**Problem Solved:** The database schema was designed for simple owner→enslaved relationships but couldn't represent complex historical documents like the 1733 Talbot County Tax Assessment, which includes households, geographic subdivisions (hundreds), occupations, legal statuses, property/quarters, and requires provenance tracking.
+
+**Solution Implemented:** Migration 007 adds 7 major enhancements:
+
+#### 1. Household System
+```sql
+households                 -- Groups of people living/taxed together
+household_members          -- Junction table linking individuals to households
+```
+- Tracks head of household, member status (dependent, kin, servant, apprentice, orphan)
+- Records taxable counts by race/gender
+- Links to geographic subdivisions and source documents
+
+#### 2. Hierarchical Geography
+```sql
+geographic_subdivisions    -- Country → State → County → Hundred → Parish
+```
+- Pre-populated with Maryland and Talbot County's 6 hundreds
+- Recursive view `geographic_hierarchy` for full path queries
+- Supports historical subdivisions that no longer exist
+
+#### 3. Occupation & Honorific Fields
+```sql
+individuals.occupation           -- 'planter', 'blacksmith', etc.
+individuals.occupation_category  -- 'craftsman', 'planter', 'merchant'
+individuals.honorific            -- 'Gent', 'Esq', 'Dr', 'Capt'
+individuals.title                -- 'Justice of the Peace', 'Sheriff'
+enslaved_individuals.occupation  -- 'field_hand', 'domestic', 'blacksmith'
+enslaved_individuals.skill_level -- 'skilled', 'semi_skilled', 'unskilled'
+```
+
+#### 4. Legal & Racial Status Fields
+```sql
+individuals.racial_designation        -- As recorded in historical documents
+individuals.racial_designation_modern -- Modern terminology
+individuals.legal_status              -- 'free', 'indentured', 'apprenticed'
+individuals.is_taxable                -- Tax liability status
+enslaved_individuals.racial_designation -- 'negro', 'mulatto', 'mustee'
+enslaved_individuals.enslaved_status   -- 'enslaved', 'term_slave', 'hired_out'
+```
+
+#### 5. Property & Quarter System
+```sql
+properties                 -- Land holdings, plantations, quarters
+property_residents         -- Who lived/worked on each property
+```
+- Supports plantation→quarter hierarchy
+- Tracks ownership, acreage, acquisition/disposition
+- Links residents with roles (owner, overseer, worker, domestic)
+
+#### 6. Enhanced Name Handling
+```sql
+enslaved_individuals.given_name      -- First name
+enslaved_individuals.surname         -- Often unknown
+enslaved_individuals.name_type       -- 'given_only', 'full', 'partial'
+enslaved_individuals.gender_source   -- 'explicit', 'inferred_from_name'
+enslaved_individuals.gender_confidence
+```
+
+#### 7. Data Attribution & Provenance
+```sql
+source_types              -- 13 source types with reliability weights
+data_attributions         -- Links any field to its source(s)
+inference_log             -- Tracks when data was inferred vs. recorded
+```
+- Reliability weights: tax_list (0.95) → oral_history (0.50)
+- Supports multi-source verification
+- Audit trail for inferences
+
+#### 8. Expanded Relationship Types
+```sql
+relationship_types        -- 39 relationship types in 5 categories
+```
+- Categories: kinship, legal, economic, residential, ecclesiastical
+- Includes: enslaver/enslaved_by, master/apprentice, guardian/ward, overseer/supervised, head_of_household/household_member
+
+**New Views Created:**
+- `household_full` - Complete household with all members as JSON
+- `geographic_hierarchy` - Full geographic path for any subdivision
+- `property_with_residents` - Property with all residents as JSON
+- `data_provenance_summary` - Attribution stats per record
+
+**Migration File:** `migrations/007-comprehensive-historical-data-model.sql`
 
 ---
 
