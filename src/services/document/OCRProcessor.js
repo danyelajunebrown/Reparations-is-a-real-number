@@ -2,15 +2,47 @@ const vision = require('@google-cloud/vision');
 const Tesseract = require('tesseract.js');
 const logger = require('../../utils/logger');
 const FileTypeDetector = require('./FileTypeDetector');
+const fs = require('fs');
+const path = require('path');
 
 class OCRProcessor {
   constructor() {
     const config = require('../../../config');
-    
-    // Configure Google Vision client
-    this.googleVisionClient = new vision.ImageAnnotatorClient({
-      keyFilename: config.apiKeys.googleVisionKeyPath
-    });
+
+    // Configure Google Vision client with multiple auth options
+    let visionConfig = {};
+
+    // Option 1: Credentials passed as JSON string in environment variable (for Render)
+    if (config.apiKeys.googleVisionCredentials) {
+      try {
+        const credentials = JSON.parse(config.apiKeys.googleVisionCredentials);
+        visionConfig = { credentials };
+        logger.info('Google Vision: Using credentials from environment variable');
+      } catch (e) {
+        logger.error('Failed to parse GOOGLE_VISION_CREDENTIALS', { error: e.message });
+      }
+    }
+    // Option 2: Credentials file path
+    else if (config.apiKeys.googleVisionKeyPath) {
+      const keyPath = path.resolve(config.apiKeys.googleVisionKeyPath);
+      if (fs.existsSync(keyPath)) {
+        visionConfig = { keyFilename: keyPath };
+        logger.info('Google Vision: Using credentials file', { path: keyPath });
+      } else {
+        logger.warn('Google Vision credentials file not found', { path: keyPath });
+      }
+    }
+
+    // Create client (may fail if no valid credentials)
+    try {
+      this.googleVisionClient = new vision.ImageAnnotatorClient(visionConfig);
+      this.googleVisionAvailable = true;
+      logger.info('Google Vision client initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize Google Vision client', { error: error.message });
+      this.googleVisionClient = null;
+      this.googleVisionAvailable = false;
+    }
 
     this.fileTypeDetector = new FileTypeDetector();
   }
@@ -24,24 +56,38 @@ class OCRProcessor {
     try {
       // Detect file type
       const detectedType = await this.fileTypeDetector.detect(file.buffer);
+      logger.info('OCR: Detected file type', { mime: detectedType.mime, ext: detectedType.ext });
 
       // Validate file type is processable
       if (!this.isProcessableType(detectedType.mime)) {
         throw new Error(`Unsupported file type for OCR: ${detectedType.mime}`);
       }
 
-      // Try Google Vision first
-      const googleResults = await this.processWithGoogleVision(file);
+      // Try Google Vision first (if available)
+      if (this.googleVisionAvailable && this.googleVisionClient) {
+        try {
+          logger.info('OCR: Attempting Google Vision');
+          const googleResults = await this.processWithGoogleVision(file);
 
-      // If Google Vision fails or has low confidence, fall back to Tesseract
-      if (googleResults.confidence < 0.8) {
-        const tesseractResults = await this.processWithTesseract(file);
-        
-        // Compare and choose best results
-        return this.chooseBestResults(googleResults, tesseractResults);
+          // If Google Vision has good confidence, use it
+          if (googleResults.confidence >= 0.8) {
+            return googleResults;
+          }
+
+          // If low confidence, try Tesseract and compare
+          logger.info('OCR: Google Vision low confidence, trying Tesseract', { confidence: googleResults.confidence });
+          const tesseractResults = await this.processWithTesseract(file);
+          return this.chooseBestResults(googleResults, tesseractResults);
+        } catch (googleError) {
+          logger.warn('OCR: Google Vision failed, falling back to Tesseract', { error: googleError.message });
+        }
+      } else {
+        logger.info('OCR: Google Vision not available, using Tesseract only');
       }
 
-      return googleResults;
+      // Use Tesseract as primary/fallback
+      return await this.processWithTesseract(file);
+
     } catch (error) {
       // Log detailed error
       logger.error('OCR Processing Failed', {
@@ -134,12 +180,63 @@ class OCRProcessor {
    */
   async processWithTesseract(file) {
     try {
-      // Perform OCR
+      // Check if file is PDF - Tesseract can't process PDFs directly
+      const detectedType = await this.fileTypeDetector.detect(file.buffer);
+
+      if (detectedType.mime === 'application/pdf') {
+        logger.info('Tesseract: PDF detected, extracting text with pdf-parse');
+        // For PDFs, use pdf-parse to extract text (not true OCR but works for text-based PDFs)
+        const pdfParse = require('pdf-parse');
+        try {
+          const pdfData = await pdfParse(file.buffer);
+
+          if (pdfData.text && pdfData.text.trim().length > 0) {
+            logger.operation('PDF text extraction completed', {
+              filename: file.originalname,
+              textLength: pdfData.text.length,
+              pages: pdfData.numpages
+            });
+
+            return {
+              text: pdfData.text,
+              confidence: 0.9, // High confidence for extracted text
+              service: 'pdf-parse',
+              pageCount: pdfData.numpages,
+              raw: { info: pdfData.info }
+            };
+          } else {
+            logger.warn('PDF has no extractable text (likely scanned image)', { filename: file.originalname });
+            // Return empty - caller should try screenshot-based OCR
+            return {
+              text: '',
+              confidence: 0,
+              service: 'pdf-parse',
+              pageCount: pdfData.numpages,
+              error: 'PDF contains no extractable text - document may be a scanned image'
+            };
+          }
+        } catch (pdfError) {
+          logger.error('PDF parse failed', { error: pdfError.message });
+          return {
+            text: '',
+            confidence: 0,
+            service: 'pdf-parse',
+            error: `PDF parsing failed: ${pdfError.message}`
+          };
+        }
+      }
+
+      // For images, use Tesseract
+      logger.info('Tesseract: Processing image', { mime: detectedType.mime });
       const { data: { text, confidence, lines } } = await Tesseract.recognize(
         file.buffer,
         'eng',
-        { 
-          logger: (m) => logger.info('Tesseract Progress', m) 
+        {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              logger.debug('Tesseract Progress', { progress: Math.round(m.progress * 100) + '%' });
+            }
+          }
         }
       );
 
