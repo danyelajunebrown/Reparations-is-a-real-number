@@ -183,10 +183,20 @@ class NarrativeExtractor {
     extractSlaveholders(text, context = []) {
         const slaveholders = [];
 
-        // Look for ownership patterns
+        // Look for ownership patterns - ordered from most specific to least
         const ownershipPatterns = [
+            // "X owned [at least] N slaves" - very reliable pattern
+            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)\s+owned\s+(?:at\s+least\s+)?(?:\d+|some|several|many)\s+slaves?/gi,
+            // "X's household included N slaves"
+            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)'s\s+household\s+included\s+(?:\d+|some|several|many)\s+slaves?/gi,
+            // "X divided his/her slaves"
+            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)\s+divided\s+(?:his|her|their)\s+slaves?/gi,
+            // "X's slaves" when followed by activity
+            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)'s\s+slaves?\s+(?:who|worked|were)/gi,
+            // Original patterns
             /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)\s*(?:'s?\s+)?(?:slaves?|owned|enslaved|property)/gi,
             /(?:owned by|belonging to|estate of|property of)\s+([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+)/gi,
+            // Title + name near slavery context
             /(?:Mr\.|Mrs\.|Col\.|Gen\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g
         ];
 
@@ -196,9 +206,14 @@ class NarrativeExtractor {
             while ((match = regex.exec(text)) !== null) {
                 const name = match[1]?.trim();
                 if (name && name.length > 2 && this.isLikelyName(name)) {
+                    // Extract slave count if present
+                    const countMatch = match[0].match(/(\d+)\s+slaves?/i);
+                    const slaveCount = countMatch ? parseInt(countMatch[1]) : null;
+
                     slaveholders.push({
                         name: name,
                         role: 'slaveholder',
+                        slaveCount: slaveCount,
                         context: context,
                         source: text.substring(Math.max(0, match.index - 20), match.index + match[0].length + 20),
                         confidence: this.calculateNameConfidence(name, text)
@@ -582,19 +597,19 @@ class NarrativeExtractor {
                 r => r.slaveholder.toLowerCase() === slaveholder.name.toLowerCase()
             );
 
-            if (!hasEnslaved) {
-                rows.push({
-                    rowIndex: rows.length,
-                    columns: {
-                        'Owner/Slaveholder': slaveholder.name,
-                        'Date': extractionResults.dates[0] || '',
-                        'Source Context': slaveholder.source?.substring(0, 200) || ''
-                    },
-                    confidence: slaveholder.confidence,
-                    rawText: slaveholder.source || '',
-                    extractionType: 'narrative'
-                });
-            }
+            // Always add slaveholders with counts or unique sources
+            rows.push({
+                rowIndex: rows.length,
+                columns: {
+                    'Owner/Slaveholder': slaveholder.name,
+                    'Slave Count': slaveholder.slaveCount || '',
+                    'Date': extractionResults.dates[0] || '',
+                    'Source Context': slaveholder.source?.substring(0, 200) || ''
+                },
+                confidence: slaveholder.confidence,
+                rawText: slaveholder.source || '',
+                extractionType: 'narrative'
+            });
         }
 
         return rows;
