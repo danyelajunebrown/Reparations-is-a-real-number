@@ -73,6 +73,61 @@ router.post('/start', async (req, res) => {
 });
 
 /**
+ * GET /api/contribute/capabilities
+ * Get system capabilities for OCR extraction
+ * NOTE: This route MUST come before /:sessionId routes to avoid being caught as a sessionId
+ */
+router.get('/capabilities', async (req, res) => {
+    try {
+        // Get extraction worker capabilities if available
+        let capabilities = {
+            ocrProcessor: false,
+            puppeteer: false,
+            playwright: false,
+            browserAutomation: false
+        };
+
+        // Try to get real capabilities from the extraction worker
+        if (contributionService && contributionService.extractionWorker) {
+            capabilities = contributionService.extractionWorker.getCapabilities();
+        }
+
+        // Check for common dependencies
+        const checks = {
+            googleVision: false,
+            tesseract: false
+        };
+
+        try {
+            require('@google-cloud/vision');
+            checks.googleVision = true;
+        } catch (e) {}
+
+        try {
+            require('tesseract.js');
+            checks.tesseract = true;
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            capabilities: {
+                ...capabilities,
+                ...checks
+            },
+            message: capabilities.browserAutomation
+                ? 'Full extraction capabilities available'
+                : 'Limited extraction - browser automation not available (install puppeteer)'
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
  * POST /api/contribute/:sessionId/describe
  * Process user's description of what they see
  */
@@ -452,61 +507,6 @@ router.get('/:sessionId/extraction/:extractionId/status', async (req, res) => {
 
     } catch (error) {
         console.error('Extraction status error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-/**
- * GET /api/contribute/capabilities
- * Get system capabilities for OCR extraction
- */
-router.get('/capabilities', async (req, res) => {
-    try {
-        // Get extraction worker capabilities if available
-        let capabilities = {
-            ocrProcessor: false,
-            puppeteer: false,
-            playwright: false,
-            browserAutomation: false
-        };
-
-        // Try to get real capabilities from the extraction worker
-        // This requires accessing the worker instance through the service
-        if (contributionService && contributionService.extractionWorker) {
-            capabilities = contributionService.extractionWorker.getCapabilities();
-        }
-
-        // Check for common dependencies
-        const checks = {
-            googleVision: false,
-            tesseract: false
-        };
-
-        try {
-            require('@google-cloud/vision');
-            checks.googleVision = true;
-        } catch (e) {}
-
-        try {
-            require('tesseract.js');
-            checks.tesseract = true;
-        } catch (e) {}
-
-        res.json({
-            success: true,
-            capabilities: {
-                ...capabilities,
-                ...checks
-            },
-            message: capabilities.browserAutomation
-                ? 'Full extraction capabilities available'
-                : 'Limited extraction - browser automation not available (install puppeteer)'
-        });
-
-    } catch (error) {
         res.status(500).json({
             success: false,
             error: error.message
