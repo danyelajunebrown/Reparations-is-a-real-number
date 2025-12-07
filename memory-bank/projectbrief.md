@@ -59,8 +59,15 @@ To provide a transparent, immutable, and mathematically rigorous system for:
 
 ## Project Status
 
-**Current Phase:** Production Deployment & Document Processing
-**Last Major Update:** November 29, 2025 - Fixed deployment issues, implemented S3 storage, file type detection
+**Current Phase:** Production Deployment & Crowdsourced Data Collection
+**Last Major Update:** December 7, 2025 - Implemented contribution/extraction system with narrative entity extraction and database persistence
+
+### Recent Additions (December 2025)
+- **Contribution Pipeline:** Multi-step workflow for crowdsourced document contribution (`/api/contribute/*`)
+- **NarrativeExtractor:** AI-powered entity extraction from prose text using regex patterns
+- **Database Persistence:** Extracted findings automatically saved to `unconfirmed_persons` table
+- **Suspected Enslaved Records:** Creates placeholder records from slave counts (e.g., "owned ten slaves" → 10 suspected enslaved records)
+- **Name Filtering:** Intelligent filtering of noise (locations, conjunctions, non-name words)
 
 ---
 

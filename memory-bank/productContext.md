@@ -198,6 +198,31 @@ Database Entry → Searchable via Research Assistant
 Export for Publication → Citation with IPFS Hash
 ```
 
+### Crowdsourced Contribution Workflow (NEW - December 2025)
+```
+User Provides URL → System Analyzes Source (archive type, PDF detection)
+                                          ↓
+User Describes Document → Layout type, scan quality, handwriting type
+                                          ↓
+System Infers Columns → User confirms or corrects structure
+                                          ↓
+OCR Extraction Triggered → Google Vision API processes PDF
+                                          ↓
+NarrativeExtractor Runs → Finds slaveholders and slave counts in prose
+                                          ↓
+Suspected Enslaved Created → "[Unknown - 1 of N]" records from counts
+                                          ↓
+Database Persistence → unconfirmed_persons table populated
+                                          ↓
+Human Review Queue → Pending approval for verified records
+```
+
+**Key Services:**
+- `ContributionSession.js` - Multi-step workflow state management
+- `ExtractionWorker.js` - OCR processing with debug logging
+- `NarrativeExtractor.js` - Entity extraction from prose text
+- `persistToUnconfirmedPersons()` - Database persistence of findings
+
 ### Tertiary Workflow: Legal Documentation
 ```
 Attorney Searches Database → Finds Relevant Documents
