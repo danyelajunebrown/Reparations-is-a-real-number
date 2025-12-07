@@ -61,6 +61,25 @@ Each stage is independent and can be retried separately if it fails.
 - **Traceable:** Each stage logs progress and errors
 - **Resumable:** Can restart from any stage using document ID
 
+### Contribution Pipeline Pattern (December 2025)
+Crowdsourced document contribution with multi-step workflow:
+
+```
+URL Analysis → Description → Column Inference → Confirmation → Extraction → Persistence
+```
+
+**Implementation:** `src/services/contribution/`
+- `ContributionSession.js` - State machine for workflow stages
+- `ExtractionWorker.js` - OCR with debug logging and database persistence
+- `NarrativeExtractor.js` - Entity extraction from prose text
+
+**Key Features:**
+- **Stateful Sessions:** Each contribution tracked with session_id
+- **Flexible Extraction:** Works with tables (column parsing) and prose (entity extraction)
+- **Suspected Records:** Creates placeholder enslaved records from slave counts
+- **Database Persistence:** `persistToUnconfirmedPersons()` saves to review queue
+- **Debug Logging:** Full diagnostic trail stored in `extraction_jobs.debug_log`
+
 ### Adapter Pattern (Storage Abstraction)
 Storage implementation is abstracted behind a common interface:
 
