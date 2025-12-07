@@ -1537,19 +1537,20 @@ class ContributionSession {
         const session = await this.getSession(sessionId);
         if (!session) throw new Error('Session not found');
 
-        // Create extraction job
+        // Create extraction job with options stored in ocr_config
         const extractionId = uuidv4();
 
         await this.db.query(`
             INSERT INTO extraction_jobs
-            (extraction_id, session_id, content_url, content_type, method, status, created_at)
-            VALUES ($1, $2, $3, $4, $5, 'pending', NOW())
+            (extraction_id, session_id, content_url, content_type, method, status, ocr_config, created_at)
+            VALUES ($1, $2, $3, $4, $5, 'pending', $6, NOW())
         `, [
             extractionId,
             sessionId,
             session.sourceMetadata.contentUrl || session.url,
             session.sourceMetadata.contentType,
-            method
+            method,
+            JSON.stringify(options) // Store page selection and other options
         ]);
 
         session.currentStage = 'extraction_in_progress';
