@@ -183,12 +183,15 @@ class NarrativeExtractor {
     extractSlaveholders(text, context = []) {
         const slaveholders = [];
 
+        // Number words to match in patterns
+        const numWords = '\\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|some|several|many|few|numerous';
+
         // Look for ownership patterns - ordered from most specific to least
         const ownershipPatterns = [
             // "X owned [at least] N slaves" - very reliable pattern
-            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)\s+owned\s+(?:at\s+least\s+)?(?:\d+|some|several|many)\s+slaves?/gi,
+            new RegExp(`([A-Z][a-z]+(?:\\s+[A-Z]\\.?\\s*)?[A-Z][a-z]+(?:\\s+(?:Jr\\.|Sr\\.|I{1,3}|IV|V))?)\\s+owned\\s+(?:at\\s+least\\s+)?(?:${numWords})\\s+slaves?`, 'gi'),
             // "X's household included N slaves"
-            /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)'s\s+household\s+included\s+(?:\d+|some|several|many)\s+slaves?/gi,
+            new RegExp(`([A-Z][a-z]+(?:\\s+[A-Z]\\.?\\s*)?[A-Z][a-z]+(?:\\s+(?:Jr\\.|Sr\\.|I{1,3}|IV|V))?)'s\\s+household\\s+included\\s+(?:${numWords})\\s+slaves?`, 'gi'),
             // "X divided his/her slaves"
             /([A-Z][a-z]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-z]+(?:\s+(?:Jr\.|Sr\.|I{1,3}|IV|V))?)\s+divided\s+(?:his|her|their)\s+slaves?/gi,
             // "X's slaves" when followed by activity
@@ -206,9 +209,26 @@ class NarrativeExtractor {
             while ((match = regex.exec(text)) !== null) {
                 const name = match[1]?.trim();
                 if (name && name.length > 2 && this.isLikelyName(name)) {
-                    // Extract slave count if present
-                    const countMatch = match[0].match(/(\d+)\s+slaves?/i);
-                    const slaveCount = countMatch ? parseInt(countMatch[1]) : null;
+                    // Extract slave count if present (numeric or word)
+                    let slaveCount = null;
+                    const numericCount = match[0].match(/(\d+)\s+slaves?/i);
+                    if (numericCount) {
+                        slaveCount = parseInt(numericCount[1]);
+                    } else {
+                        // Try word-based count
+                        const wordCount = match[0].match(/(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\s+slaves?/i);
+                        if (wordCount) {
+                            const wordToNum = {
+                                'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+                                'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+                                'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+                                'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+                                'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'seventy': 70,
+                                'eighty': 80, 'ninety': 90, 'hundred': 100
+                            };
+                            slaveCount = wordToNum[wordCount[1].toLowerCase()] || null;
+                        }
+                    }
 
                     slaveholders.push({
                         name: name,
@@ -518,8 +538,11 @@ class NarrativeExtractor {
         // Should not contain newlines (broken parsing)
         if (str.includes('\n')) return false;
 
-        // Should not end with a conjunction (indicates partial parsing)
-        if (/\s+(and|or|the|a|an|of|to|for|with|by)$/i.test(str)) return false;
+        // Should not end with a conjunction or other incomplete word (indicates partial parsing)
+        if (/\s+(and|or|the|a|an|of|to|for|with|by|also|but|yet|so|nor|then|too|as)$/i.test(str)) return false;
+
+        // Should not contain place/location words
+        if (/\b(mill|creek|river|road|county|town|city|plantation|farm|estate|house|building)\b/i.test(str)) return false;
 
         // Should have at least 2 name parts for slaveholder (first + last)
         // Single words like "Marsham" are less reliable
