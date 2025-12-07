@@ -35,7 +35,11 @@ module.exports = {
   },
 
   apiKeys: {
-    googleVision: process.env.GOOGLE_VISION_API_KEY || ''
+    googleVision: process.env.GOOGLE_VISION_API_KEY || '',
+    // Path to Google Cloud credentials JSON file (for local development)
+    googleVisionKeyPath: process.env.GOOGLE_APPLICATION_CREDENTIALS || './google-credentials.json',
+    // Or credentials can be passed as JSON string in env var (for Render/cloud deployment)
+    googleVisionCredentials: process.env.GOOGLE_VISION_CREDENTIALS || null
   },
 
   security: {

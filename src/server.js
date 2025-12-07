@@ -32,45 +32,6 @@ const bibliographyRouter = require('./api/routes/bibliography');
 // Initialize Express app
 const app = express();
 
-// =============================================================================
-// CORS Configuration
-// =============================================================================
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:8080',
-      'http://127.0.0.1:3000',
-      'https://danyelajunebrown.github.io',
-      ...config.security.allowedOrigins
-    ];
-
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Check if origin is allowed
-    const isAllowed = allowedOrigins.some(allowed =>
-      origin === allowed || origin.startsWith(allowed)
-    );
-
-    if (isAllowed) {
-      logger.debug('CORS request allowed', { origin });
-      callback(null, true);
-    } else {
-      logger.security('CORS request blocked', { origin, allowedOrigins });
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-  credentials: true,
-  maxAge: 86400 // 24 hours
-};
-
-app.use(cors(corsOptions));
 
 // =============================================================================
 // Middleware Stack
