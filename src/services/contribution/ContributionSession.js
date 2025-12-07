@@ -826,11 +826,29 @@ class ContributionSession {
         // ========================================
         // LAYOUT DETECTION
         // ========================================
-        if (lower.includes('table') || lower.includes('column') || lower.includes('row')) {
+        // Check for explicit layout_type answer first (from frontend form)
+        const layoutTypeMatch = text.match(/layout_type:\s*(prose|table|list|form|image_only|mixed)/i);
+        if (layoutTypeMatch) {
+            parsed.layoutType = layoutTypeMatch[1].toLowerCase();
+        }
+        // Check for negative patterns first ("not tables", "no table")
+        else if (lower.match(/\b(?:not?\s+table|no\s+table|isn't\s+(?:a\s+)?table|aren't\s+tables)/)) {
+            parsed.layoutType = 'prose';
+        }
+        // Check for "narrative" or "prose" explicitly
+        else if (lower.includes('narrative') || lower.includes('prose')) {
+            parsed.layoutType = 'prose';
+        }
+        // Check for paragraph text indicators
+        else if (lower.includes('paragraph') && !lower.includes('table')) {
+            parsed.layoutType = 'prose';
+        }
+        // Only then check for table indicators
+        else if (lower.includes('table') || lower.includes('column') || lower.includes('row')) {
             parsed.layoutType = 'table';
         } else if (lower.includes('list')) {
             parsed.layoutType = 'list';
-        } else if (lower.includes('paragraph') || lower.includes('text')) {
+        } else if (lower.includes('text') && !lower.match(/\bcolumn|row|table\b/)) {
             parsed.layoutType = 'prose';
         }
 
@@ -1268,7 +1286,16 @@ class ContributionSession {
         let response = '';
 
         if (parsed.layoutType) {
-            response += `Got it - this is a **${parsed.layoutType}** format document.\n\n`;
+            if (parsed.layoutType === 'prose') {
+                response += `Got it - this is a **narrative/prose** document (not tabular).\n\n`;
+                response += `I'll use AI-powered entity extraction to identify:\n`;
+                response += `- Slaveholder names\n`;
+                response += `- Enslaved persons\n`;
+                response += `- Dates and transactions\n`;
+                response += `- Relationships and context\n\n`;
+            } else {
+                response += `Got it - this is a **${parsed.layoutType}** format document.\n\n`;
+            }
         }
 
         if (parsed.columns.length > 0) {
