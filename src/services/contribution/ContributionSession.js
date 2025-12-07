@@ -287,60 +287,95 @@ class ContributionSession {
                 }
             }
 
-            // Fetch the page
-            const response = await axios.get(url, {
-                timeout: 30000,
-                headers: {
-                    'User-Agent': 'Reparations Research Bot (Historical Genealogy Research)'
-                },
-                maxRedirects: 5
-            });
+            // SMART PDF DETECTION: Check if URL is a direct PDF link
+            // This prevents timeout when trying to download large PDFs
+            const isPdfUrl = url.toLowerCase().endsWith('.pdf') ||
+                            url.toLowerCase().includes('.pdf?') ||
+                            urlObj.pathname.toLowerCase().endsWith('.pdf');
 
-            analysis.finalUrl = response.request.res.responseUrl || url;
-            const html = response.data;
-            const $ = cheerio.load(html);
-
-            // Extract page title
-            analysis.pageTitle = $('title').text().trim();
-
-            // Look for document title in common patterns
-            analysis.documentTitle = this.extractDocumentTitle($, analysis.domain);
-
-            // Detect iframes
-            const iframes = $('iframe');
-            if (iframes.length > 0) {
-                analysis.hasIframe = true;
-                analysis.iframeSrc = iframes.first().attr('src');
-            }
-
-            // Detect PDF links (common in archives)
-            const pdfLinks = $('a[href*=".pdf"]');
-            if (pdfLinks.length > 0) {
+            if (isPdfUrl) {
+                // Direct PDF URL - don't download, just record metadata
+                console.log(`[ContributionSession] Direct PDF detected: ${url}`);
+                analysis.contentType = 'pdf';
+                analysis.contentUrl = url;
                 analysis.hasPdfLink = true;
-                const pdfHref = pdfLinks.first().attr('href');
-                analysis.contentUrl = this.resolveUrl(pdfHref, url);
-            }
+                analysis.contentAccess = 'direct_pdf';
+                analysis.pageTitle = urlObj.pathname.split('/').pop().replace('.pdf', '');
+                analysis.documentTitle = analysis.pageTitle;
 
-            // Special handling for Maryland State Archives
-            if (analysis.domain.includes('msa.maryland.gov')) {
-                const pdfMatch = html.match(/href="([^"]*\.pdf)"/i);
-                if (pdfMatch) {
-                    analysis.contentUrl = this.resolveUrl(pdfMatch[1], url);
-                    analysis.contentAccess = 'pdf_link';
+                // Try a HEAD request to get file size (with short timeout)
+                try {
+                    const headResponse = await axios.head(url, {
+                        timeout: 5000,
+                        headers: {
+                            'User-Agent': 'Reparations Research Bot (Historical Genealogy Research)'
+                        }
+                    });
+                    analysis.contentLength = headResponse.headers['content-length'];
+                    analysis.lastModified = headResponse.headers['last-modified'];
+                } catch (headError) {
+                    // HEAD request failed - that's okay, proceed without size info
+                    console.log(`[ContributionSession] HEAD request failed (likely protected): ${headError.message}`);
+                    analysis.contentAccess = 'protected_pdf';
                 }
 
-                // Extract collection info from URL
-                const collectionMatch = url.match(/sc(\d+)\/sc(\d+)\/(\d+)\/(\d+)/);
-                if (collectionMatch) {
-                    analysis.collectionId = `sc${collectionMatch[1]}/sc${collectionMatch[2]}/${collectionMatch[3]}/${collectionMatch[4]}`;
+                // Skip HTML parsing - go straight to storing analysis
+            } else {
+                // Not a direct PDF - fetch the HTML page
+                const response = await axios.get(url, {
+                    timeout: 30000,
+                    headers: {
+                        'User-Agent': 'Reparations Research Bot (Historical Genealogy Research)'
+                    },
+                    maxRedirects: 5
+                });
+
+                analysis.finalUrl = response.request.res.responseUrl || url;
+                const html = response.data;
+                const $ = cheerio.load(html);
+
+                // Extract page title
+                analysis.pageTitle = $('title').text().trim();
+
+                // Look for document title in common patterns
+                analysis.documentTitle = this.extractDocumentTitle($, analysis.domain);
+
+                // Detect iframes
+                const iframes = $('iframe');
+                if (iframes.length > 0) {
+                    analysis.hasIframe = true;
+                    analysis.iframeSrc = iframes.first().attr('src');
                 }
+
+                // Detect PDF links (common in archives)
+                const pdfLinks = $('a[href*=".pdf"]');
+                if (pdfLinks.length > 0) {
+                    analysis.hasPdfLink = true;
+                    const pdfHref = pdfLinks.first().attr('href');
+                    analysis.contentUrl = this.resolveUrl(pdfHref, url);
+                }
+
+                // Special handling for Maryland State Archives
+                if (analysis.domain.includes('msa.maryland.gov')) {
+                    const pdfMatch = html.match(/href="([^"]*\.pdf)"/i);
+                    if (pdfMatch) {
+                        analysis.contentUrl = this.resolveUrl(pdfMatch[1], url);
+                        analysis.contentAccess = 'pdf_link';
+                    }
+
+                    // Extract collection info from URL
+                    const collectionMatch = url.match(/sc(\d+)\/sc(\d+)\/(\d+)\/(\d+)/);
+                    if (collectionMatch) {
+                        analysis.collectionId = `sc${collectionMatch[1]}/sc${collectionMatch[2]}/${collectionMatch[3]}/${collectionMatch[4]}`;
+                    }
+                }
+
+                // Detect pagination
+                analysis.pagination = this.detectPagination($, url);
+
+                // Determine content type
+                analysis.contentType = this.determineContentType(analysis);
             }
-
-            // Detect pagination
-            analysis.pagination = this.detectPagination($, url);
-
-            // Determine content type
-            analysis.contentType = this.determineContentType(analysis);
 
         } catch (error) {
             analysis.errors.push({
