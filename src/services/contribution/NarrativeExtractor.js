@@ -499,7 +499,8 @@ class NarrativeExtractor {
                          'from', 'were', 'have', 'been', 'such', 'some', 'other',
                          'contents', 'chapter', 'page', 'figure', 'table', 'notes',
                          'african', 'africanized', 'maryland', 'virginia', 'chesapeake',
-                         'american', 'colonial', 'historical', 'challenging', 'making'];
+                         'american', 'colonial', 'historical', 'challenging', 'making',
+                         'negroes', 'negro', 'slaves', 'slave', 'magazine'];
         const words = str.toLowerCase().split(/\s+/);
 
         // Must start with capital letter
@@ -516,6 +517,9 @@ class NarrativeExtractor {
 
         // Should not contain newlines (broken parsing)
         if (str.includes('\n')) return false;
+
+        // Should not end with a conjunction (indicates partial parsing)
+        if (/\s+(and|or|the|a|an|of|to|for|with|by)$/i.test(str)) return false;
 
         // Should have at least 2 name parts for slaveholder (first + last)
         // Single words like "Marsham" are less reliable
@@ -620,25 +624,45 @@ class NarrativeExtractor {
         }
 
         // Create rows for slaveholders with slave counts
+        // When a slave count is known, create individual "suspected enslaved" records
         for (const slaveholder of extractionResults.slaveholders) {
-            // Check if already represented in enslaved rows
-            const hasEnslaved = extractionResults.relationships.some(
-                r => r.slaveholder.toLowerCase() === slaveholder.name.toLowerCase()
-            );
+            const slaveCount = slaveholder.slaveCount || 0;
 
-            // Always add slaveholders with counts or unique sources
-            rows.push({
-                rowIndex: rows.length,
-                columns: {
-                    'Owner/Slaveholder': slaveholder.name,
-                    'Slave Count': slaveholder.slaveCount || '',
-                    'Date': extractionResults.dates[0] || '',
-                    'Source Context': slaveholder.source?.substring(0, 200) || ''
-                },
-                confidence: slaveholder.confidence,
-                rawText: slaveholder.source || '',
-                extractionType: 'narrative'
-            });
+            if (slaveCount > 0) {
+                // Create individual suspected enslaved records for each counted slave
+                for (let i = 1; i <= slaveCount; i++) {
+                    rows.push({
+                        rowIndex: rows.length,
+                        columns: {
+                            'Enslaved Name': `[Unknown - ${i} of ${slaveCount}]`,
+                            'Owner/Slaveholder': slaveholder.name,
+                            'Date': extractionResults.dates[0] || '',
+                            'Source Context': slaveholder.source?.substring(0, 200) || '',
+                            'Record Type': 'suspected_enslaved'
+                        },
+                        confidence: slaveholder.confidence * 0.8, // Lower confidence for unnamed
+                        rawText: slaveholder.source || '',
+                        extractionType: 'narrative_count',
+                        isSuspected: true,
+                        suspectedIndex: i,
+                        suspectedTotal: slaveCount
+                    });
+                }
+            } else {
+                // No count - just add slaveholder record
+                rows.push({
+                    rowIndex: rows.length,
+                    columns: {
+                        'Owner/Slaveholder': slaveholder.name,
+                        'Slave Count': '',
+                        'Date': extractionResults.dates[0] || '',
+                        'Source Context': slaveholder.source?.substring(0, 200) || ''
+                    },
+                    confidence: slaveholder.confidence,
+                    rawText: slaveholder.source || '',
+                    extractionType: 'narrative'
+                });
+            }
         }
 
         return rows;
