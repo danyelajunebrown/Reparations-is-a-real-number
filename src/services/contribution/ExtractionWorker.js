@@ -128,6 +128,9 @@ class ExtractionWorker {
             const columns = contentStructure?.columns || [];
             const sessionUrl = job.session_url;
 
+            // Parse OCR options (page selection, etc.) from ocr_config
+            const ocrOptions = job.ocr_config ? (typeof job.ocr_config === 'string' ? JSON.parse(job.ocr_config) : job.ocr_config) : {};
+
             this.debug('JOB_INFO', 'Retrieved job details', {
                 contentUrl: contentUrl || 'NOT SET',
                 sessionUrl,
@@ -136,7 +139,8 @@ class ExtractionWorker {
                 contentType: sourceMetadata?.contentType,
                 columnCount: columns.length,
                 hasIframe: sourceMetadata?.hasIframe,
-                hasPdfLink: sourceMetadata?.hasPdfLink
+                hasPdfLink: sourceMetadata?.hasPdfLink,
+                ocrOptions: ocrOptions
             });
 
             // Update progress
@@ -171,9 +175,9 @@ class ExtractionWorker {
 
             await this.updateExtractionStatus(extractionId, 'processing', { progress: 40, status_message: 'Running OCR...' });
 
-            // Run OCR
-            this.debug('OCR_START', 'Starting OCR processing', { contentType: downloadResult.contentType });
-            const ocrResults = await this.runOCR(downloadResult.buffer, downloadResult.contentType);
+            // Run OCR with page selection options
+            this.debug('OCR_START', 'Starting OCR processing', { contentType: downloadResult.contentType, ocrOptions });
+            const ocrResults = await this.runOCR(downloadResult.buffer, downloadResult.contentType, ocrOptions);
 
             this.debug('OCR_COMPLETE', 'OCR processing completed', {
                 service: ocrResults.service,
@@ -559,10 +563,11 @@ class ExtractionWorker {
      * Run OCR on content buffer
      * @param {Buffer} buffer - Content buffer to process
      * @param {string} contentType - MIME type of the content
+     * @param {Object} options - OCR options (page selection, etc.)
      * @returns {Promise<Object>} OCR results
      */
-    async runOCR(buffer, contentType = 'application/pdf') {
-        this.debug('OCR_INIT', 'Initializing OCR', { contentType, bufferSize: buffer?.length });
+    async runOCR(buffer, contentType = 'application/pdf', options = {}) {
+        this.debug('OCR_INIT', 'Initializing OCR', { contentType, bufferSize: buffer?.length, options });
 
         try {
             // Determine file extension and mimetype
@@ -590,11 +595,12 @@ class ExtractionWorker {
             this.debug('OCR_PROCESS', 'Sending to OCR processor', {
                 filename: file.originalname,
                 mimetype: file.mimetype,
-                bufferLength: file.buffer?.length
+                bufferLength: file.buffer?.length,
+                pageOptions: options
             });
 
-            // Process with OCR
-            const results = await this.ocrProcessor.process(file);
+            // Process with OCR, passing page selection options
+            const results = await this.ocrProcessor.process(file, options);
 
             this.debug('OCR_RESULT', 'OCR processor returned', {
                 hasText: !!results.text,
