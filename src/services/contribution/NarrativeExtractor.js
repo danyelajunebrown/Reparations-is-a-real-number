@@ -232,14 +232,20 @@ class NarrativeExtractor {
         const enslaved = [];
         const lower = text.toLowerCase();
 
-        // Patterns for enslaved persons
+        // Common words that should NOT be extracted as names
+        const notNames = ['a', 'an', 'the', 'his', 'her', 'their', 'with', 'from', 'to',
+                         'of', 'by', 'for', 'and', 'or', 'was', 'were', 'been', 'being',
+                         'buy', 'sell', 'sold', 'bought', 'owned', 'free', 'freed',
+                         'freeing', 'divided', 'born', 'died', 'living', 'worked'];
+
+        // Patterns for enslaved persons - these should be specific
         const patterns = [
-            // "slave named X" or "negro named X"
+            // "slave named X" or "negro named X" - most reliable
             /(?:slave|negro|negroe|enslaved\s+(?:person|man|woman|child))\s+(?:named|called)\s+([A-Z][a-z]+)/gi,
-            // "X, a slave" or "X, his slave"
-            /([A-Z][a-z]+),?\s+(?:a|his|her|their)\s+(?:slave|negro)/gi,
+            // "X, a slave" or "X, his slave" - name must be a proper name
+            /\b([A-Z][a-z]{2,}),?\s+(?:a|his|her|their)\s+(?:slave|negro)/gi,
             // Names followed by age/gender descriptors
-            /([A-Z][a-z]+),?\s+(?:aged?\s+)?\d{1,2},?\s+(?:male|female|negro|colored)/gi
+            /\b([A-Z][a-z]{2,}),?\s+(?:aged?\s+)?\d{1,2},?\s+(?:male|female|negro|colored)/gi
         ];
 
         for (const pattern of patterns) {
@@ -247,20 +253,24 @@ class NarrativeExtractor {
             const regex = new RegExp(pattern.source, pattern.flags);
             while ((match = regex.exec(text)) !== null) {
                 const name = match[1]?.trim();
-                if (name && name.length > 1) {
-                    // Extract additional details
-                    const surrounding = text.substring(Math.max(0, match.index - 50), match.index + match[0].length + 50);
 
-                    enslaved.push({
-                        name: name,
-                        role: 'enslaved',
-                        age: this.extractAge(surrounding),
-                        gender: this.extractGender(surrounding),
-                        context: context,
-                        source: surrounding,
-                        confidence: 0.7
-                    });
-                }
+                // Validate the name is reasonable
+                if (!name || name.length < 3) continue;
+                if (notNames.includes(name.toLowerCase())) continue;
+                if (!/^[A-Z][a-z]+$/.test(name)) continue; // Must be properly capitalized single word
+
+                // Extract additional details
+                const surrounding = text.substring(Math.max(0, match.index - 50), match.index + match[0].length + 50);
+
+                enslaved.push({
+                    name: name,
+                    role: 'enslaved',
+                    age: this.extractAge(surrounding),
+                    gender: this.extractGender(surrounding),
+                    context: context,
+                    source: surrounding,
+                    confidence: 0.7
+                });
             }
         }
 
@@ -484,9 +494,12 @@ class NarrativeExtractor {
      * Check if a string is likely a person's name
      */
     isLikelyName(str) {
-        // Filter out common non-name words
+        // Filter out common non-name words and historical document noise
         const nonNames = ['the', 'and', 'his', 'her', 'their', 'this', 'that', 'with',
-                         'from', 'were', 'have', 'been', 'such', 'some', 'other'];
+                         'from', 'were', 'have', 'been', 'such', 'some', 'other',
+                         'contents', 'chapter', 'page', 'figure', 'table', 'notes',
+                         'african', 'africanized', 'maryland', 'virginia', 'chesapeake',
+                         'american', 'colonial', 'historical', 'challenging', 'making'];
         const words = str.toLowerCase().split(/\s+/);
 
         // Must start with capital letter
@@ -497,6 +510,22 @@ class NarrativeExtractor {
 
         // Should have reasonable length
         if (str.length < 3 || str.length > 50) return false;
+
+        // Should not be all caps (headers/titles)
+        if (str === str.toUpperCase() && str.length > 3) return false;
+
+        // Should not contain newlines (broken parsing)
+        if (str.includes('\n')) return false;
+
+        // Should have at least 2 name parts for slaveholder (first + last)
+        // Single words like "Marsham" are less reliable
+        const nameParts = str.split(/\s+/);
+        if (nameParts.length < 2) {
+            // Single word - check if it looks like a last name (ends with common suffixes)
+            if (!/(?:son|ton|ham|field|wood|land|man|ell|ord|ard|er|or|on|ing|ey)$/i.test(str)) {
+                return false;
+            }
+        }
 
         return true;
     }
