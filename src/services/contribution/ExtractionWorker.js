@@ -190,28 +190,40 @@ class ExtractionWorker {
 
             await this.updateExtractionStatus(extractionId, 'processing', { progress: 60, status_message: 'Parsing results...' });
 
-            // Parse OCR text into rows
+            // Parse OCR text into rows (if we have column definitions)
             this.debug('PARSE_START', 'Parsing OCR text into rows', { columnCount: columns.length });
-            let parsedRows = await this.parseOCRtoRows(ocrResults.text, columns);
+            let parsedRows = [];
+            let avgTableConfidence = 0;
+            let tableParsingWorked = false;
 
-            this.debug('PARSE_COMPLETE', 'Table parsing completed', {
-                rowCount: parsedRows.length,
-                sampleRow: parsedRows[0] || null
-            });
+            if (columns.length > 0) {
+                parsedRows = await this.parseOCRtoRows(ocrResults.text, columns);
 
-            // Check if table parsing worked well
-            const avgTableConfidence = parsedRows.length > 0
-                ? parsedRows.reduce((sum, row) => sum + row.confidence, 0) / parsedRows.length
-                : 0;
+                this.debug('PARSE_COMPLETE', 'Table parsing completed', {
+                    rowCount: parsedRows.length,
+                    sampleRow: parsedRows[0] || null
+                });
 
-            // If table parsing has low confidence or few multi-column rows, try narrative extraction
-            const multiColumnRows = parsedRows.filter(r => Object.keys(r.columns).length >= 3).length;
-            const tableParsingWorked = avgTableConfidence > 0.5 && multiColumnRows > parsedRows.length * 0.3;
+                // Check if table parsing worked well
+                avgTableConfidence = parsedRows.length > 0
+                    ? parsedRows.reduce((sum, row) => sum + row.confidence, 0) / parsedRows.length
+                    : 0;
 
+                // If table parsing has low confidence or few multi-column rows, it didn't work
+                const multiColumnRows = parsedRows.filter(r => Object.keys(r.columns).length >= 3).length;
+                tableParsingWorked = avgTableConfidence > 0.5 && multiColumnRows > parsedRows.length * 0.3;
+            } else {
+                this.debug('PARSE_SKIP', 'No columns defined, skipping table parsing');
+            }
+
+            // Try narrative extraction if:
+            // 1. No columns defined (user didn't describe a table)
+            // 2. Table parsing had low confidence
+            // 3. Very few multi-column rows extracted
             if (!tableParsingWorked && ocrResults.text && ocrResults.text.length > 500) {
                 this.debug('NARRATIVE_START', 'Table parsing insufficient, trying narrative extraction', {
                     avgTableConfidence,
-                    multiColumnRows,
+                    columnsProvided: columns.length,
                     totalRows: parsedRows.length
                 });
 
