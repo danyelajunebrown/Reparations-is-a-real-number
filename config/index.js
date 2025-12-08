@@ -74,6 +74,12 @@ const envSchema = Joi.object({
   GOOGLE_VISION_API_KEY: Joi.string()
     .optional()
     .description('Google Vision API for OCR (optional - falls back to Tesseract)'),
+  GOOGLE_VISION_CREDENTIALS: Joi.string()
+    .optional()
+    .description('Google Vision service account credentials as JSON string'),
+  GOOGLE_VISION_KEY_PATH: Joi.string()
+    .optional()
+    .description('Path to Google Vision service account key file'),
   FAMILYSEARCH_API_KEY: Joi.string()
     .optional(),
   OPENROUTER_API_KEY: Joi.string()
@@ -170,6 +176,8 @@ const config = {
   // API Keys
   apiKeys: {
     googleVision: env.GOOGLE_VISION_API_KEY,
+    googleVisionCredentials: env.GOOGLE_VISION_CREDENTIALS,
+    googleVisionKeyPath: env.GOOGLE_VISION_KEY_PATH,
     familySearch: env.FAMILYSEARCH_API_KEY,
     openRouter: env.OPENROUTER_API_KEY,
     openRouterModel: env.OPENROUTER_MODEL,
@@ -210,7 +218,7 @@ if (config.isDevelopment) {
   console.log('   Database:', config.database.connectionString ? 'DATABASE_URL' : 'Individual vars');
   console.log('   S3 Storage:', config.storage.s3.enabled ? 'ENABLED' : 'DISABLED');
   console.log('   IPFS:', config.ipfs.enabled ? 'ENABLED' : 'DISABLED');
-  console.log('   Google Vision API:', config.apiKeys.googleVision ? 'CONFIGURED' : 'NOT CONFIGURED (using Tesseract)');
+  console.log('   Google Vision API:', config.apiKeys.googleVisionCredentials || config.apiKeys.googleVisionKeyPath ? 'CONFIGURED' : 'NOT CONFIGURED (using Tesseract)');
   console.log('   OpenRouter API:', config.apiKeys.openRouter ? 'CONFIGURED' : 'NOT CONFIGURED');
 }
 
