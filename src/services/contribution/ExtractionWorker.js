@@ -16,6 +16,7 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const OCRProcessor = require('../document/OCRProcessor');
 const NarrativeExtractor = require('./NarrativeExtractor');
+const TableExtractor = require('./TableExtractor');
 const logger = require('../../utils/logger');
 
 // Playwright is optional - may not be installed on all systems
@@ -43,6 +44,7 @@ class ExtractionWorker {
         this.db = database;
         this.ocrProcessor = new OCRProcessor();
         this.narrativeExtractor = new NarrativeExtractor();
+        this.tableExtractor = new TableExtractor();
 
         // Debug log buffer - stores detailed diagnostic info
         this.debugLog = [];
@@ -245,7 +247,19 @@ class ExtractionWorker {
                 // Get target names from session context if available
                 const targetNames = this.extractTargetNamesFromContext(contentStructure);
 
-                // Run narrative extraction
+                // First, try table extraction (works best for structured documents)
+                this.debug('TABLE_EXTRACT_START', 'Attempting table extraction');
+                const tableResults = await this.tableExtractor.extract(ocrResults.text);
+                const tableRows = this.tableExtractor.toRowFormat(tableResults);
+
+                this.debug('TABLE_EXTRACT_COMPLETE', 'Table extraction completed', {
+                    slaveholders: tableResults.slaveholders.length,
+                    enslaved: tableResults.enslavedPersons.length,
+                    tableRows: tableRows.length,
+                    confidence: tableResults.confidence
+                });
+
+                // Run narrative extraction as fallback/supplement
                 const narrativeResults = await this.narrativeExtractor.extractFromNarrative(
                     ocrResults.text,
                     { targetNames }
@@ -261,6 +275,24 @@ class ExtractionWorker {
 
                 // Convert narrative results to row format
                 const narrativeRows = this.narrativeExtractor.toRowFormat(narrativeResults);
+
+                // Choose best results: if table extraction found significant data, prefer it
+                if (tableRows.length > narrativeRows.length && tableResults.confidence >= 0.6) {
+                    this.debug('TABLE_CHOSEN', 'Using table extraction results (more structured data)', {
+                        tableRows: tableRows.length,
+                        narrativeRows: narrativeRows.length,
+                        tableConfidence: tableResults.confidence
+                    });
+                    // Use table results as primary, add unique narrative rows as supplement
+                    const existingNames = new Set(tableRows.map(r =>
+                        r.columns['Enslaved Name'] || r.columns['Owner/Slaveholder'] || ''
+                    ).filter(Boolean));
+                    const uniqueNarrativeRows = narrativeRows.filter(r => {
+                        const name = r.columns['Enslaved Name'] || r.columns['Owner/Slaveholder'] || '';
+                        return name && !existingNames.has(name);
+                    });
+                    parsedRows = [...tableRows, ...uniqueNarrativeRows, ...parsedRows];
+                }
 
                 // If narrative extraction found meaningful data, use it instead or combine
                 if (narrativeRows.length > 0 && narrativeResults.confidence > avgTableConfidence) {
