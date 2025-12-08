@@ -70,10 +70,10 @@ const envSchema = Joi.object({
     .uri()
     .default('https://ipfs.io/ipfs/'),
 
-  // API Keys
+  // API Keys - Google Vision supports both API key and service account auth
   GOOGLE_VISION_API_KEY: Joi.string()
     .optional()
-    .description('Google Vision API for OCR (optional - falls back to Tesseract)'),
+    .description('Google Vision API key for OCR (simpler auth, uses REST API)'),
   GOOGLE_VISION_CREDENTIALS: Joi.string()
     .optional()
     .description('Google Vision service account credentials as JSON string'),

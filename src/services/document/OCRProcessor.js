@@ -1,5 +1,6 @@
 const vision = require('@google-cloud/vision');
 const Tesseract = require('tesseract.js');
+const axios = require('axios');
 const logger = require('../../utils/logger');
 const FileTypeDetector = require('./FileTypeDetector');
 const fs = require('fs');
@@ -11,14 +12,19 @@ class OCRProcessor {
   constructor() {
     const config = require('../../../config');
 
+    // Store API key for REST API calls (simpler auth method)
+    this.googleVisionApiKey = config.apiKeys.googleVision;
+
     // Configure Google Vision client with multiple auth options
     let visionConfig = {};
+    let useClientLibrary = false;
 
     // Option 1: Credentials passed as JSON string in environment variable (for Render)
     if (config.apiKeys.googleVisionCredentials) {
       try {
         const credentials = JSON.parse(config.apiKeys.googleVisionCredentials);
         visionConfig = { credentials };
+        useClientLibrary = true;
         logger.info('Google Vision: Using credentials from environment variable');
       } catch (e) {
         logger.error('Failed to parse GOOGLE_VISION_CREDENTIALS', { error: e.message });
@@ -28,22 +34,48 @@ class OCRProcessor {
     else if (config.apiKeys.googleVisionKeyPath) {
       const keyPath = path.resolve(config.apiKeys.googleVisionKeyPath);
       if (fs.existsSync(keyPath)) {
-        visionConfig = { keyFilename: keyPath };
-        logger.info('Google Vision: Using credentials file', { path: keyPath });
+        // Check if it's a valid credentials file (not placeholder)
+        try {
+          const creds = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+          if (creds.project_id && creds.project_id !== 'your-project-id') {
+            visionConfig = { keyFilename: keyPath };
+            useClientLibrary = true;
+            logger.info('Google Vision: Using credentials file', { path: keyPath });
+          } else {
+            logger.warn('Google Vision credentials file has placeholder values');
+          }
+        } catch (e) {
+          logger.warn('Google Vision credentials file invalid', { error: e.message });
+        }
       } else {
         logger.warn('Google Vision credentials file not found', { path: keyPath });
       }
     }
 
-    // Create client (may fail if no valid credentials)
-    try {
-      this.googleVisionClient = new vision.ImageAnnotatorClient(visionConfig);
+    // Create client library (for service account auth)
+    if (useClientLibrary) {
+      try {
+        this.googleVisionClient = new vision.ImageAnnotatorClient(visionConfig);
+        this.googleVisionAvailable = true;
+        this.useRestApi = false;
+        logger.info('Google Vision client initialized successfully (service account)');
+      } catch (error) {
+        logger.error('Failed to initialize Google Vision client', { error: error.message });
+        this.googleVisionClient = null;
+        this.googleVisionAvailable = false;
+      }
+    }
+    // Option 3: Use API key with REST API (simpler, no service account needed)
+    else if (this.googleVisionApiKey) {
       this.googleVisionAvailable = true;
-      logger.info('Google Vision client initialized successfully');
-    } catch (error) {
-      logger.error('Failed to initialize Google Vision client', { error: error.message });
+      this.useRestApi = true;
+      this.googleVisionClient = null;
+      logger.info('Google Vision: Using API key with REST API');
+    } else {
       this.googleVisionClient = null;
       this.googleVisionAvailable = false;
+      this.useRestApi = false;
+      logger.info('Google Vision: Not configured, will use Tesseract fallback');
     }
 
     this.fileTypeDetector = new FileTypeDetector();
@@ -76,8 +108,8 @@ class OCRProcessor {
         return await this.processMultiPagePDF(file, options);
       }
 
-      // Try Google Vision first (if available)
-      if (this.googleVisionAvailable && this.googleVisionClient) {
+      // Try Google Vision first (if available via client library or REST API)
+      if (this.googleVisionAvailable && (this.googleVisionClient || this.useRestApi)) {
         try {
           logger.info('OCR: Attempting Google Vision');
           const googleResults = await this.processWithGoogleVision(file);
@@ -355,14 +387,21 @@ class OCRProcessor {
 
   /**
    * Process document with Google Vision API
+   * Supports both client library (service account) and REST API (API key)
    * @param {Object} file - File to process
    * @returns {Promise<Object>} OCR results
    */
   async processWithGoogleVision(file) {
+    // Use REST API if we have an API key but no client library
+    if (this.useRestApi && this.googleVisionApiKey) {
+      return this.processWithGoogleVisionRestApi(file);
+    }
+
+    // Use client library (service account auth)
     try {
       // Perform text detection
       const [result] = await this.googleVisionClient.textDetection(file.buffer);
-      
+
       // Extract text and annotations
       const fullText = result.fullTextAnnotation?.text || '';
       const pages = result.fullTextAnnotation?.pages || [];
@@ -391,6 +430,87 @@ class OCRProcessor {
       });
 
       // Throw to trigger fallback
+      throw error;
+    }
+  }
+
+  /**
+   * Process document with Google Vision REST API (using API key)
+   * This is simpler than service account auth and works for most use cases
+   * @param {Object} file - File to process
+   * @returns {Promise<Object>} OCR results
+   */
+  async processWithGoogleVisionRestApi(file) {
+    try {
+      // Convert image buffer to base64
+      const base64Image = file.buffer.toString('base64');
+
+      // Call Vision API REST endpoint
+      const response = await axios.post(
+        `https://vision.googleapis.com/v1/images:annotate?key=${this.googleVisionApiKey}`,
+        {
+          requests: [{
+            image: { content: base64Image },
+            features: [
+              { type: 'DOCUMENT_TEXT_DETECTION' }, // Better for handwriting
+              { type: 'TEXT_DETECTION' }
+            ]
+          }]
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 60000,
+          maxContentLength: 50 * 1024 * 1024, // 50MB max
+          maxBodyLength: 50 * 1024 * 1024
+        }
+      );
+
+      const result = response.data.responses[0];
+
+      // Check for errors
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      // Extract text - prefer fullTextAnnotation (DOCUMENT_TEXT_DETECTION) for handwriting
+      const fullText = result.fullTextAnnotation?.text || result.textAnnotations?.[0]?.description || '';
+      const pages = result.fullTextAnnotation?.pages || [];
+
+      // Calculate confidence from pages
+      let confidence = 0.85; // Default confidence for Vision API
+      if (pages.length > 0) {
+        const blockConfidences = [];
+        for (const page of pages) {
+          for (const block of (page.blocks || [])) {
+            if (block.confidence) {
+              blockConfidences.push(block.confidence);
+            }
+          }
+        }
+        if (blockConfidences.length > 0) {
+          confidence = blockConfidences.reduce((a, b) => a + b, 0) / blockConfidences.length;
+        }
+      }
+
+      logger.operation('Google Vision REST API OCR Completed', {
+        filename: file.originalname,
+        confidence: confidence.toFixed(2),
+        textLength: fullText.length
+      });
+
+      return {
+        text: fullText,
+        confidence,
+        service: 'google-vision-rest',
+        pageCount: pages.length || 1,
+        raw: result
+      };
+
+    } catch (error) {
+      logger.error('Google Vision REST API OCR Failed', {
+        error: error.message,
+        filename: file.originalname
+      });
       throw error;
     }
   }
