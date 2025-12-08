@@ -42,10 +42,10 @@ if (config.storage.s3.enabled) {
     console.log('⚠️  S3 storage disabled - documents will not be uploaded');
 }
 
-// Database connection
+// Database connection - prioritize DATABASE_URL env var for running locally against production
 const pool = new Pool({
-    connectionString: config.database.connectionString,
-    ssl: config.database.ssl
+    connectionString: process.env.DATABASE_URL || config.database.connectionString,
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : config.database.ssl
 });
 
 // OCR processor
@@ -427,6 +427,10 @@ async function saveToDatabase(parsedData, sourceUrl, s3Url, volumeId, page) {
                 confidence: person.confidence
             }] : [];
 
+            // Full citation: "Record of Slaves in Montgomery County at the Time of the Adoption of the Constitution in 1864"
+            // Maryland State Archives, SC 2908, Volume 812
+            const citation = `Maryland State Archives, SC 2908, Vol. ${volumeId}, p. ${page}. "Record of Slaves in Montgomery County at the Time of the Adoption of the Constitution in 1864." ${s3Url ? `Archived: ${s3Url}` : ''}`;
+
             await client.query(`
                 INSERT INTO unconfirmed_persons (
                     full_name,
@@ -448,7 +452,7 @@ async function saveToDatabase(parsedData, sourceUrl, s3Url, volumeId, page) {
                 person.gender,
                 sourceUrl,
                 'msa_archive_scraper',
-                `Volume ${volumeId}, Page ${page}. Age: ${person.age || 'unknown'}. Condition: ${person.condition || 'unknown'}. Owner: ${person.owner || 'unknown'}`,
+                `${citation}. Age: ${person.age || 'unknown'}. Condition: ${person.condition || 'unknown'}. Owner: ${person.owner || 'unknown'}`,
                 person.confidence,
                 JSON.stringify(relationships),
                 'pending',
@@ -456,8 +460,10 @@ async function saveToDatabase(parsedData, sourceUrl, s3Url, volumeId, page) {
             ]);
         }
 
-        // Insert slaveholders
+        // Insert slaveholders with full citation
         for (const owner of parsedData.slaveholders) {
+            const citation = `Maryland State Archives, SC 2908, Vol. ${volumeId}, p. ${page}. "Record of Slaves in Montgomery County at the Time of the Adoption of the Constitution in 1864." ${s3Url ? `Archived: ${s3Url}` : ''}`;
+
             await client.query(`
                 INSERT INTO unconfirmed_persons (
                     full_name,
@@ -476,41 +482,14 @@ async function saveToDatabase(parsedData, sourceUrl, s3Url, volumeId, page) {
                 'slaveholder',
                 sourceUrl,
                 'msa_archive_scraper',
-                `Volume ${volumeId}, Page ${page}. Montgomery County Slave Statistics 1867-1868.`,
+                citation,
                 owner.confidence,
                 'pending',
                 'primary'
             ]);
         }
 
-        // Insert document record if S3 upload succeeded
-        if (s3Url) {
-            await client.query(`
-                INSERT INTO documents (
-                    title,
-                    source_url,
-                    storage_url,
-                    document_type,
-                    archive_name,
-                    metadata,
-                    created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                ON CONFLICT DO NOTHING
-            `, [
-                `Montgomery County Slave Statistics - Volume ${volumeId}, Page ${page}`,
-                sourceUrl,
-                s3Url,
-                'slave_record',
-                'Maryland State Archives',
-                JSON.stringify({
-                    volumeId,
-                    page,
-                    collection: 'SC 2908',
-                    series: 'Montgomery County Slave Statistics',
-                    dateRange: '1867-1868'
-                })
-            ]);
-        }
+        // Document PDFs are uploaded to S3 and linked in each person's context_text
 
         await client.query('COMMIT');
 
