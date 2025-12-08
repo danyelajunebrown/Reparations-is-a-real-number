@@ -149,7 +149,17 @@ class ExtractionWorker {
             await this.updateExtractionStatus(extractionId, 'processing', { progress: 10 });
 
             // Determine the best URL to fetch
-            const fetchUrl = contentUrl || sourceMetadata?.contentUrl || sessionUrl;
+            // Priority: ocrOptions.pdfUrl (user-provided direct PDF) > contentUrl > sourceMetadata.contentUrl > sessionUrl
+            let fetchUrl = contentUrl || sourceMetadata?.contentUrl || sessionUrl;
+
+            // If ocrOptions.pdfUrl is provided (e.g., direct Google Drive download URL), use that instead
+            if (ocrOptions.pdfUrl) {
+                this.debug('URL_OVERRIDE', 'Using pdfUrl from OCR options instead of session URL', {
+                    originalFetchUrl: fetchUrl,
+                    pdfUrl: ocrOptions.pdfUrl
+                });
+                fetchUrl = ocrOptions.pdfUrl;
+            }
             if (!fetchUrl) {
                 this.debug('ERROR', 'No valid URL found to fetch content', { contentUrl, sessionUrl });
                 throw new Error('No content URL available for extraction');
@@ -372,6 +382,30 @@ class ExtractionWorker {
             errors: []
         };
 
+        // Check if this is a Google Drive URL and handle it specially
+        const isGoogleDrive = url.includes('drive.google.com') || url.includes('drive.usercontent.google.com');
+        if (isGoogleDrive) {
+            this.debug('GOOGLE_DRIVE', 'Detected Google Drive URL, using specialized download', { url });
+
+            // Try to download from Google Drive with proper handling
+            try {
+                const googleResult = await this.tryGoogleDriveDownload(url);
+                if (googleResult.success) {
+                    result.success = true;
+                    result.buffer = googleResult.buffer;
+                    result.method = 'google_drive';
+                    result.contentType = googleResult.contentType;
+                    return result;
+                }
+                result.attemptedMethods.push('google_drive');
+                result.errors.push(`Google Drive: ${googleResult.error}`);
+            } catch (error) {
+                result.attemptedMethods.push('google_drive');
+                result.errors.push(`Google Drive: ${error.message}`);
+                this.debug('DOWNLOAD_FAIL', 'Google Drive download failed', { error: error.message });
+            }
+        }
+
         // Method 1: Direct HTTP download
         this.debug('DOWNLOAD_METHOD', 'Attempting direct HTTP download', { url });
         try {
@@ -523,6 +557,135 @@ class ExtractionWorker {
             buffer: Buffer.from(response.data),
             contentType
         };
+    }
+
+    /**
+     * Try to download from Google Drive with proper redirect handling
+     * @param {string} url - Google Drive URL (viewer or direct download)
+     * @returns {Promise<Object>} Download result
+     */
+    async tryGoogleDriveDownload(url) {
+        this.debug('GOOGLE_DRIVE_DOWNLOAD', 'Attempting Google Drive download', { url });
+
+        // Extract file ID from various Google Drive URL formats
+        let fileId = null;
+
+        // Format 1: /file/d/{fileId}/view
+        const viewMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (viewMatch) {
+            fileId = viewMatch[1];
+        }
+
+        // Format 2: id={fileId} (direct download URL)
+        const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (!fileId && idMatch) {
+            fileId = idMatch[1];
+        }
+
+        if (!fileId) {
+            return { success: false, error: 'Could not extract Google Drive file ID from URL' };
+        }
+
+        this.debug('GOOGLE_DRIVE_ID', 'Extracted file ID', { fileId });
+
+        // Try direct download URL (for publicly shared files)
+        const directDownloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+
+        try {
+            // First request to get the download page/redirect
+            const response = await axios.get(directDownloadUrl, {
+                responseType: 'arraybuffer',
+                timeout: 60000,
+                maxRedirects: 5,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/pdf,*/*'
+                },
+                validateStatus: (status) => status < 400
+            });
+
+            const contentType = response.headers['content-type'] || 'application/octet-stream';
+
+            this.debug('GOOGLE_DRIVE_RESPONSE', 'Got response from Google Drive', {
+                status: response.status,
+                contentType,
+                size: response.data?.length || 0
+            });
+
+            // Check if we got an HTML page (download confirmation page for large files)
+            if (contentType.includes('text/html')) {
+                this.debug('GOOGLE_DRIVE_HTML', 'Got HTML page, trying to extract confirmation link');
+
+                // Parse HTML for download confirmation link
+                const html = response.data.toString('utf-8');
+
+                // Look for download confirmation URL
+                const confirmMatch = html.match(/href="(\/uc\?export=download[^"]+)"/);
+                if (confirmMatch) {
+                    const confirmUrl = `https://drive.google.com${confirmMatch[1].replace(/&amp;/g, '&')}`;
+                    this.debug('GOOGLE_DRIVE_CONFIRM', 'Found confirmation URL', { confirmUrl });
+
+                    // Try the confirmation URL
+                    const confirmResponse = await axios.get(confirmUrl, {
+                        responseType: 'arraybuffer',
+                        timeout: 120000,
+                        maxRedirects: 10,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Accept': 'application/pdf,*/*',
+                            'Cookie': response.headers['set-cookie']?.join('; ') || ''
+                        }
+                    });
+
+                    const confirmContentType = confirmResponse.headers['content-type'] || 'application/octet-stream';
+
+                    if (!confirmContentType.includes('text/html')) {
+                        return {
+                            success: true,
+                            buffer: Buffer.from(confirmResponse.data),
+                            contentType: confirmContentType
+                        };
+                    }
+                }
+
+                // Alternative: try drive.usercontent.google.com directly
+                const contentUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
+                this.debug('GOOGLE_DRIVE_CONTENT', 'Trying usercontent URL', { contentUrl });
+
+                const contentResponse = await axios.get(contentUrl, {
+                    responseType: 'arraybuffer',
+                    timeout: 120000,
+                    maxRedirects: 10,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Accept': 'application/pdf,*/*'
+                    }
+                });
+
+                const finalContentType = contentResponse.headers['content-type'] || 'application/octet-stream';
+
+                if (!finalContentType.includes('text/html')) {
+                    return {
+                        success: true,
+                        buffer: Buffer.from(contentResponse.data),
+                        contentType: finalContentType
+                    };
+                }
+
+                return { success: false, error: 'Google Drive returned HTML instead of file content - file may not be publicly accessible' };
+            }
+
+            // Got the file directly
+            return {
+                success: true,
+                buffer: Buffer.from(response.data),
+                contentType
+            };
+
+        } catch (error) {
+            this.debug('GOOGLE_DRIVE_ERROR', 'Google Drive download failed', { error: error.message });
+            return { success: false, error: error.message };
+        }
     }
 
     /**
