@@ -265,9 +265,25 @@ class OCRProcessor {
           if (this.googleVisionAvailable && this.googleVisionClient) {
             pageResult = await this.processWithGoogleVision(pageFile);
           } else {
-            // Tesseract can't process PDFs directly, skip this page
-            logger.warn(`PDF: Skipping page ${pageNum} - no PDF OCR available`);
-            continue;
+            // Try to convert PDF page to image for Tesseract
+            logger.info(`PDF: Google Vision not available, attempting PDF to image conversion for Tesseract`);
+            try {
+              const imageBuffer = await this.convertPdfPageToImage(Buffer.from(singlePageBuffer));
+              if (imageBuffer) {
+                const imageFile = {
+                  buffer: imageBuffer,
+                  originalname: `page_${pageNum}.png`,
+                  mimetype: 'image/png'
+                };
+                pageResult = await this.processWithTesseract(imageFile);
+              } else {
+                logger.warn(`PDF: Could not convert page ${pageNum} to image`);
+                continue;
+              }
+            } catch (conversionError) {
+              logger.warn(`PDF: Page ${pageNum} conversion failed: ${conversionError.message}`);
+              continue;
+            }
           }
 
           if (pageResult.text && pageResult.text.trim().length > 0) {
@@ -509,6 +525,133 @@ class OCRProcessor {
     }
 
     return tesseractResults;
+  }
+
+  /**
+   * Convert a single-page PDF to an image buffer for OCR
+   * Uses pdf.js for rendering if available, otherwise tries to extract embedded images
+   * @param {Buffer} pdfBuffer - Single page PDF buffer
+   * @returns {Promise<Buffer|null>} PNG image buffer or null if conversion failed
+   */
+  async convertPdfPageToImage(pdfBuffer) {
+    try {
+      // Try using pdf.js (pdfjs-dist) for rendering
+      let pdfjsLib;
+      try {
+        pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+      } catch (e) {
+        logger.info('pdfjs-dist not available, trying alternative methods');
+      }
+
+      if (pdfjsLib) {
+        // Use pdf.js to render PDF to canvas
+        const loadingTask = pdfjsLib.getDocument({ data: pdfBuffer });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+
+        // Set up canvas for rendering
+        const viewport = page.getViewport({ scale: 2.0 }); // 2x scale for better OCR quality
+
+        // Create a canvas using sharp or node-canvas
+        // Since we don't have node-canvas, we'll try a different approach
+        logger.info('PDF.js loaded, but canvas rendering requires node-canvas');
+      }
+
+      // Alternative: Try to extract embedded images from the PDF using sharp
+      // Many scanned PDFs are just images embedded in PDF wrapper
+      try {
+        // Check if the PDF contains raw image data we can extract
+        const pdfString = pdfBuffer.toString('binary');
+
+        // Look for JPEG markers
+        const jpegStart = pdfString.indexOf('\xFF\xD8\xFF');
+        if (jpegStart !== -1) {
+          // Find the end of JPEG
+          let jpegEnd = pdfString.indexOf('\xFF\xD9', jpegStart);
+          if (jpegEnd !== -1) {
+            jpegEnd += 2; // Include the end marker
+            const jpegData = Buffer.from(pdfString.slice(jpegStart, jpegEnd), 'binary');
+
+            // Validate and convert with sharp
+            const imageBuffer = await sharp(jpegData)
+              .png()
+              .toBuffer();
+
+            logger.info('Successfully extracted embedded JPEG from PDF', {
+              originalSize: jpegData.length,
+              pngSize: imageBuffer.length
+            });
+            return imageBuffer;
+          }
+        }
+
+        // Look for PNG markers
+        const pngStart = pdfString.indexOf('\x89PNG');
+        if (pngStart !== -1) {
+          // Find PNG end marker (IEND)
+          const pngEnd = pdfString.indexOf('IEND', pngStart);
+          if (pngEnd !== -1) {
+            const pngData = Buffer.from(pdfString.slice(pngStart, pngEnd + 8), 'binary');
+
+            logger.info('Successfully extracted embedded PNG from PDF', { size: pngData.length });
+            return pngData;
+          }
+        }
+
+        logger.info('No embedded images found in PDF using simple extraction');
+      } catch (extractError) {
+        logger.warn('Image extraction from PDF failed', { error: extractError.message });
+      }
+
+      // Last resort: Try to use Puppeteer/Playwright to render the PDF
+      // This is slower but more reliable for complex PDFs
+      try {
+        const puppeteer = require('puppeteer');
+
+        logger.info('Attempting PDF rendering via Puppeteer');
+        const browser = await puppeteer.launch({
+          headless: 'new',
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+
+        try {
+          const page = await browser.newPage();
+
+          // Create a data URL from the PDF
+          const pdfBase64 = pdfBuffer.toString('base64');
+          const dataUrl = `data:application/pdf;base64,${pdfBase64}`;
+
+          // Navigate to PDF viewer
+          await page.goto(`https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(dataUrl)}`, {
+            waitUntil: 'networkidle0',
+            timeout: 30000
+          });
+
+          // Wait for PDF to render
+          await new Promise(r => setTimeout(r, 3000));
+
+          // Take screenshot of the PDF viewer
+          const screenshot = await page.screenshot({
+            fullPage: false,
+            type: 'png'
+          });
+
+          logger.info('Successfully rendered PDF via Puppeteer', { screenshotSize: screenshot.length });
+          return screenshot;
+        } finally {
+          await browser.close();
+        }
+      } catch (puppeteerError) {
+        logger.warn('Puppeteer PDF rendering failed', { error: puppeteerError.message });
+      }
+
+      logger.warn('All PDF to image conversion methods failed');
+      return null;
+
+    } catch (error) {
+      logger.error('PDF to image conversion failed', { error: error.message });
+      return null;
+    }
   }
 }
 
