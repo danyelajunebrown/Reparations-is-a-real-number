@@ -1503,11 +1503,6 @@
             documentViewerState.viewMode = 'document';
             documentViewerState.zoomLevel = 1;
 
-            // Pause carousel auto-rotation
-            if (isAutoRotating) {
-                toggleAutoRotate();
-            }
-
             // Show document viewer
             const viewer = document.getElementById('documentViewer');
             viewer.classList.add('active');
@@ -1536,11 +1531,6 @@
             documentViewerState.currentMetadata = null;
             documentViewerState.viewMode = 'tree';
             documentViewerState.zoomLevel = 1;
-
-            // Resume carousel auto-rotation if it was active
-            if (!isAutoRotating) {
-                toggleAutoRotate();
-            }
 
             // Clear document content
             const content = document.getElementById('documentContent');
@@ -2434,7 +2424,6 @@ async function uploadMultiPageDocument() {
         // ============================================
         // CAROUSEL
         // ============================================
-        
         let currentRotation = 0;
         let autoRotateInterval;
         let isAutoRotating = true;
