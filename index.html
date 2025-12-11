@@ -3368,7 +3368,8 @@ function skipMetadata() {
         }
 
         // ============================================
-        // DOCUMENT SEARCH FUNCTIONALITY
+        // UNIFIED SEARCH FUNCTIONALITY
+        // Searches both documents AND unconfirmed_persons (scraped data)
         // ============================================
 
         async function searchDocuments() {
@@ -3388,26 +3389,39 @@ function skipMetadata() {
             // Show loading
             searchResults.style.display = 'block';
             searchResultsTitle.textContent = 'Searching...';
-            searchResultsList.innerHTML = '<div style="color: #9aa5b1; text-align: center; padding: 20px;">⏳ Searching documents...</div>';
+            searchResultsList.innerHTML = '<div style="color: #9aa5b1; text-align: center; padding: 20px;">⏳ Searching database...</div>';
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(query)}`);
-                const data = await response.json();
+                // Search both documents AND unconfirmed_persons in parallel
+                const [docResponse, peopleResponse] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/documents/owner/${encodeURIComponent(query)}`).catch(() => ({ ok: false })),
+                    fetch(`${API_BASE_URL}/api/contribute/search/${encodeURIComponent(query)}`).catch(() => ({ ok: false }))
+                ]);
 
-                if (!data.success) {
-                    throw new Error(data.error || 'Search failed');
+                let documents = [];
+                let people = [];
+
+                if (docResponse.ok) {
+                    const docData = await docResponse.json();
+                    if (docData.success) documents = docData.documents || [];
                 }
 
-                console.log(`✅ Found ${data.count} document(s)`);
+                if (peopleResponse.ok) {
+                    const peopleData = await peopleResponse.json();
+                    if (peopleData.success) people = peopleData.results || [];
+                }
+
+                const totalCount = documents.length + people.length;
+                console.log(`✅ Found ${documents.length} document(s) and ${people.length} person record(s)`);
 
                 // Update results title
-                searchResultsTitle.textContent = `Found ${data.count} Document${data.count !== 1 ? 's' : ''} for "${query}"`;
+                searchResultsTitle.textContent = `Found ${totalCount} Result${totalCount !== 1 ? 's' : ''} for "${query}"`;
 
-                if (data.count === 0) {
+                if (totalCount === 0) {
                     searchResultsList.innerHTML = `
                         <div style="color: #9aa5b1; text-align: center; padding: 30px;">
                             <div style="font-size: 48px; margin-bottom: 15px;">🔍</div>
-                            <div style="font-size: 18px; margin-bottom: 10px;">No documents found</div>
+                            <div style="font-size: 18px; margin-bottom: 10px;">No results found</div>
                             <div style="font-size: 14px;">Try a different search term or check spelling</div>
                         </div>
                     `;
@@ -3416,57 +3430,118 @@ function skipMetadata() {
 
                 // Display results
                 let html = '';
-                for (const doc of data.documents) {
-                    const fileSize = doc.file_size ? (doc.file_size / 1024).toFixed(1) : 'Unknown';
-                    const uploadDate = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : 'Unknown';
 
-                    html += `
-                        <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
-                                   border-radius: 10px; padding: 20px; margin-bottom: 15px; transition: all 0.3s;"
-                             onmouseover="this.style.borderColor='rgba(100, 200, 255, 0.8)'; this.style.background='rgba(30, 40, 70, 0.9)';"
-                             onmouseout="this.style.borderColor='rgba(100, 200, 255, 0.3)'; this.style.background='rgba(30, 40, 70, 0.6)';">
+                // Show people/entities from scraped data first (more likely to have MSA records)
+                if (people.length > 0) {
+                    html += `<div style="color: #64c8ff; font-size: 1.1em; font-weight: bold; margin-bottom: 15px; padding: 10px; background: rgba(100, 200, 255, 0.1); border-radius: 8px;">
+                        📋 Database Records (${people.length})
+                    </div>`;
 
-                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                                <div style="flex: 1;">
-                                    <div style="color: #64c8ff; font-size: 1.2em; font-weight: bold; margin-bottom: 8px;">
-                                        ${doc.owner_name || 'Unknown Owner'}
-                                    </div>
-                                    <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 5px;">
-                                        📄 ${doc.filename || 'Unknown file'}
-                                    </div>
-                                    <div style="color: #9aa5b1; font-size: 0.85em;">
-                                        Type: ${(doc.doc_type || 'unknown').toUpperCase()} •
-                                        Size: ${fileSize} KB •
-                                        Uploaded: ${uploadDate}
-                                    </div>
-                                    ${doc.owner_location ? `
-                                        <div style="color: #9aa5b1; font-size: 0.85em; margin-top: 5px;">
-                                            📍 ${doc.owner_location}
+                    for (const person of people) {
+                        const sourceHost = person.source_url ? new URL(person.source_url).hostname : 'Unknown';
+                        const confidence = person.confidence_score ? `${(person.confidence_score * 100).toFixed(0)}%` : 'N/A';
+                        const personType = person.type === 'slaveholder' ? '👤 Slaveholder' : person.type === 'enslaved' ? '⛓️ Enslaved' : '👤 Person';
+
+                        html += `
+                            <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
+                                       border-radius: 10px; padding: 20px; margin-bottom: 15px; transition: all 0.3s;"
+                                 onmouseover="this.style.borderColor='rgba(100, 200, 255, 0.8)'; this.style.background='rgba(30, 40, 70, 0.9)';"
+                                 onmouseout="this.style.borderColor='rgba(100, 200, 255, 0.3)'; this.style.background='rgba(30, 40, 70, 0.6)';">
+
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                    <div style="flex: 1;">
+                                        <div style="color: #64c8ff; font-size: 1.2em; font-weight: bold; margin-bottom: 8px;">
+                                            ${person.name || 'Unknown Name'}
                                         </div>
-                                    ` : ''}
+                                        <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 5px;">
+                                            ${personType} • Confidence: ${confidence}
+                                        </div>
+                                        <div style="color: #9aa5b1; font-size: 0.85em;">
+                                            Source: ${sourceHost}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <span style="background: ${person.source_type === 'primary' ? 'rgba(100, 255, 100, 0.2)' : 'rgba(255, 200, 100, 0.2)'};
+                                                     color: ${person.source_type === 'primary' ? '#64ff64' : '#ffc864'};
+                                                     padding: 4px 10px; border-radius: 12px; font-size: 0.8em;">
+                                            ${person.source_type || 'unknown'} source
+                                        </span>
+                                    </div>
+                                </div>
+
+                                ${person.source_url ? `
+                                    <div style="margin-top: 10px;">
+                                        <a href="${person.source_url}" target="_blank"
+                                           style="color: #64c8ff; text-decoration: none; font-size: 0.85em;"
+                                           onmouseover="this.style.textDecoration='underline';"
+                                           onmouseout="this.style.textDecoration='none';">
+                                            🔗 View Original Source
+                                        </a>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    }
+                }
+
+                // Show documents (uploaded PDFs etc)
+                if (documents.length > 0) {
+                    html += `<div style="color: #64c8ff; font-size: 1.1em; font-weight: bold; margin: 20px 0 15px 0; padding: 10px; background: rgba(100, 200, 255, 0.1); border-radius: 8px;">
+                        📄 Uploaded Documents (${documents.length})
+                    </div>`;
+
+                    for (const doc of documents) {
+                        const fileSize = doc.file_size ? (doc.file_size / 1024).toFixed(1) : 'Unknown';
+                        const uploadDate = doc.created_at ? new Date(doc.created_at).toLocaleDateString() : 'Unknown';
+
+                        html += `
+                            <div style="background: rgba(30, 40, 70, 0.6); border: 1px solid rgba(100, 200, 255, 0.3);
+                                       border-radius: 10px; padding: 20px; margin-bottom: 15px; transition: all 0.3s;"
+                                 onmouseover="this.style.borderColor='rgba(100, 200, 255, 0.8)'; this.style.background='rgba(30, 40, 70, 0.9)';"
+                                 onmouseout="this.style.borderColor='rgba(100, 200, 255, 0.3)'; this.style.background='rgba(30, 40, 70, 0.6)';">
+
+                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                                    <div style="flex: 1;">
+                                        <div style="color: #64c8ff; font-size: 1.2em; font-weight: bold; margin-bottom: 8px;">
+                                            ${doc.owner_name || 'Unknown Owner'}
+                                        </div>
+                                        <div style="color: #9aa5b1; font-size: 0.9em; margin-bottom: 5px;">
+                                            📄 ${doc.filename || 'Unknown file'}
+                                        </div>
+                                        <div style="color: #9aa5b1; font-size: 0.85em;">
+                                            Type: ${(doc.doc_type || 'unknown').toUpperCase()} •
+                                            Size: ${fileSize} KB •
+                                            Uploaded: ${uploadDate}
+                                        </div>
+                                        ${doc.owner_location ? `
+                                            <div style="color: #9aa5b1; font-size: 0.85em; margin-top: 5px;">
+                                                📍 ${doc.owner_location}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+
+                                <div style="display: flex; gap: 10px;">
+                                    <button onclick="viewDocument('${doc.document_id}')"
+                                            style="flex: 1; padding: 12px; background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff;
+                                                   color: #64c8ff; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600;
+                                                   transition: all 0.3s;"
+                                            onmouseover="this.style.background='rgba(100, 200, 255, 0.3)'; this.style.transform='translateY(-2px)';"
+                                            onmouseout="this.style.background='rgba(100, 200, 255, 0.2)'; this.style.transform='translateY(0)';">
+                                        👁️ View Document
+                                    </button>
+                                    <button onclick="downloadDocument('${doc.document_id}')"
+                                            style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid #64ff64;
+                                                   color: #64ff64; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600;
+                                                   transition: all 0.3s;"
+                                            onmouseover="this.style.background='rgba(100, 255, 100, 0.3)'; this.style.transform='translateY(-2px)';"
+                                            onmouseout="this.style.background='rgba(100, 255, 100, 0.2)'; this.style.transform='translateY(0)';">
+                                        ⬇️ Download
+                                    </button>
                                 </div>
                             </div>
-
-                            <div style="display: flex; gap: 10px;">
-                                <button onclick="viewDocument('${doc.document_id}')"
-                                        style="flex: 1; padding: 12px; background: rgba(100, 200, 255, 0.2); border: 1px solid #64c8ff;
-                                               color: #64c8ff; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600;
-                                               transition: all 0.3s;"
-                                        onmouseover="this.style.background='rgba(100, 200, 255, 0.3)'; this.style.transform='translateY(-2px)';"
-                                        onmouseout="this.style.background='rgba(100, 200, 255, 0.2)'; this.style.transform='translateY(0)';">
-                                    👁️ View Document
-                                </button>
-                                <button onclick="downloadDocument('${doc.document_id}')"
-                                        style="flex: 1; padding: 12px; background: rgba(100, 255, 100, 0.2); border: 1px solid #64ff64;
-                                               color: #64ff64; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600;
-                                               transition: all 0.3s;"
-                                        onmouseover="this.style.background='rgba(100, 255, 100, 0.3)'; this.style.transform='translateY(-2px)';"
-                                        onmouseout="this.style.background='rgba(100, 255, 100, 0.2)'; this.style.transform='translateY(0)';">
-                                    ⬇️ Download
-                                </button>
-                            </div>
-                        </div>
-                    `;
+                        `;
+                    }
                 }
 
                 searchResultsList.innerHTML = html;
