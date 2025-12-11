@@ -11,6 +11,14 @@ const router = express.Router();
 const multer = require('multer');
 const ContributionSession = require('../../services/contribution/ContributionSession');
 const OwnerPromotion = require('../../services/contribution/OwnerPromotion');
+const SourceClassifier = require('../../services/SourceClassifier');
+const SourceAnalyzer = require('../../services/SourceAnalyzer');
+const FamilySearchCatalogProcessor = require('../../services/FamilySearchCatalogProcessor');
+const UniversalRouter = require('../../services/UniversalRouter');
+
+// Initialize classifiers and analyzers
+const sourceClassifier = new SourceClassifier();
+let sourceAnalyzer = null; // Will be initialized with database connection
 
 // Configure multer for file uploads (memory storage for processing)
 const upload = multer({
@@ -39,6 +47,7 @@ let promotionService = null;
 function initializeService(database, extractionWorker = null) {
     contributionService = new ContributionSession(database, extractionWorker);
     promotionService = new OwnerPromotion(database);
+    sourceAnalyzer = new SourceAnalyzer(database);
 }
 
 /**
@@ -903,6 +912,636 @@ router.post('/check-federal', async (req, res) => {
         });
 
     } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// =============================================================================
+// SOURCE CLASSIFICATION & INTELLIGENT ROUTING ENDPOINTS
+// =============================================================================
+
+/**
+ * POST /api/contribute/classify-source
+ * Analyze a URL to determine source type, confidence, and recommended extraction method
+ */
+router.post('/classify-source', async (req, res) => {
+    try {
+        const { url, metadata } = req.body;
+
+        if (!url) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL is required'
+            });
+        }
+
+        // Validate URL format
+        try {
+            new URL(url);
+        } catch {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid URL format'
+            });
+        }
+
+        // Classify the source
+        const classification = sourceClassifier.classify(url, metadata || {});
+
+        // Get display-friendly format
+        const display = sourceClassifier.formatForDisplay(classification);
+
+        // Determine target tables
+        const targetTables = sourceClassifier.getTargetTables(classification);
+
+        res.json({
+            success: true,
+            classification: {
+                ...classification,
+                display,
+                targetTables
+            },
+            message: `${display.badge} - ${classification.sourceName} (${display.confidence} confidence)`,
+            recommendations: {
+                extractionMethod: classification.recommendedMethod,
+                autoConfirm: classification.shouldAutoConfirm,
+                expectedDataTypes: classification.expectedDataTypes
+            }
+        });
+
+    } catch (error) {
+        console.error('Source classification error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// =============================================================================
+// FAMILYSEARCH CATALOG ENDPOINTS
+// =============================================================================
+
+/**
+ * POST /api/contribute/familysearch-catalog
+ * Process a FamilySearch catalog URL and detect/queue multiple film collections
+ */
+router.post('/familysearch-catalog', async (req, res) => {
+    try {
+        const { catalogUrl, autoQueue } = req.body;
+
+        if (!catalogUrl) {
+            return res.status(400).json({
+                success: false,
+                error: 'catalogUrl is required'
+            });
+        }
+
+        // Verify it's a catalog URL
+        if (!FamilySearchCatalogProcessor.isCatalogUrl(catalogUrl)) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL does not appear to be a FamilySearch catalog URL',
+                hint: 'Expected format: https://www.familysearch.org/search/catalog/XXXXXX'
+            });
+        }
+
+        // Get database pool from contributionService
+        // contributionService.db is the pool passed directly from server.js
+        const pool = contributionService?.db;
+        if (!pool) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database connection not available'
+            });
+        }
+
+        const catalogProcessor = new FamilySearchCatalogProcessor({ pool });
+
+        // Extract film information from catalog
+        const catalogResult = await catalogProcessor.extractFilms(catalogUrl);
+
+        if (!catalogResult.success) {
+            return res.status(400).json({
+                success: false,
+                error: catalogResult.error
+            });
+        }
+
+        let queueResult = null;
+        if (autoQueue && catalogResult.films.length > 0) {
+            // Auto-queue films for processing
+            queueResult = await catalogProcessor.queueFilmsForProcessing(catalogResult.films);
+        }
+
+        res.json({
+            success: true,
+            catalog: {
+                id: catalogResult.catalogId,
+                url: catalogResult.catalogUrl,
+                totalFilms: catalogResult.totalFilms
+            },
+            films: catalogResult.films,
+            queueResult: queueResult,
+            message: autoQueue
+                ? `Found ${catalogResult.totalFilms} films, queued ${queueResult?.queued?.length || 0} for processing`
+                : `Found ${catalogResult.totalFilms} films in catalog`
+        });
+
+    } catch (error) {
+        console.error('FamilySearch catalog error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/contribute/familysearch-catalog/:catalogId/status
+ * Get processing status for a FamilySearch catalog
+ */
+router.get('/familysearch-catalog/:catalogId/status', async (req, res) => {
+    try {
+        const { catalogId } = req.params;
+
+        // Get database pool
+        const pool = contributionService?.db;
+        if (!pool) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database connection not available'
+            });
+        }
+
+        const catalogProcessor = new FamilySearchCatalogProcessor({ pool });
+        const status = await catalogProcessor.getCatalogStatus(catalogId);
+
+        res.json({
+            success: true,
+            status,
+            message: `Catalog ${catalogId}: ${status.completed}/${status.total} films completed`
+        });
+
+    } catch (error) {
+        console.error('Catalog status error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/contribute/analyze-source
+ * INTELLIGENT SOURCE ANALYSIS - Performs deep analysis of a source URL
+ * This is the endpoint that asks the same questions about each source URL
+ * that were manually analyzed for sources like the Louisiana Slave Database.
+ *
+ * Analysis includes:
+ * - Source type identification (archive, database, government records, etc.)
+ * - Available downloads (ZIP, CSV, PDF, images)
+ * - Data fields detected (names, ages, skills, prices, locations, etc.)
+ * - Quality assessment (documentation, codebooks, structure)
+ * - Processing plan generation
+ * - Custom scraper recommendation
+ */
+router.post('/analyze-source', async (req, res) => {
+    try {
+        const { url } = req.body;
+
+        if (!url) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL is required'
+            });
+        }
+
+        // Validate URL format
+        try {
+            new URL(url);
+        } catch {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid URL format'
+            });
+        }
+
+        if (!sourceAnalyzer) {
+            return res.status(500).json({
+                success: false,
+                error: 'Source analyzer not initialized'
+            });
+        }
+
+        // Run comprehensive source analysis
+        console.log(`\n[ANALYZE-SOURCE] Starting intelligent analysis of: ${url}`);
+        const analysis = await sourceAnalyzer.analyzeSource(url);
+
+        // Save analysis to database if available
+        await sourceAnalyzer.saveAnalysis(analysis);
+
+        // Generate user-friendly summary
+        const summary = generateAnalysisSummary(analysis);
+
+        res.json({
+            success: true,
+            url,
+            analysis: {
+                sourceType: analysis.sourceType,
+                qualityScore: analysis.qualityIndicators.overallScore,
+                downloads: analysis.availableDownloads,
+                detectedFields: analysis.detectedFields,
+                estimatedRecords: analysis.estimatedRecordCount,
+                processingPlan: analysis.processingPlan,
+                customScraperNeeded: analysis.customScraperNeeded,
+                recommendations: analysis.recommendations
+            },
+            summary,
+            message: summary.headline
+        });
+
+    } catch (error) {
+        console.error('Source analysis error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * Generate a user-friendly summary of the analysis
+ */
+function generateAnalysisSummary(analysis) {
+    const headlines = [];
+    const actions = [];
+
+    // Quality-based headlines
+    if (analysis.qualityIndicators.overallScore >= 70) {
+        headlines.push('HIGH VALUE SOURCE - Contains structured data with documentation');
+    } else if (analysis.qualityIndicators.overallScore >= 40) {
+        headlines.push('MODERATE VALUE SOURCE - Some structured data found');
+    } else {
+        headlines.push('BASIC SOURCE - May require manual extraction');
+    }
+
+    // Downloads found
+    const dataFiles = analysis.availableDownloads.filter(d =>
+        ['zip', 'csv', 'xlsx', 'dbf'].includes(d.type)
+    );
+    if (dataFiles.length > 0) {
+        headlines.push(`Found ${dataFiles.length} downloadable data file(s)`);
+        actions.push(`Download and process: ${dataFiles.map(d => d.name).join(', ')}`);
+    }
+
+    // Fields detected
+    const criticalFields = analysis.detectedFields.filter(f => f.importance === 'critical');
+    const highFields = analysis.detectedFields.filter(f => f.importance === 'high');
+    if (criticalFields.length > 0 || highFields.length > 0) {
+        const fieldNames = [...criticalFields, ...highFields].slice(0, 5).map(f => f.field);
+        headlines.push(`Detected fields: ${fieldNames.join(', ')}`);
+    }
+
+    // Custom scraper needed
+    if (analysis.customScraperNeeded) {
+        actions.push('Custom scraper recommended for optimal extraction');
+    }
+
+    // Processing strategy
+    if (analysis.processingPlan) {
+        actions.push(`Recommended strategy: ${analysis.processingPlan.strategy}`);
+    }
+
+    return {
+        headline: headlines[0] || 'Analysis complete',
+        details: headlines.slice(1),
+        recommendedActions: actions,
+        priority: analysis.sourceType?.priority || 'low'
+    };
+}
+
+/**
+ * POST /api/contribute/universal-extract
+ * Universal URL extraction using UniversalRouter
+ * 
+ * This endpoint:
+ * 1. Analyzes URL to determine source type and scraper
+ * 2. Executes immediately if fast/simple
+ * 3. Queues for background processing if complex
+ * 4. Returns results or queue ID
+ */
+router.post('/universal-extract', async (req, res) => {
+    try {
+        const { url, metadata, options } = req.body;
+
+        if (!url) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL is required'
+            });
+        }
+
+        // Validate URL format
+        try {
+            new URL(url);
+        } catch {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid URL format'
+            });
+        }
+
+        // Initialize router
+        const router = new UniversalRouter(contributionService.db);
+
+        // Execute extraction
+        const result = await router.extract(url, {
+            metadata: metadata || {},
+            ...options
+        });
+
+        // Return appropriate response based on execution strategy
+        if (result.immediate) {
+            // Immediate execution completed
+            res.json({
+                success: true,
+                immediate: true,
+                routing: result.routing,
+                extraction: {
+                    url: result.result.url,
+                    category: result.result.category,
+                    ownersFound: result.result.owners.length,
+                    enslavedFound: result.result.enslavedPeople.length,
+                    relationshipsFound: result.result.relationships.length,
+                    duration: result.result.duration,
+                    owners: result.result.owners,
+                    enslaved: result.result.enslavedPeople,
+                    relationships: result.result.relationships,
+                    documents: result.result.documents,
+                    metadata: result.result.metadata
+                },
+                message: result.message
+            });
+        } else {
+            // Queued for background processing
+            res.json({
+                success: true,
+                queued: true,
+                routing: result.routing,
+                queueId: result.queueId,
+                queueUrl: result.queueUrl,
+                status: result.status,
+                estimatedWait: result.estimatedWait,
+                message: result.message,
+                checkStatusUrl: `/api/contribute/queue/${result.queueId}/status`
+            });
+        }
+
+    } catch (error) {
+        console.error('Universal extract error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/contribute/queue/:queueId/status
+ * Check status of queued extraction
+ */
+router.get('/queue/:queueId/status', async (req, res) => {
+    try {
+        const { queueId } = req.params;
+
+        const router = new UniversalRouter(contributionService.db);
+        const status = await router.getQueueStatus(queueId);
+
+        if (!status) {
+            return res.status(404).json({
+                success: false,
+                error: 'Queue entry not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            queue: status
+        });
+
+    } catch (error) {
+        console.error('Queue status error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * POST /api/contribute/smart-extract
+ * Intelligent extraction that auto-detects source type and routes appropriately
+ * 
+ * @deprecated Use /universal-extract instead (unified interface)
+ */
+router.post('/smart-extract', async (req, res) => {
+    try {
+        const { url, metadata } = req.body;
+
+        if (!url) {
+            return res.status(400).json({
+                success: false,
+                error: 'URL is required'
+            });
+        }
+
+        // Step 1: Classify the source
+        const classification = sourceClassifier.classify(url, metadata || {});
+        const display = sourceClassifier.formatForDisplay(classification);
+
+        // Step 2: Check for special handling cases
+        let specialHandling = null;
+
+        // FamilySearch catalog - has multiple films
+        if (FamilySearchCatalogProcessor.isCatalogUrl(url)) {
+            specialHandling = {
+                type: 'familysearch_catalog',
+                message: 'This is a FamilySearch catalog with multiple film collections',
+                nextStep: 'Use /api/contribute/familysearch-catalog to analyze and queue films'
+            };
+        }
+        // FamilySearch film viewer - needs authentication and tile extraction
+        else if (FamilySearchCatalogProcessor.isFilmViewerUrl(url)) {
+            specialHandling = {
+                type: 'familysearch_film',
+                message: 'This is a FamilySearch film viewer URL',
+                nextStep: 'Start a contribution session to process with OCR'
+            };
+        }
+        // MSA PDF archives
+        else if (url.includes('msa.maryland.gov') && url.includes('.pdf')) {
+            specialHandling = {
+                type: 'msa_pdf',
+                message: 'This is a Maryland State Archives PDF document',
+                nextStep: 'Start a contribution session for PDF OCR extraction'
+            };
+        }
+
+        res.json({
+            success: true,
+            url,
+            classification: {
+                sourceType: classification.sourceType,
+                sourceName: classification.sourceName,
+                confidence: classification.confidence,
+                isPrimarySource: classification.isPrimarySource,
+                shouldAutoConfirm: classification.shouldAutoConfirm,
+                badge: display.badge
+            },
+            recommendedMethod: classification.recommendedMethod,
+            expectedDataTypes: classification.expectedDataTypes,
+            specialHandling,
+            message: specialHandling
+                ? specialHandling.message
+                : `${display.badge} source detected - use recommended extraction method: ${classification.recommendedMethod}`
+        });
+
+    } catch (error) {
+        console.error('Smart extract error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// =============================================================================
+// UNIFIED SEARCH ENDPOINT
+// =============================================================================
+
+/**
+ * GET /api/contribute/search/:query
+ * Search across all person tables (unconfirmed_persons, enslaved_people, individuals)
+ * This is what the homepage search should call
+ */
+router.get('/search/:query', async (req, res) => {
+    try {
+        const { query } = req.params;
+        const { limit = 50, source } = req.query;
+
+        if (!query || query.length < 2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Query must be at least 2 characters'
+            });
+        }
+
+        const pool = contributionService?.db;
+        if (!pool) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database connection not available'
+            });
+        }
+
+        // Build the search query
+        let sql = `
+            SELECT
+                lead_id as id,
+                full_name as name,
+                person_type as type,
+                source_url,
+                source_type,
+                confidence_score,
+                locations,
+                scraped_at as created_at,
+                'unconfirmed_persons' as table_source
+            FROM unconfirmed_persons
+            WHERE full_name ILIKE $1
+        `;
+        const params = [`%${query}%`];
+        let paramIndex = 2;
+
+        // Filter by source if provided
+        if (source) {
+            sql += ` AND source_url ILIKE $${paramIndex}`;
+            params.push(`%${source}%`);
+            paramIndex++;
+        }
+
+        sql += ` ORDER BY confidence_score DESC NULLS LAST, scraped_at DESC LIMIT $${paramIndex}`;
+        params.push(parseInt(limit));
+
+        const result = await pool.query(sql, params);
+
+        // Group results by source
+        const bySource = {};
+        result.rows.forEach(row => {
+            const sourceKey = row.source_url ? new URL(row.source_url).hostname : 'unknown';
+            if (!bySource[sourceKey]) {
+                bySource[sourceKey] = [];
+            }
+            bySource[sourceKey].push(row);
+        });
+
+        res.json({
+            success: true,
+            query,
+            count: result.rows.length,
+            results: result.rows,
+            bySource,
+            sources: Object.keys(bySource).map(key => ({
+                hostname: key,
+                count: bySource[key].length
+            }))
+        });
+
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/contribute/stats
+ * Get statistics about the database records
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const pool = contributionService?.db;
+        if (!pool) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database connection not available'
+            });
+        }
+
+        const stats = await pool.query(`
+            SELECT
+                COUNT(*) as total_records,
+                COUNT(DISTINCT source_url) as unique_sources,
+                COUNT(CASE WHEN person_type = 'slaveholder' THEN 1 END) as slaveholders,
+                COUNT(CASE WHEN person_type = 'enslaved' THEN 1 END) as enslaved,
+                COUNT(CASE WHEN source_url LIKE '%msa.maryland.gov%' THEN 1 END) as msa_records,
+                COUNT(CASE WHEN source_url LIKE '%familysearch%' THEN 1 END) as familysearch_records,
+                COUNT(CASE WHEN source_url LIKE '%civilwardc%' THEN 1 END) as civilwardc_records
+            FROM unconfirmed_persons
+        `);
+
+        res.json({
+            success: true,
+            stats: stats.rows[0]
+        });
+
+    } catch (error) {
+        console.error('Stats error:', error);
         res.status(500).json({
             success: false,
             error: error.message
