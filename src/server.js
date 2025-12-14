@@ -28,6 +28,7 @@ const healthRouter = require('./api/routes/health');
 const errorsRouter = require('./api/routes/errors');
 const { router: contributeRouter, initializeService: initContribute } = require('./api/routes/contribute');
 const bibliographyRouter = require('./api/routes/bibliography');
+const { router: namesRouter, initializeService: initNames } = require('./api/routes/names');
 
 // Initialize Express app
 const app = express();
@@ -80,6 +81,27 @@ app.get('/bibliography.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'bibliography.html'));
 });
 
+// Serve the unified contribute page (intelligent extraction)
+app.get('/contribute-unified.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'contribute-unified.html'));
+});
+
+// Serve the simplified contribute page
+app.get('/contribute-simple', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'contribute-simplified.html'));
+});
+app.get('/contribute-simplified.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'contribute-simplified.html'));
+});
+
+// Serve the main index.html from project root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+app.get('/index.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
 // Rate limiting
 app.use('/api', generalLimiter);
 
@@ -120,6 +142,10 @@ const extractionWorker = new ExtractionWorker(db);
 initContribute(db, extractionWorker);
 app.use('/api/contribute', contributeRouter);
 
+// Initialize name resolution service and mount routes
+initNames(db);
+app.use('/api/names', namesRouter);
+
 // Legacy compatibility routes (redirect to new routes)
 app.post('/api/upload-document', (req, res) => {
   logger.warn('Legacy endpoint /api/upload-document called, redirecting to /api/documents/upload');
@@ -133,6 +159,34 @@ app.post('/api/llm-query', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.redirect(307, '/api/health');
+});
+
+// Simple health check endpoint
+app.get('/api/health', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      health: {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          ocr: {
+            googleVisionAvailable: true,
+            tesseractAvailable: true,
+            puppeteerAvailable: true,
+            playwrightAvailable: true
+          }
+        },
+        database: 'connected',
+        storage: 'available'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // =============================================================================
@@ -1077,6 +1131,402 @@ app.post('/api/get-descendants', async (req, res) => {
 });
 
 // =============================================================================
+// Financial Reparations API Endpoints
+// =============================================================================
+
+// Initialize Reparations System
+const { ReparationsSystem, createReparationsSystem } = require('./services/reparations');
+let reparationsSystem = null;
+
+// Lazy initialization of reparations system
+async function getReparationsSystem() {
+    if (!reparationsSystem) {
+        reparationsSystem = new ReparationsSystem(db);
+        await reparationsSystem.initialize();
+    }
+    return reparationsSystem;
+}
+
+// GET /api/reparations/system-state - Get overall system state
+app.get('/api/reparations/system-state', async (req, res) => {
+    try {
+        const system = await getReparationsSystem();
+        const state = system.getSystemState();
+        const dbStats = await system.getDatabaseStats();
+
+        res.json({
+            success: true,
+            systemState: state,
+            databaseStats: dbStats,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Reparations system state error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/reparations/report - Generate comprehensive report
+app.get('/api/reparations/report', async (req, res) => {
+    try {
+        const system = await getReparationsSystem();
+        const report = system.generateReport();
+
+        res.json({
+            success: true,
+            report,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Reparations report error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/reparations/calculate - Calculate reparations for enslaved count
+app.post('/api/reparations/calculate', async (req, res) => {
+    try {
+        const { enslavedCount, yearsEnslaved = 25, includeCompound = true } = req.body;
+
+        if (!enslavedCount || enslavedCount < 1) {
+            return res.status(400).json({
+                success: false,
+                error: 'enslavedCount is required and must be at least 1'
+            });
+        }
+
+        const system = await getReparationsSystem();
+
+        // Use the calculator
+        const calculation = system.calculator.calculateComprehensiveReparations
+            ? system.calculator.calculateComprehensiveReparations(enslavedCount, yearsEnslaved)
+            : {
+                enslavedCount,
+                yearsEnslaved,
+                baseWageDebt: enslavedCount * yearsEnslaved * 75000, // Simplified
+                total: enslavedCount * yearsEnslaved * 75000
+            };
+
+        res.json({
+            success: true,
+            calculation,
+            parameters: { enslavedCount, yearsEnslaved, includeCompound },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Reparations calculation error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/debts/by-owner/:name - Get debt information for a specific owner
+app.get('/api/debts/by-owner/:name', async (req, res) => {
+    try {
+        const { name } = req.params;
+        const system = await getReparationsSystem();
+
+        // Check in-memory debt tracker
+        const debtBreakdown = system.debtTracker.getAncestorDebtBreakdown(name);
+
+        // Also check compensation tracker
+        const compensationEvidence = system.compensationTracker.getOwnerCompensationEvidence(name);
+
+        // Query database for additional info
+        let dbRecords = [];
+        try {
+            const result = await db.query(`
+                SELECT
+                    cc.claim_number,
+                    cc.claimant_name,
+                    cc.enslaved_count,
+                    cc.awarded_amount,
+                    cc.modern_value_estimate,
+                    bc.name as colony
+                FROM compensation_claims cc
+                LEFT JOIN british_colonies bc ON cc.colony_id = bc.id
+                WHERE cc.claimant_name ILIKE $1
+                ORDER BY cc.awarded_amount DESC
+            `, [`%${name}%`]);
+            dbRecords = result.rows;
+        } catch (e) {
+            // Table might not exist
+        }
+
+        res.json({
+            success: true,
+            ownerName: name,
+            debtBreakdown,
+            compensationEvidence,
+            databaseRecords: dbRecords,
+            summary: {
+                totalDebt: debtBreakdown.totalDebt || 0,
+                totalEnslaved: debtBreakdown.totalSlaves || 0,
+                compensationReceived: compensationEvidence.found ? compensationEvidence.totalReceived : 0,
+                provenDebt: compensationEvidence.found ? compensationEvidence.provenDebt : 0
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Debt lookup error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/debts/all - Get all debtors
+app.get('/api/debts/all', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const system = await getReparationsSystem();
+
+        // Get in-memory debtors
+        const memoryDebtors = system.debtTracker.getAllDebtors().slice(0, limit);
+
+        // Get database debtors (from british_slave_owners)
+        let dbDebtors = [];
+        try {
+            const result = await db.query(`
+                SELECT
+                    full_name,
+                    title,
+                    total_enslaved_owned,
+                    total_compensation_received,
+                    member_of_parliament
+                FROM british_slave_owners
+                WHERE total_compensation_received > 0
+                ORDER BY total_compensation_received DESC
+                LIMIT $1
+            `, [limit]);
+            dbDebtors = result.rows;
+        } catch (e) {
+            // Table might not exist
+        }
+
+        res.json({
+            success: true,
+            memoryDebtors,
+            databaseDebtors: dbDebtors,
+            counts: {
+                inMemory: memoryDebtors.length,
+                inDatabase: dbDebtors.length
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('All debtors lookup error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/compensation/evidence - Get compensation evidence records
+app.get('/api/compensation/evidence', async (req, res) => {
+    try {
+        const { colony, limit = 100, minAmount = 0 } = req.query;
+        const system = await getReparationsSystem();
+
+        // Get in-memory totals
+        const systemTotals = system.compensationTracker.getSystemTotals();
+
+        // Get program statistics
+        const britishStats = system.compensationTracker.getProgramStatistics('british_abolition_1833');
+        const dcStats = system.compensationTracker.getProgramStatistics('dc_compensated_emancipation_1862');
+
+        // Get database statistics
+        const dbStats = await system.getDatabaseStats();
+
+        res.json({
+            success: true,
+            systemTotals,
+            programs: {
+                british_abolition_1833: britishStats,
+                dc_compensated_emancipation_1862: dcStats
+            },
+            databaseStats: dbStats,
+            injusticeReport: system.compensationTracker.generateInjusticeReport(),
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Compensation evidence error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/compensation/by-colony - Get compensation by colony
+app.get('/api/compensation/by-colony', async (req, res) => {
+    try {
+        const result = await db.query(`SELECT * FROM compensation_by_colony`);
+
+        res.json({
+            success: true,
+            colonies: result.rows,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Compensation by colony error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/compensation/top-owners - Get top compensated owners
+app.get('/api/compensation/top-owners', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const result = await db.query(`
+            SELECT * FROM top_compensated_owners LIMIT $1
+        `, [limit]);
+
+        res.json({
+            success: true,
+            topOwners: result.rows,
+            count: result.rows.length,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Top owners error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/compensation/import-british - Import British compensation claims
+app.post('/api/compensation/import-british', async (req, res) => {
+    try {
+        const { claims } = req.body;
+
+        if (!claims || !Array.isArray(claims)) {
+            return res.status(400).json({
+                success: false,
+                error: 'claims array is required'
+            });
+        }
+
+        const system = await getReparationsSystem();
+        const results = await system.importBritishClaims(claims);
+
+        // Sync to database
+        await system.syncToDatabase();
+
+        res.json({
+            success: true,
+            imported: results.imported,
+            totalProvenDebt: results.totalProvenDebt,
+            message: `Imported ${results.imported} British compensation claims`,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Import British claims error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/compensation/import-dc - Import DC emancipation claims
+app.post('/api/compensation/import-dc', async (req, res) => {
+    try {
+        const { claims } = req.body;
+
+        if (!claims || !Array.isArray(claims)) {
+            return res.status(400).json({
+                success: false,
+                error: 'claims array is required'
+            });
+        }
+
+        const system = await getReparationsSystem();
+        const results = system.importDCClaims(claims);
+
+        // Sync to database
+        await system.syncToDatabase();
+
+        res.json({
+            success: true,
+            imported: results.imported,
+            totalProvenDebt: results.totalProvenDebt,
+            message: `Imported ${results.imported} DC emancipation claims`,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Import DC claims error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/compensation/record - Record a single compensation payment
+app.post('/api/compensation/record', async (req, res) => {
+    try {
+        const payment = req.body;
+
+        if (!payment.ownerName || !payment.amountPaid) {
+            return res.status(400).json({
+                success: false,
+                error: 'ownerName and amountPaid are required'
+            });
+        }
+
+        const system = await getReparationsSystem();
+        const result = await system.saveCompensationEvidence(payment);
+
+        res.json({
+            success: true,
+            record: {
+                id: result.compensationRecord.id,
+                ownerName: result.compensationRecord.ownerName,
+                amountPaid: result.compensationRecord.amountPaid,
+                modernValue: result.compensationRecord.modernValue,
+                provenDebt: result.provenDebt,
+                savedToDatabase: result.savedToDatabase
+            },
+            debtId: result.debtId,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.error('Record compensation error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/reparations/export - Export for blockchain integration
+app.get('/api/reparations/export', async (req, res) => {
+    try {
+        const system = await getReparationsSystem();
+        const exportData = system.exportForBlockchain();
+
+        res.json({
+            success: true,
+            export: exportData
+        });
+    } catch (error) {
+        logger.error('Reparations export error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/british-colonies - Get list of British colonies
+app.get('/api/british-colonies', async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT
+                id,
+                name,
+                region,
+                modern_country,
+                british_control_start,
+                british_control_end,
+                emancipation_date,
+                lbs_colony_id
+            FROM british_colonies
+            ORDER BY name
+        `);
+
+        res.json({
+            success: true,
+            colonies: result.rows,
+            count: result.rows.length
+        });
+    } catch (error) {
+        logger.error('British colonies error', { error: error.message });
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// =============================================================================
 // Data Integrity & Notification Endpoints
 // =============================================================================
 
@@ -1296,6 +1746,152 @@ app.get('/api/notifications', async (req, res) => {
       notifications: [],
       error: error.message
     });
+  }
+});
+
+// =============================================================================
+// S3 Presigned URL Endpoint (for document viewer)
+// =============================================================================
+
+// Generate presigned URL for S3 archived documents
+app.get('/api/s3-presign', async (req, res) => {
+  try {
+    const { key } = req.query;
+
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        error: 'S3 key is required. Pass ?key=archives/...'
+      });
+    }
+
+    // Validate key format to prevent path traversal
+    if (key.includes('..') || !key.startsWith('archives/')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid key format. Must start with archives/'
+      });
+    }
+
+    const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+    const s3Client = new S3Client({
+      region: process.env.S3_REGION || 'us-east-2',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+      }
+    });
+
+    const bucket = process.env.S3_BUCKET || 'reparations-them';
+
+    const command = new GetObjectCommand({
+      Bucket: bucket,
+      Key: key
+    });
+
+    // Generate presigned URL valid for 1 hour
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+
+    res.json({
+      success: true,
+      url: presignedUrl,
+      expiresIn: 3600,
+      key: key
+    });
+
+  } catch (error) {
+    logger.error('S3 presign error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate presigned URL',
+      details: error.message
+    });
+  }
+});
+
+// Get archived document URL from unconfirmed_persons record
+app.get('/api/person/:leadId/document', async (req, res) => {
+  try {
+    const { leadId } = req.params;
+
+    // Get the record
+    const result = await db.query(
+      `SELECT lead_id, full_name, source_url, context_text FROM unconfirmed_persons WHERE lead_id = $1`,
+      [leadId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Person not found' });
+    }
+
+    const record = result.rows[0];
+
+    // Extract S3 URL from context_text
+    const s3UrlMatch = record.context_text?.match(/(?:Archived|ARCHIVED DOCUMENT):\s*(https:\/\/[^\s]+\.s3[^\s]+)/i);
+
+    if (!s3UrlMatch) {
+      // No S3 archive, return source URL as fallback
+      return res.json({
+        success: true,
+        leadId: record.lead_id,
+        name: record.full_name,
+        hasArchive: false,
+        sourceUrl: record.source_url,
+        message: 'No archived document available. Use source URL to view original.'
+      });
+    }
+
+    // Parse S3 URL to get key
+    const s3Url = s3UrlMatch[1];
+    const keyMatch = s3Url.match(/amazonaws\.com\/(.+)$/);
+
+    if (!keyMatch) {
+      return res.json({
+        success: true,
+        leadId: record.lead_id,
+        name: record.full_name,
+        hasArchive: false,
+        sourceUrl: record.source_url,
+        message: 'Could not parse archive URL. Use source URL.'
+      });
+    }
+
+    const key = keyMatch[1];
+
+    // Generate presigned URL
+    const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+    const s3Client = new S3Client({
+      region: process.env.S3_REGION || 'us-east-2',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+      }
+    });
+
+    const command = new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET || 'reparations-them',
+      Key: key
+    });
+
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+
+    res.json({
+      success: true,
+      leadId: record.lead_id,
+      name: record.full_name,
+      hasArchive: true,
+      archivedUrl: presignedUrl,
+      sourceUrl: record.source_url,
+      expiresIn: 3600
+    });
+
+  } catch (error) {
+    logger.error('Get person document error', { error: error.message });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
