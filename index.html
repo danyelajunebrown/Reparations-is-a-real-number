@@ -754,11 +754,254 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Person Profile Modal */
+        .person-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+
+        .person-modal-overlay.active {
+            display: flex;
+        }
+
+        .person-modal {
+            background: linear-gradient(135deg, #1a1e3f 0%, #0d1025 100%);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 20px;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+        }
+
+        .person-modal-header {
+            padding: 25px;
+            border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            position: sticky;
+            top: 0;
+            background: linear-gradient(135deg, #1a1e3f 0%, #0d1025 100%);
+            z-index: 1;
+        }
+
+        .person-modal-close {
+            background: none;
+            border: none;
+            color: #9aa5b1;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .person-modal-close:hover {
+            color: #ff6464;
+        }
+
+        .person-name {
+            font-size: 1.8em;
+            color: #64c8ff;
+            margin: 0 0 5px 0;
+        }
+
+        .person-type-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .person-type-badge.enslaved {
+            background: rgba(100, 255, 100, 0.2);
+            color: #64ff64;
+        }
+
+        .person-type-badge.owner {
+            background: rgba(255, 100, 100, 0.2);
+            color: #ff6464;
+        }
+
+        .person-type-badge.unknown {
+            background: rgba(150, 150, 150, 0.2);
+            color: #9aa5b1;
+        }
+
+        .person-modal-body {
+            padding: 25px;
+        }
+
+        .person-section {
+            margin-bottom: 25px;
+        }
+
+        .person-section-title {
+            color: #64c8ff;
+            font-size: 0.9em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .person-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .person-detail {
+            background: rgba(30, 40, 70, 0.5);
+            padding: 12px 15px;
+            border-radius: 10px;
+        }
+
+        .person-detail-label {
+            color: #9aa5b1;
+            font-size: 0.75em;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .person-detail-value {
+            color: #e0e0e0;
+            font-size: 1.05em;
+        }
+
+        .reparations-total {
+            background: linear-gradient(135deg, rgba(100, 200, 255, 0.15), rgba(100, 255, 100, 0.1));
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        .reparations-total-label {
+            color: #9aa5b1;
+            font-size: 0.85em;
+            margin-bottom: 5px;
+        }
+
+        .reparations-total-amount {
+            color: #64ff64;
+            font-size: 2.2em;
+            font-weight: bold;
+        }
+
+        .reparations-breakdown {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .reparations-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: rgba(30, 40, 70, 0.5);
+            border-radius: 8px;
+        }
+
+        .reparations-item-label {
+            color: #e0e0e0;
+        }
+
+        .reparations-item-amount {
+            color: #64c8ff;
+            font-weight: 600;
+        }
+
+        .person-link-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            background: rgba(100, 200, 255, 0.1);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 8px;
+            color: #64c8ff;
+            text-decoration: none;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .person-link-btn:hover {
+            background: rgba(100, 200, 255, 0.2);
+            border-color: #64c8ff;
+        }
+
+        .person-status-banner {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .person-status-banner.confirmed {
+            background: rgba(100, 255, 100, 0.1);
+            border: 1px solid rgba(100, 255, 100, 0.3);
+            color: #64ff64;
+        }
+
+        .person-status-banner.unconfirmed {
+            background: rgba(255, 200, 100, 0.1);
+            border: 1px solid rgba(255, 200, 100, 0.3);
+            color: #ffc864;
+        }
+
+        .person-status-banner.needs-document {
+            background: rgba(255, 100, 100, 0.1);
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            color: #ff6464;
+        }
     </style>
 </head>
 <body>
     <!-- Toast Notification -->
     <div class="toast" id="toast"></div>
+
+    <!-- Person Profile Modal -->
+    <div class="person-modal-overlay" id="personModalOverlay" onclick="closePersonModal(event)">
+        <div class="person-modal" onclick="event.stopPropagation()">
+            <div class="person-modal-header">
+                <div>
+                    <h2 class="person-name" id="modalPersonName">Loading...</h2>
+                    <span class="person-type-badge" id="modalPersonType">unknown</span>
+                </div>
+                <button class="person-modal-close" onclick="closePersonModal()">&times;</button>
+            </div>
+            <div class="person-modal-body" id="modalPersonBody">
+                <div style="text-align: center; padding: 40px;">
+                    <div class="spinner" style="margin: 0 auto;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Hero Section - Full Screen -->
     <div class="hero-container">
@@ -1033,11 +1276,12 @@
                 const response = await fetch(`${API_BASE_URL}/api/contribute/stats`);
                 if (response.ok) {
                     const data = await response.json();
+                    const stats = data.stats || data; // Handle both nested and flat response
 
-                    document.getElementById('statRecords').textContent = formatNumber(data.total_records || 0);
-                    document.getElementById('statSlaveholders').textContent = formatNumber(data.slaveholders || 0);
-                    document.getElementById('statEnslaved').textContent = formatNumber(data.enslaved || 0);
-                    document.getElementById('statSources').textContent = data.sources || '--';
+                    document.getElementById('statRecords').textContent = formatNumber(stats.total_records || 0);
+                    document.getElementById('statSlaveholders').textContent = formatNumber(stats.slaveholders || 0);
+                    document.getElementById('statEnslaved').textContent = formatNumber(stats.enslaved || 0);
+                    document.getElementById('statSources').textContent = formatNumber(stats.unique_sources || 0);
                 }
             } catch (error) {
                 console.error('Failed to load stats:', error);
@@ -1147,14 +1391,194 @@
             const result = window.searchResults[resultIndex];
             if (!result) return;
 
-            // If there's an archive URL, open the document viewer
-            if (result.archiveUrl) {
-                openArchiveViewer(result);
-            } else if (result.type === 'document') {
-                openDocViewer(result.id);
-            } else if (result.sourceUrl) {
-                window.open(result.sourceUrl, '_blank');
+            // Always open person profile modal first
+            openPersonModal(result);
+        }
+
+        // Open person profile modal
+        async function openPersonModal(result) {
+            const overlay = document.getElementById('personModalOverlay');
+            const nameEl = document.getElementById('modalPersonName');
+            const typeEl = document.getElementById('modalPersonType');
+            const bodyEl = document.getElementById('modalPersonBody');
+
+            // Show modal with loading state
+            overlay.classList.add('active');
+            nameEl.textContent = result.name || 'Loading...';
+            typeEl.textContent = result.type || 'unknown';
+            typeEl.className = `person-type-badge ${getTypeClass(result.type)}`;
+            bodyEl.innerHTML = '<div style="text-align: center; padding: 40px;"><div class="spinner" style="margin: 0 auto;"></div></div>';
+
+            try {
+                // Fetch full person details
+                const response = await fetch(`${API_BASE_URL}/api/contribute/person/${result.id}?table=${result.tableSource || ''}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderPersonProfile(data, result);
+                } else {
+                    // Fallback to basic display from search result
+                    renderBasicProfile(result);
+                }
+            } catch (error) {
+                console.error('Failed to load person profile:', error);
+                renderBasicProfile(result);
             }
+        }
+
+        function getTypeClass(type) {
+            if (!type) return 'unknown';
+            if (type.includes('enslaved')) return 'enslaved';
+            if (type.includes('owner') || type.includes('slaveholder')) return 'owner';
+            return 'unknown';
+        }
+
+        function renderPersonProfile(data, result) {
+            const { person, reparations, owner, documents, links } = data;
+            const bodyEl = document.getElementById('modalPersonBody');
+
+            // Determine status
+            let statusClass = 'unconfirmed';
+            let statusText = 'Unconfirmed Record';
+            if (person.tableSource === 'enslaved_individuals') {
+                statusClass = 'confirmed';
+                statusText = 'Confirmed Record';
+            }
+            if (person.status === 'needs_document') {
+                statusClass = 'needs-document';
+                statusText = 'Needs Documentation';
+            }
+
+            bodyEl.innerHTML = `
+                <div class="person-status-banner ${statusClass}">
+                    <span>${statusClass === 'confirmed' ? '✓' : statusClass === 'needs-document' ? '⚠' : '○'}</span>
+                    <span>${statusText}</span>
+                </div>
+
+                <!-- Personal Details -->
+                <div class="person-section">
+                    <div class="person-section-title">Personal Details</div>
+                    <div class="person-details-grid">
+                        ${person.birth_year ? `<div class="person-detail"><div class="person-detail-label">Birth Year</div><div class="person-detail-value">${person.birth_year}</div></div>` : ''}
+                        ${person.death_year ? `<div class="person-detail"><div class="person-detail-label">Death Year</div><div class="person-detail-value">${person.death_year}</div></div>` : ''}
+                        ${person.gender ? `<div class="person-detail"><div class="person-detail-label">Gender</div><div class="person-detail-value">${person.gender}</div></div>` : ''}
+                        ${person.occupation ? `<div class="person-detail"><div class="person-detail-label">Occupation</div><div class="person-detail-value">${person.occupation}</div></div>` : ''}
+                        ${person.spouse_name ? `<div class="person-detail"><div class="person-detail-label">Spouse</div><div class="person-detail-value">${escapeHtml(person.spouse_name)}</div></div>` : ''}
+                        ${person.racial_designation ? `<div class="person-detail"><div class="person-detail-label">Racial Designation</div><div class="person-detail-value">${person.racial_designation}</div></div>` : ''}
+                    </div>
+                </div>
+
+                <!-- Reparations -->
+                ${reparations && reparations.total > 0 ? `
+                <div class="person-section">
+                    <div class="person-section-title">Reparations Owed</div>
+                    <div class="reparations-total">
+                        <div class="reparations-total-label">Total Amount Owed</div>
+                        <div class="reparations-total-amount">$${formatCurrency(reparations.total)}</div>
+                    </div>
+                    <div class="reparations-breakdown">
+                        ${reparations.breakdown.map(item => `
+                            <div class="reparations-item">
+                                <div>
+                                    <div class="reparations-item-label">${item.label}</div>
+                                    <div style="font-size: 0.8em; color: #9aa5b1;">${item.description}</div>
+                                </div>
+                                <div class="reparations-item-amount">$${formatCurrency(item.amount)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${reparations.amountPaid > 0 ? `
+                        <div style="margin-top: 15px; padding: 10px; background: rgba(100, 255, 100, 0.1); border-radius: 8px;">
+                            <span style="color: #64ff64;">Amount Paid: $${formatCurrency(reparations.amountPaid)}</span>
+                        </div>
+                    ` : ''}
+                </div>
+                ` : ''}
+
+                <!-- Owner/Enslaver -->
+                ${owner ? `
+                <div class="person-section">
+                    <div class="person-section-title">Enslaved By</div>
+                    <div class="person-detail" style="cursor: pointer;" onclick="searchPerson('${escapeHtml(owner.full_name)}')">
+                        <div class="person-detail-label">Slaveholder</div>
+                        <div class="person-detail-value" style="color: #ff6464;">${escapeHtml(owner.full_name)}</div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- Links & Actions -->
+                <div class="person-section">
+                    <div class="person-section-title">Actions</div>
+                    ${result.sourceUrl ? `<a href="${result.sourceUrl}" target="_blank" class="person-link-btn">📄 View Source Document</a>` : ''}
+                    ${result.archiveUrl ? `<button class="person-link-btn" onclick="closePersonModal(); openArchiveViewer(window.searchResults[${window.searchResults?.indexOf(result) || 0}])">📁 View Archive</button>` : ''}
+                    ${links?.familySearch ? `<a href="${links.familySearch}" target="_blank" class="person-link-btn">🌳 FamilySearch</a>` : ''}
+                    ${links?.ancestry ? `<a href="${links.ancestry}" target="_blank" class="person-link-btn">🌳 Ancestry</a>` : ''}
+                </div>
+
+                <!-- Context/Notes -->
+                ${person.notes || person.context_text ? `
+                <div class="person-section">
+                    <div class="person-section-title">Notes & Context</div>
+                    <div style="background: rgba(30, 40, 70, 0.5); padding: 15px; border-radius: 10px; color: #e0e0e0; font-size: 0.9em; line-height: 1.6; max-height: 200px; overflow-y: auto;">
+                        ${escapeHtml((person.notes || person.context_text || '').substring(0, 500))}${(person.notes || person.context_text || '').length > 500 ? '...' : ''}
+                    </div>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        function renderBasicProfile(result) {
+            const bodyEl = document.getElementById('modalPersonBody');
+            bodyEl.innerHTML = `
+                <div class="person-status-banner unconfirmed">
+                    <span>○</span>
+                    <span>Unconfirmed Record</span>
+                </div>
+
+                <div class="person-section">
+                    <div class="person-section-title">Source Information</div>
+                    <div class="person-detail">
+                        <div class="person-detail-label">Source</div>
+                        <div class="person-detail-value">${result.source || 'Unknown'}</div>
+                    </div>
+                    ${result.confidence ? `
+                    <div class="person-detail" style="margin-top: 10px;">
+                        <div class="person-detail-label">Confidence</div>
+                        <div class="person-detail-value">${Math.round(result.confidence * 100)}%</div>
+                    </div>
+                    ` : ''}
+                </div>
+
+                <div class="person-section">
+                    <div class="person-section-title">Actions</div>
+                    ${result.sourceUrl ? `<a href="${result.sourceUrl}" target="_blank" class="person-link-btn">📄 View Source Document</a>` : ''}
+                    ${result.archiveUrl ? `<button class="person-link-btn" onclick="closePersonModal(); openArchiveViewerByResult(${window.searchResults?.indexOf(result) || 0})">📁 View Archive</button>` : ''}
+                </div>
+            `;
+        }
+
+        function closePersonModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('personModalOverlay').classList.remove('active');
+        }
+
+        function formatCurrency(amount) {
+            if (!amount || amount === 0) return '0';
+            if (amount >= 1000000000) return (amount / 1000000000).toFixed(2) + 'B';
+            if (amount >= 1000000) return (amount / 1000000).toFixed(2) + 'M';
+            if (amount >= 1000) return (amount / 1000).toFixed(1) + 'K';
+            return amount.toFixed(2);
+        }
+
+        function searchPerson(name) {
+            closePersonModal();
+            document.getElementById('searchInput').value = name;
+            performSearch();
+        }
+
+        function openArchiveViewerByResult(index) {
+            const result = window.searchResults[index];
+            if (result) openArchiveViewer(result);
         }
 
         // Open archived document in viewer

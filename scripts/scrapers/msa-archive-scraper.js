@@ -236,11 +236,12 @@ async function downloadPdf(url) {
 }
 
 /**
- * Extract embedded image from PDF
+ * Extract embedded image from PDF and resize for OCR
  */
 async function extractImageFromPdf(pdfBuffer) {
     try {
         const pdfString = pdfBuffer.toString('binary');
+        let imageBuffer = null;
 
         // Look for JPEG markers
         const jpegStart = pdfString.indexOf('\xFF\xD8\xFF');
@@ -248,27 +249,36 @@ async function extractImageFromPdf(pdfBuffer) {
             let jpegEnd = pdfString.indexOf('\xFF\xD9', jpegStart);
             if (jpegEnd !== -1) {
                 jpegEnd += 2;
-                const jpegData = Buffer.from(pdfString.slice(jpegStart, jpegEnd), 'binary');
-
-                // Convert to PNG with sharp for better OCR
-                const pngBuffer = await sharp(jpegData)
-                    .png()
-                    .toBuffer();
-
-                return pngBuffer;
+                imageBuffer = Buffer.from(pdfString.slice(jpegStart, jpegEnd), 'binary');
             }
         }
 
-        // Look for PNG markers
-        const pngStart = pdfString.indexOf('\x89PNG');
-        if (pngStart !== -1) {
-            const pngEnd = pdfString.indexOf('IEND', pngStart);
-            if (pngEnd !== -1) {
-                return Buffer.from(pdfString.slice(pngStart, pngEnd + 8), 'binary');
+        // Look for PNG markers if no JPEG found
+        if (!imageBuffer) {
+            const pngStart = pdfString.indexOf('\x89PNG');
+            if (pngStart !== -1) {
+                const pngEnd = pdfString.indexOf('IEND', pngStart);
+                if (pngEnd !== -1) {
+                    imageBuffer = Buffer.from(pdfString.slice(pngStart, pngEnd + 8), 'binary');
+                }
             }
         }
 
-        return null;
+        if (!imageBuffer) {
+            return null;
+        }
+
+        // Resize image for OCR - Google Vision works best with 1024-2048px width
+        // This significantly reduces API call time and improves reliability
+        const resizedBuffer = await sharp(imageBuffer)
+            .resize(2000, null, { // Max width 2000px, maintain aspect ratio
+                fit: 'inside',
+                withoutEnlargement: true
+            })
+            .png({ quality: 90 })
+            .toBuffer();
+
+        return resizedBuffer;
     } catch (error) {
         console.error(`   Image extraction error: ${error.message}`);
         return null;
@@ -295,6 +305,15 @@ async function runOcr(imageBuffer) {
 
 /**
  * Parse OCR text to extract enslaved persons and slaveholders
+ *
+ * The OCR output from these historical slave records comes in various formats.
+ * Google Vision reads left-to-right, top-to-bottom, so column data gets mixed.
+ *
+ * Common patterns in the text:
+ * - Names: "Saydia King", "William Hall", "Rhody Key"
+ * - Gender/age: "female 50", "Male 45", "male 15"
+ * - Conditions: "healthy", "Healthy", "unsound"
+ * - Terms: "for life", "For life"
  */
 function parseOcrText(text, volumeId, page) {
     const result = {
@@ -305,74 +324,222 @@ function parseOcrText(text, volumeId, page) {
 
     if (!text || text.length < 50) return result;
 
+    // Normalize text - replace multiple spaces/tabs with single space
+    const normalizedText = text.replace(/\s+/g, ' ');
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    // Patterns for name extraction
-    // These are adapted for historical slave records from Maryland
-    const namePattern = /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+/;
-    const ageGenderPattern = /\b(male|female|m|f)\b.*?\b(\d{1,2})\b/i;
+    // Words to exclude from name extraction (common OCR artifacts, headers, and column labels)
+    const excludeWords = new Set([
+        // Headers and titles
+        'record', 'slaves', 'montgomery', 'county', 'date', 'name', 'owner',
+        'sex', 'age', 'physical', 'condition', 'term', 'service', 'military',
+        'constitution', 'adoption', 'time', 'remarks', 'page', 'male', 'female',
+        // Column headers from MSA forms
+        'month', 'day', 'year', 'compensation', 'received', 'drafted', 'none',
+        'regen', 'meanin', 'israil', // Common OCR misreads
+        // Common words
+        'healthy', 'unsound', 'sick', 'life', 'years', 'the', 'and', 'for', 'at',
+        'of', 'in', 'to', 'is', 'as', 'by', 'from', 'with', 'was', 'were', 'been',
+        'slaves', 'slave', 'persons', 'sept', 'free', 'colored', 'black', 'negro',
+        // OCR artifacts
+        'that', 'your', 'petitioner', 'petition', 'here', 'limbs', 'body', 'sound'
+    ]);
 
-    let currentOwner = null;
+    // Track found names to avoid duplicates
+    const foundNames = new Set();
 
+    // Pattern 1: Look for "Name Gender Age" patterns (most common in OCR)
+    // Example: "Saydia King female 50 healthy" or "William Hall Male 45"
+    const nameGenderAgePattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(female|male|f|m)\s+(\d{1,2})/gi;
+    let match;
+
+    while ((match = nameGenderAgePattern.exec(normalizedText)) !== null) {
+        const name = match[1].trim();
+        const genderRaw = match[2].toLowerCase();
+        const age = parseInt(match[3]);
+
+        // Skip if name is in exclude list or too short
+        if (name.length < 3 || excludeWords.has(name.toLowerCase())) continue;
+
+        const nameLower = name.toLowerCase();
+        if (foundNames.has(nameLower)) continue;
+        foundNames.add(nameLower);
+
+        const gender = genderRaw.startsWith('f') ? 'Female' : 'Male';
+
+        // Look for condition near this match
+        const contextStart = Math.max(0, match.index - 20);
+        const contextEnd = Math.min(normalizedText.length, match.index + match[0].length + 30);
+        const context = normalizedText.slice(contextStart, contextEnd);
+
+        let condition = null;
+        if (context.match(/healthy/i)) condition = 'healthy';
+        else if (context.match(/unsound/i)) condition = 'unsound';
+        else if (context.match(/sick/i)) condition = 'sick';
+
+        result.enslavedPersons.push({
+            name,
+            gender,
+            age,
+            condition,
+            owner: null, // Will try to associate later
+            page,
+            confidence: 0.75
+        });
+    }
+
+    // Pattern 2: Look for standalone names that look like enslaved persons
+    // Names that appear with single first name (common for enslaved persons)
+    // or with "child" descriptor
+    const singleNamePattern = /\b([A-Z][a-z]{2,})\s+(child|infant|boy|girl)\b/gi;
+    while ((match = singleNamePattern.exec(normalizedText)) !== null) {
+        const name = match[1].trim();
+        const descriptor = match[2].toLowerCase();
+
+        if (excludeWords.has(name.toLowerCase())) continue;
+
+        const nameLower = name.toLowerCase();
+        if (foundNames.has(nameLower)) continue;
+        foundNames.add(nameLower);
+
+        const gender = (descriptor === 'boy') ? 'Male' :
+                       (descriptor === 'girl') ? 'Female' : null;
+
+        result.enslavedPersons.push({
+            name: `${name} (${descriptor})`,
+            gender,
+            age: null,
+            condition: null,
+            owner: null,
+            page,
+            confidence: 0.6
+        });
+    }
+
+    // Pattern 3: Look for owner names - typically "First Last" patterns
+    // that appear at the start of lines or after certain keywords
+    const ownerPattern = /([A-Z][a-z]+\s+[A-Z]\.?\s*[A-Z][a-z]+)/g;
+    const potentialOwners = [];
+
+    while ((match = ownerPattern.exec(normalizedText)) !== null) {
+        const name = match[1].trim();
+
+        // Skip if it's already an enslaved person
+        if (foundNames.has(name.toLowerCase())) continue;
+
+        // Skip common OCR artifacts
+        if (excludeWords.has(name.split(' ')[0].toLowerCase())) continue;
+        if (excludeWords.has(name.split(' ').pop().toLowerCase())) continue;
+
+        potentialOwners.push(name);
+    }
+
+    // Deduplicate owners
+    const uniqueOwners = [...new Set(potentialOwners)];
+    for (const ownerName of uniqueOwners) {
+        // Check if this name appears multiple times (more likely to be an owner)
+        const count = potentialOwners.filter(n => n === ownerName).length;
+
+        result.slaveholders.push({
+            name: ownerName,
+            page,
+            confidence: count > 1 ? 0.8 : 0.6
+        });
+    }
+
+    // Pattern 4: Extract additional names from structured patterns
+    // Look for lines that have "Name" followed by demographic info
     for (const line of lines) {
         // Skip header lines
-        if (line.match(/RECORD OF SLAVES|MONTGOMERY COUNTY|DATE|NAME OF|SEX|AGE|PHYSICAL/i)) {
+        if (line.match(/RECORD OF SLAVES|MONTGOMERY COUNTY|DATE|NAME OF|SEX|AGE|PHYSICAL|CONSTITUTION/i)) {
             continue;
         }
 
-        // Detect owner names (usually in NAME OF OWNER column, leftmost)
-        // Owners often appear in a specific format or with specific keywords
-        const ownerMatch = line.match(/^([A-Z][a-z]+\s+[A-Z]?\.?\s*[A-Z][a-z]+)\s*$/);
-        if (ownerMatch) {
-            currentOwner = ownerMatch[1].trim();
-            if (!result.slaveholders.find(s => s.name === currentOwner)) {
-                result.slaveholders.push({
-                    name: currentOwner,
+        // Look for patterns like: "Name, age Gender" or "Name age"
+        const lineMatch = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s*(\d{1,2})?\s*(male|female|m|f)?/i);
+        if (lineMatch) {
+            const name = lineMatch[1].trim();
+            const age = lineMatch[2] ? parseInt(lineMatch[2]) : null;
+            const genderRaw = lineMatch[3]?.toLowerCase();
+
+            if (name.length < 3 || excludeWords.has(name.toLowerCase())) continue;
+
+            const nameLower = name.toLowerCase();
+            if (foundNames.has(nameLower)) continue;
+            foundNames.add(nameLower);
+
+            const gender = genderRaw ? (genderRaw.startsWith('f') ? 'Female' : 'Male') : null;
+
+            // Only add if we have SOME demographic info or name looks like enslaved person name
+            if (age || gender || name.split(' ').length === 1) {
+                result.enslavedPersons.push({
+                    name,
+                    gender,
+                    age,
+                    condition: null,
+                    owner: null,
                     page,
-                    confidence: 0.7
+                    confidence: 0.5
                 });
             }
-            continue;
         }
+    }
 
-        // Look for enslaved person patterns
-        // Format often: Name | Sex | Age | Condition | Term | Military status
-        const parts = line.split(/\s{2,}|\t/).filter(p => p.length > 0);
+    // Pattern 5: Try to find full names by looking for "FirstName LastName" where LastName looks like a surname
+    // Common enslaved surnames from these records: Johnson, Jackson, Brown, Smith, Jones, etc.
+    const commonSurnames = new Set(['johnson', 'jackson', 'brown', 'smith', 'jones', 'williams', 'davis', 'thomas', 'harris', 'robinson', 'clark', 'lewis', 'walker', 'hall', 'young', 'king', 'wright', 'hill', 'green', 'adams', 'baker', 'nelson', 'moore', 'taylor', 'white', 'wilson', 'campbell', 'owen', 'owens']);
 
-        if (parts.length >= 2) {
-            // First part might be a name
-            const possibleName = parts[0];
+    // Look for "First Last" patterns where Last is a known surname
+    const fullNamePattern = /([A-Z][a-z]+)\s+([A-Z][a-z]+)/g;
+    while ((match = fullNamePattern.exec(normalizedText)) !== null) {
+        const firstName = match[1].trim();
+        const lastName = match[2].trim();
+        const fullName = `${firstName} ${lastName}`;
 
-            // Check if it looks like a name (starts with capital, has letters)
-            if (possibleName.match(/^[A-Z][a-z]+/) && !possibleName.match(/^\d/)) {
-                let gender = null;
-                let age = null;
-                let condition = null;
+        // Skip if either part is excluded
+        if (excludeWords.has(firstName.toLowerCase()) || excludeWords.has(lastName.toLowerCase())) continue;
 
-                // Look for gender/age in remaining parts
-                for (const part of parts.slice(1)) {
-                    if (part.match(/^(male|female|m|f)$/i)) {
-                        gender = part.toLowerCase().startsWith('m') ? 'Male' : 'Female';
-                    } else if (part.match(/^\d{1,2}$/)) {
-                        age = parseInt(part);
-                    } else if (part.match(/healthy|unsound|sick/i)) {
-                        condition = part;
-                    }
-                }
+        // Skip if already found
+        if (foundNames.has(fullName.toLowerCase())) continue;
 
-                // Only add if we have some data beyond just a name
-                if (gender || age) {
-                    result.enslavedPersons.push({
-                        name: possibleName,
-                        gender,
-                        age,
-                        condition,
-                        owner: currentOwner,
-                        page,
-                        confidence: 0.6
-                    });
-                }
-            }
+        // Check if lastName looks like a surname
+        if (commonSurnames.has(lastName.toLowerCase())) {
+            foundNames.add(fullName.toLowerCase());
+
+            // Look for age nearby
+            const contextStart = Math.max(0, match.index - 30);
+            const contextEnd = Math.min(normalizedText.length, match.index + match[0].length + 50);
+            const context = normalizedText.slice(contextStart, contextEnd);
+
+            let age = null;
+            const ageMatch = context.match(/\b(\d{1,2})\b/);
+            if (ageMatch) age = parseInt(ageMatch[1]);
+
+            let condition = null;
+            if (context.match(/healthy/i)) condition = 'healthy';
+            else if (context.match(/unsound/i)) condition = 'unsound';
+
+            result.enslavedPersons.push({
+                name: fullName,
+                gender: null,
+                age,
+                condition,
+                owner: null,
+                page,
+                confidence: 0.7
+            });
+        }
+    }
+
+    // Try to associate enslaved persons with owners if we have position info
+    // For now, just note that we found potential relationships
+    if (result.slaveholders.length > 0 && result.enslavedPersons.length > 0) {
+        // Basic heuristic: if only one owner, associate all enslaved with them
+        if (result.slaveholders.length === 1) {
+            const owner = result.slaveholders[0].name;
+            result.enslavedPersons.forEach(person => {
+                person.owner = owner;
+            });
         }
     }
 

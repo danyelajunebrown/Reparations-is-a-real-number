@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simplified Document Contribution</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95em;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            max-height: calc(100vh - 100px);
+        }
+
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #333;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background: #16213e;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.system {
+            background: #1a1a2e;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .message.user {
+            background: #0f3460;
+            border-left: 4px solid #e94560;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+            margin-left: 40px;
+        }
+
+        .message.assistant {
+            background: #1a1a2e;
+            border-left: 4px solid #00d9ff;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .message-header {
+            font-size: 0.8em;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .message-content {
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .message-content strong {
+            color: #00d9ff;
+        }
+
+        .message-content code {
+            background: #0f3460;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .chat-input-area {
+            padding: 20px;
+            background: #1a1a2e;
+            border-top: 1px solid #333;
+        }
+
+        .url-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .url-input-group input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 14px;
+        }
+
+        .url-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .url-input-group button {
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .url-input-group button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .url-input-group button:disabled {
+            background: #444;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-group textarea {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 14px;
+            resize: none;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .chat-input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .chat-input-group button {
+            padding: 12px 25px;
+            background: #00d9ff;
+            border: none;
+            border-radius: 8px;
+            color: #1a1a2e;
+            font-weight: 600;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        .chat-input-group button:disabled {
+            background: #444;
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        .quick-responses {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .quick-response {
+            padding: 8px 15px;
+            background: #0f3460;
+            border: 1px solid #333;
+            border-radius: 20px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .quick-response:hover {
+            background: #667eea;
+            border-color: #667eea;
+        }
+
+        .side-panel {
+            width: 350px;
+            background: #16213e;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .panel-section {
+            margin-bottom: 25px;
+        }
+
+        .panel-section h3 {
+            font-size: 1em;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+            color: #00d9ff;
+        }
+
+        .progress-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #1a1a2e;
+            opacity: 0.5;
+        }
+
+        .progress-step.active {
+            opacity: 1;
+            background: #0f3460;
+            border-left: 3px solid #00d9ff;
+        }
+
+        .progress-step.completed {
+            opacity: 1;
+        }
+
+        .progress-step .step-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+        }
+
+        .progress-step.completed .step-icon {
+            background: #38a169;
+        }
+
+        .progress-step.active .step-icon {
+            background: #00d9ff;
+            color: #1a1a2e;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #333;
+            border-top-color: #00d9ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .method-card {
+            background: #1a1a2e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .method-card:hover {
+            border-color: #667eea;
+            background: #0f3460;
+        }
+
+        .method-card h4 {
+            margin-bottom: 5px;
+            color: #00d9ff;
+        }
+
+        .method-card p {
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+
+        .method-card small {
+            font-size: 0.75em;
+            opacity: 0.6;
+            display: block;
+            margin-top: 5px;
+        }
+
+        .error-message {
+            background: #2d1b1b;
+            border-left: 3px solid #e94560;
+            padding: 12px;
+            border-radius: 5px;
+            margin: 10px 0;
+            color: #ffcccc;
+        }
+
+        .success-message {
+            background: #1b2d1b;
+            border-left: 3px solid #38a169;
+            padding: 12px;
+            border-radius: 5px;
+            margin: 10px 0;
+            color: #ccffcc;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            color: white;
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
+                flex-direction: column;
+            }
+
+            .side-panel {
+                width: 100%;
+                max-height: 300px;
+                order: -1;
+            }
+
+            .chat-panel {
+                border-right: none;
+                border-top: 1px solid #333;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Simplified Document Contribution</h1>
+        <p>Quickly extract data from historical documents - just paste a URL or upload directly</p>
+        <a href="contribute.html" class="back-link">&larr; Back to original</a>
+    </div>
+
+    <div class="main-container">
+        <div class="chat-panel">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    <div class="message-header">System</div>
+                    <div class="message-content">
+                        <strong>Welcome! Choose how you want to contribute:</strong>
+
+                        <div style="margin-top: 15px;">
+                            <strong>🚀 Quick Start Options:</strong>
+                            <ol style="margin-top: 8px; padding-left: 20px;">
+                                <li>Paste a URL to a document</li>
+                                <li>Upload screenshots of document pages</li>
+                                <li>Copy and paste text directly</li>
+                            </ol>
+                        </div>
+
+                        <div style="margin-top: 15px; padding: 10px; background: #0f3460; border-radius: 5px;">
+                            <strong>💡 Tip:</strong> If automatic URL processing fails, manual methods always work!
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="url-input-group" id="urlInputGroup">
+                    <input type="url" id="urlInput" placeholder="Paste URL here (e.g., https://msa.maryland.gov/...)" />
+                    <button id="startBtn" onclick="startSession()">Analyze</button>
+                </div>
+
+                <div class="chat-input-group" id="chatInputGroup" style="display: none;">
+                    <textarea id="chatInput" placeholder="Describe what you see, or answer my questions..." onkeydown="handleKeyDown(event)"></textarea>
+                    <button id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+
+                <div class="quick-responses" id="quickResponses"></div>
+            </div>
+        </div>
+
+        <div class="side-panel">
+            <div class="panel-section">
+                <h3>Quick Methods</h3>
+                <div id="quickMethods">
+                    <div class="method-card" onclick="showScreenshotUpload()">
+                        <h4>📸 Upload Screenshots</h4>
+                        <p>Take screenshots and upload them</p>
+                        <small>Works for ANY document, even protected sites</small>
+                    </div>
+                    <div class="method-card" onclick="showTextCopyInterface()">
+                        <h4>📝 Paste Text</h4>
+                        <p>Copy text from document and paste</p>
+                        <small>Best when you can select text</small>
+                    </div>
+                    <div class="method-card" onclick="showUrlMethod()">
+                        <h4>🔗 Paste URL</h4>
+                        <p>Let system try automatic extraction</p>
+                        <small>May fail for protected sites</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>Progress</h3>
+                <div class="progress-steps" id="progressSteps">
+                    <div class="progress-step active" data-stage="start">
+                        <div class="step-icon">1</div>
+                        <span>Choose Method</span>
+                    </div>
+                    <div class="progress-step" data-stage="processing">
+                        <div class="step-icon">2</div>
+                        <span>Process Data</span>
+                    </div>
+                    <div class="progress-step" data-stage="complete">
+                        <div class="step-icon">3</div>
+                        <span>Complete</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section" id="queueSection">
+                <h3>Processing Queue <span onclick="refreshQueue()" style="cursor:pointer; float:right; font-size:0.8em;">🔄</span></h3>
+                <div id="queueContainer">
+                    <div style="padding: 10px; text-align: center; opacity: 0.7;">Loading queue...</div>
+                </div>
+            </div>
+
+            <div class="panel-section" id="extractionResultsSection" style="display: none;">
+                <h3>Extraction Results</h3>
+                <div id="extractionResults"></div>
+            </div>
+
+            <div class="panel-section" id="debugPanelSection">
+                <h3>Debug Info <span id="debugToggle" onclick="toggleDebugPanel()" style="cursor:pointer; float:right; font-size:0.8em;">▼</span></h3>
+                <div id="debugPanel" style="display: none;">
+                    <div id="extractionStatus" style="margin-bottom: 10px;">
+                        <div class="info-row">
+                            <span class="info-label">Status</span>
+                            <span class="info-value" id="debugStatus">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Progress</span>
+                            <span class="info-value" id="debugProgress">--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Message</span>
+                            <span class="info-value" id="debugMessage">--</span>
+                        </div>
+                    </div>
+                    <div id="debugLogContainer" style="max-height: 200px; overflow-y: auto; background: #0a0a1a; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.75em;">
+                        <div id="debugLogEntries">No debug logs yet...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API configuration
+        const API_BASE = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : 'https://reparations-platform.onrender.com';
+
+        // Session state
+        let sessionId = null;
+        let currentStage = 'start';
+        let currentExtractionId = null;
+        let pollIntervalId = null;
+
+        // Start a new session with intelligent source analysis
+        async function startSession() {
+            const url = document.getElementById('urlInput').value.trim();
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+
+            // Disable button and show loading
+            const btn = document.getElementById('startBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Analyzing...';
+
+            try {
+                // STEP 1: Run intelligent source analysis first
+                addMessage('system', `Analyzing source: ${url}\n\nRunning intelligent analysis to understand this source...`);
+
+                const analysisResponse = await fetch(`${API_BASE}/api/contribute/analyze-source`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const analysisData = await analysisResponse.json();
+
+                if (analysisData.success) {
+                    // Display the intelligent analysis results
+                    displaySourceAnalysis(analysisData);
+                } else {
+                    console.warn('Source analysis failed:', analysisData.error);
+                    addMessage('system', `Source analysis note: ${analysisData.error || 'Could not complete deep analysis'}`);
+                }
+
+                // STEP 2: Now start the contribution session
+                btn.innerHTML = '<span class="loading"></span> Starting session...';
+
+                const response = await fetch(`${API_BASE}/api/contribute/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    sessionId = data.sessionId;
+                    currentStage = data.stage;
+
+                    // Add assistant message
+                    addMessage('assistant', data.message);
+
+                    // Update UI
+                    updateProgress(data.stage);
+
+                    // If automatic analysis fails, immediately show alternatives
+                    if (data.error || data.status === 'failed') {
+                        showErrorWithAlternatives(data.error || 'Automatic analysis failed');
+                    }
+
+                    // Switch to chat input
+                    document.getElementById('urlInputGroup').style.display = 'none';
+                    document.getElementById('chatInputGroup').style.display = 'flex';
+
+                } else {
+                    // If automatic method fails, show alternatives immediately
+                    showErrorWithAlternatives(data.error || 'Could not analyze URL automatically');
+                }
+
+            } catch (error) {
+                // If any error occurs, show alternatives immediately
+                showErrorWithAlternatives(`Connection error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze';
+            }
+        }
+
+        // Display intelligent source analysis results
+        function displaySourceAnalysis(analysisData) {
+            const analysis = analysisData.analysis;
+            const summary = analysisData.summary;
+
+            // Build analysis message
+            let analysisMsg = `**SOURCE ANALYSIS COMPLETE**\n\n`;
+            analysisMsg += `**${summary.headline}**\n`;
+            analysisMsg += `Quality Score: ${analysis.qualityScore}/100\n`;
+            analysisMsg += `Source Type: ${analysis.sourceType?.type || 'unknown'} (${analysis.sourceType?.priority || 'unknown'} priority)\n\n`;
+
+            // Downloads found
+            if (analysis.downloads && analysis.downloads.length > 0) {
+                analysisMsg += `**Downloads Found (${analysis.downloads.length}):**\n`;
+                analysis.downloads.slice(0, 5).forEach(d => {
+                    analysisMsg += `  - ${d.name} (${d.type})\n`;
+                });
+                analysisMsg += '\n';
+            }
+
+            // Detected fields
+            if (analysis.detectedFields && analysis.detectedFields.length > 0) {
+                analysisMsg += `**Data Fields Detected:**\n`;
+                analysis.detectedFields.slice(0, 6).forEach(f => {
+                    analysisMsg += `  - ${f.field} (${f.importance} importance)\n`;
+                });
+                analysisMsg += '\n';
+            }
+
+            // Estimated records
+            if (analysis.estimatedRecords) {
+                analysisMsg += `**Estimated Records:** ~${analysis.estimatedRecords.toLocaleString()}\n\n`;
+            }
+
+            // Processing plan
+            if (analysis.processingPlan) {
+                analysisMsg += `**Recommended Strategy:** ${analysis.processingPlan.strategy}\n`;
+                if (analysis.processingPlan.toolsNeeded && analysis.processingPlan.toolsNeeded.length > 0) {
+                    analysisMsg += `Tools needed: ${analysis.processingPlan.toolsNeeded.join(', ')}\n`;
+                }
+                analysisMsg += '\n';
+            }
+
+            // Custom scraper needed?
+            if (analysis.customScraperNeeded) {
+                analysisMsg += `**Note:** This source would benefit from a custom scraper for optimal extraction.\n\n`;
+            }
+
+            // Recommendations
+            if (analysis.recommendations && analysis.recommendations.length > 0) {
+                analysisMsg += `**Recommendations:**\n`;
+                analysis.recommendations.forEach(r => {
+                    analysisMsg += `  [${r.type.toUpperCase()}] ${r.message}\n`;
+                });
+            }
+
+            addMessage('assistant', analysisMsg);
+
+            // Update side panel with analysis summary
+            updateAnalysisSidePanel(analysis, summary);
+        }
+
+        // Update side panel with analysis info
+        function updateAnalysisSidePanel(analysis, summary) {
+            const quickMethods = document.getElementById('quickMethods');
+
+            // Add analysis summary card at the top
+            const analysisCard = document.createElement('div');
+            analysisCard.style.cssText = 'background: linear-gradient(135deg, #1a3a5c 0%, #0f3460 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #00d9ff;';
+            analysisCard.innerHTML = `
+                <h4 style="color: #00d9ff; margin-bottom: 10px;">Source Analysis</h4>
+                <div style="font-size: 0.9em;">
+                    <div style="margin-bottom: 8px;">
+                        <strong>Quality:</strong>
+                        <span style="color: ${analysis.qualityScore >= 70 ? '#38a169' : analysis.qualityScore >= 40 ? '#d69e2e' : '#e94560'};">
+                            ${analysis.qualityScore}/100
+                        </span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong>Type:</strong> ${analysis.sourceType?.type || 'unknown'}
+                    </div>
+                    ${analysis.downloads && analysis.downloads.length > 0 ? `
+                        <div style="margin-bottom: 8px;">
+                            <strong>Downloads:</strong> ${analysis.downloads.length} file(s)
+                        </div>
+                    ` : ''}
+                    ${analysis.detectedFields && analysis.detectedFields.length > 0 ? `
+                        <div style="margin-bottom: 8px;">
+                            <strong>Fields:</strong> ${analysis.detectedFields.slice(0, 3).map(f => f.field).join(', ')}
+                        </div>
+                    ` : ''}
+                    ${analysis.customScraperNeeded ? `
+                        <div style="padding: 8px; background: #0f3460; border-radius: 4px; margin-top: 10px; font-size: 0.85em;">
+                            Custom scraper recommended
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+
+            quickMethods.insertBefore(analysisCard, quickMethods.firstChild);
+        }
+
+        // Show error with immediate alternatives
+        function showErrorWithAlternatives(errorMessage) {
+            addMessage('system', `Automatic processing failed: ${errorMessage}`);
+
+            // Show error message in side panel
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.innerHTML = `
+                <strong>❌ Error:</strong> ${errorMessage}
+                <div style="margin-top: 10px; padding: 8px; background: #1a1a2e; border-radius: 4px;">
+                    <strong>💡 Try these alternatives:</strong>
+                    <ul style="margin-top: 5px; padding-left: 15px;">
+                        <li><a href="#" onclick="showScreenshotUpload(); return false;">Upload screenshots</a></li>
+                        <li><a href="#" onclick="showTextCopyInterface(); return false;">Paste text manually</a></li>
+                    </ul>
+                </div>
+            `;
+
+            document.getElementById('quickMethods').prepend(errorDiv);
+        }
+
+        // Send chat message
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || !sessionId) return;
+
+            // Add user message
+            addMessage('user', message);
+            input.value = '';
+
+            // Disable send button
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Add assistant response
+                    if (data.message) {
+                        addMessage('assistant', data.message);
+                    }
+
+                    // Update stage
+                    if (data.stage) {
+                        currentStage = data.stage;
+                        updateProgress(data.stage);
+                    }
+
+                    // Show extraction options if available
+                    if (data.extractionOptions) {
+                        showExtractionOptions(data.extractionOptions);
+                    }
+
+                } else {
+                    addMessage('system', `Error: ${data.error}`);
+                }
+
+            } catch (error) {
+                addMessage('system', `Connection error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Show extraction options (simplified)
+        function showExtractionOptions(options) {
+            const section = document.getElementById('extractionResultsSection');
+            const container = document.getElementById('extractionResults');
+
+            section.style.display = 'block';
+
+            // Simplified options - prioritize manual methods
+            container.innerHTML = `
+                <div style="background: #0f3460; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9em;">
+                    <strong>📋 Choose an extraction method:</strong>
+                    <p style="margin-top: 8px; opacity: 0.8;">Manual methods work for any document!</p>
+                </div>
+
+                <!-- MANUAL OPTIONS - Always Available -->
+                <div style="margin-bottom: 20px; padding: 15px; background: #1a3a5c; border-radius: 8px; border: 2px solid #00d9ff;">
+                    <h4 style="color: #00d9ff; margin-bottom: 10px;">⭐ RECOMMENDED: Manual Methods</h4>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div class="method-card" onclick="showScreenshotUpload()">
+                            <h4>📸 Screenshot Upload</h4>
+                            <p>Take screenshots of the document pages and upload them</p>
+                            <small>Best for: Protected sites, complex layouts, ANY document</small>
+                        </div>
+                        <div class="method-card" onclick="showTextCopyInterface()">
+                            <h4>📝 Copy & Paste Text</h4>
+                            <p>Copy text from the document and paste it here</p>
+                            <small>Best for: When you can select text in the document</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AUTOMATIC OPTIONS -->
+                <div style="margin-bottom: 10px;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">🤖 Automatic Methods</h4>
+                    <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 10px;">
+                        These may fail for protected sites. If they do, use manual methods above.
+                    </p>
+                </div>
+            ` + options.map(opt => `
+                <div class="method-card" onclick="selectExtractionMethod('${opt.id}')">
+                    <h4>${opt.label}</h4>
+                    <p>${opt.description}</p>
+                    <small>Best for: ${opt.bestFor}</small>
+                </div>
+            `).join('');
+        }
+
+        // Select extraction method
+        async function selectExtractionMethod(method) {
+            addMessage('user', `Using method: ${method}`);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/${sessionId}/extract`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    addMessage('assistant', data.message);
+                    updateProgress(data.stage);
+
+                    // Start polling for extraction status if auto_ocr
+                    if (method === 'auto_ocr' && data.extractionId) {
+                        pollExtractionStatus(data.extractionId);
+                    }
+                }
+
+            } catch (error) {
+                addMessage('system', `Error: ${error.message}`);
+            }
+        }
+
+        // Toggle debug panel visibility
+        function toggleDebugPanel() {
+            const panel = document.getElementById('debugPanel');
+            const toggle = document.getElementById('debugToggle');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                toggle.textContent = '▲';
+            } else {
+                panel.style.display = 'none';
+                toggle.textContent = '▼';
+            }
+        }
+
+        // Update progress indicator
+        function updateProgress(stage) {
+            const steps = document.querySelectorAll('.progress-step');
+            let foundActive = false;
+
+            steps.forEach(step => {
+                const stepStage = step.dataset.stage;
+
+                if (stepStage === stage) {
+                    step.classList.add('active');
+                    step.classList.remove('completed');
+                    foundActive = true;
+                } else if (!foundActive) {
+                    step.classList.remove('active');
+                    step.classList.add('completed');
+                    step.querySelector('.step-icon').textContent = '✓';
+                } else {
+                    step.classList.remove('active', 'completed');
+                }
+            });
+        }
+
+        // Add message to chat
+        function addMessage(role, content) {
+            const messages = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = `message ${role}`;
+
+            const header = document.createElement('div');
+            header.className = 'message-header';
+            header.textContent = role === 'user' ? 'You' : role === 'assistant' ? 'Assistant' : 'System';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = formatMessage(content);
+
+            msg.appendChild(header);
+            msg.appendChild(contentDiv);
+            messages.appendChild(msg);
+
+            // Scroll to bottom
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Format message with markdown-like syntax
+        function formatMessage(text) {
+            return text
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/`(.+?)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // Handle Enter key in chat input
+        function handleKeyDown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Show text copy interface
+        function showTextCopyInterface() {
+            const section = document.getElementById('extractionResultsSection');
+            section.style.display = 'block';
+
+            const container = document.getElementById('extractionResults');
+            container.innerHTML = `
+                <div style="background: #1a1a2e; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4>📝 Copy & Paste Text</h4>
+                    <p>Copy text directly from the document:</p>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Open the document in your browser</li>
+                        <li>Select and copy the text (Ctrl+C / Cmd+C)</li>
+                        <li>Paste it below (Ctrl+V / Cmd+V)</li>
+                    </ol>
+                    <div style="background: #0f3460; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 0.85em;">
+                        <strong>💡 Tip:</strong> Include column headers if visible. The system will try to parse the text into rows automatically.
+                    </div>
+                    <textarea id="manualTextInput" placeholder="Paste document text here...
+
+Example:
+DATE        NAME OF OWNER       NAME OF SLAVE       SEX     AGE
+1867 May 1  Thomas Griffith     Lydia King          Female  50
+1867 May 1  Thomas Griffith     William Kall        Male    45"
+                              style="width: 100%; height: 200px; padding: 10px; background: #16213e; border: 2px solid #333; border-radius: 5px; color: #eee; margin: 10px 0; resize: vertical; font-family: monospace; font-size: 0.9em;"></textarea>
+                    <button onclick="processManualText()" style="padding: 10px 20px; background: #667eea; border: none; border-radius: 5px; color: white; cursor: pointer; width: 100%;">
+                        📋 Process Pasted Text
+                    </button>
+                    <div id="textProcessingStatus" style="margin-top: 10px; font-size: 0.85em;"></div>
+                </div>
+                <button onclick="hideExtractionResults()" style="padding: 8px 15px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer;">
+                    ← Back
+                </button>
+            `;
+        }
+
+        // Hide extraction results section
+        function hideExtractionResults() {
+            document.getElementById('extractionResultsSection').style.display = 'none';
+        }
+
+        // Show screenshot upload interface
+        function showScreenshotUpload() {
+            const section = document.getElementById('extractionResultsSection');
+            section.style.display = 'block';
+
+            const container = document.getElementById('extractionResults');
+            container.innerHTML = `
+                <div style="background: #1a1a2e; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4>📸 Screenshot Upload</h4>
+                    <p>Upload screenshots of the document pages:</p>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Open the document in your browser</li>
+                        <li>Take a screenshot (Cmd+Shift+4 on Mac, Win+Shift+S on Windows)</li>
+                        <li>Upload the image(s) below</li>
+                    </ol>
+                    <div style="background: #0f3460; padding: 10px; border-radius: 5px; margin-bottom: 10px; font-size: 0.85em;">
+                        <strong>💡 Tip:</strong> For best results, zoom in so text is clearly visible. You can upload multiple images for multi-page documents.
+                    </div>
+                    <input type="file" id="screenshotUpload" accept="image/*" multiple
+                           style="margin: 10px 0; display: block; padding: 10px; background: #16213e; border: 2px dashed #333; border-radius: 5px; width: 100%; cursor: pointer;">
+                    <div id="screenshotPreview" style="display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0;"></div>
+                    <button onclick="uploadScreenshots()" style="padding: 10px 20px; background: #667eea; border: none; border-radius: 5px; color: white; cursor: pointer; width: 100%;">
+                        📤 Upload & Process Images
+                    </button>
+                    <div id="screenshotUploadStatus" style="margin-top: 10px; font-size: 0.85em;"></div>
+                </div>
+                <button onclick="hideExtractionResults()" style="padding: 8px 15px; background: #0f3460; border: 1px solid #333; border-radius: 5px; color: #eee; cursor: pointer;">
+                    ← Back
+                </button>
+            `;
+
+            // Add file preview handler
+            document.getElementById('screenshotUpload').onchange = function(e) {
+                const preview = document.getElementById('screenshotPreview');
+                preview.innerHTML = '';
+                for (const file of e.target.files) {
+                    const img = document.createElement('img');
+                    img.src = URL.createObjectURL(file);
+                    img.style.cssText = 'max-width: 100px; max-height: 100px; border-radius: 5px; border: 1px solid #333;';
+                    preview.appendChild(img);
+                }
+            };
+        }
+
+        // Show URL method
+        function showUrlMethod() {
+            document.getElementById('urlInputGroup').style.display = 'flex';
+            document.getElementById('chatInputGroup').style.display = 'none';
+            document.getElementById('urlInput').focus();
+        }
+
+        // Process manual text input
+        async function processManualText() {
+            const text = document.getElementById('manualTextInput').value.trim();
+            const statusDiv = document.getElementById('textProcessingStatus');
+
+            if (!text) {
+                statusDiv.textContent = 'Please paste some text';
+                statusDiv.style.color = '#e94560';
+                return;
+            }
+
+            statusDiv.innerHTML = '<span class="loading"></span> Processing text...';
+            statusDiv.style.color = '#00d9ff';
+
+            try {
+                // Ensure we have an extraction job
+                let extractionId = currentExtractionId;
+
+                if (!extractionId && sessionId) {
+                    // Create extraction job with manual_text method
+                    const extractResponse = await fetch(`${API_BASE}/api/contribute/${sessionId}/extract`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ method: 'manual_text' })
+                    });
+                    const extractData = await extractResponse.json();
+                    if (extractData.success) {
+                        extractionId = extractData.extractionId;
+                        currentExtractionId = extractionId;
+                    } else {
+                        throw new Error('Failed to create extraction job: ' + (extractData.error || 'Unknown error'));
+                    }
+                }
+
+                if (!extractionId) {
+                    throw new Error('No session or extraction ID available. Please start by pasting a URL.');
+                }
+
+                statusDiv.innerHTML = '<span class="loading"></span> Parsing text into rows...';
+
+                // Submit manual text for processing
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/manual-text`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text: text,
+                            method: 'manual_text'
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `✅ Text processed! Found <strong>${data.rowCount}</strong> rows.`;
+                    statusDiv.style.color = '#38a169';
+
+                    addMessage('assistant', `Text processing complete! Found ${data.rowCount} rows with ${(data.avgConfidence * 100).toFixed(0)}% average confidence.`);
+
+                    // Show results
+                    if (data.parsedRows && data.parsedRows.length > 0) {
+                        displayParsedRows(data.parsedRows);
+                    }
+
+                    updateProgress('complete');
+                } else {
+                    throw new Error(data.error || 'Failed to process text');
+                }
+
+            } catch (error) {
+                statusDiv.innerHTML = `❌ Error: ${error.message}`;
+                statusDiv.style.color = '#e94560';
+                console.error('Manual text processing error:', error);
+                addMessage('system', `Text processing failed: ${error.message}`);
+            }
+        }
+
+        // Upload and process screenshots
+        async function uploadScreenshots() {
+            const input = document.getElementById('screenshotUpload');
+            const files = input.files;
+            const statusDiv = document.getElementById('screenshotUploadStatus');
+
+            if (!files || files.length === 0) {
+                statusDiv.textContent = 'Please select at least one image';
+                statusDiv.style.color = '#e94560';
+                return;
+            }
+
+            statusDiv.innerHTML = `<span class="loading"></span> Uploading ${files.length} image(s)...`;
+            statusDiv.style.color = '#00d9ff';
+
+            try {
+                // Ensure we have an extraction job
+                let extractionId = currentExtractionId;
+
+                if (!extractionId && sessionId) {
+                    // Create extraction job with screenshot_upload method
+                    const extractResponse = await fetch(`${API_BASE}/api/contribute/${sessionId}/extract`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ method: 'screenshot_upload' })
+                    });
+                    const extractData = await extractResponse.json();
+                    if (extractData.success) {
+                        extractionId = extractData.extractionId;
+                        currentExtractionId = extractionId;
+                    } else {
+                        throw new Error('Failed to create extraction job: ' + (extractData.error || 'Unknown error'));
+                    }
+                }
+
+                if (!extractionId) {
+                    throw new Error('No session or extraction ID available. Please start by pasting a URL.');
+                }
+
+                statusDiv.innerHTML = `<span class="loading"></span> Processing ${files.length} image(s) with OCR...`;
+
+                // Create form data for file upload
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                    formData.append('images', files[i]);
+                }
+
+                // Upload images
+                const response = await fetch(
+                    `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/screenshots`,
+                    {
+                        method: 'POST',
+                        body: formData
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `✅ Processed ${files.length} image(s)! Found <strong>${data.rowCount}</strong> rows.`;
+                    statusDiv.style.color = '#38a169';
+
+                    addMessage('assistant', `Screenshot processing complete! Found ${data.rowCount} rows with ${(data.avgConfidence * 100).toFixed(0)}% average confidence.`);
+
+                    // Show results
+                    if (data.parsedRows && data.parsedRows.length > 0) {
+                        displayParsedRows(data.parsedRows);
+                    }
+
+                    updateProgress('complete');
+                } else {
+                    throw new Error(data.error || 'Failed to process screenshots');
+                }
+
+            } catch (error) {
+                statusDiv.innerHTML = `❌ Error: ${error.message}`;
+                statusDiv.style.color = '#e94560';
+                console.error('Screenshot upload error:', error);
+                addMessage('system', `Screenshot processing failed: ${error.message}`);
+            }
+        }
+
+        // Display parsed rows in a table format
+        function displayParsedRows(rows) {
+            const container = document.getElementById('extractionResults');
+            if (!container) return;
+
+            // Create table header
+            let html = '<table class="extraction-results-table"><thead><tr><th>Row</th>';
+
+            // Get all unique column headers
+            const headers = new Set();
+            rows.forEach(row => {
+                if (row.columns) {
+                    Object.keys(row.columns).forEach(header => {
+                        headers.add(header);
+                    });
+                }
+            });
+
+            // Add headers to table
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '<th>Confidence</th></tr></thead><tbody>';
+
+            // Add rows
+            rows.forEach((row, index) => {
+                html += `<tr><td>${index + 1}</td>`;
+                headers.forEach(header => {
+                    const value = row.columns?.[header] || '';
+                    html += `<td>${value}</td>`;
+                });
+                html += `<td>${(row.confidence * 100).toFixed(0)}%</td></tr>`;
+            });
+
+            html += '</tbody></table>';
+
+            // Add success message
+            html += `
+                <div class="success-message" style="margin-top: 15px;">
+                    <strong>✅ Success!</strong> Your data has been extracted and saved.
+                    <div style="margin-top: 10px; padding: 8px; background: #1a1a2e; border-radius: 4px;">
+                        <strong>💡 What's next?</strong>
+                        <ul style="margin-top: 5px; padding-left: 15px;">
+                            <li>Review the extracted data above</li>
+                            <li>Use the correction tools if needed</li>
+                            <li>Submit more documents to build the database</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Poll extraction status
+        async function pollExtractionStatus(extractionId) {
+            currentExtractionId = extractionId;
+
+            // Clear any existing poll interval
+            if (pollIntervalId) {
+                clearInterval(pollIntervalId);
+            }
+
+            let pollCount = 0;
+            const maxPolls = 150; // 5 minutes at 2-second intervals
+
+            pollIntervalId = setInterval(async () => {
+                pollCount++;
+
+                try {
+                    const response = await fetch(
+                        `${API_BASE}/api/contribute/${sessionId}/extraction/${extractionId}/status`
+                    );
+                    const data = await response.json();
+
+                    if (data.success) {
+                        const extraction = data.extraction;
+
+                        // Update debug panel
+                        updateDebugPanel(extraction);
+
+                        if (extraction.status === 'completed') {
+                            clearInterval(pollIntervalId);
+                            pollIntervalId = null;
+
+                            addMessage('assistant', `Extraction complete! Found ${extraction.rowCount} rows with ${(extraction.avgConfidence * 100).toFixed(0)}% average confidence.`);
+
+                            // Display parsed rows if available
+                            if (extraction.parsedRows && extraction.parsedRows.length > 0) {
+                                displayParsedRows(extraction.parsedRows);
+                            }
+
+                            updateProgress('complete');
+
+                        } else if (extraction.status === 'failed') {
+                            clearInterval(pollIntervalId);
+                            pollIntervalId = null;
+
+                            addMessage('system', `Extraction failed: ${extraction.error || 'Unknown error'}`);
+                            addMessage('system', 'Please try a manual method from the Quick Methods panel.');
+
+                        } else {
+                            // Show progress update in chat periodically
+                            if (pollCount % 10 === 0) {
+                                console.log(`Extraction progress: ${extraction.progress}% - ${extraction.statusMessage || 'Processing...'}`);
+                            }
+                        }
+                    } else {
+                        console.error('Poll returned error:', data.error);
+                    }
+
+                } catch (error) {
+                    console.error('Poll error:', error);
+
+                    // After 3 consecutive errors, stop polling
+                    if (pollCount > 3) {
+                        clearInterval(pollIntervalId);
+                        pollIntervalId = null;
+                        addMessage('system', `Lost connection to extraction process. Error: ${error.message}`);
+                    }
+                }
+
+                // Stop polling after max polls
+                if (pollCount >= maxPolls) {
+                    clearInterval(pollIntervalId);
+                    pollIntervalId = null;
+                    addMessage('system', 'Extraction timed out after 5 minutes. Please try a manual method.');
+                }
+
+            }, 2000);
+        }
+
+        // Update debug panel with extraction status
+        function updateDebugPanel(extraction) {
+            document.getElementById('debugStatus').textContent = extraction.status || '--';
+            document.getElementById('debugProgress').textContent = `${extraction.progress || 0}%`;
+            document.getElementById('debugMessage').textContent = extraction.statusMessage || extraction.error || '--';
+
+            // Color-code status
+            const statusEl = document.getElementById('debugStatus');
+            if (extraction.status === 'completed') {
+                statusEl.style.color = '#38a169';
+            } else if (extraction.status === 'failed') {
+                statusEl.style.color = '#e94560';
+            } else if (extraction.status === 'processing') {
+                statusEl.style.color = '#00d9ff';
+            } else {
+                statusEl.style.color = '#eee';
+            }
+        }
+
+        // Processing queue functions
+        async function refreshQueue() {
+            const container = document.getElementById('queueContainer');
+            container.innerHTML = '<div style="padding: 10px; text-align: center;"><span class="loading"></span> Loading...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/contribute/queue`);
+                const data = await response.json();
+
+                if (data.success) {
+                    displayQueue(data.queue);
+                } else {
+                    container.innerHTML = '<div style="padding: 10px; color: #e94560;">Could not load queue</div>';
+                }
+            } catch (error) {
+                // Show static queue since we don't have a queue endpoint yet
+                displayStaticQueue();
+            }
+        }
+
+        function displayStaticQueue() {
+            const container = document.getElementById('queueContainer');
+            const staticQueue = [
+                { name: 'FamilySearch Ravenel Papers', status: 'processing', films: '2-10', detail: 'Film 3 in progress' },
+                { name: 'Louisiana Slave Database', status: 'pending', detail: 'ibiblio.org - 100k+ records' }
+            ];
+
+            let html = '';
+            staticQueue.forEach((item, index) => {
+                const statusColor = item.status === 'processing' ? '#00d9ff' : item.status === 'completed' ? '#38a169' : '#d69e2e';
+                const statusIcon = item.status === 'processing' ? '⏳' : item.status === 'completed' ? '✅' : '📋';
+                html += `
+                    <div style="background: #1a1a2e; padding: 10px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid ${statusColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 600; font-size: 0.9em;">${statusIcon} ${item.name}</span>
+                        </div>
+                        <div style="font-size: 0.8em; opacity: 0.7; margin-top: 4px;">
+                            ${item.detail}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                <button onclick="addToQueue()" style="width: 100%; padding: 8px; margin-top: 10px; background: #0f3460; border: 1px dashed #333; border-radius: 6px; color: #aaa; cursor: pointer; font-size: 0.85em;">
+                    + Add URL to queue
+                </button>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function displayQueue(queue) {
+            const container = document.getElementById('queueContainer');
+
+            if (!queue || queue.length === 0) {
+                container.innerHTML = '<div style="padding: 10px; text-align: center; opacity: 0.7;">Queue is empty</div>';
+                return;
+            }
+
+            let html = '';
+            queue.forEach((item, index) => {
+                const statusColor = item.status === 'processing' ? '#00d9ff' : item.status === 'completed' ? '#38a169' : '#d69e2e';
+                const statusIcon = item.status === 'processing' ? '⏳' : item.status === 'completed' ? '✅' : '📋';
+                html += `
+                    <div style="background: #1a1a2e; padding: 10px; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid ${statusColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 600; font-size: 0.9em;">${statusIcon} ${item.name || item.url}</span>
+                        </div>
+                        <div style="font-size: 0.8em; opacity: 0.7; margin-top: 4px;">
+                            ${item.detail || item.status}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `
+                <button onclick="addToQueue()" style="width: 100%; padding: 8px; margin-top: 10px; background: #0f3460; border: 1px dashed #333; border-radius: 6px; color: #aaa; cursor: pointer; font-size: 0.85em;">
+                    + Add URL to queue
+                </button>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function addToQueue() {
+            // Focus the URL input
+            document.getElementById('urlInputGroup').style.display = 'flex';
+            document.getElementById('chatInputGroup').style.display = 'none';
+            document.getElementById('urlInput').focus();
+            addMessage('system', 'Enter a URL to analyze and add to the processing queue.');
+        }
+
+        // Auto-check capabilities on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load the queue
+            displayStaticQueue();
+
+            // Silently check capabilities in background
+            fetch(`${API_BASE}/api/contribute/capabilities`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success && !data.capabilities.browserAutomation) {
+                        console.warn('Browser automation not available - some extraction methods may be limited');
+                    }
+                })
+                .catch(e => console.warn('Could not check capabilities:', e));
+        });
+    </script>
+</body>
+</html>
