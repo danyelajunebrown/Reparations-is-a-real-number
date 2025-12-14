@@ -41,6 +41,13 @@ const upload = multer({
 let contributionService = null;
 let promotionService = null;
 
+// Simple in-memory cache for stats (5 minute TTL)
+let statsCache = {
+    data: null,
+    timestamp: 0,
+    ttl: 5 * 60 * 1000 // 5 minutes
+};
+
 /**
  * Initialize the contribution service with database
  */
@@ -369,7 +376,7 @@ router.get('/search/:query', async (req, res) => {
 
 /**
  * GET /api/contribute/stats
- * Get statistics about the database records
+ * Get statistics about the database records (with 5-minute cache)
  */
 router.get('/stats', async (req, res) => {
     try {
@@ -381,6 +388,20 @@ router.get('/stats', async (req, res) => {
             });
         }
 
+        const now = Date.now();
+        const isCacheValid = statsCache.data && (now - statsCache.timestamp) < statsCache.ttl;
+
+        // Return cached data if valid
+        if (isCacheValid) {
+            return res.json({
+                success: true,
+                stats: statsCache.data,
+                cached: true,
+                cacheAge: Math.floor((now - statsCache.timestamp) / 1000) // seconds
+            });
+        }
+
+        // Cache miss - query database
         const stats = await pool.query(`
             SELECT
                 COUNT(*) as total_records,
@@ -393,9 +414,14 @@ router.get('/stats', async (req, res) => {
             FROM unconfirmed_persons
         `);
 
+        // Update cache
+        statsCache.data = stats.rows[0];
+        statsCache.timestamp = now;
+
         res.json({
             success: true,
-            stats: stats.rows[0]
+            stats: statsCache.data,
+            cached: false
         });
 
     } catch (error) {
