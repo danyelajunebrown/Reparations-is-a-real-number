@@ -547,9 +547,19 @@ router.get('/person/:id', async (req, res) => {
             breakdown: []
         };
 
-        // Extract owner name from context_text or use stored ID
+        // Extract ALL available information
         let owner = null;
         let ownerName = null;
+        let dataAvailability = {
+            hasOwnerData: false,
+            hasStructuredOwner: false,
+            hasBirthYear: !!person.birth_year,
+            hasDeathYear: !!person.death_year,
+            hasGender: !!person.gender,
+            hasLocation: !!person.locations,
+            hasContextText: !!person.context_text,
+            hasSourceUrl: !!person.source_url
+        };
         
         if (tableSource === 'enslaved_individuals' && person.enslaved_by_individual_id) {
             // Get owner from individuals table
@@ -561,15 +571,18 @@ router.get('/person/:id', async (req, res) => {
             if (ownerResult.rows.length > 0) {
                 owner = ownerResult.rows[0];
                 ownerName = owner.full_name;
+                dataAvailability.hasOwnerData = true;
+                dataAvailability.hasStructuredOwner = true;
             }
         } else if (tableSource === 'unconfirmed_persons' && person.context_text) {
-            // Extract owner from context_text for unconfirmed_persons
-            // Pattern: "Owner: NAME" or "Slaveholder: NAME" or "NAME, slave owner"
+            // Try multiple extraction patterns for unconfirmed_persons
             const ownerPatterns = [
                 /Owner:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
                 /Slaveholder:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
                 /Enslaved by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
-                /held by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i
+                /held by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
+                /Property of:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
+                /Owned by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i
             ];
             
             for (const pattern of ownerPatterns) {
@@ -577,6 +590,8 @@ router.get('/person/:id', async (req, res) => {
                 if (match && match[1]) {
                     ownerName = match[1].trim();
                     owner = { full_name: ownerName };
+                    dataAvailability.hasOwnerData = true;
+                    dataAvailability.hasStructuredOwner = true;
                     break;
                 }
             }
@@ -660,7 +675,13 @@ router.get('/person/:id', async (req, res) => {
             },
             reparations,
             owner,
+            dataAvailability,
             documents,
+            rawData: {
+                contextText: person.context_text || null,
+                locations: person.locations || null,
+                notes: person.notes || null
+            },
             links: {
                 sourceUrl: person.source_url || null,
                 familySearch: person.familysearch_id
