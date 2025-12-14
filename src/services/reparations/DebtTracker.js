@@ -1,19 +1,17 @@
 /**
-
-- Debt Tracking System for Reparations
-- Handles ancestor debt assignment, inheritance chains, and descendant liability
-  */
+ * Debt Tracking System for Reparations
+ * Handles ancestor debt assignment, inheritance chains, and descendant liability
+ */
 
 class DebtTracker {
-constructor() {
-this.debtRecords = [];
-this.ancestorDebts = new Map();
-this.inheritanceChains = new Map();
-this.nextDebtId = 1;
-}
+    constructor() {
+        this.debtRecords = [];
+        this.ancestorDebts = new Map();
+        this.inheritanceChains = new Map();
+        this.nextDebtId = 1;
+    }
 
-```
-/**
+    /**
  * Add debt record for a slave owner based on document evidence
  */
 addSlaveownerDebt(ancestorName, slaveCount, source, year, documentDetails = null) {
@@ -362,13 +360,11 @@ getSystemStats() {
         ...this.calculateSystemTotalDebt()
     };
 }
-```
-
 }
 
 // Export for different environments
-if (typeof module !== ‘undefined’ && module.exports) {
-module.exports = DebtTracker;
-} else if (typeof window !== ‘undefined’) {
-window.DebtTracker = DebtTracker;
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = DebtTracker;
+} else if (typeof window !== 'undefined') {
+    window.DebtTracker = DebtTracker;
 }
