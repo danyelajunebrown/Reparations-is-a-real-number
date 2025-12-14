@@ -25,6 +25,9 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
         uint256 totalReparationsOwed;
         uint256 totalDeposited;
         uint256 totalPaid;
+        uint256 historicalPaymentsReceived; // Pre-blockchain settlements (e.g., Belinda Sutton 1783)
+        string historicalPaymentsProof; // IPFS hash of historical payment documentation
+        bool historicalPaymentsVerified; // Has the historical payment claim been verified
         address submitter;
         uint256 timestamp;
         bool verified;
@@ -83,6 +86,8 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
     event PaymentDistributed(uint256 indexed recordId, address recipient, uint256 amount, address token);
     event RecordVerified(uint256 indexed recordId, address verifier);
     event DescendantVerified(uint256 indexed recordId, address descendant, address verifier);
+    event HistoricalPaymentRecorded(uint256 indexed recordId, uint256 amount, string proofIPFSHash);
+    event HistoricalPaymentVerified(uint256 indexed recordId, uint256 amount);
     event WithdrawalRequested(uint256 indexed id, address token, uint256 amount, uint256 executeAfter);
     event WithdrawalExecuted(uint256 indexed id);
     event WithdrawalCancelled(uint256 indexed id);
@@ -120,6 +125,9 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
             totalReparationsOwed: _totalReparationsOwed,
             totalDeposited: 0,
             totalPaid: 0,
+            historicalPaymentsReceived: 0,
+            historicalPaymentsProof: "",
+            historicalPaymentsVerified: false,
             submitter: msg.sender,
             timestamp: block.timestamp,
             verified: false,
@@ -281,6 +289,60 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
         require(ancestryRecords[_recordId].timestamp > 0, "Record does not exist");
         ancestryRecords[_recordId].verified = true;
         emit RecordVerified(_recordId, msg.sender);
+    }
+    
+    /**
+     * @dev Record historical payments received (pre-blockchain settlements)
+     * Example: Belinda Sutton received £27 in 1783-1784 ($22,950 modern value)
+     */
+    function recordHistoricalPayment(
+        uint256 _recordId,
+        uint256 _amountReceived,
+        string memory _proofIPFSHash
+    ) external onlyVerifier {
+        require(ancestryRecords[_recordId].timestamp > 0, "Record does not exist");
+        require(_amountReceived > 0, "Amount must be positive");
+        
+        ancestryRecords[_recordId].historicalPaymentsReceived = _amountReceived;
+        ancestryRecords[_recordId].historicalPaymentsProof = _proofIPFSHash;
+        ancestryRecords[_recordId].historicalPaymentsVerified = false; // Requires separate verification
+        
+        emit HistoricalPaymentRecorded(_recordId, _amountReceived, _proofIPFSHash);
+    }
+    
+    /**
+     * @dev Verify historical payment claim after document review
+     */
+    function verifyHistoricalPayment(uint256 _recordId) external onlyVerifier {
+        require(ancestryRecords[_recordId].timestamp > 0, "Record does not exist");
+        require(ancestryRecords[_recordId].historicalPaymentsReceived > 0, "No historical payment recorded");
+        require(bytes(ancestryRecords[_recordId].historicalPaymentsProof).length > 0, "No proof provided");
+        
+        ancestryRecords[_recordId].historicalPaymentsVerified = true;
+        
+        emit HistoricalPaymentVerified(_recordId, ancestryRecords[_recordId].historicalPaymentsReceived);
+    }
+    
+    /**
+     * @dev Get net debt owed (total owed - historical payments - blockchain payments)
+     */
+    function getNetDebtOwed(uint256 _recordId) external view returns (uint256) {
+        AncestryRecord memory record = ancestryRecords[_recordId];
+        uint256 totalPaid = record.totalPaid + record.historicalPaymentsReceived;
+        
+        if (totalPaid >= record.totalReparationsOwed) {
+            return 0;
+        }
+        return record.totalReparationsOwed - totalPaid;
+    }
+    
+    /**
+     * @dev Check if debt is fully settled (including historical payments)
+     */
+    function isDebtFullySettled(uint256 _recordId) external view returns (bool) {
+        AncestryRecord memory record = ancestryRecords[_recordId];
+        uint256 totalPaid = record.totalPaid + record.historicalPaymentsReceived;
+        return totalPaid >= record.totalReparationsOwed;
     }
     
     /**

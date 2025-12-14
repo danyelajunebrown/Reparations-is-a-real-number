@@ -1,0 +1,6 @@
+2025/12/10-15:55:25.988 e624e4 Creating DB /Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main/.chrome-profile/Default/WebStorage/6/IndexedDB/indexeddb.leveldb since it was missing.
+2025/12/10-15:55:25.996 e624e4 Reusing MANIFEST /Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main/.chrome-profile/Default/WebStorage/6/IndexedDB/indexeddb.leveldb/MANIFEST-000001
+2025/12/10-15:55:45.637 e624ef Level-0 table #5: started
+2025/12/10-15:55:45.638 e624ef Level-0 table #5: 9854 bytes OK
+2025/12/10-15:55:45.643 e624ef Delete type=0 #3
+2025/12/10-15:55:45.644 e624ef Manual compaction at level-0 from (begin) .. (end); will stop at (end)
