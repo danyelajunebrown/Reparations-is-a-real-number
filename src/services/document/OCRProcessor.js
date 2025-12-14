@@ -3,6 +3,7 @@ const Tesseract = require('tesseract.js');
 const axios = require('axios');
 const logger = require('../../utils/logger');
 const FileTypeDetector = require('./FileTypeDetector');
+const CursiveOCREnhancer = require('./CursiveOCREnhancer');
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
@@ -79,6 +80,19 @@ class OCRProcessor {
     }
 
     this.fileTypeDetector = new FileTypeDetector();
+
+    // Initialize cursive OCR enhancer for handwritten document improvement
+    this.cursiveEnhancer = null; // Will be initialized with database if available
+  }
+
+  /**
+   * Initialize the cursive OCR enhancer with database connection
+   * This enables learning from previous corrections
+   * @param {Object} db - Database connection pool
+   */
+  initializeCursiveEnhancer(db) {
+    this.cursiveEnhancer = new CursiveOCREnhancer(db);
+    logger.info('Cursive OCR Enhancer initialized with database connection');
   }
 
   /**
@@ -459,7 +473,7 @@ class OCRProcessor {
         },
         {
           headers: { 'Content-Type': 'application/json' },
-          timeout: 60000,
+          timeout: 120000, // 2 minutes for large images
           maxContentLength: 50 * 1024 * 1024, // 50MB max
           maxBodyLength: 50 * 1024 * 1024
         }
@@ -645,6 +659,74 @@ class OCRProcessor {
     }
 
     return tesseractResults;
+  }
+
+  /**
+   * Enhance OCR results using cursive letter reference and learned corrections
+   * This improves accuracy for handwritten historical documents
+   * @param {Object} ocrResults - Raw OCR results
+   * @param {Object} options - Enhancement options
+   * @returns {Promise<Object>} Enhanced OCR results
+   */
+  async enhanceWithCursiveReference(ocrResults, options = {}) {
+    // Skip if no enhancer or if disabled
+    if (!this.cursiveEnhancer || options.skipEnhancement) {
+      return ocrResults;
+    }
+
+    // Skip enhancement for high-confidence results (likely typed/printed documents)
+    if (ocrResults.confidence > 0.95 && !options.forceEnhancement) {
+      logger.info('OCR: Skipping cursive enhancement for high-confidence result');
+      return ocrResults;
+    }
+
+    try {
+      logger.info('OCR: Applying cursive enhancement', {
+        originalConfidence: ocrResults.confidence,
+        textLength: ocrResults.text?.length || 0
+      });
+
+      const enhanced = await this.cursiveEnhancer.enhance(
+        ocrResults.text,
+        ocrResults.confidence,
+        options
+      );
+
+      logger.info('OCR: Cursive enhancement complete', {
+        corrections: enhanced.correctionCount,
+        newConfidence: enhanced.confidence
+      });
+
+      return {
+        ...ocrResults,
+        text: enhanced.text,
+        originalText: enhanced.originalText,
+        confidence: enhanced.confidence,
+        cursiveCorrections: enhanced.corrections,
+        correctionCount: enhanced.correctionCount,
+        enhanced: enhanced.enhancementApplied
+      };
+
+    } catch (error) {
+      logger.warn('OCR: Cursive enhancement failed, using raw results', {
+        error: error.message
+      });
+      return ocrResults;
+    }
+  }
+
+  /**
+   * Process with enhancement (convenience method)
+   * @param {Object} file - File to process
+   * @param {Object} options - Processing options including enhancement settings
+   * @returns {Promise<Object>} Enhanced OCR results
+   */
+  async processWithEnhancement(file, options = {}) {
+    // First, get raw OCR results
+    const rawResults = await this.process(file, options);
+
+    // Then apply cursive enhancement
+    return this.enhanceWithCursiveReference(rawResults, options);
   }
 
   /**
