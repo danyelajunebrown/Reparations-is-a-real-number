@@ -1100,6 +1100,8 @@
                                 source: new URL(person.source_url || 'https://unknown').hostname,
                                 confidence: person.confidence_score || 0,
                                 sourceUrl: person.source_url,
+                                archiveUrl: person.archive_url,
+                                contextText: person.context_text,
                                 id: person.id
                             });
                         });
@@ -1112,16 +1114,23 @@
                 if (allResults.length === 0) {
                     resultsList.innerHTML = '<div style="text-align: center; padding: 40px; color: #9aa5b1;">No results found. Try a different search term.</div>';
                 } else {
-                    resultsList.innerHTML = allResults.map(r => `
-                        <div class="result-item ${r.type}" onclick="viewResult('${r.type}', '${r.id}', '${r.sourceUrl || ''}')">
-                            <div class="result-name">${escapeHtml(r.name)}</div>
+                    resultsList.innerHTML = allResults.map((r, idx) => `
+                        <div class="result-item ${r.type}" onclick="viewResult(${idx})" data-result-index="${idx}">
+                            <div class="result-name">
+                                ${r.archiveUrl ? '<span style="color: #64c8ff; margin-right: 8px;">📄</span>' : ''}
+                                ${escapeHtml(r.name)}
+                            </div>
                             <div class="result-meta">
                                 <span class="result-type ${r.type}">${r.type}</span>
                                 <span class="result-source">${r.source}</span>
                                 ${r.confidence ? `<span class="result-confidence">${Math.round(r.confidence * 100)}%</span>` : ''}
+                                ${r.archiveUrl ? '<span style="color: #64ff64; font-size: 0.75em; margin-left: 8px;">📁 Archive</span>' : ''}
                             </div>
                         </div>
                     `).join('');
+
+                    // Store results globally for viewResult function
+                    window.searchResults = allResults;
                 }
 
             } catch (error) {
@@ -1134,12 +1143,73 @@
             document.getElementById('searchResultsPanel').classList.remove('active');
         }
 
-        function viewResult(type, id, sourceUrl) {
-            if (type === 'document') {
-                openDocViewer(id);
-            } else if (sourceUrl) {
-                window.open(sourceUrl, '_blank');
+        function viewResult(resultIndex) {
+            const result = window.searchResults[resultIndex];
+            if (!result) return;
+
+            // If there's an archive URL, open the document viewer
+            if (result.archiveUrl) {
+                openArchiveViewer(result);
+            } else if (result.type === 'document') {
+                openDocViewer(result.id);
+            } else if (result.sourceUrl) {
+                window.open(result.sourceUrl, '_blank');
             }
+        }
+
+        // Open archived document in viewer
+        function openArchiveViewer(result) {
+            document.getElementById('documentViewer').classList.add('active');
+            const content = document.getElementById('docViewerContent');
+            const sidebar = document.getElementById('docMetadata');
+
+            // Determine file type from URL
+            const isPdf = result.archiveUrl.toLowerCase().includes('.pdf');
+
+            // Display document
+            if (isPdf) {
+                content.innerHTML = `<iframe src="${result.archiveUrl}" style="width: 100%; height: 85vh; border: none; border-radius: 8px;"></iframe>`;
+            } else {
+                content.innerHTML = `<img src="${result.archiveUrl}" style="max-height: 85vh; border-radius: 8px;" onerror="this.onerror=null; this.src=''; this.alt='Image failed to load';" />`;
+            }
+
+            // Update sidebar with person/document info
+            sidebar.innerHTML = `
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Name</div>
+                    <div style="color: #e0e0e0; font-size: 1.1em; font-weight: 600;">${escapeHtml(result.name)}</div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Type</div>
+                    <div style="color: ${result.type === 'slaveholder' ? '#ff6464' : '#64ff64'}; text-transform: capitalize;">${result.type}</div>
+                </div>
+                ${result.confidence ? `
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Confidence</div>
+                    <div style="color: #e0e0e0;">${Math.round(result.confidence * 100)}%</div>
+                </div>` : ''}
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Source</div>
+                    <div style="color: #e0e0e0;">${result.source}</div>
+                </div>
+                ${result.contextText ? `
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Citation</div>
+                    <div style="color: #e0e0e0; font-size: 0.9em; line-height: 1.4;">${escapeHtml(result.contextText.split('Archived:')[0])}</div>
+                </div>` : ''}
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Archive</div>
+                    <a href="${result.archiveUrl}" target="_blank" style="color: #64c8ff; font-size: 0.85em; word-break: break-all;">View Original</a>
+                </div>
+                ${result.sourceUrl ? `
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #9aa5b1; font-size: 0.85em;">Original Source</div>
+                    <a href="${result.sourceUrl}" target="_blank" style="color: #64c8ff; font-size: 0.85em; word-break: break-all;">Visit Source</a>
+                </div>` : ''}
+            `;
+
+            // Store download URL
+            window.currentDocDownloadUrl = result.archiveUrl;
         }
 
         // ============================================
