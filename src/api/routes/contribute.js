@@ -154,6 +154,252 @@ router.get('/capabilities', async (req, res) => {
     }
 });
 
+// =============================================================================
+// UNIFIED SEARCH AND STATS ENDPOINTS
+// Must be defined BEFORE /:sessionId routes to avoid route conflicts
+// =============================================================================
+
+/**
+ * GET /api/contribute/search/:query
+ * Search across all person tables (unconfirmed_persons, enslaved_people, individuals)
+ * This is what the homepage search should call
+ */
+router.get('/search/:query', async (req, res) => {
+    try {
+        const { query } = req.params;
+        const { limit = 50, source, type } = req.query;
+
+        if (!query || query.length < 2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Query must be at least 2 characters'
+            });
+        }
+
+        // Use direct connection to ensure we connect to the right database
+        const { Pool } = require('pg');
+        const connectionString = process.env.DATABASE_URL;
+        if (!connectionString) {
+            return res.status(500).json({
+                success: false,
+                error: 'DATABASE_URL not configured'
+            });
+        }
+        const pool = new Pool({
+            connectionString,
+            ssl: { rejectUnauthorized: false }
+        });
+
+        // Natural language processing for person type detection
+        const queryLower = query.toLowerCase();
+        let detectedType = type || null;
+        let searchTerms = query;
+
+        // Detect owner/slaveholder queries
+        const ownerPatterns = [
+            /slave\s*owners?/i,
+            /slaveholders?/i,
+            /owners?\s+of\s+slaves?/i,
+            /plantation\s+owners?/i,
+            /masters?/i
+        ];
+
+        // Detect enslaved person queries
+        const enslavedPatterns = [
+            /enslaved\s*(people|persons?|individuals?)?/i,
+            /slaves?(?!\s*owners?)/i,
+            /bondsmen/i,
+            /bondswomen/i
+        ];
+
+        // Check for owner patterns
+        for (const pattern of ownerPatterns) {
+            if (pattern.test(queryLower)) {
+                detectedType = 'owner';
+                searchTerms = query.replace(pattern, '').trim();
+                break;
+            }
+        }
+
+        // Check for enslaved patterns
+        if (!detectedType) {
+            for (const pattern of enslavedPatterns) {
+                if (pattern.test(queryLower)) {
+                    detectedType = 'enslaved';
+                    searchTerms = query.replace(pattern, '').trim();
+                    break;
+                }
+            }
+        }
+
+        // Build search query
+        const stopWords = ['in', 'the', 'a', 'an', 'of', 'for', 'to', 'from', 'with', 'by', 'on', 'at'];
+        const words = searchTerms.split(/\s+/).filter(w => w.length >= 2 && !stopWords.includes(w.toLowerCase()));
+
+        let whereClause;
+        let params;
+        let paramIndex = 1;
+        const hasTextSearch = words.length > 0;
+
+        if (hasTextSearch) {
+            if (words.length > 1) {
+                const conditions = words.map((_, i) => `(
+                    full_name ILIKE $${i + 1} OR
+                    context_text ILIKE $${i + 1} OR
+                    source_url ILIKE $${i + 1} OR
+                    locations::text ILIKE $${i + 1}
+                )`).join(' OR ');
+                whereClause = `(${conditions})`;
+                params = words.map(w => `%${w}%`);
+                paramIndex = params.length + 1;
+            } else {
+                whereClause = `(
+                    full_name ILIKE $1 OR
+                    context_text ILIKE $1 OR
+                    source_url ILIKE $1 OR
+                    locations::text ILIKE $1
+                )`;
+                params = [`%${words[0]}%`];
+                paramIndex = 2;
+            }
+        } else {
+            whereClause = '1=1';
+            params = [];
+        }
+
+        let sql = `
+            SELECT
+                lead_id as id,
+                full_name as name,
+                person_type as type,
+                source_url,
+                source_type,
+                confidence_score,
+                locations,
+                context_text,
+                scraped_at as created_at,
+                'unconfirmed_persons' as table_source
+            FROM unconfirmed_persons
+            WHERE ${whereClause}
+        `;
+
+        if (source) {
+            sql += ` AND source_url ILIKE $${paramIndex}`;
+            params.push(`%${source}%`);
+            paramIndex++;
+        }
+
+        if (detectedType) {
+            if (detectedType === 'owner') {
+                sql += ` AND (person_type IN ('owner', 'slaveholder', 'suspected_owner', 'confirmed_owner'))`;
+            } else if (detectedType === 'enslaved') {
+                sql += ` AND (person_type IN ('enslaved', 'suspected_enslaved', 'confirmed_enslaved'))`;
+            } else {
+                sql += ` AND person_type = $${paramIndex}`;
+                params.push(detectedType);
+                paramIndex++;
+            }
+        }
+
+        sql += ` ORDER BY confidence_score DESC NULLS LAST, scraped_at DESC LIMIT $${paramIndex}`;
+        params.push(parseInt(limit));
+
+        const result = await pool.query(sql, params);
+
+        // Extract S3 archive URL from context_text
+        const extractArchiveUrl = (contextText) => {
+            if (!contextText) return null;
+            const s3Match = contextText.match(/https:\/\/[^"'\s]+\.s3[^"'\s]*\.amazonaws\.com[^"'\s]*/);
+            if (s3Match) return s3Match[0];
+            const archivedMatch = contextText.match(/Archived:\s*(https:\/\/[^\s]+)/);
+            if (archivedMatch) return archivedMatch[1];
+            return null;
+        };
+
+        const processedResults = result.rows.map(row => ({
+            ...row,
+            archive_url: extractArchiveUrl(row.context_text)
+        }));
+
+        // Group by source
+        const bySource = {};
+        processedResults.forEach(row => {
+            const sourceKey = row.source_url ? new URL(row.source_url).hostname : 'unknown';
+            if (!bySource[sourceKey]) bySource[sourceKey] = [];
+            bySource[sourceKey].push(row);
+        });
+
+        await pool.end();
+
+        res.json({
+            success: true,
+            query,
+            searchTerms: searchTerms || query,
+            filteredWords: words,
+            hasTextSearch,
+            detectedType,
+            count: processedResults.length,
+            results: processedResults,
+            bySource,
+            sources: Object.keys(bySource).map(key => ({
+                hostname: key,
+                count: bySource[key].length
+            }))
+        });
+
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
+ * GET /api/contribute/stats
+ * Get statistics about the database records
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const pool = contributionService?.db;
+        if (!pool) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database connection not available'
+            });
+        }
+
+        const stats = await pool.query(`
+            SELECT
+                COUNT(*) as total_records,
+                COUNT(DISTINCT source_url) as unique_sources,
+                COUNT(CASE WHEN person_type IN ('owner', 'slaveholder', 'confirmed_owner') THEN 1 END) as slaveholders,
+                COUNT(CASE WHEN person_type IN ('enslaved', 'confirmed_enslaved') THEN 1 END) as enslaved,
+                COUNT(CASE WHEN source_url LIKE '%msa.maryland.gov%' THEN 1 END) as msa_records,
+                COUNT(CASE WHEN source_url LIKE '%familysearch%' THEN 1 END) as familysearch_records,
+                COUNT(CASE WHEN source_url LIKE '%civilwardc%' THEN 1 END) as civilwardc_records
+            FROM unconfirmed_persons
+        `);
+
+        res.json({
+            success: true,
+            stats: stats.rows[0]
+        });
+
+    } catch (error) {
+        console.error('Stats error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// =============================================================================
+// SESSION MANAGEMENT ENDPOINTS
+// =============================================================================
+
 /**
  * POST /api/contribute/:sessionId/describe
  * Process user's description of what they see
@@ -1412,268 +1658,6 @@ router.post('/smart-extract', async (req, res) => {
 
     } catch (error) {
         console.error('Smart extract error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// =============================================================================
-// UNIFIED SEARCH ENDPOINT
-// =============================================================================
-
-/**
- * GET /api/contribute/search/:query
- * Search across all person tables (unconfirmed_persons, enslaved_people, individuals)
- * This is what the homepage search should call
- */
-router.get('/search/:query', async (req, res) => {
-    try {
-        const { query } = req.params;
-        const { limit = 50, source, type } = req.query;
-
-        if (!query || query.length < 2) {
-            return res.status(400).json({
-                success: false,
-                error: 'Query must be at least 2 characters'
-            });
-        }
-
-        // Use direct connection to ensure we connect to the right database
-        const { Pool } = require('pg');
-        const connectionString = process.env.DATABASE_URL;
-        if (!connectionString) {
-            return res.status(500).json({
-                success: false,
-                error: 'DATABASE_URL not configured'
-            });
-        }
-        const pool = new Pool({
-            connectionString,
-            ssl: { rejectUnauthorized: false }
-        });
-
-        // Natural language processing for person type detection
-        const queryLower = query.toLowerCase();
-        let detectedType = type || null; // Allow explicit type override via query param
-        let searchTerms = query;
-
-        // Detect owner/slaveholder queries
-        const ownerPatterns = [
-            /slave\s*owners?/i,
-            /slaveholders?/i,
-            /owners?\s+of\s+slaves?/i,
-            /owners?\s+who\s+owned\s+slaves?/i,
-            /plantation\s+owners?/i,
-            /masters?/i
-        ];
-
-        // Detect enslaved person queries
-        const enslavedPatterns = [
-            /enslaved\s*(people|persons?|individuals?)?/i,
-            /slaves?(?!\s*owners?)/i,
-            /bondsmen/i,
-            /bondswomen/i
-        ];
-
-        // Check for owner patterns
-        for (const pattern of ownerPatterns) {
-            if (pattern.test(queryLower)) {
-                detectedType = 'owner';
-                // Remove the pattern from search terms to get location/name filters
-                searchTerms = query.replace(pattern, '').trim();
-                break;
-            }
-        }
-
-        // Check for enslaved patterns (only if no owner pattern found)
-        if (!detectedType) {
-            for (const pattern of enslavedPatterns) {
-                if (pattern.test(queryLower)) {
-                    detectedType = 'enslaved';
-                    searchTerms = query.replace(pattern, '').trim();
-                    break;
-                }
-            }
-        }
-
-        // Build the search query - searches name, context_text, source_url, and locations
-        // Supports multi-word queries by searching each word with OR logic
-        // Filter out common stop words that don't add search value
-        const stopWords = ['in', 'the', 'a', 'an', 'of', 'for', 'to', 'from', 'with', 'by', 'on', 'at'];
-        const words = searchTerms.split(/\s+/).filter(w => w.length >= 2 && !stopWords.includes(w.toLowerCase()));
-
-        let whereClause;
-        let params;
-        let paramIndex = 1;
-
-        // If detectedType is set but no meaningful search words remain,
-        // just filter by person_type (e.g., "slave owners" with no location/name)
-        const hasTextSearch = words.length > 0;
-
-        if (hasTextSearch) {
-            if (words.length > 1) {
-                // Multi-word query: search for records containing ANY of the words
-                const conditions = words.map((_, i) => `(
-                    full_name ILIKE $${i + 1} OR
-                    context_text ILIKE $${i + 1} OR
-                    source_url ILIKE $${i + 1} OR
-                    locations::text ILIKE $${i + 1}
-                )`).join(' OR ');
-                whereClause = `(${conditions})`;
-                params = words.map(w => `%${w}%`);
-                paramIndex = params.length + 1;
-            } else {
-                // Single word query
-                whereClause = `(
-                    full_name ILIKE $1 OR
-                    context_text ILIKE $1 OR
-                    source_url ILIKE $1 OR
-                    locations::text ILIKE $1
-                )`;
-                params = [`%${words[0]}%`];
-                paramIndex = 2;
-            }
-        } else {
-            // No text search - will rely entirely on person_type filter
-            whereClause = '1=1'; // Always true placeholder
-            params = [];
-        }
-
-        let sql = `
-            SELECT
-                lead_id as id,
-                full_name as name,
-                person_type as type,
-                source_url,
-                source_type,
-                confidence_score,
-                locations,
-                context_text,
-                scraped_at as created_at,
-                'unconfirmed_persons' as table_source
-            FROM unconfirmed_persons
-            WHERE ${whereClause}
-        `;
-
-        // Filter by source if provided
-        if (source) {
-            sql += ` AND source_url ILIKE $${paramIndex}`;
-            params.push(`%${source}%`);
-            paramIndex++;
-        }
-
-        // Filter by person type if detected from natural language or provided explicitly
-        if (detectedType) {
-            if (detectedType === 'owner') {
-                // Match both 'owner' and 'slaveholder' types
-                sql += ` AND (person_type IN ('owner', 'slaveholder', 'suspected_owner'))`;
-            } else if (detectedType === 'enslaved') {
-                // Match enslaved types
-                sql += ` AND (person_type IN ('enslaved', 'suspected_enslaved'))`;
-            } else {
-                // Direct type match for other types
-                sql += ` AND person_type = $${paramIndex}`;
-                params.push(detectedType);
-                paramIndex++;
-            }
-        }
-
-        sql += ` ORDER BY confidence_score DESC NULLS LAST, scraped_at DESC LIMIT $${paramIndex}`;
-        params.push(parseInt(limit));
-
-        const result = await pool.query(sql, params);
-
-        // Helper function to extract S3 archive URL from context_text
-        const extractArchiveUrl = (contextText) => {
-            if (!contextText) return null;
-            // Look for S3 URL patterns in context_text
-            const s3Match = contextText.match(/https:\/\/[^"'\s]+\.s3[^"'\s]*\.amazonaws\.com[^"'\s]*/);
-            if (s3Match) return s3Match[0];
-            // Also check for "Archived:" prefix
-            const archivedMatch = contextText.match(/Archived:\s*(https:\/\/[^\s]+)/);
-            if (archivedMatch) return archivedMatch[1];
-            return null;
-        };
-
-        // Process results to add archive_url field
-        const processedResults = result.rows.map(row => ({
-            ...row,
-            archive_url: extractArchiveUrl(row.context_text)
-        }));
-
-        // Group results by source
-        const bySource = {};
-        processedResults.forEach(row => {
-            const sourceKey = row.source_url ? new URL(row.source_url).hostname : 'unknown';
-            if (!bySource[sourceKey]) {
-                bySource[sourceKey] = [];
-            }
-            bySource[sourceKey].push(row);
-        });
-
-        // Close the pool connection
-        await pool.end();
-
-        res.json({
-            success: true,
-            query,
-            searchTerms: searchTerms || query,
-            filteredWords: words,
-            hasTextSearch,
-            detectedType,
-            count: processedResults.length,
-            results: processedResults,
-            bySource,
-            sources: Object.keys(bySource).map(key => ({
-                hostname: key,
-                count: bySource[key].length
-            }))
-        });
-
-    } catch (error) {
-        console.error('Search error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-/**
- * GET /api/contribute/stats
- * Get statistics about the database records
- */
-router.get('/stats', async (req, res) => {
-    try {
-        const pool = contributionService?.db;
-        if (!pool) {
-            return res.status(500).json({
-                success: false,
-                error: 'Database connection not available'
-            });
-        }
-
-        const stats = await pool.query(`
-            SELECT
-                COUNT(*) as total_records,
-                COUNT(DISTINCT source_url) as unique_sources,
-                COUNT(CASE WHEN person_type = 'slaveholder' THEN 1 END) as slaveholders,
-                COUNT(CASE WHEN person_type = 'enslaved' THEN 1 END) as enslaved,
-                COUNT(CASE WHEN source_url LIKE '%msa.maryland.gov%' THEN 1 END) as msa_records,
-                COUNT(CASE WHEN source_url LIKE '%familysearch%' THEN 1 END) as familysearch_records,
-                COUNT(CASE WHEN source_url LIKE '%civilwardc%' THEN 1 END) as civilwardc_records
-            FROM unconfirmed_persons
-        `);
-
-        res.json({
-            success: true,
-            stats: stats.rows[0]
-        });
-
-    } catch (error) {
-        console.error('Stats error:', error);
         res.status(500).json({
             success: false,
             error: error.message
