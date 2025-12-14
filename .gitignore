@@ -41,3 +41,4 @@ fix*.pl
 RUN-THIS-TO-UPLOAD-PDFS.sh
 s3-setup-instructions.sh
 .env
+.chrome-profile/
