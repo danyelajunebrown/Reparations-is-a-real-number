@@ -538,7 +538,7 @@ router.get('/person/:id', async (req, res) => {
             });
         }
 
-        // Calculate reparations if not already calculated
+        // Calculate reparations for BOTH tables
         let reparations = {
             wageTheft: 0,
             damages: 0,
@@ -547,40 +547,12 @@ router.get('/person/:id', async (req, res) => {
             breakdown: []
         };
 
-        if (tableSource === 'enslaved_individuals') {
-            // Use stored values or calculate
-            const yearsEnslaved = person.freedom_year && person.birth_year
-                ? person.freedom_year - person.birth_year - 10 // Assume started working at 10
-                : person.death_year && person.birth_year
-                    ? Math.min(person.death_year, 1865) - person.birth_year - 10
-                    : 30; // Default 30 years if unknown
-
-            const yearsSinceEmancipation = 2025 - (person.freedom_year || 1865);
-            const annualWage = 15000; // Conservative modern equivalent
-
-            reparations.wageTheft = Math.max(0, yearsEnslaved) * annualWage;
-            reparations.damages = 100000; // Base human dignity damages
-            reparations.interest = (reparations.wageTheft + reparations.damages) *
-                (Math.pow(1.02, yearsSinceEmancipation) - 1); // 2% compound
-            reparations.total = parseFloat(person.total_reparations_owed) ||
-                (reparations.wageTheft + reparations.damages + reparations.interest);
-
-            reparations.breakdown = [
-                { label: 'Wage Theft', amount: reparations.wageTheft,
-                  description: `${Math.max(0, yearsEnslaved)} years × $${annualWage.toLocaleString()}/year` },
-                { label: 'Human Dignity Damages', amount: reparations.damages,
-                  description: 'Base compensation for enslavement' },
-                { label: 'Compound Interest', amount: reparations.interest,
-                  description: `${yearsSinceEmancipation} years @ 2% annual` }
-            ];
-
-            reparations.amountPaid = parseFloat(person.amount_paid) || 0;
-            reparations.amountOutstanding = reparations.total - reparations.amountPaid;
-        }
-
-        // Get owner info if available
+        // Extract owner name from context_text or use stored ID
         let owner = null;
-        if (person.enslaved_by_individual_id) {
+        let ownerName = null;
+        
+        if (tableSource === 'enslaved_individuals' && person.enslaved_by_individual_id) {
+            // Get owner from individuals table
             const ownerResult = await pool.query(`
                 SELECT individual_id, full_name, birth_year, death_year
                 FROM individuals
@@ -588,7 +560,81 @@ router.get('/person/:id', async (req, res) => {
             `, [person.enslaved_by_individual_id]);
             if (ownerResult.rows.length > 0) {
                 owner = ownerResult.rows[0];
+                ownerName = owner.full_name;
             }
+        } else if (tableSource === 'unconfirmed_persons' && person.context_text) {
+            // Extract owner from context_text for unconfirmed_persons
+            // Pattern: "Owner: NAME" or "Slaveholder: NAME" or "NAME, slave owner"
+            const ownerPatterns = [
+                /Owner:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
+                /Slaveholder:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
+                /Enslaved by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i,
+                /held by:\s*([A-Za-z\s\.]+?)(?:\s*\||$)/i
+            ];
+            
+            for (const pattern of ownerPatterns) {
+                const match = person.context_text.match(pattern);
+                if (match && match[1]) {
+                    ownerName = match[1].trim();
+                    owner = { full_name: ownerName };
+                    break;
+                }
+            }
+        }
+
+        // Calculate years enslaved
+        let yearsEnslaved = 30; // Default
+        let startYear = person.birth_year ? person.birth_year + 10 : null; // Assume started at 10
+        let endYear = 1865; // Default emancipation
+
+        if (person.freedom_year) {
+            endYear = person.freedom_year;
+        } else if (person.death_year) {
+            endYear = Math.min(person.death_year, 1865);
+        }
+
+        if (startYear && endYear) {
+            yearsEnslaved = Math.max(0, endYear - startYear);
+        } else if (person.birth_year) {
+            // Estimate from birth year to 1865
+            yearsEnslaved = Math.max(0, Math.min(1865, person.death_year || 1865) - person.birth_year - 10);
+        }
+
+        // Always calculate reparations for enslaved people
+        if (person.person_type && (person.person_type.includes('enslaved') || tableSource === 'enslaved_individuals')) {
+            const yearsSinceEmancipation = 2025 - endYear;
+            const annualWage = 15000; // Conservative modern equivalent
+
+            reparations.wageTheft = Math.max(0, yearsEnslaved) * annualWage;
+            reparations.damages = 100000; // Base human dignity damages
+            reparations.interest = (reparations.wageTheft + reparations.damages) *
+                (Math.pow(1.02, yearsSinceEmancipation) - 1); // 2% compound
+            
+            reparations.total = tableSource === 'enslaved_individuals' && person.total_reparations_owed
+                ? parseFloat(person.total_reparations_owed)
+                : (reparations.wageTheft + reparations.damages + reparations.interest);
+
+            reparations.breakdown = [
+                { 
+                    label: 'Wage Theft', 
+                    amount: reparations.wageTheft,
+                    description: `${Math.max(0, yearsEnslaved)} years × $${annualWage.toLocaleString()}/year` 
+                },
+                { 
+                    label: 'Human Dignity Damages', 
+                    amount: reparations.damages,
+                    description: 'Base compensation for enslavement' 
+                },
+                { 
+                    label: 'Compound Interest', 
+                    amount: reparations.interest,
+                    description: `${yearsSinceEmancipation} years @ 2% annual` 
+                }
+            ];
+
+            reparations.amountPaid = parseFloat(person.amount_paid) || 0;
+            reparations.amountOutstanding = reparations.total - reparations.amountPaid;
+            reparations.yearsEnslaved = yearsEnslaved;
         }
 
         // Get related documents
