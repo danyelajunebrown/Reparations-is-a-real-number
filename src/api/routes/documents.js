@@ -310,8 +310,9 @@ router.get('/:documentId/access',
 
     // CASE 2: Try S3 if enabled
     if (S3Service.isEnabled()) {
-      // Try the path as-is first, then try normalized version
-      const s3Key = S3Service.constructor.normalizeS3Key(filePath);
+      // Strip 'storage/' prefix if present to get correct S3 key
+      let s3Key = filePath.replace(/^storage\//, '');
+      s3Key = S3Service.constructor.normalizeS3Key(s3Key);
       const checkResult = await S3Service.objectExists(s3Key);
 
       if (checkResult.exists) {
