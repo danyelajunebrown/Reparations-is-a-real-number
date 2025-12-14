@@ -6,7 +6,7 @@
  * and fails fast if required variables are missing.
  */
 
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const Joi = require('joi');
 
 // Define the schema for environment variables
