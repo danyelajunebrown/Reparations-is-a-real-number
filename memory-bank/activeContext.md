@@ -1,343 +1,185 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 6, 2025
-**Current Phase:** Comprehensive Historical Data Model
+**Last Updated:** December 14, 2025 (Session 3)
+**Current Phase:** Neon Migration Complete, Search Fixed
 **Active Branch:** main
 
 ---
 
-## Recent Major Changes (Dec 6, 2025)
+## Recent Major Changes (Dec 14, 2025 - Session 3)
 
-### 14. Comprehensive Historical Data Model Enhancement (Dec 6, 2025)
+### 23. Neon Database Migration ✅ (Dec 14, 2025)
 
-**Problem Solved:** The database schema was designed for simple owner→enslaved relationships but couldn't represent complex historical documents like the 1733 Talbot County Tax Assessment, which includes households, geographic subdivisions (hundreds), occupations, legal statuses, property/quarters, and requires provenance tracking.
+**Problem:** Render PostgreSQL had connection issues and the frontend was depending on a backend that could be slow to respond.
 
-**Solution Implemented:** Migration 007 adds 7 major enhancements:
+**Solution:** Migrated entire database to Neon serverless PostgreSQL:
+- Migrated 214,159 unconfirmed_persons
+- Migrated 1,401 enslaved_individuals
+- Migrated 1,068 canonical_persons
+- Migrated 726 confirming_documents
+- Migrated 4,192 scraping_queue
+- Migrated 2,887 scraping_sessions
 
-#### 1. Household System
-```sql
-households                 -- Groups of people living/taxed together
-household_members          -- Junction table linking individuals to households
+**Benefits:**
+- Serverless - auto-scales, no cold start issues
+- Better connection pooling via pooler endpoint
+- No more "connection refused" errors
+- Faster queries for frontend
+
+**Action Required:** Update Render's DATABASE_URL environment variable to:
 ```
-- Tracks head of household, member status (dependent, kin, servant, apprentice, orphan)
-- Records taxable counts by race/gender
-- Links to geographic subdivisions and source documents
-
-#### 2. Hierarchical Geography
-```sql
-geographic_subdivisions    -- Country → State → County → Hundred → Parish
-```
-- Pre-populated with Maryland and Talbot County's 6 hundreds
-- Recursive view `geographic_hierarchy` for full path queries
-- Supports historical subdivisions that no longer exist
-
-#### 3. Occupation & Honorific Fields
-```sql
-individuals.occupation           -- 'planter', 'blacksmith', etc.
-individuals.occupation_category  -- 'craftsman', 'planter', 'merchant'
-individuals.honorific            -- 'Gent', 'Esq', 'Dr', 'Capt'
-individuals.title                -- 'Justice of the Peace', 'Sheriff'
-enslaved_individuals.occupation  -- 'field_hand', 'domestic', 'blacksmith'
-enslaved_individuals.skill_level -- 'skilled', 'semi_skilled', 'unskilled'
-```
-
-#### 4. Legal & Racial Status Fields
-```sql
-individuals.racial_designation        -- As recorded in historical documents
-individuals.racial_designation_modern -- Modern terminology
-individuals.legal_status              -- 'free', 'indentured', 'apprenticed'
-individuals.is_taxable                -- Tax liability status
-enslaved_individuals.racial_designation -- 'negro', 'mulatto', 'mustee'
-enslaved_individuals.enslaved_status   -- 'enslaved', 'term_slave', 'hired_out'
-```
-
-#### 5. Property & Quarter System
-```sql
-properties                 -- Land holdings, plantations, quarters
-property_residents         -- Who lived/worked on each property
-```
-- Supports plantation→quarter hierarchy
-- Tracks ownership, acreage, acquisition/disposition
-- Links residents with roles (owner, overseer, worker, domestic)
-
-#### 6. Enhanced Name Handling
-```sql
-enslaved_individuals.given_name      -- First name
-enslaved_individuals.surname         -- Often unknown
-enslaved_individuals.name_type       -- 'given_only', 'full', 'partial'
-enslaved_individuals.gender_source   -- 'explicit', 'inferred_from_name'
-enslaved_individuals.gender_confidence
-```
-
-#### 7. Data Attribution & Provenance
-```sql
-source_types              -- 13 source types with reliability weights
-data_attributions         -- Links any field to its source(s)
-inference_log             -- Tracks when data was inferred vs. recorded
-```
-- Reliability weights: tax_list (0.95) → oral_history (0.50)
-- Supports multi-source verification
-- Audit trail for inferences
-
-#### 8. Expanded Relationship Types
-```sql
-relationship_types        -- 39 relationship types in 5 categories
-```
-- Categories: kinship, legal, economic, residential, ecclesiastical
-- Includes: enslaver/enslaved_by, master/apprentice, guardian/ward, overseer/supervised, head_of_household/household_member
-
-**New Views Created:**
-- `household_full` - Complete household with all members as JSON
-- `geographic_hierarchy` - Full geographic path for any subdivision
-- `property_with_residents` - Property with all residents as JSON
-- `data_provenance_summary` - Attribution stats per record
-
-**Migration File:** `migrations/007-comprehensive-historical-data-model.sql`
-
----
-
-## Recent Major Changes (Dec 5, 2025)
-
-### 13. OCR Extraction Pipeline Comprehensive Debugging (Dec 5, 2025)
-
-**Problem Solved:** The OCR extraction process was failing silently with no errors shown to users. When users clicked "start auto-ocr", the system would show "Starting extraction..." but nothing would happen - no progress, no errors, no results even after 10+ minutes.
-
-**Root Cause Analysis:**
-1. ExtractionWorker ran asynchronously but errors were only logged server-side
-2. No real-time status updates were pushed to frontend
-3. Download methods failed silently (especially for protected PDFs like MSA)
-4. No debug information was persisted or exposed to frontend
-5. Database lacked columns for status messages and debug logs
-
-**Solution Implemented:**
-
-#### 1. Enhanced ExtractionWorker (`src/services/contribution/ExtractionWorker.js`)
-- **Debug Logging System:** Added `debug()` method that logs to console AND persists to database
-- **Multiple Download Fallback Methods:**
-  1. Direct HTTP download (for unprotected PDFs)
-  2. Browser-mimicking download (spoofed User-Agent + headers)
-  3. PDF link extraction from HTML pages (parses iframe/embed/object tags)
-  4. Browser-based screenshot (Puppeteer or Playwright)
-- **Comprehensive Error Tracking:** Every stage logs with timestamp, elapsed time, and data
-- **Graceful Degradation:** OCR errors return results instead of throwing
-
-#### 2. New Database Columns (Migration: `migrations/add-extraction-debug-columns.sql`)
-```sql
-ALTER TABLE extraction_jobs ADD COLUMN status_message TEXT;
-ALTER TABLE extraction_jobs ADD COLUMN debug_log JSONB;
-ALTER TABLE extraction_jobs ADD COLUMN updated_at TIMESTAMP;
-```
-
-#### 3. Enhanced API Routes (`src/api/routes/contribute.js`)
-- **Debug Status Endpoint:** `GET /api/contribute/:sessionId/extraction/:extractionId/status?debug=true`
-  - Returns full debug log with timestamps and stages
-  - Shows elapsed time, status message, error details
-- **Capabilities Endpoint:** `GET /api/contribute/capabilities`
-  - Reports available OCR services (Google Vision, Tesseract)
-  - Reports browser automation availability (Puppeteer, Playwright)
-
-#### 4. Frontend Debug Panel (`contribute-v2.html`)
-- **Collapsible Debug Panel:** Shows real-time extraction status
-- **Live Status Display:** Status, Progress %, Message, Elapsed Time
-- **Color-Coded Debug Log:**
-  - Red for errors/failures
-  - Green for success/completion
-  - Blue for initialization/start
-  - Purple for download stages
-  - Orange for OCR stages
-- **Capabilities Check Button:** Shows what OCR services are available
-- **Auto-show on extraction start:** Debug panel opens automatically
-
-#### 5. Improved Polling System
-- Polls every 2 seconds with debug info every 5th poll
-- 10-minute timeout with clear messaging
-- Shows alternative methods on failure/timeout
-- Better error handling for connection issues
-
-**Key Debug Log Stages:**
-```
-INIT → STATUS → DB_QUERY → JOB_INFO → URL_RESOLVE →
-DOWNLOAD_METHOD → DOWNLOAD_FAIL → DOWNLOAD →
-OCR_START → OCR_PROCESS → OCR_RESULT → OCR_COMPLETE →
-PARSE_START → PARSE_COMPLETE → SAVE → COMPLETE
-```
-
-**Migration Required:**
-```bash
-PGPASSWORD=hjEMn35Kw7p712q1SYJnBxZqIYRdahHv psql -h dpg-d3v78f7diees73epc4k0-a.oregon-postgres.render.com -U reparations_user -d reparations -f migrations/add-extraction-debug-columns.sql
+postgresql://neondb_owner:npg_2S8LrhzkZmad@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
 ```
 
 ---
 
-## Recent Major Changes (Dec 4, 2025)
+### 22. Search Bug Fixes ✅ (Dec 14, 2025)
 
-### 12. Bibliography & Intellectual Property System LIVE (Dec 4, 2025)
+**Problem 1:** Search for "Grace Butler" returned 50 unrelated names like "Co Maryland", "Gusty", "Sept".
 
-**Problem Solved:** The project needed a comprehensive system to track all intellectual sources, databases, archives, researchers, and contributors. Users copy/paste content without full citations, and sources need proper academic attribution.
+**Root Cause:** Search used OR between words and searched context_text (entire documents), so any record containing "grace" OR "butler" anywhere matched.
 
-**Solution Implemented:**
-
-#### 1. BibliographyManager (`src/utils/bibliography-manager.js`)
-Core management class with:
-- Citation formatting (APA, Chicago, MLA, BibTeX)
-- Known archive patterns (MSA, FamilySearch, Ancestry, Civil War DC, etc.)
-- Copy/paste content detection
-- Pending citation flagging
-- Participant/contributor tracking
-- Database and in-memory storage support
-
-#### 2. IP Tracker (`src/utils/ip-tracker.js`)
-Intellectual property tracker with:
-- Automatic URL detection and archive identification
-- Long text/quote detection
-- Academic citation pattern recognition
-- Census/statistical data detection
-- Session-based reference tracking
-- Integration hooks for contribution pipeline
-
-#### 3. Bibliography API Routes (`src/api/routes/bibliography.js`)
-```
-GET    /api/bibliography              - Get all entries + pending + participants
-GET    /api/bibliography/stats        - Statistics
-GET    /api/bibliography/export       - Export (json, bibtex, apa, chicago)
-GET    /api/bibliography/pending      - Pending citations
-POST   /api/bibliography/pending      - Flag pending citation
-PUT    /api/bibliography/pending/:id  - Resolve pending
-GET    /api/bibliography/participants - Get participants
-POST   /api/bibliography/participants - Add participant
-POST   /api/bibliography              - Add entry
-POST   /api/bibliography/analyze      - Analyze text for copy/paste
-POST   /api/bibliography/from-url     - Generate citation from URL
-```
-
-#### 4. Frontend (`bibliography.html`)
-Full-featured bibliography page with:
-- Tabbed sections: Sources, Technologies, Intellectual Leaders, Participants, Pending
-- Search and filter functionality
-- Expandable category cards with formatted citations
-- Forms to add participants and flag pending citations
-- Export functionality (JSON)
-- Pre-populated with 10+ known sources
-
-#### 5. Database Tables (LIVE on Render PostgreSQL)
-```sql
-bibliography              - Main citations table
-pending_citations         - Sources needing full citation
-participants              - Contributors and researchers
-copy_paste_flags          - Detected references
-citation_relationships    - Source relationships
-bibliography_exports      - Export history
-```
-
-#### 6. Memory Bank Index (`memory-bank/bibliography-index.md`)
-Living documentation tracking all sources with:
-- Quick statistics
-- Full source inventory by category
-- How-to guides for adding sources
-- Source type definitions
-
-**Pre-populated Sources (14 entries):**
-- 4 Government Archives (MSA, Civil War DC, NARA, Library of Virginia)
-- 3 Genealogy Databases (FamilySearch, Ancestry, Find A Grave)
-- 2 Research Compilations (Tom Blake's 1860, Beyond Kin)
-- 3 Technologies (Google Vision, Tesseract, OpenZeppelin)
-- 2 Participants (Danyela Brown, Tom Blake)
-
-**Key Feature - Pending Citations:**
-When content is copy/pasted or referenced without full citation:
-1. The IP Tracker can flag it automatically
-2. Entry appears in `/api/bibliography/pending`
-3. Shows on bibliography.html under "Pending Citations" tab
-4. User completes citation details later (NOT prompted immediately)
-
----
-
-### 11. Conversational Contribution Pipeline LIVE (Dec 4, 2025)
-
-**Problem Solved:** Built a human-guided contribution flow where users can describe documents in natural language and the system extracts structured data. Critical fix: confirmation is now based on **document content**, NOT source domain.
-
-**Key Principle:** Source domain (e.g., .gov) provides CONTEXT about where to look for documents, but does NOT confirm the data itself. Confirmation can ONLY come from:
-1. Human transcription of names from document
-2. OCR extraction that has been human-verified
-3. High-confidence OCR (>= 95%) from user-confirmed document
-4. Structured metadata parsed from page that user confirmed as accurate
-5. Cross-reference with existing confirmed records
-
-**Implementation Complete:**
-
-#### 1. ContributionSession.js (`src/services/contribution/ContributionSession.js`)
-Conversational service managing the contribution flow:
-- **Stages:** url_analysis → content_description → structure_confirmation → extraction_strategy → extraction_in_progress → human_review → complete
-- **URL Analysis:** Fetches page, detects archive type, PDF links, iframes, pagination
-- **Content Description Parsing:** Extracts columns, quality, handwriting type from natural language
-- **Column Header Parsing:** Prioritizes quoted headers ("DATE." "NAME.") over period-split parsing
-- **Expanded inferDataType():** Recognizes 15+ column types (owner, enslaved, date, age, gender, physical_condition, military, compensation, witness, etc.)
-
-#### 2. OwnerPromotion.js (`src/services/contribution/OwnerPromotion.js`)
-Content-based promotion service with **confirmatory channels**:
+**Fix:** Changed to AND logic and only search full_name field:
 ```javascript
-confirmatoryChannels = {
-    'human_transcription': { minConfidence: 0.90 },
-    'ocr_human_verified': { minConfidence: 0.85 },
-    'ocr_high_confidence': { minConfidence: 0.95 },
-    'structured_metadata': { minConfidence: 0.80 },
-    'cross_reference': { minConfidence: 0.85 }
-}
-```
-- Promotion REQUIRES specifying a confirmatory channel
-- `.gov` domain alone does NOT auto-confirm anything
-- Extensible via `addConfirmatoryChannel()` method
+// OLD (buggy): Returns any record with "grace" OR "butler"
+WHERE full_name ILIKE '%grace%' OR context_text ILIKE '%grace%' OR ...
 
-#### 3. API Routes (`src/api/routes/contribute.js`)
-```
-POST /api/contribute/start              - Start session with URL
-POST /api/contribute/:sessionId/describe - Describe document content
-POST /api/contribute/:sessionId/confirm  - Confirm structure
-POST /api/contribute/:sessionId/extract  - Start extraction
-POST /api/contribute/:sessionId/chat     - Natural language interaction
-POST /api/contribute/:sessionId/sample   - Submit sample extractions
-GET  /api/contribute/:sessionId          - Get session state
-POST /api/contribute/:sessionId/extraction/:extractionId/promote - Promote to individuals (REQUIRES confirmationChannel)
-POST /api/contribute/promote/:leadId     - Manual promotion
-GET  /api/contribute/promotion-stats     - Statistics
+// NEW (fixed): Returns only records with BOTH words in name
+WHERE full_name ILIKE '%grace%' AND full_name ILIKE '%butler%'
 ```
 
-#### 4. Frontend (`contribute-v2.html`)
-Chat-based UI with:
-- URL input to start session
-- Chat interface for natural language
-- Side panel showing progress, source info, extraction options
-- Questions panel for structured input
+**Problem 2:** Search for "Adjua D'Wolf" returned 0 results.
 
-#### 5. Database Tables (on Render PostgreSQL)
-- `contribution_sessions` - Conversation state and metadata
-- `extraction_jobs` - OCR/extraction job tracking
-- `extraction_corrections` - Human corrections (training data)
-- `promotion_log` - Audit trail for promotions
-- `human_readings` - Ground truth from human input
-- `document_auxiliary_data` - Stockpiled auxiliary information
+**Root Cause:** Adjua D'Wolf was in enslaved_individuals table (confirmed records), but search only queried unconfirmed_persons.
 
-#### 6. End-to-End Test (`test-contribution-pipeline-e2e.js`)
-Comprehensive test simulating real user flow:
-- Tests 3 description styles (detailed, simple, minimal)
-- Validates questions have proper structure
-- Verifies all stages complete successfully
-- Run with: `node test-contribution-pipeline-e2e.js`
-
-**Bugs Fixed (Dec 4):**
-1. `pagination.detected` undefined - Initialize pagination in analysis object
-2. Column header parsing - Prioritize quoted headers over period-split
-3. Missing data type recognition - Added 15+ column types
-4. Null safety - Added checks for contentStructure and columns arrays
-5. Incorrect confirmation messaging - Changed from "Can CONFIRM" to "May contain"
+**Fix:** Added UNION query to search both tables:
+```sql
+SELECT ... FROM unconfirmed_persons WHERE ...
+UNION ALL
+SELECT ... FROM enslaved_individuals WHERE ...
+```
 
 ---
 
-### 10. Unified Scraping System & Backlog Processing LIVE (Dec 2, 2025)
+## Recent Major Changes (Dec 14, 2025 - Session 2)
 
-**Problem Solved:** Fragmented scraping system rebuilt into unified system.
+### 21. FamilySearch Scraper LDS Ad Fix ✅ (Dec 14, 2025)
 
-See previous activeContext.md for full details.
+**Problem:** FamilySearch scraper was clicking on LDS Church promotional ads instead of document thumbnails. The scraper navigated to `churchofjesuschrist.org/comeuntochrist` instead of viewing plantation records.
+
+**Root Cause:** The thumbnail selector was too broad - it would click any image meeting size criteria, including embedded LDS promotional banners on FamilySearch pages.
+
+**Solution:** Added domain filtering to thumbnail selection in `scripts/scrapers/familysearch-scraper.js`:
+```javascript
+// CRITICAL: Only click images from FamilySearch domains, never external ads
+const isFamilySearchImage = src.includes('familysearch.org') ||
+                           src.includes('fs.net') ||
+                           src.startsWith('data:') ||
+                           src.startsWith('blob:');
+// Exclude external/promotional images
+const isExternal = src.includes('churchofjesuschrist') ||
+                  src.includes('comeuntochrist') ||
+                  src.includes('lds.org') ||
+                  src.includes('churchnews');
+```
+
+**Status:** Film 7 scraper relaunched and running successfully.
+
+---
+
+### 20. Name Resolution System ✅ (Dec 14, 2025)
+
+**Problem Solved:** The same person appears with different spellings across documents due to OCR errors and historical spelling variations (e.g., "Sally Swailes" vs "Sally Swailer" vs "Sally Swales"). Need to consolidate these to TRUE identities.
+
+**Solution Implemented:**
+
+#### 1. NameResolver Service (`src/services/NameResolver.js`)
+New service providing:
+- **Soundex Algorithm** - Phonetic matching (Swailes → S420, Swailer → S420)
+- **Metaphone Algorithm** - Alternative phonetic encoding
+- **Levenshtein Distance** - Character-by-character edit distance
+- **Name Parsing** - Split into first, middle, last, suffix components
+- **Confidence Scoring** - Combined metrics for match quality
+
+**Confidence Thresholds:**
+- ≥0.85: Auto-match to existing canonical person
+- 0.60-0.84: Queue for human review
+- <0.60: Create new canonical person
+
+#### 2. Database Migration (`migrations/010-name-resolution-system.sql`)
+Three new tables:
+```sql
+canonical_persons    -- TRUE identity of a person
+name_variants        -- Different spellings linking to canonical
+name_match_queue     -- Ambiguous matches awaiting human review
+```
+
+**Key Fields:**
+- `first_name_soundex`, `last_name_soundex` - For phonetic search
+- `first_name_metaphone`, `last_name_metaphone` - Alternative phonetic
+- `confidence_score` - How confident we are this is a real person
+- `verification_status` - auto_created, human_verified, confirmed
+
+#### 3. API Endpoints (`src/api/routes/names.js`)
+```javascript
+POST /api/names/analyze      // Analyze a name (parsing, phonetic codes)
+POST /api/names/compare      // Compare two names for similarity
+POST /api/names/resolve      // Resolve name to canonical or queue
+GET  /api/names/search/:name // Find similar names in database
+GET  /api/names/stats        // System statistics
+```
+
+#### 4. Automatic Scraper Integration
+FamilySearch scraper (`scripts/scrapers/familysearch-scraper.js`) now:
+- Initializes NameResolver on database connection
+- Processes each extracted name through `resolveOrCreate()`
+- Logs resolution statistics: `🔗 Name resolution: X linked, Y queued, Z new`
+
+**Current Database Stats (Dec 14, 2025):**
+| Table | Count |
+|-------|-------|
+| canonical_persons | 4 |
+| name_variants | 0 |
+| name_match_queue | 1 |
+| unconfirmed_persons | 213,740 |
+
+---
+
+### 19. CompensationTracker Financial System ✅ (Dec 10, 2025)
+
+**Key Insight:** Compensation payments TO owners PROVE debt exists - they don't reduce it. The enslaved received $0.
+
+**Test Results:**
+- Lord Harewood: £26,309 for 1,277 enslaved → **$2.69 billion proven debt**
+- James Williams (DC): $4,500 for 15 enslaved → **$19M proven debt**
+
+---
+
+## Name Resolution Architecture
+
+### Data Flow
+```
+OCR Extraction → unconfirmed_persons table
+                        ↓
+              NameResolver.resolveOrCreate()
+                        ↓
+        ┌───────────────┼───────────────┐
+        ↓               ↓               ↓
+   HIGH CONF        MED CONF        LOW CONF
+   (≥0.85)        (0.60-0.84)       (<0.60)
+        ↓               ↓               ↓
+   Link to          Queue for        Create new
+   existing         human review     canonical
+   canonical                         person
+```
+
+### Phonetic Matching Examples
+| Name 1 | Name 2 | Soundex | Match? |
+|--------|--------|---------|--------|
+| Swailes | Swailer | S420 = S420 | Yes |
+| Swailes | Swales | S420 = S420 | Yes |
+| Key | Frey | K000 ≠ F600 | No |
+| Johnson | Johnsen | J525 = J525 | Yes |
 
 ---
 
@@ -345,9 +187,18 @@ See previous activeContext.md for full details.
 
 ### Render Services
 - **Backend:** `reparations-platform.onrender.com` (Node.js)
-- **Database:** Render PostgreSQL 17 (Virginia) - contains contribution tables
+- **Database:** Neon PostgreSQL (migrated Dec 14, 2025)
 
-### Database Credentials (Render PostgreSQL)
+### Database Credentials (Neon PostgreSQL) - UPDATED
+```
+Host: ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech
+Database: neondb
+User: neondb_owner
+Password: npg_2S8LrhzkZmad
+Connection String: postgresql://neondb_owner:npg_2S8LrhzkZmad@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
+```
+
+### Legacy Database (Render PostgreSQL) - DEPRECATED
 ```
 Host: dpg-d3v78f7diees73epc4k0-a.oregon-postgres.render.com
 Database: reparations
@@ -355,110 +206,103 @@ User: reparations_user
 Password: hjEMn35Kw7p712q1SYJnBxZqIYRdahHv
 ```
 
-### Working Contribution Endpoints (Verified Dec 4, 2025)
-```
-POST /api/contribute/start              ✅ Working
-POST /api/contribute/:id/chat           ✅ Working
-POST /api/contribute/:id/describe       ✅ Working
-POST /api/contribute/:id/confirm        ✅ Working
-POST /api/contribute/:id/extract        ✅ Working
-GET  /api/contribute/:id                ✅ Working
+### Database Statistics (Dec 14, 2025) - UPDATED
+- **Database:** Neon PostgreSQL (migrated from Render)
+- **Total unconfirmed_persons:** 214,159
+- **Enslaved individuals (confirmed):** 1,401
+- **Canonical persons:** 1,068
+- **Confirming documents:** 726
+- **Scraping queue:** 4,192
+- **Scraping sessions:** 2,887
+
+### Frontend
+- **URL:** https://danyelajunebrown.github.io/Reparations-is-a-real-number/
+- **Backend API:** https://reparations-platform.onrender.com
+
+---
+
+## Files Created/Modified This Session (Dec 14, 2025)
+
+### New Files
+- `src/services/NameResolver.js` - Name resolution service
+- `src/api/routes/names.js` - API endpoints for name resolution
+- `migrations/010-name-resolution-system.sql` - Database schema
+- `scripts/test-name-resolver.js` - Test script
+
+### Modified Files
+- `scripts/scrapers/familysearch-scraper.js` - Added NameResolver integration
+- `src/server.js` - Added /api/names routes
+
+---
+
+## NameResolver Service Methods
+
+```javascript
+// Core algorithms
+soundex(name)           // Returns Soundex code (e.g., "S420")
+metaphone(name)         // Returns Metaphone code
+levenshtein(s1, s2)     // Returns edit distance
+parseName(fullName)     // Returns {first, middle, last, suffix}
+
+// Database operations
+createCanonicalPerson(name, options)    // Create TRUE identity
+addNameVariant(canonicalId, variant)    // Link variant spelling
+findCandidateMatches(name, context)     // Find potential matches
+resolveOrCreate(name, options)          // Main entry point
+
+// Search & stats
+searchSimilarNames(name, options)       // Find similar in DB
+getStats()                              // System statistics
 ```
 
 ---
 
-## Architecture Notes
+## Background Processes (Currently Running)
 
-### Contribution Pipeline Flow
-```
-User pastes URL → /api/contribute/start
-         ↓
-URL Analysis (source type, PDF detection, pagination)
-         ↓
-User describes content → /api/contribute/:id/chat
-         ↓
-Parse description (columns, quality, handwriting)
-         ↓
-Confirm structure → /api/contribute/:id/confirm
-         ↓
-Choose extraction method → /api/contribute/:id/extract
-         ↓
-Extraction runs (OCR or guided entry)
-         ↓
-Human review/corrections
-         ↓
-Promotion (REQUIRES confirmatory channel)
-         ↓
-individuals table (confirmed only)
-```
+| Process | Status | Progress |
+|---------|--------|----------|
+| Film 5 Scraper | Running | Images 582-1012 |
+| Film 6 Scraper | Running | Images 1-1012 |
+| Film 7 Scraper | Running | Images 1-1045 (fixed) |
 
-### Confirmation Logic (CRITICAL)
-```
-Source Domain → Provides CONTEXT (government archive, genealogy site, etc.)
-                Does NOT confirm data
-
-Confirmation → Can ONLY come from:
-  1. human_transcription - User typed what they see
-  2. ocr_human_verified - OCR + human corrections
-  3. ocr_high_confidence - >= 95% OCR confidence
-  4. structured_metadata - Parsed + user confirmed
-  5. cross_reference - Matches existing confirmed record
-```
+**Film 7 Notes:** Relaunched with LDS ad fix. Previously was clicking on `churchofjesuschrist.org/comeuntochrist` promotional banners instead of document thumbnails.
 
 ---
 
-## Known Issues & Limitations
+## Files Modified This Session (Dec 14, 2025 - Session 3)
 
-### Resolved Issues ✅
-1. ~~"Can CONFIRM" based on .gov domain~~ - FIXED: Now says "May contain"
-2. ~~pagination.detected undefined~~ - FIXED: Initialize in analysis object
-3. ~~Column parsing breaks on periods~~ - FIXED: Prioritize quoted headers
-4. ~~Limited column type recognition~~ - FIXED: Added 15+ types
-5. ~~Questions causing frontend crash~~ - FIXED: Null safety added
-6. ~~OCR extraction failing silently~~ - FIXED: Comprehensive debug logging
-7. ~~No progress notifications~~ - FIXED: Real-time debug panel
+### Modified
+- `src/api/routes/contribute.js` - Fixed search logic (OR→AND), added UNION with enslaved_individuals
+- `memory-bank/activeContext.md` - Updated with Neon credentials and search fixes
+- `memory-bank/progress.md` - Added Phase 13 for Neon migration
 
-### Remaining Issues
-1. **No Authentication** - API completely open
-2. **Guided entry not implemented** - UI exists but backend incomplete
-3. **Browser automation may not be installed** - Need Puppeteer for protected PDFs
-4. **Google Vision API key required** - OCR won't work without valid credentials
-
-### Dependencies to Install (if not present)
-```bash
-npm install puppeteer  # For browser-based PDF extraction
-```
+### Database Migration
+- Migrated 224,433 total records from Render PostgreSQL to Neon
+- Updated Render DATABASE_URL environment variable to use Neon
 
 ---
 
-## Commits from This Session (Dec 5, 2025)
+## Files Modified (Dec 14, 2025 - Session 2)
 
-TBD - Commit after testing
-
-Previous session commits (Dec 4):
-1. `261f097` - Fix confirmation logic: use content-based confirmation, not domain-based
-2. `2132989` - Fix multiple contribution pipeline bugs found by e2e testing
-3. `0544589` - Add end-to-end test for contribution pipeline
-
-Previous session commits (Dec 2):
-- `36c3e02` - Add conversational contribution pipeline with federal owner auto-promotion
-- `b9a3e16` - Add rootsweb census scraper and full backlog auto-processing
-- `a2ca268` - Add unified scraping system with dynamic site handlers
+### Modified
+- `scripts/scrapers/familysearch-scraper.js` - Added domain filtering to prevent clicking LDS promotional ads
 
 ---
 
 ## Next Steps
 
-### Immediate (Dec 5, 2025)
-1. ✅ Run database migration for debug columns
-2. Test extraction with MSA URL to verify debug logging works
-3. Install Puppeteer if browser automation needed
+### Immediate
+1. ✅ ~~Migrate database to Neon~~ (COMPLETED Dec 14, 2025)
+2. ✅ ~~Fix search returning unrelated names~~ (COMPLETED Dec 14, 2025)
+3. ✅ ~~Add enslaved_individuals to search~~ (COMPLETED Dec 14, 2025)
+4. Build human review UI for name_match_queue
+5. Monitor Film 7 scraper progress (1045 images)
 
 ### Short Term
-1. Add authentication to protect API
-2. Build verification queue for human review
-3. Add more confirmatory channels as needed
-4. Implement guided entry for documents OCR can't handle
+1. Create merge tools for duplicate canonical persons
+2. Link canonical_persons to reparations calculation system
+3. Download International Genealogy Index from FamilySearch
+4. Add document viewer for Adjua D'Wolf tombstone (currently no S3 link)
 
 ---
 
