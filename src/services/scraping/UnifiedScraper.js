@@ -70,6 +70,15 @@ class UnifiedScraper {
                 case 'rootsweb_census':
                     await this.scrapeRootswebCensus(url, result, options);
                     break;
+                case 'ucl_lbs':
+                    await this.scrapeUCLLBS(url, result, options);
+                    break;
+                case 'la_slave_database':
+                    await this.scrapeLouisianaSlaveDB(url, result, options);
+                    break;
+                case 'underwriting_souls':
+                    await this.scrapeUnderwritingSouls(url, result, options);
+                    break;
                 case 'wikipedia':
                     await this.scrapeWikipedia(url, result, options);
                     break;
@@ -117,6 +126,9 @@ class UnifiedScraper {
         if (lower.includes('beyondkin.org')) return 'beyondkin';
         if (lower.includes('civilwardc.org')) return 'civilwardc';
         if (lower.includes('freepages.rootsweb.com') || lower.includes('rootsweb.com/~ajac')) return 'rootsweb_census';
+        if (lower.includes('ucl.ac.uk/lbs')) return 'ucl_lbs';
+        if (lower.includes('ibiblio.org/laslave')) return 'la_slave_database';
+        if (lower.includes('underwritingsouls.org')) return 'underwriting_souls';
         if (lower.includes('wikipedia.org')) return 'wikipedia';
         if (lower.includes('findagrave.com')) return 'findagrave';
         if (lower.includes('familysearch.org')) return 'familysearch';
@@ -529,6 +541,541 @@ class UnifiedScraper {
     }
 
     /**
+     * ========================================
+     * UCL LEGACIES OF BRITISH SLAVERY SCRAPER
+     * ========================================
+     * Scrapes the UCL Legacies of British Slavery database
+     * Source: https://www.ucl.ac.uk/lbs/
+     * Data: CONFIRMED compensation claims, British slave owners, estates
+     *
+     * URL Patterns:
+     * - /lbs/claim/[claim_id] - Compensation claims
+     * - /lbs/person/[person_id] - Person profiles
+     * - /lbs/estate/[estate_id] - Estate pages
+     * - /lbs/legacy/[legacy_id] - Legacy pages
+     *
+     * This is PRIMARY SOURCE data from the Slave Compensation Commission records.
+     */
+    async scrapeUCLLBS(url, result, options) {
+        console.log('\n📜 Scraping UCL Legacies of British Slavery...');
+
+        // Determine page type from URL
+        const urlLower = url.toLowerCase();
+        let pageType = 'unknown';
+        let entityId = null;
+
+        // URL patterns: /lbs/claim/view/123 or /lbs/claim/123
+        if (urlLower.includes('/lbs/claim/')) {
+            pageType = 'claim';
+            // Match the numeric ID at the end of the URL
+            entityId = url.match(/\/claim\/(?:view\/)?(\d+)/)?.[1] || url.match(/\/claim\/([^\/\?]+)/)?.[1];
+        } else if (urlLower.includes('/lbs/person/')) {
+            pageType = 'person';
+            entityId = url.match(/\/person\/(?:view\/)?(\d+)/)?.[1] || url.match(/\/person\/([^\/\?]+)/)?.[1];
+        } else if (urlLower.includes('/lbs/estate/')) {
+            pageType = 'estate';
+            entityId = url.match(/\/estate\/(?:view\/)?(\d+)/)?.[1] || url.match(/\/estate\/([^\/\?]+)/)?.[1];
+        } else if (urlLower.includes('/lbs/legacy/')) {
+            pageType = 'legacy';
+            entityId = url.match(/\/legacy\/(?:view\/)?(\d+)/)?.[1] || url.match(/\/legacy\/([^\/\?]+)/)?.[1];
+        } else if (urlLower.includes('/lbs/search') || urlLower.includes('/lbs/')) {
+            pageType = 'search';
+        }
+
+        console.log(`   Page type: ${pageType}, Entity ID: ${entityId || 'N/A'}`);
+
+        // UCL LBS requires JavaScript, use Puppeteer
+        const html = await this.fetchHTMLWithBrowser(url);
+        const $ = cheerio.load(html);
+        result.rawText = $('body').text();
+
+        switch (pageType) {
+            case 'claim':
+                await this.extractLBSClaim($, url, result, entityId);
+                break;
+            case 'person':
+                await this.extractLBSPerson($, url, result, entityId);
+                break;
+            case 'estate':
+                await this.extractLBSEstate($, url, result, entityId);
+                break;
+            case 'legacy':
+                await this.extractLBSLegacy($, url, result, entityId);
+                break;
+            case 'search':
+                await this.extractLBSSearchResults($, url, result);
+                break;
+            default:
+                console.log('   Unknown UCL LBS page type, attempting generic extraction...');
+                await this.extractLBSGeneric($, url, result);
+        }
+
+        result.metadata.pageType = `ucl_lbs_${pageType}`;
+        result.metadata.entityId = entityId;
+        result.metadata.isPrimarySource = true;
+        result.metadata.sourceYear = 1834;
+    }
+
+    /**
+     * Extract compensation claim from UCL LBS
+     *
+     * UCL LBS page structure (discovered by inspection):
+     * - H1: "Colony ClaimNumber" (e.g., "Antigua 585")
+     * - Summary line: "Date | X Enslaved | £X Xs Xd"
+     * - Colony field in claim details
+     * - Associated Individuals section with claimant names as links
+     */
+    async extractLBSClaim($, url, result, claimId) {
+        console.log('   Extracting compensation claim data...');
+
+        const bodyText = $('body').text();
+
+        // Parse H1: "Antigua 585" -> colony + claim number
+        const h1Text = $('h1').first().text().trim();
+        let colony = '';
+        let claimNumber = '';
+
+        if (h1Text) {
+            const h1Match = h1Text.match(/^(.+?)\s+(\d+)$/);
+            if (h1Match) {
+                colony = h1Match[1].trim();
+                claimNumber = h1Match[2];
+            } else {
+                claimNumber = h1Text;
+            }
+        }
+
+        // Parse summary line: "2nd Nov 1835 | 1 Enslaved | £16 19s 11d"
+        const summaryMatch = bodyText.match(/(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4})\s*\|\s*(\d+)\s*Enslaved\s*\|\s*(£[\d,]+(?:\s+\d+s)?(?:\s+\d+d)?)/i);
+        let awardDate = '';
+        let enslavedCount = 0;
+        let awardedAmount = '';
+        let awardedPounds = 0;
+
+        if (summaryMatch) {
+            awardDate = summaryMatch[1];
+            enslavedCount = parseInt(summaryMatch[2]) || 0;
+            awardedAmount = summaryMatch[3];
+            const poundsMatch = awardedAmount.match(/£([\d,]+)/);
+            awardedPounds = poundsMatch ? parseInt(poundsMatch[1].replace(/,/g, '')) : 0;
+        }
+
+        // Get colony from claim details if not from H1
+        if (!colony) {
+            const colonyMatch = bodyText.match(/Colony\s*\n\s*([A-Za-z\s]+?)(?:\n|Claim)/);
+            if (colonyMatch) colony = colonyMatch[1].trim();
+        }
+
+        // Extract Associated Individuals - these are the CLAIMANTS (slave owners)
+        const claimants = [];
+        const seenNames = new Set();
+
+        // Find person links - these are the actual claimant names
+        $('a[href*="/person/"]').each((i, el) => {
+            const href = $(el).attr('href') || '';
+            const name = $(el).text().trim();
+
+            // Only process actual person view links, skip navigation
+            if (href.includes('/person/view/') && name.length > 2) {
+                // Skip common non-name text
+                if (name.includes('Visit') || name.includes('section') ||
+                    name.includes('Project') || name.includes('overview')) return;
+
+                if (seenNames.has(name)) return;
+                seenNames.add(name);
+
+                // Determine role from surrounding text
+                const parent = $(el).parent();
+                const parentText = parent.text();
+                let role = 'claimant';
+                if (parentText.includes('1st claimant')) role = '1st claimant';
+                else if (parentText.includes('2nd claimant')) role = '2nd claimant';
+                else if (parentText.includes('awardee')) role = 'awardee';
+
+                claimants.push({ name, role, personUrl: href });
+            }
+        });
+
+        console.log(`   Found ${claimants.length} claimants: ${claimants.map(c => c.name).join(', ') || 'none'}`);
+
+        // Add each claimant as a confirmed owner
+        for (const claimant of claimants) {
+            result.owners.push({
+                fullName: claimant.name,
+                type: 'confirmed_owner',
+                source: 'ucl_lbs',
+                sourceUrl: url,
+                confidence: 0.98,
+                locations: [colony].filter(Boolean),
+                notes: `UCL LBS Claim ${colony} ${claimNumber}. Role: ${claimant.role}. ${enslavedCount} enslaved. Amount: ${awardedAmount}`,
+                lbsClaimId: claimNumber,
+                lbsPersonUrl: claimant.personUrl,
+                compensationReceived: awardedPounds,
+                enslavedCount: enslavedCount,
+                claimantRole: claimant.role,
+                awardDate: awardDate
+            });
+
+            result.relationships.push({
+                type: 'compensation_claim',
+                owner: claimant.name,
+                enslaved: `${enslavedCount} enslaved people`,
+                source: 'ucl_lbs',
+                confidence: 0.98,
+                confirmed: true,
+                colony: colony,
+                claimId: claimNumber
+            });
+        }
+
+        // Queue linked estate pages
+        $('a[href*="/estate/view/"]').each((i, el) => {
+            const estateUrl = $(el).attr('href');
+            const fullUrl = estateUrl.startsWith('http') ? estateUrl : `https://www.ucl.ac.uk${estateUrl}`;
+            result.documents.push({
+                url: fullUrl,
+                type: 'linked_estate',
+                name: $(el).text().trim()
+            });
+        });
+
+        result.metadata = {
+            ...result.metadata,
+            h1: h1Text,
+            colony,
+            claimNumber,
+            awardDate,
+            enslavedCount,
+            awardedAmount,
+            awardedPounds,
+            claimantsFound: claimants.length,
+            claimantNames: claimants.map(c => c.name)
+        };
+    }
+
+    /**
+     * Extract person profile from UCL LBS
+     */
+    async extractLBSPerson($, url, result, personId) {
+        console.log('   Extracting person profile...');
+
+        const fullName = $('h1, .person-name, [class*="name"]').first().text().trim();
+        const title = this.extractLBSField($, ['Title', 'Honorific']);
+        const gender = this.extractLBSField($, ['Gender', 'Sex']);
+        const birthYear = parseInt(this.extractLBSField($, ['Born', 'Birth']) || '0') || null;
+        const deathYear = parseInt(this.extractLBSField($, ['Died', 'Death']) || '0') || null;
+        const occupation = this.extractLBSField($, ['Occupation', 'Trade', 'Profession']);
+        const residence = this.extractLBSField($, ['Residence', 'Address', 'Location']);
+        const mpInfo = this.extractLBSField($, ['MP', 'Parliament', 'Constituency']);
+
+        // Get total compensation
+        const totalCompensation = this.parseBritishPounds(
+            this.extractLBSField($, ['Total compensation', 'Compensation received', 'Total awarded'])
+        );
+        const totalEnslaved = parseInt(this.extractLBSField($, ['Total enslaved', 'Enslaved owned']) || '0');
+
+        if (fullName) {
+            result.owners.push({
+                fullName: fullName,
+                title: title,
+                type: 'confirmed_owner',
+                source: 'ucl_lbs',
+                sourceUrl: url,
+                confidence: 0.98,
+                birthYear: birthYear,
+                deathYear: deathYear,
+                occupation: occupation,
+                locations: residence ? [residence] : [],
+                memberOfParliament: !!mpInfo,
+                parliamentInfo: mpInfo,
+                notes: `UCL LBS Person ID: ${personId}. ${totalEnslaved ? `Held ${totalEnslaved} enslaved people.` : ''} ${totalCompensation ? `Total compensation: £${totalCompensation.toLocaleString()}` : ''}`,
+                lbsPersonId: personId,
+                totalCompensationReceived: totalCompensation,
+                totalEnslavedOwned: totalEnslaved,
+                gender: gender
+            });
+        }
+
+        // Extract all claims associated with this person
+        $('a[href*="/claim/"]').each((i, el) => {
+            const claimUrl = $(el).attr('href');
+            result.documents.push({
+                url: claimUrl.startsWith('http') ? claimUrl : `https://www.ucl.ac.uk${claimUrl}`,
+                type: 'associated_claim',
+                text: $(el).text().trim()
+            });
+        });
+
+        // Extract estates
+        $('a[href*="/estate/"]').each((i, el) => {
+            result.documents.push({
+                url: $(el).attr('href').startsWith('http') ? $(el).attr('href') : `https://www.ucl.ac.uk${$(el).attr('href')}`,
+                type: 'owned_estate',
+                name: $(el).text().trim()
+            });
+        });
+
+        result.metadata = {
+            ...result.metadata,
+            fullName,
+            title,
+            gender,
+            birthYear,
+            deathYear,
+            occupation,
+            residence,
+            mpInfo,
+            totalCompensation,
+            totalEnslaved
+        };
+    }
+
+    /**
+     * Extract estate data from UCL LBS
+     */
+    async extractLBSEstate($, url, result, estateId) {
+        console.log('   Extracting estate data...');
+
+        const estateName = $('h1, .estate-name, [class*="estate"]').first().text().trim();
+        const colony = this.extractLBSField($, ['Colony', 'Island']);
+        const parish = this.extractLBSField($, ['Parish', 'District']);
+        const estateType = this.extractLBSField($, ['Type', 'Crop', 'Production']);
+        const enslaved1817 = parseInt(this.extractLBSField($, ['1817', 'enslaved 1817']) || '0');
+        const enslaved1832 = parseInt(this.extractLBSField($, ['1832', 'enslaved 1832', 'at abolition']) || '0');
+
+        // Get compensation info for the estate
+        const compensationAmount = this.parseBritishPounds(
+            this.extractLBSField($, ['Compensation', 'Award', 'Awarded'])
+        );
+
+        if (estateName) {
+            // Store estate-related info
+            result.metadata = {
+                ...result.metadata,
+                estateName,
+                colony,
+                parish,
+                estateType,
+                enslaved1817,
+                enslaved1832,
+                compensationAmount,
+                lbsEstateId: estateId
+            };
+        }
+
+        // Extract owners/claimants linked to estate
+        $('a[href*="/person/"]').each((i, el) => {
+            const ownerName = $(el).text().trim();
+            const ownerUrl = $(el).attr('href');
+
+            if (ownerName && ownerName.length > 2) {
+                result.owners.push({
+                    fullName: ownerName,
+                    type: 'confirmed_owner',
+                    source: 'ucl_lbs_estate',
+                    sourceUrl: url,
+                    confidence: 0.95,
+                    locations: [colony, parish, estateName].filter(Boolean),
+                    notes: `Owner/claimant for estate: ${estateName}. Colony: ${colony}.`,
+                    linkedEstates: [estateName],
+                    lbsPersonUrl: ownerUrl
+                });
+            }
+        });
+
+        // Record enslaved count (we don't have individual names from estates)
+        if (enslaved1832 > 0 || enslaved1817 > 0) {
+            result.enslavedPeople.push({
+                fullName: `${enslaved1832 || enslaved1817} enslaved people at ${estateName}`,
+                type: 'confirmed_enslaved',
+                source: 'ucl_lbs_estate',
+                sourceUrl: url,
+                confidence: 0.95,
+                location: `${estateName}, ${parish || ''}, ${colony || ''}`,
+                notes: `Estate: ${estateName}. Enslaved count 1817: ${enslaved1817}, 1832: ${enslaved1832}.`,
+                isAggregate: true,
+                count: enslaved1832 || enslaved1817
+            });
+        }
+    }
+
+    /**
+     * Extract legacy data from UCL LBS
+     */
+    async extractLBSLegacy($, url, result, legacyId) {
+        console.log('   Extracting legacy data...');
+
+        const legacyName = $('h1, .legacy-name').first().text().trim();
+        const legacyType = this.extractLBSField($, ['Type', 'Category']);
+        const institutionName = this.extractLBSField($, ['Institution', 'Organisation', 'Organization']);
+        const description = this.extractLBSField($, ['Description', 'Details', 'Summary']);
+
+        // Find associated persons
+        $('a[href*="/person/"]').each((i, el) => {
+            const personName = $(el).text().trim();
+            const personUrl = $(el).attr('href');
+
+            if (personName) {
+                result.owners.push({
+                    fullName: personName,
+                    type: 'confirmed_owner',
+                    source: 'ucl_lbs_legacy',
+                    sourceUrl: url,
+                    confidence: 0.90,
+                    notes: `Associated with legacy: ${legacyName || institutionName}. ${description || ''}`,
+                    lbsPersonUrl: personUrl
+                });
+            }
+        });
+
+        result.metadata = {
+            ...result.metadata,
+            legacyName,
+            legacyType,
+            institutionName,
+            description,
+            lbsLegacyId: legacyId
+        };
+    }
+
+    /**
+     * Extract search results from UCL LBS (for batch processing)
+     */
+    async extractLBSSearchResults($, url, result) {
+        console.log('   Extracting search results...');
+
+        // Queue all found claims/persons/estates for individual processing
+        const linksToQueue = [];
+
+        $('a[href*="/lbs/claim/"]').each((i, el) => {
+            const claimUrl = $(el).attr('href');
+            const fullUrl = claimUrl.startsWith('http') ? claimUrl : `https://www.ucl.ac.uk${claimUrl}`;
+            if (!linksToQueue.includes(fullUrl)) {
+                linksToQueue.push({ url: fullUrl, type: 'claim' });
+            }
+        });
+
+        $('a[href*="/lbs/person/"]').each((i, el) => {
+            const personUrl = $(el).attr('href');
+            const fullUrl = personUrl.startsWith('http') ? personUrl : `https://www.ucl.ac.uk${personUrl}`;
+            if (!linksToQueue.includes(fullUrl)) {
+                linksToQueue.push({ url: fullUrl, type: 'person' });
+            }
+        });
+
+        $('a[href*="/lbs/estate/"]').each((i, el) => {
+            const estateUrl = $(el).attr('href');
+            const fullUrl = estateUrl.startsWith('http') ? estateUrl : `https://www.ucl.ac.uk${estateUrl}`;
+            if (!linksToQueue.includes(fullUrl)) {
+                linksToQueue.push({ url: fullUrl, type: 'estate' });
+            }
+        });
+
+        // Queue all found links
+        if (this.db && linksToQueue.length > 0) {
+            console.log(`   📝 Queueing ${linksToQueue.length} UCL LBS pages for processing...`);
+            for (const link of linksToQueue) {
+                try {
+                    await this.db.query(`
+                        INSERT INTO scraping_queue (url, category, status, priority, metadata)
+                        VALUES ($1, 'ucl_lbs', 'pending', 15, $2::jsonb)
+                        ON CONFLICT (url) DO NOTHING
+                    `, [link.url, JSON.stringify({ subType: link.type })]);
+                } catch (err) {
+                    // Ignore duplicates
+                }
+            }
+        }
+
+        result.metadata = {
+            ...result.metadata,
+            linksFound: linksToQueue.length,
+            claimsFound: linksToQueue.filter(l => l.type === 'claim').length,
+            personsFound: linksToQueue.filter(l => l.type === 'person').length,
+            estatesFound: linksToQueue.filter(l => l.type === 'estate').length
+        };
+    }
+
+    /**
+     * Generic extraction for unknown UCL LBS pages
+     */
+    async extractLBSGeneric($, url, result) {
+        console.log('   Generic UCL LBS extraction...');
+
+        // Extract any names that appear with compensation/enslaved context
+        const bodyText = result.rawText;
+
+        // Pattern for names with compensation amounts
+        const compensationPattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*[:\-–]?\s*£([\d,]+)/g;
+        let match;
+
+        while ((match = compensationPattern.exec(bodyText)) !== null) {
+            const name = match[1].trim();
+            const amount = parseInt(match[2].replace(/,/g, ''));
+
+            if (name && amount > 0 && !result.owners.find(o => o.fullName === name)) {
+                result.owners.push({
+                    fullName: name,
+                    type: 'confirmed_owner',
+                    source: 'ucl_lbs',
+                    sourceUrl: url,
+                    confidence: 0.90,
+                    notes: `Compensation: £${amount.toLocaleString()}`,
+                    compensationReceived: amount
+                });
+            }
+        }
+
+        // Queue any links found
+        await this.extractLBSSearchResults($, url, result);
+    }
+
+    /**
+     * Helper: Extract field value from UCL LBS page structure
+     */
+    extractLBSField($, fieldNames) {
+        for (const fieldName of fieldNames) {
+            // Try various selectors
+            const selectors = [
+                `dt:contains("${fieldName}") + dd`,
+                `th:contains("${fieldName}") + td`,
+                `label:contains("${fieldName}") + span`,
+                `[class*="${fieldName.toLowerCase()}"]`,
+                `.field-${fieldName.toLowerCase()}`,
+                `[data-field="${fieldName.toLowerCase()}"]`
+            ];
+
+            for (const selector of selectors) {
+                const element = $(selector).first();
+                if (element.length && element.text().trim()) {
+                    return element.text().trim();
+                }
+            }
+
+            // Fallback: look for pattern in text
+            const regex = new RegExp(`${fieldName}[:\\s]+([^\\n<]+)`, 'i');
+            const textMatch = $('body').html()?.match(regex);
+            if (textMatch) {
+                return textMatch[1].trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Helper: Parse British pounds from text
+     */
+    parseBritishPounds(text) {
+        if (!text) return 0;
+        // Match patterns like "£1,234", "1234", "£1234.5.6" (pounds.shillings.pence)
+        const match = text.match(/£?([\d,]+)/);
+        if (match) {
+            return parseInt(match[1].replace(/,/g, ''));
+        }
+        return 0;
+    }
+
+    /**
      * Helper to extract state abbreviation from href
      */
     extractStateFromHref(href) {
@@ -539,6 +1086,480 @@ class UnifiedScraper {
         };
         const prefix = href.substring(0, 2).toLowerCase();
         return stateMap[prefix] || 'Unknown';
+    }
+
+    /**
+     * ========================================
+     * LOUISIANA SLAVE DATABASE SCRAPER
+     * ========================================
+     * Scrapes the Afro-Louisiana History and Genealogy database
+     * Source: https://www.ibiblio.org/laslave/
+     * Data: CONFIRMED enslaved people from Louisiana records (PRIMARY SOURCE!)
+     *
+     * This database contains over 100,000 records of enslaved people from:
+     * - French period (1719-1769)
+     * - Spanish period (1770-1803)
+     * - Early American period (1804-1820)
+     *
+     * URL Patterns:
+     * - Main page: /laslave/
+     * - Parish pages: /laslave/[parish].php
+     * - Search: /laslave/fields.php
+     * - Downloads: /laslave/downloads/
+     */
+    async scrapeLouisianaSlaveDB(url, result, options) {
+        console.log('\n📜 Scraping Louisiana Slave Database...');
+
+        const urlLower = url.toLowerCase();
+
+        // Determine page type from URL
+        let pageType = 'main';
+        let parish = null;
+
+        if (urlLower.includes('/downloads')) {
+            pageType = 'downloads';
+        } else if (urlLower.includes('fields.php')) {
+            pageType = 'search';
+        } else if (urlLower.match(/\/([a-z-]+)\.php$/)) {
+            pageType = 'parish';
+            const match = url.match(/\/([a-z-]+)\.php$/i);
+            if (match) parish = match[1];
+        }
+
+        console.log(`   Page type: ${pageType}, Parish: ${parish || 'N/A'}`);
+
+        const html = await this.fetchHTML(url);
+        const $ = cheerio.load(html);
+        result.rawText = $('body').text();
+
+        if (pageType === 'downloads') {
+            // Downloads page - note available data files
+            console.log('   📦 Found downloadable database files');
+
+            result.metadata = {
+                pageType: 'la_slave_downloads',
+                availableFiles: [
+                    { name: 'Slave.zip', size: '18.03 MB', description: 'Louisiana slave records database' },
+                    { name: 'Free.zip', size: '1.28 MB', description: 'Louisiana free blacks database' }
+                ],
+                note: 'Full database files available for download - contains 100,000+ records',
+                formats: ['dbf', 'mdb', 'sav', 'mdx']
+            };
+
+            result.documents.push({
+                url: 'https://www.ibiblio.org/laslave/downloads/Slave.zip',
+                type: 'database_download',
+                name: 'Louisiana Slave Records Database',
+                size: '18.03 MB'
+            });
+
+        } else if (pageType === 'parish') {
+            // Parish-specific page
+            console.log(`   📍 Processing ${parish} parish page...`);
+
+            // Extract parish name from title or heading
+            const title = $('title').text() || '';
+            const parishName = title.replace(/Afro-Louisiana/i, '').replace(/History.*$/i, '').trim() ||
+                               parish.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+            // Look for any table data
+            const tables = $('table');
+            let recordsFound = 0;
+
+            tables.each((i, table) => {
+                const rows = $(table).find('tr');
+                rows.each((j, row) => {
+                    const cells = $(row).find('td');
+                    if (cells.length >= 2) {
+                        const text = $(row).text().trim();
+                        // Look for enslaved person patterns
+                        if (text.length > 5) {
+                            recordsFound++;
+                        }
+                    }
+                });
+            });
+
+            // Queue the downloads page if we're on a navigation page
+            if (this.db && recordsFound === 0) {
+                try {
+                    await this.db.query(`
+                        INSERT INTO scraping_queue (url, category, status, priority, metadata)
+                        VALUES ($1, 'la_slave_database', 'pending', 20, $2::jsonb)
+                        ON CONFLICT (url) DO NOTHING
+                    `, ['https://www.ibiblio.org/laslave/downloads/', JSON.stringify({ type: 'downloads' })]);
+                } catch (err) {
+                    // Ignore
+                }
+            }
+
+            result.metadata = {
+                pageType: 'la_slave_parish',
+                parishName,
+                parish,
+                note: 'Parish navigation page - actual records require database download',
+                isPrimarySource: true,
+                sourceYears: '1719-1820'
+            };
+
+        } else if (pageType === 'search') {
+            // Search form page
+            console.log('   🔍 Processing search interface...');
+
+            // Document available search fields
+            const searchFields = [];
+            $('select, input[type="text"]').each((i, el) => {
+                const name = $(el).attr('name');
+                if (name) searchFields.push(name);
+            });
+
+            result.metadata = {
+                pageType: 'la_slave_search',
+                searchFields,
+                note: 'Search interface available - database download recommended for bulk processing',
+                isPrimarySource: true
+            };
+
+        } else {
+            // Main page
+            console.log('   📋 Processing main page...');
+
+            // Extract key statistics from the page
+            const statsMatch = result.rawText.match(/(\d{2,3},?\d{3})\s*(?:records?|entries|enslaved)/i);
+            const recordCount = statsMatch ? parseInt(statsMatch[1].replace(/,/g, '')) : null;
+
+            result.metadata = {
+                pageType: 'la_slave_main',
+                databaseName: 'Afro-Louisiana History and Genealogy',
+                estimatedRecords: recordCount || '100,000+',
+                coverage: {
+                    french: '1719-1769',
+                    spanish: '1770-1803',
+                    earlyAmerican: '1804-1820'
+                },
+                isPrimarySource: true,
+                note: 'This database contains primary source records from Louisiana. Use downloads page for bulk access.'
+            };
+
+            // Queue downloads page
+            if (this.db) {
+                try {
+                    await this.db.query(`
+                        INSERT INTO scraping_queue (url, category, status, priority, metadata)
+                        VALUES ($1, 'la_slave_database', 'pending', 25, $2::jsonb)
+                        ON CONFLICT (url) DO NOTHING
+                    `, ['https://www.ibiblio.org/laslave/downloads/', JSON.stringify({ type: 'downloads', priority: 'high' })]);
+                } catch (err) {
+                    // Ignore
+                }
+            }
+        }
+
+        result.metadata.isPrimarySource = true;
+        result.metadata.sourceType = 'louisiana_colonial_records';
+    }
+
+    /**
+     * ========================================
+     * UNDERWRITING SOULS SCRAPER
+     * ========================================
+     * Scrapes the Lloyd's of London slave trade insurance archive
+     * Source: https://underwritingsouls.org/
+     * Data: Insurance policies for enslaved people and slave ships (PRIMARY SOURCE!)
+     *
+     * This archive contains:
+     * - Life insurance policies for enslaved individuals
+     * - Ship policies for slave trading vessels
+     * - Bills of lading
+     * - Underwriter risk books
+     *
+     * These are PRIMARY SOURCES documenting the financial infrastructure of slavery.
+     */
+    async scrapeUnderwritingSouls(url, result, options) {
+        console.log('\n📜 Scraping Underwriting Souls (Lloyd\'s Archive)...');
+
+        const html = await this.fetchHTMLWithBrowser(url);
+        const $ = cheerio.load(html);
+        result.rawText = $('body').text();
+
+        const urlLower = url.toLowerCase();
+
+        // Determine document type from URL
+        let docType = 'unknown';
+        if (urlLower.includes('life-insurance')) {
+            docType = 'life_insurance';
+        } else if (urlLower.includes('policy-for-the-ship')) {
+            docType = 'ship_policy';
+        } else if (urlLower.includes('bill-of-lading')) {
+            docType = 'bill_of_lading';
+        } else if (urlLower.includes('risk-book')) {
+            docType = 'risk_book';
+        } else if (urlLower.includes('deed')) {
+            docType = 'deed';
+        } else if (urlLower.includes('certificate')) {
+            docType = 'certificate';
+        } else if (urlLower.includes('digitized-corpus') && !urlLower.match(/digitized-corpus\/[a-z]/)) {
+            docType = 'index';
+        }
+
+        console.log(`   Document type: ${docType}`);
+
+        if (docType === 'index') {
+            // Index/listing page - queue all individual documents
+            await this.extractUnderwritingSoulsIndex($, url, result);
+        } else {
+            // Individual document page
+            await this.extractUnderwritingSoulsDocument($, url, result, docType);
+        }
+
+        result.metadata.pageType = `underwriting_souls_${docType}`;
+        result.metadata.isPrimarySource = true;
+        result.metadata.archiveSource = "Lloyd's of London Archive";
+    }
+
+    /**
+     * Extract individual document from Underwriting Souls
+     */
+    async extractUnderwritingSoulsDocument($, url, result, docType) {
+        console.log('   Extracting document data...');
+
+        const bodyText = result.rawText;
+        const title = $('h1, .entry-title, .document-title').first().text().trim();
+
+        // Extract common fields
+        const referenceMatch = bodyText.match(/Reference(?:\s*Number)?[:\s]+([A-Z0-9]+)/i);
+        const dateMatch = bodyText.match(/Date(?:\s*Issued)?[:\s]+([A-Za-z]+\s+\d{1,2},?\s+\d{4})/i);
+        const valueMatch = bodyText.match(/(?:Insurance\s+)?Value[:\s]+[\$£]?([\d,]+)/i);
+        const premiumMatch = bodyText.match(/(?:Annual\s+)?Premium[:\s]+[\$£]?([\d,.]+)/i);
+
+        const reference = referenceMatch ? referenceMatch[1] : null;
+        const date = dateMatch ? dateMatch[1] : null;
+        const value = valueMatch ? parseInt(valueMatch[1].replace(/,/g, '')) : null;
+        const premium = premiumMatch ? parseFloat(premiumMatch[1].replace(/,/g, '')) : null;
+
+        if (docType === 'life_insurance') {
+            // Extract enslaved person and owner info
+            const enslavedMatch = bodyText.match(/(?:Insured\s+Person|Name)[:\s]+([A-Za-z]+)/i);
+            const ownerMatch = bodyText.match(/(?:Policy\s+Owner|Owner|Master)[:\s]+([A-Za-z\s]+?)(?:\n|Location|Occupation)/i);
+            const locationMatch = bodyText.match(/Location[:\s]+([A-Za-z\s,]+?)(?:\n|Policy)/i);
+            const occupationMatch = bodyText.match(/Occupation[:\s]+([A-Za-z\s]+?)(?:\n|Location)/i);
+
+            const enslavedName = enslavedMatch ? enslavedMatch[1].trim() : null;
+            const ownerName = ownerMatch ? ownerMatch[1].trim() : null;
+            const location = locationMatch ? locationMatch[1].trim() : null;
+            const occupation = occupationMatch ? occupationMatch[1].trim() : null;
+
+            if (enslavedName) {
+                result.enslavedPeople.push({
+                    fullName: enslavedName,
+                    type: 'confirmed_enslaved',
+                    source: 'underwriting_souls',
+                    sourceUrl: url,
+                    confidence: 0.98,
+                    locations: location ? [location] : [],
+                    notes: `Life insurance policy ${reference || ''}. Value: $${value || 'unknown'}. Policy holder: ${ownerName || 'unknown'}.`,
+                    insuranceValue: value,
+                    insuranceDate: date,
+                    insuranceReference: reference
+                });
+            }
+
+            if (ownerName) {
+                result.owners.push({
+                    fullName: ownerName,
+                    type: 'confirmed_owner',
+                    source: 'underwriting_souls',
+                    sourceUrl: url,
+                    confidence: 0.98,
+                    locations: location ? [location] : [],
+                    occupation: occupation,
+                    notes: `Insured enslaved person ${enslavedName || 'unknown'}. Policy value: $${value || 'unknown'}.`,
+                    insurancePolicyHolder: true,
+                    insuranceValue: value
+                });
+
+                if (enslavedName) {
+                    result.relationships.push({
+                        type: 'enslaver-enslaved',
+                        owner: ownerName,
+                        enslaved: enslavedName,
+                        source: 'underwriting_souls',
+                        confidence: 0.98,
+                        confirmed: true,
+                        evidenceType: 'insurance_policy'
+                    });
+                }
+            }
+
+            result.metadata = {
+                ...result.metadata,
+                title,
+                reference,
+                date,
+                value,
+                premium,
+                enslavedName,
+                ownerName,
+                location
+            };
+
+        } else if (docType === 'ship_policy') {
+            // Extract ship and voyage info
+            const shipMatch = title.match(/ship\s+([A-Za-z\s]+)/i) || bodyText.match(/Ship\s*Name[:\s]+([A-Za-z\s]+)/i);
+            const shipName = shipMatch ? shipMatch[1].trim() : null;
+            const voyageMatch = bodyText.match(/Voyage[:\s]+([A-Za-z\s,]+?)(?:\n|Date)/i);
+            const captainMatch = bodyText.match(/Captain[:\s]+([A-Za-z\s]+?)(?:\n|Voyage)/i);
+            const enslavedCountMatch = bodyText.match(/(\d+)\s*enslaved/i);
+
+            result.metadata = {
+                ...result.metadata,
+                title,
+                reference,
+                date,
+                value,
+                shipName,
+                voyage: voyageMatch ? voyageMatch[1].trim() : null,
+                captain: captainMatch ? captainMatch[1].trim() : null,
+                enslavedCount: enslavedCountMatch ? parseInt(enslavedCountMatch[1]) : null,
+                documentType: 'slave_ship_policy'
+            };
+
+            // Record aggregate enslaved count if present
+            if (enslavedCountMatch) {
+                result.enslavedPeople.push({
+                    fullName: `${enslavedCountMatch[1]} enslaved people on ${shipName || 'ship'}`,
+                    type: 'confirmed_enslaved',
+                    source: 'underwriting_souls',
+                    sourceUrl: url,
+                    confidence: 0.95,
+                    notes: `Ship: ${shipName || 'unknown'}. Insurance policy ${reference || ''}.`,
+                    isAggregate: true,
+                    count: parseInt(enslavedCountMatch[1])
+                });
+            }
+
+        } else if (docType === 'bill_of_lading') {
+            // Bills of lading for enslaved people
+            const enslavedCountMatch = bodyText.match(/(\d+)\s*enslaved/i);
+            const portMatch = bodyText.match(/(?:Port|Destination)[:\s]+([A-Za-z\s,]+?)(?:\n|Date)/i);
+
+            if (enslavedCountMatch) {
+                result.enslavedPeople.push({
+                    fullName: `${enslavedCountMatch[1]} enslaved people (bill of lading)`,
+                    type: 'confirmed_enslaved',
+                    source: 'underwriting_souls',
+                    sourceUrl: url,
+                    confidence: 0.98,
+                    notes: `Bill of lading ${reference || ''}. ${portMatch ? 'Destination: ' + portMatch[1].trim() : ''}`,
+                    isAggregate: true,
+                    count: parseInt(enslavedCountMatch[1])
+                });
+            }
+
+            result.metadata = {
+                ...result.metadata,
+                title,
+                reference,
+                date,
+                enslavedCount: enslavedCountMatch ? parseInt(enslavedCountMatch[1]) : null,
+                port: portMatch ? portMatch[1].trim() : null
+            };
+
+        } else if (docType === 'risk_book') {
+            // Underwriter risk books - may contain multiple policies
+            const underwriterMatch = title.match(/of\s+([A-Za-z\s]+?)(?:\s*$|\s*-)/i) ||
+                                    bodyText.match(/Underwriter[:\s]+([A-Za-z\s]+?)(?:\n|Date)/i);
+
+            if (underwriterMatch) {
+                result.owners.push({
+                    fullName: underwriterMatch[1].trim(),
+                    type: 'confirmed_owner', // Underwriters profited from slavery
+                    source: 'underwriting_souls',
+                    sourceUrl: url,
+                    confidence: 0.95,
+                    notes: 'Underwriter who profited from insuring the slave trade',
+                    role: 'underwriter'
+                });
+            }
+
+            result.metadata = {
+                ...result.metadata,
+                title,
+                underwriter: underwriterMatch ? underwriterMatch[1].trim() : null,
+                documentType: 'underwriter_risk_book'
+            };
+
+        } else {
+            // Generic document extraction
+            result.metadata = {
+                ...result.metadata,
+                title,
+                reference,
+                date,
+                value
+            };
+        }
+
+        // Extract any document/image links
+        $('a[href*=".pdf"], a[href*=".jpg"], a[href*=".png"], img[src*="archive"]').each((i, el) => {
+            const src = $(el).attr('src') || $(el).attr('href');
+            if (src) {
+                result.documents.push({
+                    url: src.startsWith('http') ? src : `https://underwritingsouls.org${src}`,
+                    type: 'primary_document_scan',
+                    name: title
+                });
+            }
+        });
+    }
+
+    /**
+     * Extract index page from Underwriting Souls - queue all documents
+     */
+    async extractUnderwritingSoulsIndex($, url, result) {
+        console.log('   Extracting document index...');
+
+        const documentsToQueue = [];
+
+        // Find all document links
+        $('a[href*="/digitized-corpus/"]').each((i, el) => {
+            const href = $(el).attr('href');
+            const text = $(el).text().trim();
+
+            // Skip the main index page itself
+            if (href && !href.endsWith('/digitized-corpus/') && text.length > 3) {
+                const fullUrl = href.startsWith('http') ? href : `https://underwritingsouls.org${href}`;
+                if (!documentsToQueue.find(d => d.url === fullUrl)) {
+                    documentsToQueue.push({
+                        url: fullUrl,
+                        title: text
+                    });
+                }
+            }
+        });
+
+        console.log(`   Found ${documentsToQueue.length} documents to queue`);
+
+        // Queue all documents
+        if (this.db && documentsToQueue.length > 0) {
+            for (const doc of documentsToQueue) {
+                try {
+                    await this.db.query(`
+                        INSERT INTO scraping_queue (url, category, status, priority, metadata)
+                        VALUES ($1, 'underwriting_souls', 'pending', 15, $2::jsonb)
+                        ON CONFLICT (url) DO NOTHING
+                    `, [doc.url, JSON.stringify({ title: doc.title })]);
+                } catch (err) {
+                    // Ignore duplicates
+                }
+            }
+        }
+
+        result.metadata = {
+            ...result.metadata,
+            documentsFound: documentsToQueue.length,
+            documentTitles: documentsToQueue.map(d => d.title)
+        };
     }
 
     /**
@@ -857,7 +1878,15 @@ class UnifiedScraper {
             });
         }
         const page = await this.browser.newPage();
+
+        // Set realistic user agent to avoid bot detection
+        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
         await page.goto(url, { waitUntil: 'networkidle2', timeout: this.config.timeout });
+
+        // Wait for dynamic content to load
+        await new Promise(r => setTimeout(r, 2000));
+
         const html = await page.content();
         await page.close();
         return html;
