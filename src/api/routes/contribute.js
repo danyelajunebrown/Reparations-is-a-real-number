@@ -232,7 +232,7 @@ router.get('/search/:query', async (req, res) => {
             }
         }
 
-        // Build search query
+        // Build search query - use AND between words for name searches
         const stopWords = ['in', 'the', 'a', 'an', 'of', 'for', 'to', 'from', 'with', 'by', 'on', 'at'];
         const words = searchTerms.split(/\s+/).filter(w => w.length >= 2 && !stopWords.includes(w.toLowerCase()));
 
@@ -242,26 +242,12 @@ router.get('/search/:query', async (req, res) => {
         const hasTextSearch = words.length > 0;
 
         if (hasTextSearch) {
-            if (words.length > 1) {
-                const conditions = words.map((_, i) => `(
-                    full_name ILIKE $${i + 1} OR
-                    context_text ILIKE $${i + 1} OR
-                    source_url ILIKE $${i + 1} OR
-                    locations::text ILIKE $${i + 1}
-                )`).join(' OR ');
-                whereClause = `(${conditions})`;
-                params = words.map(w => `%${w}%`);
-                paramIndex = params.length + 1;
-            } else {
-                whereClause = `(
-                    full_name ILIKE $1 OR
-                    context_text ILIKE $1 OR
-                    source_url ILIKE $1 OR
-                    locations::text ILIKE $1
-                )`;
-                params = [`%${words[0]}%`];
-                paramIndex = 2;
-            }
+            // Use AND between words - all words must match the name
+            // This ensures "grace butler" only returns records with BOTH words in the name
+            const nameConditions = words.map((_, i) => `full_name ILIKE $${i + 1}`).join(' AND ');
+            whereClause = `(${nameConditions})`;
+            params = words.map(w => `%${w}%`);
+            paramIndex = params.length + 1;
         } else {
             whereClause = '1=1';
             params = [];
