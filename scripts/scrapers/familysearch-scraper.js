@@ -797,6 +797,7 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
 
     const sourceUrl = `https://www.familysearch.org/search/film/${COLLECTION.filmNumber}?i=${imageNumber - 1}&cat=${COLLECTION.catalogId}`;
     const archiveNote = s3Url ? `\n\nARCHIVED DOCUMENT: ${s3Url}` : '';
+    const s3Key = s3Url ? `archives/familysearch/film-${COLLECTION.filmNumber}/image-${String(imageNumber).padStart(4, '0')}.png` : null;
 
     const citation = `FamilySearch, ${COLLECTION.name}, Film ${COLLECTION.filmNumber}, image ${imageNumber}. ` +
                     `${COLLECTION.description}, ${COLLECTION.dateRange}. ${COLLECTION.location}.${archiveNote}`;
@@ -848,11 +849,12 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
 
         console.log(`   💾 Saved ${parsed.enslavedPersons.length} enslaved, ${parsed.slaveholders.length} slaveholders`);
 
-        // Run name resolution to detect name variants and link to canonical persons
+        // Run name resolution and save to person_documents junction table
         if (nameResolver) {
             let linkedCount = 0;
             let queuedCount = 0;
             let newCount = 0;
+            let docsIndexed = 0;
 
             // Process all persons through name resolver
             const allPersons = [
@@ -879,6 +881,57 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
                     } else if (result.action === 'created_new') {
                         newCount++;
                     }
+
+                    // Index this document to the person (person_documents junction table)
+                    // This allows retrieving all documents for a person
+                    if (s3Url) {
+                        try {
+                            await pool.query(`
+                                INSERT INTO person_documents (
+                                    canonical_person_id,
+                                    unconfirmed_person_id,
+                                    name_as_appears,
+                                    s3_url,
+                                    s3_key,
+                                    source_url,
+                                    source_type,
+                                    collection_name,
+                                    film_number,
+                                    image_number,
+                                    ocr_text,
+                                    context_snippet,
+                                    person_type,
+                                    document_type,
+                                    extraction_confidence,
+                                    created_by
+                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                                ON CONFLICT DO NOTHING
+                            `, [
+                                result.canonicalPersonId || null,
+                                result.unconfirmedPersonId || null,
+                                person.name,
+                                s3Url,
+                                s3Key,
+                                sourceUrl,
+                                'familysearch',
+                                COLLECTION.name,
+                                COLLECTION.filmNumber,
+                                imageNumber,
+                                transcriptText,
+                                person.context || null,
+                                person.personType,
+                                'plantation_record', // Ravenel papers are diaries/daybooks
+                                person.confidence || 0.70,
+                                'familysearch_scraper'
+                            ]);
+                            docsIndexed++;
+                        } catch (docErr) {
+                            // Table might not exist yet if migration hasn't run
+                            if (!docErr.message.includes('does not exist')) {
+                                console.error(`   ⚠️  Document indexing error: ${docErr.message}`);
+                            }
+                        }
+                    }
                 } catch (resolverErr) {
                     // Don't fail the whole save if name resolution fails for one person
                     // Just log and continue
@@ -887,6 +940,9 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
 
             if (linkedCount + queuedCount + newCount > 0) {
                 console.log(`   🔗 Name resolution: ${linkedCount} linked, ${queuedCount} queued, ${newCount} new`);
+            }
+            if (docsIndexed > 0) {
+                console.log(`   📑 Indexed ${docsIndexed} person-document links`);
             }
         }
     } catch (error) {
