@@ -1226,14 +1226,15 @@
         });
 
         async function initializeApp() {
-            await pingBackend();
-            if (backendReady) {
-                loadStats();
-            }
+            // Load stats immediately without waiting for health check
+            loadStats();
+            
+            // Ping backend in background
+            pingBackend();
         }
 
         async function pingBackend() {
-            const maxRetries = 20;
+            const maxRetries = 5; // Reduced from 20
             let retries = 0;
 
             while (retries < maxRetries && !backendReady) {
@@ -1241,12 +1242,13 @@
                     const response = await fetch(`${API_BASE_URL}/api/health`, {
                         method: 'GET',
                         mode: 'cors',
-                        cache: 'no-cache'
+                        cache: 'no-cache',
+                        timeout: 10000
                     });
 
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.status === 'ok') {
+                        if (data.success || data.status === 'ok' || data.health) {
                             backendReady = true;
                             document.getElementById('systemStatus').textContent = 'System Online';
                             showToast('Connected to backend', 'success');
@@ -1254,17 +1256,18 @@
                         }
                     }
                 } catch (error) {
-                    console.log(`Backend not ready: ${error.message}`);
+                    console.log(`Backend connection attempt ${retries + 1}: ${error.message}`);
                 }
 
                 retries++;
                 document.getElementById('systemStatus').textContent = `Connecting (${retries}/${maxRetries})...`;
-                await new Promise(resolve => setTimeout(resolve, 6000));
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Reduced from 6000
             }
 
             if (!backendReady) {
-                document.getElementById('systemStatus').textContent = 'Offline';
-                showToast('Backend not responding', 'error');
+                document.getElementById('systemStatus').textContent = 'Checking...';
+                // Still try to load stats even if health check failed
+                loadStats();
             }
         }
 
