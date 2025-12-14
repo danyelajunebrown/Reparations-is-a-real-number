@@ -253,41 +253,66 @@ router.get('/search/:query', async (req, res) => {
             params = [];
         }
 
-        let sql = `
-            SELECT
-                lead_id as id,
-                full_name as name,
-                person_type as type,
-                source_url,
-                source_type,
-                confidence_score,
-                locations,
-                context_text,
-                scraped_at as created_at,
-                'unconfirmed_persons' as table_source
-            FROM unconfirmed_persons
-            WHERE ${whereClause}
-        `;
+        // Build query to search both unconfirmed_persons AND enslaved_individuals
+        let unconfirmedWhere = whereClause;
+        let enslavedWhere = whereClause;
 
+        // Handle source filter
         if (source) {
-            sql += ` AND source_url ILIKE $${paramIndex}`;
+            unconfirmedWhere += ` AND source_url ILIKE $${paramIndex}`;
             params.push(`%${source}%`);
             paramIndex++;
         }
 
+        // Handle type filter for unconfirmed_persons
         if (detectedType) {
             if (detectedType === 'owner') {
-                sql += ` AND (person_type IN ('owner', 'slaveholder', 'suspected_owner', 'confirmed_owner'))`;
+                unconfirmedWhere += ` AND (person_type IN ('owner', 'slaveholder', 'suspected_owner', 'confirmed_owner'))`;
             } else if (detectedType === 'enslaved') {
-                sql += ` AND (person_type IN ('enslaved', 'suspected_enslaved', 'confirmed_enslaved'))`;
+                unconfirmedWhere += ` AND (person_type IN ('enslaved', 'suspected_enslaved', 'confirmed_enslaved'))`;
             } else {
-                sql += ` AND person_type = $${paramIndex}`;
+                unconfirmedWhere += ` AND person_type = $${paramIndex}`;
                 params.push(detectedType);
                 paramIndex++;
             }
         }
 
-        sql += ` ORDER BY confidence_score DESC NULLS LAST, scraped_at DESC LIMIT $${paramIndex}`;
+        // Combined query: unconfirmed_persons UNION enslaved_individuals
+        let sql = `
+            SELECT * FROM (
+                SELECT
+                    lead_id::text as id,
+                    full_name as name,
+                    person_type as type,
+                    source_url,
+                    source_type,
+                    confidence_score,
+                    locations,
+                    context_text,
+                    scraped_at as created_at,
+                    'unconfirmed_persons' as table_source
+                FROM unconfirmed_persons
+                WHERE ${unconfirmedWhere}
+
+                UNION ALL
+
+                SELECT
+                    enslaved_id as id,
+                    full_name as name,
+                    'enslaved' as type,
+                    NULL as source_url,
+                    'confirmed' as source_type,
+                    1.0 as confidence_score,
+                    NULL as locations,
+                    notes as context_text,
+                    created_at,
+                    'enslaved_individuals' as table_source
+                FROM enslaved_individuals
+                WHERE ${enslavedWhere}
+            ) combined
+            ORDER BY confidence_score DESC NULLS LAST, created_at DESC
+            LIMIT $${paramIndex}
+        `;
         params.push(parseInt(limit));
 
         const result = await pool.query(sql, params);
