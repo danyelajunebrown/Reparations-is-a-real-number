@@ -407,6 +407,208 @@ router.get('/stats', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/contribute/person/:id
+ * Get full person profile with reparations calculation
+ * Works for both unconfirmed_persons (lead_id) and enslaved_individuals (enslaved_id)
+ */
+router.get('/person/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { table } = req.query; // 'unconfirmed_persons' or 'enslaved_individuals'
+
+        // Use direct connection
+        const { Pool } = require('pg');
+        const connectionString = process.env.DATABASE_URL;
+        if (!connectionString) {
+            return res.status(500).json({
+                success: false,
+                error: 'DATABASE_URL not configured'
+            });
+        }
+        const pool = new Pool({
+            connectionString,
+            ssl: { rejectUnauthorized: false }
+        });
+
+        let person = null;
+        let tableSource = table || 'unknown';
+
+        // Try enslaved_individuals first if ID looks like enslaved_id format
+        if (!table || table === 'enslaved_individuals' || id.startsWith('enslaved_')) {
+            const enslavedResult = await pool.query(`
+                SELECT
+                    enslaved_id as id,
+                    full_name,
+                    given_name,
+                    middle_name,
+                    surname,
+                    birth_year,
+                    death_year,
+                    gender,
+                    occupation,
+                    skill_level,
+                    racial_designation,
+                    enslaved_status,
+                    freedom_year,
+                    enslaved_by_individual_id,
+                    spouse_name,
+                    spouse_ids,
+                    parent_ids,
+                    child_ids,
+                    child_names,
+                    alternative_names,
+                    direct_reparations,
+                    inherited_reparations,
+                    total_reparations_owed,
+                    amount_paid,
+                    amount_outstanding,
+                    verified,
+                    notes,
+                    created_at,
+                    'enslaved_individuals' as table_source
+                FROM enslaved_individuals
+                WHERE enslaved_id = $1
+            `, [id]);
+
+            if (enslavedResult.rows.length > 0) {
+                person = enslavedResult.rows[0];
+                tableSource = 'enslaved_individuals';
+            }
+        }
+
+        // Try unconfirmed_persons if not found or explicitly requested
+        if (!person && (!table || table === 'unconfirmed_persons')) {
+            const unconfirmedResult = await pool.query(`
+                SELECT
+                    lead_id::text as id,
+                    full_name,
+                    person_type,
+                    birth_year,
+                    death_year,
+                    gender,
+                    locations,
+                    source_url,
+                    source_type,
+                    context_text,
+                    confidence_score,
+                    scraped_at as created_at,
+                    'unconfirmed_persons' as table_source
+                FROM unconfirmed_persons
+                WHERE lead_id = $1
+            `, [id]);
+
+            if (unconfirmedResult.rows.length > 0) {
+                person = unconfirmedResult.rows[0];
+                tableSource = 'unconfirmed_persons';
+            }
+        }
+
+        if (!person) {
+            await pool.end();
+            return res.status(404).json({
+                success: false,
+                error: 'Person not found'
+            });
+        }
+
+        // Calculate reparations if not already calculated
+        let reparations = {
+            wageTheft: 0,
+            damages: 0,
+            interest: 0,
+            total: 0,
+            breakdown: []
+        };
+
+        if (tableSource === 'enslaved_individuals') {
+            // Use stored values or calculate
+            const yearsEnslaved = person.freedom_year && person.birth_year
+                ? person.freedom_year - person.birth_year - 10 // Assume started working at 10
+                : person.death_year && person.birth_year
+                    ? Math.min(person.death_year, 1865) - person.birth_year - 10
+                    : 30; // Default 30 years if unknown
+
+            const yearsSinceEmancipation = 2025 - (person.freedom_year || 1865);
+            const annualWage = 15000; // Conservative modern equivalent
+
+            reparations.wageTheft = Math.max(0, yearsEnslaved) * annualWage;
+            reparations.damages = 100000; // Base human dignity damages
+            reparations.interest = (reparations.wageTheft + reparations.damages) *
+                (Math.pow(1.02, yearsSinceEmancipation) - 1); // 2% compound
+            reparations.total = parseFloat(person.total_reparations_owed) ||
+                (reparations.wageTheft + reparations.damages + reparations.interest);
+
+            reparations.breakdown = [
+                { label: 'Wage Theft', amount: reparations.wageTheft,
+                  description: `${Math.max(0, yearsEnslaved)} years × $${annualWage.toLocaleString()}/year` },
+                { label: 'Human Dignity Damages', amount: reparations.damages,
+                  description: 'Base compensation for enslavement' },
+                { label: 'Compound Interest', amount: reparations.interest,
+                  description: `${yearsSinceEmancipation} years @ 2% annual` }
+            ];
+
+            reparations.amountPaid = parseFloat(person.amount_paid) || 0;
+            reparations.amountOutstanding = reparations.total - reparations.amountPaid;
+        }
+
+        // Get owner info if available
+        let owner = null;
+        if (person.enslaved_by_individual_id) {
+            const ownerResult = await pool.query(`
+                SELECT individual_id, full_name, birth_year, death_year
+                FROM individuals
+                WHERE individual_id = $1
+            `, [person.enslaved_by_individual_id]);
+            if (ownerResult.rows.length > 0) {
+                owner = ownerResult.rows[0];
+            }
+        }
+
+        // Get related documents
+        let documents = [];
+        if (tableSource === 'enslaved_individuals') {
+            const docsResult = await pool.query(`
+                SELECT document_id, filename, doc_type, source_url
+                FROM confirming_documents cd
+                JOIN unconfirmed_persons up ON cd.unconfirmed_person_id = up.lead_id
+                WHERE up.full_name ILIKE $1
+                LIMIT 5
+            `, [`%${person.full_name}%`]);
+            documents = docsResult.rows;
+        }
+
+        await pool.end();
+
+        res.json({
+            success: true,
+            person: {
+                ...person,
+                tableSource
+            },
+            reparations,
+            owner,
+            documents,
+            links: {
+                sourceUrl: person.source_url || null,
+                familySearch: person.familysearch_id
+                    ? `https://www.familysearch.org/tree/person/details/${person.familysearch_id}`
+                    : null,
+                ancestry: person.ancestry_id
+                    ? `https://www.ancestry.com/family-tree/person/${person.ancestry_id}`
+                    : null
+            }
+        });
+
+    } catch (error) {
+        console.error('Person profile error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // =============================================================================
 // SESSION MANAGEMENT ENDPOINTS
 // =============================================================================
