@@ -1,0 +1,148 @@
+{
+  "training_dataset": {
+    "description": "Ground truth manual extractions from Ravenel papers for parser training",
+    "created": "2025-12-15",
+    "documents": [
+      {
+        "film": "008891446",
+        "image": 367,
+        "type": "bill_of_sale",
+        "date": "1804-01-30",
+        "scraper_found": 0,
+        "manual_found": 6,
+        "accuracy": 0,
+        "names": ["Glade", "Alfey", "Lorette", "Phillis", "Bellah", "Ned"],
+        "family_groups": [
+          {"head": "Glade", "wife": "Alfey", "grandchildren": ["Lorette"]},
+          {"head": "Phillis", "children": ["Bellah", "Ned"]}
+        ],
+        "owner": "Stephen Ravenel",
+        "seller": "Daniel James Ravenel",
+        "value": "$700"
+      },
+      {
+        "film": "008891447",
+        "image": 926,
+        "type": "mortgage",
+        "scraper_found": 0,
+        "manual_found": 2,
+        "accuracy": 0,
+        "names": ["Ellick", "Sampson"],
+        "owner": "Henry W. Ravenel",
+        "debtor": "Peter G. Snowden",
+        "value": "$770"
+      },
+      {
+        "film": "008891446",
+        "image": "1019-1020",
+        "type": "estate_inventory",
+        "date": "1757-04-28",
+        "scraper_found": 0,
+        "manual_found": 3,
+        "accuracy": 0,
+        "names": ["Colone", "Sibell", "Betty"],
+        "family_groups": [
+          {"head": "Sibell", "children": ["Betty"]}
+        ],
+        "values": {"Colone": "£40", "Sibell_Betty": "£30"},
+        "owner": "Catherine Taylor (Estate)"
+      },
+      {
+        "film": "008891447",
+        "image": 935,
+        "type": "family_chart",
+        "scraper_found": 0,
+        "manual_found": 26,
+        "accuracy": 0,
+        "family_groups": [
+          {"name": "Clap family", "members": ["Clap", "Harriet", "Yvione"]},
+          {"name": "Pompey family", "members": ["Pompey", "Peggy", "Leah", "Harper"], "value": "$3200"},
+          {"name": "Lizette family", "members": ["Lizette", "Suly", "David", "Winfred", "Yuines", "Alafo"]},
+          {"name": "Parker group", "members": ["Bob", "Belluh", "Negree", "Isabella", "Scipio", "Cal", "Jean", "Billy"]}
+        ],
+        "total_estate_value": "$23,225"
+      },
+      {
+        "film": "008891450",
+        "image": 79,
+        "type": "plantation_inventory",
+        "scraper_found": 1,
+        "manual_found": 75,
+        "accuracy": 1.3,
+        "layout": "3_columns",
+        "column_counts": [26, 25, 24],
+        "notable_features": {
+          "occupations": ["Adam Carpenter"],
+          "african_daynames": ["Penda", "Phibba"],
+          "physical_notes": ["Isaac (1 leg)"],
+          "status_marks": ["Venus (crossed out)", "Amos Little (crossed out)"]
+        }
+      },
+      {
+        "film": "008891450",
+        "image": 80,
+        "type": "plantation_inventory",
+        "scraper_found": 2,
+        "manual_found": 85,
+        "accuracy": 2.4,
+        "layout": "3_columns",
+        "column_counts": [22, 26, 37],
+        "notable_features": {
+          "occupations": ["Catharina Cook", "Phillis Nurse", "Cretia Cook", "Adjoe Watchman", "August Gardener", "Charles Cook"],
+          "african_daynames": ["Quash", "Adjoe"],
+          "distinguishers": ["Sam Little", "Sam Big", "Adam Big", "Nancy Big", "Amel Big"]
+        }
+      },
+      {
+        "film": "008891450",
+        "image": 666,
+        "type": "workers_list",
+        "date": "1813",
+        "catalog_ref": "34-199-2",
+        "scraper_found": 3,
+        "manual_found": 52,
+        "accuracy": 5.8,
+        "layout": "3_columns",
+        "column_counts": [20, 18, 14],
+        "owner": "Thomas Aston Coffin",
+        "notable_features": {
+          "elderly": ["Old Toney", "Old Johnson", "Old Will", "Old Isaac", "Old Benny", "Old Alberta"],
+          "physical": ["Long Caron", "Little Delora"],
+          "daynames": ["Monday", "January"]
+        }
+      }
+    ]
+  },
+  "parser_improvements_needed": [
+    {
+      "issue": "No columnar layout detection",
+      "solution": "Detect multi-column formats by analyzing text position/spacing",
+      "priority": "high"
+    },
+    {
+      "issue": "Garbage word extraction",
+      "solution": "Filter against dictionary of common English words, keep only proper names",
+      "priority": "high"
+    },
+    {
+      "issue": "Day-name bias",
+      "solution": "Context check - 'July' in date context vs name context",
+      "priority": "medium"
+    },
+    {
+      "issue": "No family relationship detection",
+      "solution": "Pattern matching for 'wife', 'child', 'daughter', 'son', 'grandchild'",
+      "priority": "high"
+    },
+    {
+      "issue": "No value/price extraction",
+      "solution": "Detect currency patterns ($, £) associated with names",
+      "priority": "medium"
+    },
+    {
+      "issue": "No document type classification",
+      "solution": "Classify as sale/mortgage/inventory/will before parsing",
+      "priority": "high"
+    }
+  ]
+}

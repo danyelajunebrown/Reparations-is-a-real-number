@@ -38,19 +38,35 @@ const app = express();
 // Middleware Stack
 // =============================================================================
 
-// CORS configuration - allow GitHub Pages and local development
+// CORS configuration - allow GitHub Pages, local development, and file:// URLs
 app.use(cors({
-  origin: [
-    'https://danyelajunebrown.github.io',
-    'http://localhost:3000',
-    'http://localhost:5000',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5000'
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like file://, mobile apps, curl)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'https://danyelajunebrown.github.io',
+      'http://localhost:3000',
+      'http://localhost:5000',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5000',
+      'null' // for file:// URLs
+    ];
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Allow all for now during development
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
+
+// Serve dashboard.html at /dashboard
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dashboard.html'));
+});
 
 // Request logging
 app.use(logger.middleware);
@@ -59,40 +75,17 @@ app.use(logger.middleware);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static file serving
-app.use(express.static('frontend/public'));
-
-// Serve specific test files
-app.get('/test-upload.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'test-upload.html'));
-});
-
-app.get('/test-viewer.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'test-viewer.html'));
-});
+// Static file serving - serve from project root for styles/, js/, and static assets
+app.use(express.static(path.join(__dirname, '..')));
+app.use('/styles', express.static(path.join(__dirname, '..', 'styles')));
+app.use('/js', express.static(path.join(__dirname, '..', 'js')));
 
 // Serve the new conversational contribute page
 app.get('/contribute-v2.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'contribute-v2.html'));
 });
 
-// Serve the bibliography page
-app.get('/bibliography.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'bibliography.html'));
-});
-
-// Serve the unified contribute page (intelligent extraction)
-app.get('/contribute-unified.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'contribute-unified.html'));
-});
-
-// Serve the simplified contribute page
-app.get('/contribute-simple', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'contribute-simplified.html'));
-});
-app.get('/contribute-simplified.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'contribute-simplified.html'));
-});
+// Note: Old contribute variants and bibliography.html moved to _archive/
 
 // Serve the main index.html from project root
 app.get('/', (req, res) => {
@@ -129,6 +122,7 @@ app.set('documentProcessor', documentProcessor);
 
 app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
+app.use('/api/chat', require('./api/routes/chat'));
 app.use('/api/health', healthRouter);
 app.use('/api/errors', errorsRouter);
 app.use('/api/bibliography', bibliographyRouter);
@@ -145,6 +139,9 @@ app.use('/api/contribute', contributeRouter);
 // Initialize name resolution service and mount routes
 initNames(db);
 app.use('/api/names', namesRouter);
+
+// Corporate debts API (Farmer-Paellmann defendants) - Added Dec 18, 2025
+app.use('/api/corporate-debts', require('./api/routes/corporate-debts'));
 
 // Legacy compatibility routes (redirect to new routes)
 app.post('/api/upload-document', (req, res) => {

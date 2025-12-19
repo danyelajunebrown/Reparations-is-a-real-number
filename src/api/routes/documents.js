@@ -831,4 +831,87 @@ router.delete('/:documentId',
   })
 );
 
+/**
+ * GET /api/documents/archive/presign
+ * Generate presigned URL for an archived document (S3 key or full URL)
+ * Used by frontend to view archived FamilySearch documents
+ */
+router.get('/archive/presign',
+  moderateLimiter,
+  asyncHandler(async (req, res) => {
+    const { url, key } = req.query;
+    const expiresIn = parseInt(req.query.expiresIn) || 900; // Default 15 minutes
+
+    if (!url && !key) {
+      return res.status(400).json({
+        success: false,
+        error: 'Either url or key parameter is required'
+      });
+    }
+
+    if (!S3Service.isEnabled()) {
+      return res.status(500).json({
+        success: false,
+        error: 'S3 storage is not enabled'
+      });
+    }
+
+    try {
+      // Extract S3 key from full URL if provided
+      let s3Key = key;
+      if (url) {
+        // Parse S3 URL to extract key
+        // Format: https://bucket.s3.region.amazonaws.com/key or https://bucket.s3.amazonaws.com/key
+        const urlObj = new URL(url);
+        s3Key = urlObj.pathname.substring(1); // Remove leading slash
+      }
+
+      if (!s3Key) {
+        return res.status(400).json({
+          success: false,
+          error: 'Could not extract S3 key from URL'
+        });
+      }
+
+      // Check if object exists
+      const checkResult = await S3Service.objectExists(s3Key);
+      if (!checkResult.exists) {
+        return res.status(404).json({
+          success: false,
+          error: 'Archive not found in S3',
+          key: s3Key
+        });
+      }
+
+      // Generate presigned URL
+      const viewUrl = await S3Service.getViewUrl(s3Key, expiresIn);
+      const downloadUrl = await S3Service.getDownloadUrl(s3Key, expiresIn);
+
+      logger.info('Generated presigned URL for archive', { s3Key });
+
+      res.json({
+        success: true,
+        viewUrl,
+        downloadUrl,
+        expiresIn,
+        expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+        metadata: checkResult.metadata
+      });
+
+    } catch (error) {
+      logger.error('Failed to generate presigned URL', {
+        error: error.message,
+        url,
+        key
+      });
+
+      res.status(500).json({
+        success: false,
+        error: 'Failed to generate access URL',
+        details: error.message
+      });
+    }
+  })
+);
+
 module.exports = router;

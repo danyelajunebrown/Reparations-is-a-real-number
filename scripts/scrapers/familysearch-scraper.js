@@ -34,6 +34,11 @@ const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
 const NameResolver = require('../../src/services/NameResolver');
+const NameValidator = require('../../src/services/NameValidator');
+const UnifiedNameExtractor = require('../../src/services/UnifiedNameExtractor');
+
+// Global name extractor instance (initialized in scrape())
+let nameExtractor = null;
 
 // Google Vision API for OCR (same as MSA scraper)
 const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
@@ -643,10 +648,14 @@ async function screenshotViewerArea(page) {
 }
 
 /**
- * Parse transcript text using interpretive framework
- * Centers enslaved persons, tracks resistance, identifies relationships
+ * Parse transcript text using UnifiedNameExtractor
+ * NOW uses system-wide parsing with:
+ * - Training data from manual extractions
+ * - Columnar layout detection
+ * - Family relationship extraction
+ * - Document type classification
  */
-function parseTranscript(text, imageNumber) {
+async function parseTranscript(text, imageNumber) {
     const result = {
         enslavedPersons: [],
         slaveholders: [],
@@ -654,23 +663,51 @@ function parseTranscript(text, imageNumber) {
         locations: [],
         dates: [],
         resistanceIndicators: [],
+        familyGroups: [],
         rawText: text
     };
 
     if (!text || text.length < 20) return result;
 
-    // Normalize text
-    const normalizedText = text.replace(/\s+/g, ' ').trim();
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    // Use UnifiedNameExtractor if available
+    if (nameExtractor) {
+        try {
+            const extraction = await nameExtractor.extract(text, {
+                source: 'familysearch',
+                collection: COLLECTION.name,
+                imageNumber
+            });
 
-    // Common enslaved name patterns in SC plantation records
-    // Many are Akan day names or anglicized African names
-    const africanDayNames = [
-        'Quash', 'Quashee', 'Cudjoe', 'Cudjo', 'Cuffee', 'Cuffy',
-        'Quaco', 'Kwaku', 'Juba', 'Phibba', 'Phoebe', 'Abba',
-        'Cuba', 'Mingo', 'Sambo', 'Cato', 'Pompey', 'Caesar',
-        'Scipio', 'Prince', 'Fortune', 'July', 'Monday', 'Friday'
-    ];
+            if (extraction.success) {
+                // Map extracted data to expected format
+                result.enslavedPersons = extraction.enslavedPersons.map(p => ({
+                    name: p.name,
+                    context: p.context,
+                    page: imageNumber,
+                    confidence: p.confidence,
+                    age: p.age,
+                    gender: p.gender,
+                    occupation: p.occupation,
+                    value: p.value
+                }));
+
+                result.slaveholders = extraction.slaveholders.map(p => ({
+                    name: p.name,
+                    page: imageNumber,
+                    confidence: p.confidence
+                }));
+
+                result.familyGroups = extraction.familyGroups;
+
+                console.log(`   📊 UnifiedExtractor: ${extraction.documentType} layout, ${result.enslavedPersons.length} enslaved, ${result.slaveholders.length} owners`);
+            }
+        } catch (err) {
+            console.log(`   ⚠️ UnifiedExtractor error: ${err.message}, falling back to basic parsing`);
+        }
+    }
+
+    // Fallback/supplement with resistance indicators (not in UnifiedExtractor)
+    const normalizedText = text.replace(/\s+/g, ' ').trim();
 
     // Resistance indicators (following interpretive framework)
     const resistancePatterns = [
@@ -682,67 +719,10 @@ function parseTranscript(text, imageNumber) {
         /\b(refuse|refused|resist|resisted|trouble)\b/gi
     ];
 
-    // Check for resistance indicators
     for (const pattern of resistancePatterns) {
         const matches = normalizedText.match(pattern);
         if (matches) {
             result.resistanceIndicators.push(...matches.map(m => m.toLowerCase()));
-        }
-    }
-
-    // Extract potential enslaved names
-    // Pattern: Look for names followed by occupational/status markers
-    const namePatterns = [
-        // "Negro [Name]" or "Negroe [Name]"
-        /\b(?:negro|negroe|black)\s+([A-Z][a-z]+)/gi,
-        // "[Name] a negro/slave"
-        /\b([A-Z][a-z]+)\s+(?:a\s+)?(?:negro|slave|servant)/gi,
-        // African day names
-        new RegExp(`\\b(${africanDayNames.join('|')})\\b`, 'gi'),
-        // "my/the [role] [Name]" - e.g., "my driver Moses"
-        /\b(?:my|the|our)\s+(?:driver|cook|servant|slave|man|woman|boy|girl)\s+([A-Z][a-z]+)/gi
-    ];
-
-    const foundNames = new Set();
-
-    for (const pattern of namePatterns) {
-        let match;
-        while ((match = pattern.exec(normalizedText)) !== null) {
-            const name = match[1]?.trim();
-            if (name && name.length > 1 && !foundNames.has(name.toLowerCase())) {
-                foundNames.add(name.toLowerCase());
-
-                // Get context around the match
-                const contextStart = Math.max(0, match.index - 50);
-                const contextEnd = Math.min(normalizedText.length, match.index + match[0].length + 50);
-                const context = normalizedText.slice(contextStart, contextEnd);
-
-                result.enslavedPersons.push({
-                    name: name,
-                    context: context,
-                    page: imageNumber,
-                    confidence: 0.65 // Lower confidence for diary entries vs tabular records
-                });
-            }
-        }
-    }
-
-    // Extract slaveholder names (Ravenel family patterns)
-    const slaveholderPatterns = [
-        /\b(Ravenel|Porcher|Pringle|Middleton|Pinckney)\b/gi,
-        /\b(Mr\.|Mrs\.|Dr\.|Col\.|Capt\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/g
-    ];
-
-    for (const pattern of slaveholderPatterns) {
-        let match;
-        while ((match = pattern.exec(normalizedText)) !== null) {
-            const name = match[2] || match[1];
-            if (name && !foundNames.has(name.toLowerCase())) {
-                result.slaveholders.push({
-                    name: name.trim(),
-                    page: imageNumber
-                });
-            }
         }
     }
 
@@ -803,13 +783,23 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
                     `${COLLECTION.description}, ${COLLECTION.dateRange}. ${COLLECTION.location}.${archiveNote}`;
 
     try {
-        // Save enslaved persons
+        // Build owner relationships for this page
+        const ownersOnPage = parsed.slaveholders.map(s => ({
+            type: 'potential_owner',
+            name: s.name,
+            source: 'same_document',
+            page: imageNumber
+        }));
+        const ownerRelationships = ownersOnPage.length > 0 ? JSON.stringify(ownersOnPage) : '[]';
+
+        // Save enslaved persons with owner relationships
         for (const person of parsed.enslavedPersons) {
             await pool.query(`
                 INSERT INTO unconfirmed_persons (
                     full_name, person_type, source_url, source_page_title,
-                    extraction_method, context_text, confidence_score, source_type
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    extraction_method, context_text, confidence_score, source_type,
+                    relationships
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
                 ON CONFLICT DO NOTHING
             `, [
                 person.name,
@@ -823,7 +813,8 @@ async function saveToDatabase(parsed, imageNumber, transcriptText, s3Url = null)
                     : '') +
                 `Full transcript available.`,
                 person.confidence,
-                'primary'
+                'primary',
+                ownerRelationships
             ]);
         }
 
@@ -1186,6 +1177,11 @@ async function scrape(startImage = 1, endImage = COLLECTION.totalImages) {
 
     // Initialize database
     initDatabase();
+
+    // Initialize UnifiedNameExtractor with training data
+    nameExtractor = new UnifiedNameExtractor();
+    await nameExtractor.initialize();
+    console.log('✅ UnifiedNameExtractor initialized with training data');
 
     // Launch browser - use a persistent user data directory to appear more legitimate
     // This helps bypass Google's "This browser or app may not be secure" error
@@ -1625,8 +1621,8 @@ async function scrape(startImage = 1, endImage = COLLECTION.totalImages) {
                     continue;
                 }
 
-                // Parse the transcript
-                const parsed = parseTranscript(textContent, imageNum);
+                // Parse the transcript using UnifiedNameExtractor
+                const parsed = await parseTranscript(textContent, imageNum);
 
                 console.log(`   👥 Found: ${parsed.enslavedPersons.length} enslaved, ${parsed.slaveholders.length} slaveholders`);
 

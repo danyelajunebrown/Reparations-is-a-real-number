@@ -1,5 +1,7 @@
-// Example config.js — update or merge into your existing config
+// Root config.js - loads .env and re-exports from config/index.js
 // Make sure to set sensitive values (AWS keys) via environment variables in production.
+
+require('dotenv').config({ override: true });
 
 module.exports = {
   env: process.env.NODE_ENV || 'development',
@@ -7,10 +9,15 @@ module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
 
   database: {
+    // Prefer DATABASE_URL (Neon/Render/production), fall back to individual vars
+    connectionString: process.env.DATABASE_URL,
     host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
     database: process.env.DB_NAME || process.env.POSTGRES_DB || 'reparations',
     user: process.env.DB_USER || process.env.POSTGRES_USER || '',
-    password: process.env.DB_PASS || process.env.POSTGRES_PASSWORD || ''
+    password: process.env.DB_PASS || process.env.POSTGRES_PASSWORD || '',
+    ssl: process.env.NODE_ENV === 'production' || process.env.DB_SSL_REQUIRED === 'true'
+      ? { rejectUnauthorized: false }
+      : false
   },
 
   storage: {

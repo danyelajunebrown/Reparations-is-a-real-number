@@ -1,63 +1,53 @@
 /**
  * Database Connection Pool
  *
- * Centralized PostgreSQL connection management using the new config system.
+ * Centralized PostgreSQL connection management using Neon serverless (HTTP).
+ * This uses the @neondatabase/serverless driver which connects over HTTP
+ * instead of TCP port 5432 (useful when port 5432 is blocked).
  */
 
-const { Pool } = require('pg');
+const { neon, neonConfig } = require('@neondatabase/serverless');
 const config = require('../../config');
 const logger = require('../utils/logger');
 
-// Create pool connection
-const pool = config.database.connectionString
-  ? new Pool({
-      connectionString: config.database.connectionString,
-      ssl: config.database.ssl
-    })
-  : new Pool({
-      host: config.database.host,
-      port: config.database.port,
-      database: config.database.database,
-      user: config.database.user,
-      password: config.database.password,
-      ssl: config.database.ssl
-    });
+// neonConfig is available for advanced configuration if needed
 
-// Connection event handlers
-pool.on('connect', () => {
-  logger.info('Connected to PostgreSQL database');
-});
+// Create the SQL function
+const connectionString = config.database.connectionString ||
+  `postgresql://${config.database.user}:${config.database.password}@${config.database.host}:${config.database.port}/${config.database.database}`;
 
-pool.on('error', (err) => {
-  logger.error('Unexpected database error on idle client', {
-    error: err.message,
-    stack: err.stack
-  });
+const sql = neon(connectionString);
 
-  // Log to monitoring service if configured
-  if (config.monitoring.sentryDsn) {
-    // Sentry.captureException(err);
-  }
-
-  // Don't exit process - allow app to recover
-  // The pool will attempt to reconnect automatically
-});
+// Track connection state
+let isConnected = false;
 
 /**
  * Execute a query with timing and logging
- * @param {string} text - SQL query
+ * Compatible with pg Pool.query() interface
+ * @param {string} text - SQL query with $1, $2, etc. placeholders
  * @param {Array} params - Query parameters
- * @returns {Promise<Object>} Query result
+ * @returns {Promise<Object>} Query result with rows array
  */
-async function query(text, params) {
+async function query(text, params = []) {
   const start = Date.now();
   try {
-    const res = await pool.query(text, params);
+    // Use sql.query() for parameterized queries (not tagged template)
+    const result = await sql.query(text, params);
     const duration = Date.now() - start;
 
-    logger.query(text, duration, res.rowCount);
+    if (!isConnected) {
+      isConnected = true;
+      logger.info('Connected to PostgreSQL database (Neon serverless/HTTP)');
+    }
 
-    return res;
+    logger.query(text, duration, result.length);
+
+    // Return in pg-compatible format
+    return {
+      rows: result,
+      rowCount: result.length,
+      command: text.trim().split(' ')[0].toUpperCase()
+    };
   } catch (error) {
     logger.error('Database query error', {
       query: text.substring(0, 100),
@@ -69,35 +59,28 @@ async function query(text, params) {
 }
 
 /**
- * Get a client from the pool for transaction handling
- * @returns {Promise<PoolClient>} Database client
+ * Get a "client" for transaction handling
+ * Note: Neon serverless doesn't support traditional transactions the same way,
+ * but we provide a compatible interface that executes queries serially
+ * @returns {Promise<Object>} Pseudo-client object
  */
 async function getClient() {
-  const client = await pool.connect();
-
-  // Add query logging to client
-  const originalQuery = client.query.bind(client);
-  client.query = async function (text, params) {
-    const start = Date.now();
-    try {
-      const res = await originalQuery(text, params);
-      const duration = Date.now() - start;
-      logger.query(text, duration, res.rowCount);
-      return res;
-    } catch (error) {
-      logger.error('Database query error (client)', {
-        query: text.substring(0, 100),
-        error: error.message
-      });
-      throw error;
+  // Return an object that mimics pg client interface
+  const client = {
+    query: async function(text, params) {
+      return query(text, params);
+    },
+    release: function() {
+      // No-op for serverless
     }
   };
-
   return client;
 }
 
 /**
  * Execute a function within a transaction
+ * Note: For true transaction support with Neon, consider using their
+ * transaction() API or the Pool driver for local development
  * @param {Function} callback - Async function to execute in transaction
  * @returns {Promise<any>} Result of callback
  */
@@ -126,10 +109,11 @@ async function transaction(callback) {
  */
 async function checkHealth() {
   try {
-    const result = await pool.query('SELECT 1 as health');
+    const result = await query('SELECT 1 as health');
     return {
       healthy: true,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      driver: 'neon-serverless'
     };
   } catch (err) {
     logger.error('Database health check failed', {
@@ -138,18 +122,31 @@ async function checkHealth() {
     return {
       healthy: false,
       error: err.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      driver: 'neon-serverless'
     };
   }
 }
 
 /**
- * Close all connections in the pool
+ * Close connections (no-op for serverless HTTP)
  */
 async function close() {
-  await pool.end();
-  logger.info('Database connection pool closed');
+  logger.info('Database connection pool closed (serverless - no persistent connections)');
 }
+
+// Create a pool-like object for compatibility
+const pool = {
+  query,
+  connect: getClient,
+  end: close,
+  on: function(event, callback) {
+    // No-op for event handlers - serverless doesn't have persistent connections
+    if (event === 'error') {
+      // Store error handler but it won't be called in serverless mode
+    }
+  }
+};
 
 module.exports = {
   pool,
@@ -157,5 +154,6 @@ module.exports = {
   getClient,
   transaction,
   checkHealth,
-  close
+  close,
+  sql // Export raw sql function for advanced usage
 };
