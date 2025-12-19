@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reparations ∈ ℝ</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+        h1 { color: #ffd700; margin-bottom: 10px; }
+        h2 { color: #ffd700; margin: 20px 0 15px; font-size: 1.3em; }
+        .subtitle { color: #888; margin-bottom: 20px; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #16213e; padding-bottom: 10px; }
+        .tab { padding: 12px 24px; background: #16213e; border: none; color: #888; cursor: pointer; border-radius: 8px 8px 0 0; font-size: 1em; }
+        .tab.active { background: #0f3460; color: #ffd700; }
+        .tab:hover { color: #ffd700; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Stats Grid */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .stat-card { background: #16213e; padding: 20px; border-radius: 8px; text-align: center; }
+        .stat-card.highlight { border: 2px solid #ffd700; }
+        .stat-value { font-size: 2.5em; color: #ffd700; margin-bottom: 5px; }
+        .stat-label { color: #888; font-size: 0.9em; }
+        .stat-sublabel { color: #666; font-size: 0.8em; margin-top: 5px; }
+
+        /* Accuracy Display */
+        .accuracy-section { background: #16213e; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .accuracy-bar { background: #0f3460; height: 30px; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+        .accuracy-fill { background: linear-gradient(90deg, #f44336, #ff9800, #4CAF50); height: 100%; transition: width 0.5s; }
+        .accuracy-text { display: flex; justify-content: space-between; color: #888; font-size: 0.9em; }
+
+        /* Document Types */
+        .doc-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 15px; }
+        .doc-type { background: #0f3460; padding: 10px; border-radius: 4px; text-align: center; }
+        .doc-type-name { font-size: 0.85em; color: #aaa; }
+        .doc-type-accuracy { font-size: 1.2em; color: #fff; }
+
+        /* Review Queue */
+        .review-list { max-height: 500px; overflow-y: auto; }
+        .review-item { background: #0f3460; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .review-item.approved { opacity: 0.5; border-left: 4px solid #4CAF50; }
+        .review-item.rejected { opacity: 0.5; border-left: 4px solid #f44336; }
+        .review-name { font-size: 1.3em; color: #fff; margin-bottom: 8px; }
+        .review-meta { font-size: 0.9em; color: #888; margin-bottom: 10px; }
+        .review-actions { display: flex; gap: 10px; }
+
+        /* Buttons */
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em; }
+        .btn-primary { background: #ffd700; color: #1a1a2e; }
+        .btn-primary:hover { background: #ffed4a; }
+        .btn-approve { background: #4CAF50; color: white; }
+        .btn-reject { background: #f44336; color: white; }
+        .btn-secondary { background: #16213e; color: #888; border: 1px solid #333; }
+
+        /* Forms */
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; color: #888; margin-bottom: 5px; font-size: 0.9em; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 10px; background: #0f3460; border: 1px solid #333;
+            border-radius: 4px; color: #fff; font-size: 1em;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none; border-color: #ffd700;
+        }
+
+        /* Layout */
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+        .card { background: #16213e; border-radius: 8px; padding: 20px; }
+        .card h3 { color: #ffd700; margin-bottom: 15px; }
+
+        /* Pipeline Status */
+        .pipeline-status { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f3460; border-radius: 4px; margin-bottom: 10px; }
+        .pipeline-indicator { width: 12px; height: 12px; border-radius: 50%; }
+        .pipeline-indicator.ready { background: #4CAF50; }
+        .pipeline-indicator.pending { background: #ff9800; }
+        .pipeline-indicator.error { background: #f44336; }
+        .pipeline-name { flex: 1; color: #fff; }
+        .pipeline-status-text { color: #888; font-size: 0.85em; }
+
+        /* Known Names List */
+        .names-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .name-tag { background: #0f3460; padding: 4px 10px; border-radius: 4px; font-size: 0.85em; color: #aaa; }
+        .name-tag.owner { border-left: 3px solid #ff9800; }
+        .name-tag.enslaved { border-left: 3px solid #4CAF50; }
+
+        .loading { text-align: center; padding: 40px; color: #888; }
+        .error { background: #f44336; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .success { background: #4CAF50; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Reparations Platform Dashboard</h1>
+        <p class="subtitle">System status, training data, and human review queue</p>
+
+        <div id="message"></div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('monitoring')">Monitoring</button>
+            <button class="tab" onclick="showTab('quality')">Data Quality</button>
+            <button class="tab" onclick="showTab('overview')">System Overview</button>
+            <button class="tab" onclick="showTab('training')">Training Data</button>
+            <button class="tab" onclick="showTab('contribute')">Add Names</button>
+        </div>
+
+        <!-- Tab: Monitoring (DEFAULT) -->
+        <div id="tab-monitoring" class="tab-content active">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0; color: #ffd700;">Real-Time Data Quality Metrics</h2>
+                <div>
+                    <label style="color: #888; margin-right: 10px;">
+                        <input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()"> Auto-refresh (30s)
+                    </label>
+                    <button class="btn btn-primary" onclick="loadMonitoringMetrics()">Refresh Now</button>
+                </div>
+            </div>
+            <p id="last-updated" style="color: #666; margin-bottom: 20px;">Last updated: -</p>
+
+            <!-- Key Metrics -->
+            <div class="stats-grid" id="monitoring-stats">
+                <div class="stat-card" id="metric-clean">
+                    <div class="stat-value" id="clean-records">-</div>
+                    <div class="stat-label">Clean Records</div>
+                    <div class="stat-sublabel" id="clean-rate">- of total</div>
+                </div>
+                <div class="stat-card" id="metric-garbage">
+                    <div class="stat-value" id="garbage-rate">-</div>
+                    <div class="stat-label">Garbage Rate</div>
+                    <div class="stat-sublabel">Target: < 5%</div>
+                </div>
+                <div class="stat-card" id="metric-confidence">
+                    <div class="stat-value" id="avg-confidence">-</div>
+                    <div class="stat-label">Avg Confidence</div>
+                    <div class="stat-sublabel">Target: > 70%</div>
+                </div>
+                <div class="stat-card" id="metric-linkage">
+                    <div class="stat-value" id="owner-linkage">-</div>
+                    <div class="stat-label">Owner Linkage</div>
+                    <div class="stat-sublabel">FamilySearch enslaved</div>
+                </div>
+            </div>
+
+            <!-- Status Breakdown -->
+            <div class="two-col" style="margin-top: 20px;">
+                <div class="card">
+                    <h3>Records by Status</h3>
+                    <div id="status-breakdown" style="margin-top: 15px;">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Records by Person Type</h3>
+                    <div id="type-breakdown" style="margin-top: 15px;">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Source Breakdown -->
+            <div class="card" style="margin-top: 20px;">
+                <h3>Breakdown by Source</h3>
+                <div id="source-breakdown" style="margin-top: 15px;">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Target Progress -->
+            <div class="card" style="margin-top: 20px;">
+                <h3>Target Progress</h3>
+                <div id="target-progress" style="margin-top: 15px;">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Data Quality -->
+        <div id="tab-quality" class="tab-content">
+            <div class="stats-grid" id="quality-stats">
+                <div class="stat-card" style="border-left: 4px solid #f44336;">
+                    <div class="stat-value" id="total-issues">-</div>
+                    <div class="stat-label">Total Issues Found</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="placeholder-count">-</div>
+                    <div class="stat-label">Placeholder Records</div>
+                    <div class="stat-sublabel">"Unknown Enslaved Person"</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="low-conf-count">-</div>
+                    <div class="stat-label">Low Confidence</div>
+                    <div class="stat-sublabel">< 0.5 confidence</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="missing-owner-count">-</div>
+                    <div class="stat-label">Missing Owner Link</div>
+                </div>
+            </div>
+
+            <div class="two-col">
+                <div class="card">
+                    <h3>Automated Fixes Available</h3>
+                    <p style="color: #888; margin-bottom: 15px;">Click to apply bulk fixes to the database:</p>
+                    <div id="fix-buttons">
+                        <div class="loading">Loading fixes...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Issue Breakdown</h3>
+                    <div id="issue-breakdown">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <h3>Records Needing Review</h3>
+                <p style="color: #888; margin-bottom: 15px;">Low confidence and problematic records. Fix the name or delete garbage:</p>
+                <div class="review-list" id="garbage-records" style="max-height: 600px;">
+                    <div class="loading">Loading records...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: System Overview -->
+        <div id="tab-overview" class="tab-content">
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card highlight">
+                    <div class="stat-value" id="confirmed-enslaved">-</div>
+                    <div class="stat-label">Confirmed Enslaved</div>
+                    <div class="stat-sublabel" id="linked-percent">- linked to owners</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="confirmed-owners">-</div>
+                    <div class="stat-label">Confirmed Owners</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="unconfirmed">-</div>
+                    <div class="stat-label">Unconfirmed Persons</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="pending-review">-</div>
+                    <div class="stat-label">Pending Review</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="documents">-</div>
+                    <div class="stat-label">Source Documents</div>
+                </div>
+            </div>
+
+            <div class="two-col">
+                <div class="card">
+                    <h3>Pipeline Status</h3>
+                    <div id="pipeline-status">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Data Sources</h3>
+                    <div id="data-sources">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Human Review -->
+        <div id="tab-review" class="tab-content">
+            <div class="two-col">
+                <div class="card">
+                    <h3>Pending Review Items</h3>
+                    <div class="review-list" id="review-items">
+                        <div class="loading">Loading review queue...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Review Instructions</h3>
+                    <p style="color: #aaa; line-height: 1.6;">
+                        Review extracted names from historical documents. For each item:
+                    </p>
+                    <ul style="color: #888; margin-top: 10px; padding-left: 20px;">
+                        <li>Check if the name looks like a real person's name</li>
+                        <li>Approve valid names to add them to the confirmed database</li>
+                        <li>Reject garbage (OCR errors, common words)</li>
+                        <li>Approved names train the parser to recognize similar patterns</li>
+                    </ul>
+                    <button class="btn btn-primary" onclick="loadReviewQueue()" style="margin-top: 15px;">Refresh Queue</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Training Data -->
+        <div id="tab-training" class="tab-content">
+            <div class="accuracy-section">
+                <h3 style="color: #ffd700; margin-bottom: 15px;">Parser Accuracy</h3>
+                <p style="color: #888; margin-bottom: 10px;">Based on <span id="docs-processed">0</span> manually reviewed documents</p>
+                <div class="accuracy-bar">
+                    <div class="accuracy-fill" id="accuracy-bar" style="width: 0%"></div>
+                </div>
+                <div class="accuracy-text">
+                    <span>0%</span>
+                    <span id="accuracy-value">2.4% overall</span>
+                    <span>100%</span>
+                </div>
+
+                <h4 style="color: #aaa; margin-top: 20px;">Accuracy by Document Type</h4>
+                <div class="doc-types" id="doc-types">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="two-col">
+                <div class="card">
+                    <h3>Known Enslaved Names (<span id="known-names-count">0</span>)</h3>
+                    <div class="names-list" id="known-names">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Known Slaveholder Names (<span id="known-owners-count">0</span>)</h3>
+                    <div class="names-list" id="known-owners">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Add Names -->
+        <div id="tab-contribute" class="tab-content">
+            <div class="two-col">
+                <div class="card">
+                    <h3>Add Manual Extraction</h3>
+                    <p style="color: #888; margin-bottom: 15px;">
+                        Help train the parser by adding names you've manually extracted from documents.
+                    </p>
+                    <form id="add-name-form">
+                        <div class="form-group">
+                            <label>Name</label>
+                            <input type="text" id="input-name" placeholder="e.g., Glade, Phillis, Thomas Coffin" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="input-type" required>
+                                <option value="enslaved">Enslaved Person</option>
+                                <option value="owner">Slaveholder</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Document Reference (optional)</label>
+                            <input type="text" id="input-doc" placeholder="e.g., Film 008891450 Image 79">
+                        </div>
+                        <div class="form-group">
+                            <label>Context (optional)</label>
+                            <textarea id="input-context" rows="3" placeholder="e.g., Listed in plantation inventory as 'Glade and wife Alfey'"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add to Training Data</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <h3>Bulk Add Names</h3>
+                    <p style="color: #888; margin-bottom: 15px;">
+                        Paste a list of names (one per line) to add multiple at once.
+                    </p>
+                    <form id="bulk-add-form">
+                        <div class="form-group">
+                            <label>Names (one per line)</label>
+                            <textarea id="bulk-names" rows="10" placeholder="Glade&#10;Alfey&#10;Lorette&#10;Phillis&#10;Bellah&#10;Ned"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="bulk-type" required>
+                                <option value="enslaved">Enslaved Persons</option>
+                                <option value="owner">Slaveholders</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add All Names</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+
+        let autoRefreshInterval = null;
+
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            // Load data for specific tabs
+            if (tabName === 'monitoring') loadMonitoringMetrics();
+            if (tabName === 'quality') loadDataQuality();
+            if (tabName === 'training') loadTrainingStats();
+            if (tabName === 'overview') loadSystemStatus();
+        }
+
+        // Toggle auto-refresh
+        function toggleAutoRefresh() {
+            const checkbox = document.getElementById('auto-refresh');
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(loadMonitoringMetrics, 30000);
+                showMessage('success', 'Auto-refresh enabled (30s)');
+            } else {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // Load monitoring metrics
+        async function loadMonitoringMetrics() {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/data-quality-metrics`);
+                const data = await response.json();
+
+                if (data.success) {
+                    // Update timestamp
+                    document.getElementById('last-updated').textContent =
+                        `Last updated: ${new Date(data.timestamp).toLocaleString()}`;
+
+                    // Key metrics
+                    document.getElementById('clean-records').textContent =
+                        data.summary.cleanRecords.toLocaleString();
+                    document.getElementById('clean-rate').textContent =
+                        `${data.summary.cleanRate}% of ${data.summary.totalRecords.toLocaleString()} total`;
+                    document.getElementById('garbage-rate').textContent =
+                        `${data.summary.garbageRate}%`;
+                    document.getElementById('avg-confidence').textContent =
+                        `${(parseFloat(data.summary.avgConfidence) * 100).toFixed(0)}%`;
+                    document.getElementById('owner-linkage').textContent =
+                        `${data.summary.ownerLinkageRate}%`;
+
+                    // Color-code metric cards based on targets
+                    const metricGarbage = document.getElementById('metric-garbage');
+                    metricGarbage.style.borderLeft = data.targets.garbageRate.status === 'good'
+                        ? '4px solid #4CAF50' : '4px solid #f44336';
+
+                    const metricConfidence = document.getElementById('metric-confidence');
+                    metricConfidence.style.borderLeft = data.targets.avgConfidence.status === 'good'
+                        ? '4px solid #4CAF50' : '4px solid #ff9800';
+
+                    const metricLinkage = document.getElementById('metric-linkage');
+                    metricLinkage.style.borderLeft = data.targets.ownerLinkage.status === 'good'
+                        ? '4px solid #4CAF50' : '4px solid #f44336';
+
+                    // Status breakdown
+                    const statusColors = {
+                        'pending': '#4CAF50',
+                        'needs_review': '#ff9800',
+                        'rejected': '#f44336',
+                        'confirmed': '#2196F3'
+                    };
+                    document.getElementById('status-breakdown').innerHTML = Object.entries(data.byStatus)
+                        .map(([status, count]) => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #0f3460; border-radius: 4px; margin-bottom: 8px; border-left: 4px solid ${statusColors[status] || '#666'};">
+                                <span style="color: #aaa; text-transform: capitalize;">${status.replace('_', ' ')}</span>
+                                <span style="color: #ffd700; font-weight: bold;">${count.toLocaleString()}</span>
+                            </div>
+                        `).join('');
+
+                    // Type breakdown
+                    document.getElementById('type-breakdown').innerHTML = data.byType
+                        .map(item => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: #0f3460; border-radius: 4px; margin-bottom: 8px;">
+                                <span style="color: #aaa; text-transform: capitalize;">${item.type || 'unknown'}</span>
+                                <span style="color: #ffd700; font-weight: bold;">${item.displayable.toLocaleString()}</span>
+                            </div>
+                        `).join('');
+
+                    // Source breakdown with bar chart
+                    const maxTotal = Math.max(...data.bySource.map(s => s.total));
+                    document.getElementById('source-breakdown').innerHTML = `
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="color: #888; text-align: left;">
+                                    <th style="padding: 10px;">Source</th>
+                                    <th style="padding: 10px;">Total</th>
+                                    <th style="padding: 10px;">Pending</th>
+                                    <th style="padding: 10px;">Needs Review</th>
+                                    <th style="padding: 10px;">Rejected</th>
+                                    <th style="padding: 10px; width: 30%;">Distribution</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.bySource.map(source => `
+                                    <tr style="border-bottom: 1px solid #16213e;">
+                                        <td style="padding: 10px; color: #fff;">${escapeHtml(source.source)}</td>
+                                        <td style="padding: 10px; color: #ffd700; font-weight: bold;">${source.total.toLocaleString()}</td>
+                                        <td style="padding: 10px; color: #4CAF50;">${source.pending.toLocaleString()}</td>
+                                        <td style="padding: 10px; color: #ff9800;">${source.needsReview.toLocaleString()}</td>
+                                        <td style="padding: 10px; color: #f44336;">${source.rejected.toLocaleString()}</td>
+                                        <td style="padding: 10px;">
+                                            <div style="background: #0f3460; border-radius: 4px; overflow: hidden; height: 20px; display: flex;">
+                                                <div style="background: #4CAF50; width: ${(source.pending / source.total * 100).toFixed(1)}%; transition: width 0.3s;" title="Pending"></div>
+                                                <div style="background: #ff9800; width: ${(source.needsReview / source.total * 100).toFixed(1)}%; transition: width 0.3s;" title="Needs Review"></div>
+                                                <div style="background: #f44336; width: ${(source.rejected / source.total * 100).toFixed(1)}%; transition: width 0.3s;" title="Rejected"></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+
+                    // Target progress bars
+                    document.getElementById('target-progress').innerHTML = `
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="color: #aaa;">Garbage Rate</span>
+                                <span style="color: ${data.targets.garbageRate.status === 'good' ? '#4CAF50' : '#f44336'};">
+                                    ${data.targets.garbageRate.current}% / ${data.targets.garbageRate.target}% target
+                                </span>
+                            </div>
+                            <div style="background: #0f3460; height: 24px; border-radius: 4px; overflow: hidden;">
+                                <div style="background: ${data.targets.garbageRate.status === 'good' ? '#4CAF50' : '#f44336'}; height: 100%; width: ${Math.min(data.targets.garbageRate.current / data.targets.garbageRate.target * 100, 100)}%; transition: width 0.5s;"></div>
+                            </div>
+                            <div style="color: #666; font-size: 0.85em; margin-top: 5px;">
+                                ${data.targets.garbageRate.status === 'good' ? 'Target met!' : 'Below target - run cleanup'}
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="color: #aaa;">Owner Linkage (FamilySearch)</span>
+                                <span style="color: ${data.targets.ownerLinkage.status === 'good' ? '#4CAF50' : '#f44336'};">
+                                    ${data.targets.ownerLinkage.current}% / ${data.targets.ownerLinkage.target}% target
+                                </span>
+                            </div>
+                            <div style="background: #0f3460; height: 24px; border-radius: 4px; overflow: hidden;">
+                                <div style="background: linear-gradient(90deg, #f44336, #ff9800, #4CAF50); height: 100%; width: ${Math.min(data.targets.ownerLinkage.current / data.targets.ownerLinkage.target * 100, 100)}%; transition: width 0.5s;"></div>
+                            </div>
+                            <div style="color: #666; font-size: 0.85em; margin-top: 5px;">
+                                ${data.targets.ownerLinkage.status === 'good' ? 'Target met!' : 'Needs improvement - run FamilySearch linkage fix'}
+                            </div>
+                        </div>
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="color: #aaa;">Average Confidence</span>
+                                <span style="color: ${data.targets.avgConfidence.status === 'good' ? '#4CAF50' : '#ff9800'};">
+                                    ${(data.targets.avgConfidence.current * 100).toFixed(0)}% / ${data.targets.avgConfidence.target * 100}% target
+                                </span>
+                            </div>
+                            <div style="background: #0f3460; height: 24px; border-radius: 4px; overflow: hidden;">
+                                <div style="background: ${data.targets.avgConfidence.status === 'good' ? '#4CAF50' : '#ff9800'}; height: 100%; width: ${Math.min(data.targets.avgConfidence.current / data.targets.avgConfidence.target * 100, 100)}%; transition: width 0.5s;"></div>
+                            </div>
+                            <div style="color: #666; font-size: 0.85em; margin-top: 5px;">
+                                ${data.targets.avgConfidence.status === 'good' ? 'Target met!' : 'Below target - low confidence records need review'}
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to load monitoring metrics:', e);
+                document.getElementById('status-breakdown').innerHTML = `<div class="error">Error: ${e.message}</div>`;
+            }
+        }
+
+        // Load system status
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/system-status`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const db = data.database;
+                    document.getElementById('confirmed-enslaved').textContent = Number(db.confirmed_enslaved).toLocaleString();
+                    document.getElementById('confirmed-owners').textContent = Number(db.confirmed_owners).toLocaleString();
+                    document.getElementById('unconfirmed').textContent = Number(db.unconfirmed_enslaved).toLocaleString();
+                    document.getElementById('pending-review').textContent = Number(db.pending_review).toLocaleString();
+                    document.getElementById('documents').textContent = Number(db.document_count).toLocaleString();
+
+                    const linkedPct = Math.round((db.linked_to_owner / db.confirmed_enslaved) * 100);
+                    document.getElementById('linked-percent').textContent = `${linkedPct}% linked to owners`;
+
+                    // Pipeline status
+                    document.getElementById('pipeline-status').innerHTML = `
+                        <div class="pipeline-status">
+                            <div class="pipeline-indicator ready"></div>
+                            <div class="pipeline-name">FamilySearch Scraper</div>
+                            <div class="pipeline-status-text">${data.pipelines.familySearchScraper}</div>
+                        </div>
+                        <div class="pipeline-status">
+                            <div class="pipeline-indicator ready"></div>
+                            <div class="pipeline-name">MSA Archive Scraper</div>
+                            <div class="pipeline-status-text">${data.pipelines.msaScraper}</div>
+                        </div>
+                        <div class="pipeline-status">
+                            <div class="pipeline-indicator ${db.pending_review > 0 ? 'pending' : 'ready'}"></div>
+                            <div class="pipeline-name">Human Review</div>
+                            <div class="pipeline-status-text">${data.pipelines.humanReview}</div>
+                        </div>
+                        <div class="pipeline-status">
+                            <div class="pipeline-indicator ready"></div>
+                            <div class="pipeline-name">Training Data</div>
+                            <div class="pipeline-status-text">${data.training.knownNames} names, ${data.training.patterns} patterns</div>
+                        </div>
+                    `;
+
+                    // Data sources
+                    document.getElementById('data-sources').innerHTML = `
+                        <div class="pipeline-status">
+                            <div class="pipeline-name">Ravenel Papers (FamilySearch)</div>
+                            <div class="pipeline-status-text">${Number(db.ravenel_records).toLocaleString()} records</div>
+                        </div>
+                        <div class="pipeline-status">
+                            <div class="pipeline-name">Maryland State Archives</div>
+                            <div class="pipeline-status-text">${Number(db.msa_records).toLocaleString()} records</div>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error('Failed to load system status:', e);
+            }
+        }
+
+        // Load training stats
+        async function loadTrainingStats() {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/training-stats`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('docs-processed').textContent = data.training.documentsProcessed;
+                    document.getElementById('known-names-count').textContent = data.training.knownNamesCount;
+                    document.getElementById('known-owners-count').textContent = data.training.knownOwnersCount;
+
+                    // Accuracy
+                    const accuracy = parseFloat(data.accuracy.overallAccuracy) || 2.4;
+                    document.getElementById('accuracy-bar').style.width = `${accuracy}%`;
+                    document.getElementById('accuracy-value').textContent = `${accuracy}% overall`;
+
+                    // Known names
+                    document.getElementById('known-names').innerHTML = data.sampleNames.map(n =>
+                        `<span class="name-tag enslaved">${escapeHtml(n)}</span>`
+                    ).join('');
+
+                    // Known owners
+                    document.getElementById('known-owners').innerHTML = data.sampleOwners.map(n =>
+                        `<span class="name-tag owner">${escapeHtml(n)}</span>`
+                    ).join('');
+
+                    // Accuracy by doc type
+                    if (data.accuracy.accuracyByDocType) {
+                        document.getElementById('doc-types').innerHTML = Object.entries(data.accuracy.accuracyByDocType).map(([type, stats]) => `
+                            <div class="doc-type">
+                                <div class="doc-type-accuracy">${stats.accuracy}%</div>
+                                <div class="doc-type-name">${type.replace(/_/g, ' ')}</div>
+                            </div>
+                        `).join('');
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load training stats:', e);
+            }
+        }
+
+        // Load review queue
+        async function loadReviewQueue() {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/review-queue`);
+                const data = await response.json();
+
+                const container = document.getElementById('review-items');
+
+                if (!data.success || data.count === 0) {
+                    container.innerHTML = '<div class="loading">No items pending review. All done!</div>';
+                    return;
+                }
+
+                container.innerHTML = data.items.map(item => {
+                    const sourceUrl = item.source_context?.source_url || item.location_context || '';
+                    const hasDoc = sourceUrl && (sourceUrl.includes('familysearch') || sourceUrl.includes('msa.maryland.gov'));
+                    return `
+                    <div class="review-item" id="item-${item.id}">
+                        <div class="review-name">${escapeHtml(item.unconfirmed_name)}</div>
+                        <div class="review-meta">
+                            Gender: ${item.source_context?.gender || 'unknown'} |
+                            Source: ${escapeHtml(item.location_context || 'N/A')}
+                            ${hasDoc ? `| <a href="${escapeHtml(sourceUrl)}" target="_blank" style="color: #ffd700;">View Document</a>` : ''}
+                        </div>
+                        <div class="review-actions">
+                            <button class="btn btn-approve" onclick="approveItem(${item.id}, '${escapeHtml(item.unconfirmed_name)}')">Approve</button>
+                            <button class="btn btn-reject" onclick="rejectItem(${item.id})">Reject</button>
+                        </div>
+                    </div>
+                `}).join('');
+
+            } catch (e) {
+                console.error('Failed to load review queue:', e);
+                document.getElementById('review-items').innerHTML = `<div class="error">Error: ${e.message}</div>`;
+            }
+        }
+
+        // Approve review item
+        async function approveItem(id, name) {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/review-queue/${id}/approve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: name })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById(`item-${id}`).classList.add('approved');
+                    showMessage('success', `Approved: ${name}`);
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        }
+
+        // Reject review item
+        async function rejectItem(id) {
+            const reason = prompt('Reason for rejection (optional):');
+            try {
+                const response = await fetch(`${API_BASE}/contribute/review-queue/${id}/reject`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reason })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById(`item-${id}`).classList.add('rejected');
+                    showMessage('success', 'Item rejected');
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        }
+
+        // Add single name
+        document.getElementById('add-name-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('input-name').value.trim();
+            const type = document.getElementById('input-type').value;
+            const docRef = document.getElementById('input-doc').value.trim();
+            const context = document.getElementById('input-context').value.trim();
+
+            try {
+                const response = await fetch(`${API_BASE}/contribute/training/add-name`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, type, documentRef: docRef, context })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage('success', data.message);
+                    document.getElementById('add-name-form').reset();
+                    loadTrainingStats();
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        });
+
+        // Bulk add names
+        document.getElementById('bulk-add-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const names = document.getElementById('bulk-names').value.split('\n').map(n => n.trim()).filter(n => n);
+            const type = document.getElementById('bulk-type').value;
+
+            let added = 0;
+            for (const name of names) {
+                try {
+                    const response = await fetch(`${API_BASE}/contribute/training/add-name`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, type })
+                    });
+                    const data = await response.json();
+                    if (data.success) added++;
+                } catch (e) {
+                    console.error(`Failed to add ${name}:`, e);
+                }
+            }
+
+            showMessage('success', `Added ${added} of ${names.length} names to training data`);
+            document.getElementById('bulk-add-form').reset();
+            loadTrainingStats();
+        });
+
+        function showMessage(type, text) {
+            const el = document.getElementById('message');
+            el.className = type;
+            el.textContent = text;
+            setTimeout(() => { el.textContent = ''; el.className = ''; }, 3000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Load data quality info
+        async function loadDataQuality() {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/data-quality`);
+                const data = await response.json();
+
+                if (data.success) {
+                    // Update stats
+                    document.getElementById('total-issues').textContent = data.summary.totalIssues.toLocaleString();
+
+                    // Find specific counts
+                    const issues = data.summary.issueBreakdown;
+                    const placeholder = issues.find(i => i.issue_type === 'placeholder_names');
+                    const lowConf = issues.find(i => i.issue_type === 'low_confidence');
+                    const missingOwner = issues.find(i => i.issue_type === 'missing_owner_link');
+
+                    document.getElementById('placeholder-count').textContent = placeholder ? Number(placeholder.count).toLocaleString() : '0';
+                    document.getElementById('low-conf-count').textContent = lowConf ? Number(lowConf.count).toLocaleString() : '0';
+                    document.getElementById('missing-owner-count').textContent = missingOwner ? Number(missingOwner.count).toLocaleString() : '0';
+
+                    // Issue breakdown
+                    document.getElementById('issue-breakdown').innerHTML = issues.map(issue => `
+                        <div style="display: flex; justify-content: space-between; padding: 8px; background: #0f3460; border-radius: 4px; margin-bottom: 8px;">
+                            <span style="color: #aaa;">${escapeHtml(issue.description)}</span>
+                            <span style="color: #ffd700; font-weight: bold;">${Number(issue.count).toLocaleString()}</span>
+                        </div>
+                    `).join('');
+
+                    // Fix buttons
+                    document.getElementById('fix-buttons').innerHTML = data.fixablePatterns.map(fix => `
+                        <button class="btn btn-primary" onclick="applyFix('${fix.fix_type}')" style="margin: 5px; display: block; width: 100%;">
+                            ${escapeHtml(fix.description)} (${Number(fix.affected_count).toLocaleString()} records)
+                        </button>
+                    `).join('') + `
+                        <button class="btn" style="margin: 5px; display: block; width: 100%; background: #f44336; color: white;" onclick="applyFix('delete_very_low_confidence')">
+                            Delete Very Low Confidence Records (&lt;0.3)
+                        </button>
+                    `;
+
+                    // Garbage records for review
+                    document.getElementById('garbage-records').innerHTML = data.sampleGarbage.map(record => `
+                        <div class="review-item" id="record-${record.lead_id}">
+                            <div class="review-name">${escapeHtml(record.full_name)}</div>
+                            <div class="review-meta">
+                                Type: ${record.person_type} |
+                                Confidence: ${(record.confidence_score * 100).toFixed(0)}% |
+                                ${record.source_url ? `<a href="${escapeHtml(record.source_url)}" target="_blank" style="color: #ffd700;">View Source</a>` : 'No source'}
+                            </div>
+                            ${record.context_preview ? `<div style="color: #666; font-size: 0.85em; margin: 5px 0;">${escapeHtml(record.context_preview)}...</div>` : ''}
+                            <div class="review-actions">
+                                <input type="text" id="fix-name-${record.lead_id}" placeholder="Correct name..." style="flex: 1; padding: 6px; background: #0f3460; border: 1px solid #333; color: #fff; border-radius: 4px;">
+                                <button class="btn btn-approve" onclick="fixRecord('${record.lead_id}')">Fix</button>
+                                <button class="btn btn-reject" onclick="deleteRecord('${record.lead_id}')">Delete</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load data quality:', e);
+            }
+        }
+
+        // Apply automated fix
+        async function applyFix(fixType) {
+            if (!confirm(`Apply fix: ${fixType}? This will modify the database.`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/contribute/data-quality/fix`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fixType })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage('success', data.message);
+                    loadDataQuality(); // Refresh
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        }
+
+        // Fix individual record
+        async function fixRecord(id) {
+            const newName = document.getElementById(`fix-name-${id}`).value.trim();
+            if (!newName) {
+                showMessage('error', 'Enter a corrected name');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/contribute/data-quality/record/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_name: newName, confidence_score: 0.9 })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById(`record-${id}`).classList.add('approved');
+                    showMessage('success', `Fixed: ${newName}`);
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        }
+
+        // Delete garbage record
+        async function deleteRecord(id) {
+            try {
+                const response = await fetch(`${API_BASE}/contribute/data-quality/record/${id}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById(`record-${id}`).classList.add('rejected');
+                    showMessage('success', data.message);
+                } else {
+                    showMessage('error', data.error);
+                }
+            } catch (e) {
+                showMessage('error', e.message);
+            }
+        }
+
+        // Initialize - load monitoring first since it's the default tab
+        loadMonitoringMetrics();
+        loadDataQuality();
+        loadSystemStatus();
+        loadTrainingStats();
+    </script>
+</body>
+</html>

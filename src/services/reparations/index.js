@@ -37,6 +37,11 @@ const ReparationsCalculator = require('./Calculator');
 const DebtTracker = require('./DebtTracker');
 const CompensationTracker = require('./CompensationTracker');
 
+// Sector-specific calculators for corporate entities (Added Dec 18, 2025)
+const InsuranceCalculator = require('./InsuranceCalculator');
+const BankingCalculator = require('./BankingCalculator');
+const RailroadCalculator = require('./RailroadCalculator');
+
 /**
  * Unified Reparations System
  * Combines all three trackers into a single coherent system
@@ -47,6 +52,11 @@ class ReparationsSystem {
         this.calculator = new ReparationsCalculator();
         this.debtTracker = new DebtTracker();
         this.compensationTracker = new CompensationTracker(db);
+
+        // Sector-specific calculators for corporate debt (Added Dec 18, 2025)
+        this.insuranceCalculator = new InsuranceCalculator();
+        this.bankingCalculator = new BankingCalculator();
+        this.railroadCalculator = new RailroadCalculator();
     }
 
     /**
@@ -277,18 +287,138 @@ REMAINING DEBT:                   $${state.reparationsPaid.remaining.toLocaleStr
         return {
             systemState: this.getSystemState(),
             compensationEvidence: this.compensationTracker.exportForBlockchain(),
-            debtRecords: this.debtTracker.exportForBlockchain(),
+            debtRecords: this.debtTracker.exportForBlockchainWithCorporate(),
             exportTimestamp: new Date().toISOString()
+        };
+    }
+
+    // ========================================================================
+    // CORPORATE DEBT CALCULATIONS (Added Dec 18, 2025)
+    // For Farmer-Paellmann defendants
+    // ========================================================================
+
+    /**
+     * Calculate and register debt for all Farmer-Paellmann insurance defendants
+     */
+    calculateInsuranceDefendantsDebt() {
+        const calculations = this.insuranceCalculator.calculateFarmerPaellmannInsurers();
+
+        for (const calc of calculations) {
+            this.debtTracker.addCorporateDebt(
+                calc.companyName,
+                calc.debtType || 'insurance',
+                calc,
+                { scacReference: calc.scacReference }
+            );
+        }
+
+        return calculations;
+    }
+
+    /**
+     * Calculate and register debt for all Farmer-Paellmann banking defendants
+     */
+    calculateBankingDefendantsDebt() {
+        const calculations = this.bankingCalculator.calculateFarmerPaellmannBanks();
+
+        for (const calc of calculations) {
+            this.debtTracker.addCorporateDebt(
+                calc.companyName,
+                calc.debtType || 'banking',
+                calc,
+                { scacReference: calc.scacReference }
+            );
+        }
+
+        return calculations;
+    }
+
+    /**
+     * Calculate and register debt for all Farmer-Paellmann railroad defendants
+     */
+    calculateRailroadDefendantsDebt() {
+        const calculations = this.railroadCalculator.calculateFarmerPaellmannRailroads();
+
+        for (const calc of calculations) {
+            this.debtTracker.addCorporateDebt(
+                calc.companyName,
+                calc.debtType || 'railroad_labor',
+                calc,
+                { scacReference: calc.scacReference }
+            );
+        }
+
+        return calculations;
+    }
+
+    /**
+     * Calculate debt for all 17 Farmer-Paellmann defendants
+     * Returns comprehensive breakdown by sector
+     */
+    calculateAllFarmerPaellmannDebt() {
+        console.log('[ReparationsSystem] Calculating debt for all Farmer-Paellmann defendants...');
+
+        const insurance = this.calculateInsuranceDefendantsDebt();
+        const banking = this.calculateBankingDefendantsDebt();
+        const railroads = this.calculateRailroadDefendantsDebt();
+
+        // Note: Tobacco companies require different calculation approach
+        // (asset beneficiary rather than direct involvement)
+
+        const totalInsurance = insurance.reduce((sum, c) => sum + (c.modernValue || 0), 0);
+        const totalBanking = banking.reduce((sum, c) => sum + (c.totalModernValue || c.modernValue || 0), 0);
+        const totalRailroads = railroads.reduce((sum, c) => sum + (c.modernValue || 0), 0);
+
+        const grandTotal = totalInsurance + totalBanking + totalRailroads;
+
+        console.log(`[ReparationsSystem] Total Farmer-Paellmann debt: $${grandTotal.toLocaleString()}`);
+
+        return {
+            bySector: {
+                insurance: { defendants: insurance.length, total: totalInsurance, calculations: insurance },
+                banking: { defendants: banking.length, total: totalBanking, calculations: banking },
+                railroads: { defendants: railroads.length, total: totalRailroads, calculations: railroads },
+                tobacco: { defendants: 4, total: 0, note: 'Tobacco calculation requires asset beneficiary analysis' }
+            },
+            summary: {
+                totalDefendants: insurance.length + banking.length + railroads.length + 4,
+                farmerPaellmannDefendants: 17,
+                calculatedDebt: grandTotal,
+                tobaccoPending: true
+            },
+            legalReference: 'In re African-American Slave Descendants Litigation, 304 F. Supp. 2d 1027 (N.D. Ill. 2004)'
+        };
+    }
+
+    /**
+     * Get combined system state including corporate debt
+     */
+    getCombinedSystemState() {
+        const baseState = this.getSystemState();
+        const combinedDebt = this.debtTracker.calculateCombinedSystemDebt();
+
+        return {
+            ...baseState,
+            corporateDebt: combinedDebt.corporations,
+            combinedTotal: combinedDebt.combined,
+            leaderboard: this.debtTracker.getCombinedLeaderboard(20)
         };
     }
 }
 
 // Export individual classes and unified system
 module.exports = {
+    // Core system
     ReparationsCalculator,
     DebtTracker,
     CompensationTracker,
     ReparationsSystem,
+
+    // Sector-specific calculators (Added Dec 18, 2025)
+    InsuranceCalculator,
+    BankingCalculator,
+    RailroadCalculator,
+
     // Factory function to create initialized system with database
     createReparationsSystem: async (db) => {
         const system = new ReparationsSystem(db);

@@ -1,8 +1,8 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Name Resolution System & Identity Consolidation
-**Last Updated:** December 14, 2025
+**Current Phase:** Production Ready - All Tests Passing
+**Last Updated:** December 18, 2025
 
 ---
 
@@ -157,7 +157,199 @@ Compensation TO owners PROVES debt owed TO descendants:
 
 ---
 
-### Phase 13: Neon Database Migration & Search Fixes (Dec 14, 2025) ✅ NEW
+### Phase 17: Corporate Entity & Farmer-Paellmann Integration (Dec 18, 2025) ✅ NEW
+**Goal:** Track corporate entities involved in slavery and calculate their reparations debt
+
+**Legal Reference:** In re African-American Slave Descendants Litigation, 304 F. Supp. 2d 1027 (N.D. Ill. 2004)
+
+**Completed Features:**
+
+#### Database Schema
+- ✅ `corporate_entities` table - 17 Farmer-Paellmann defendants seeded
+- ✅ `corporate_succession` table - Historical predecessor → modern successor chains
+- ✅ `corporate_financial_instruments` table - Insurance policies, loans, mortgages
+- ✅ `corporate_slaveholding` table - Direct ownership (BBH: 4,614 acres, 346 enslaved)
+- ✅ `ipums_census_records` table - Ready for IPUMS Full Count data import
+- ✅ `fips_states` table - 16 slave states seeded with FIPS codes
+
+#### Sector-Specific Calculators
+- ✅ `InsuranceCalculator.js` - Aetna, New York Life, Lloyd's, Southern Mutual, AIG
+- ✅ `BankingCalculator.js` - FleetBoston, JP Morgan, Brown Brothers Harriman, Lehman
+- ✅ `RailroadCalculator.js` - CSX, Norfolk Southern, Union Pacific, Canadian National
+
+#### Enhanced DebtTracker
+- ✅ Corporate debt tracking alongside individual slaveholders
+- ✅ `addCorporateDebt()` method for sector calculator integration
+- ✅ `getFarmerPaellmannDebts()` for all 17 defendants
+- ✅ `getCombinedLeaderboard()` - Individuals + corporations ranked
+- ✅ `calculateCombinedSystemDebt()` - System-wide totals
+
+#### API Endpoints (`/api/corporate-debts/`)
+- ✅ GET `/farmer-paellmann` - All 17 defendants
+- ✅ GET `/farmer-paellmann/calculate` - Calculate all defendant debt
+- ✅ GET `/entity/:id/debt` - Individual entity calculation
+- ✅ GET `/leaderboard` - Corporate debt ranking
+- ✅ GET `/sector/insurance|banking|railroads` - Sector calculations
+- ✅ GET `/brown-brothers-harriman` - Most documented case
+
+**Farmer-Paellmann Defendants (17 Total):**
+
+| Sector | Count | Key Defendants |
+|--------|-------|----------------|
+| Banking | 4 | Bank of America, JP Morgan, Brown Brothers Harriman, Barclays |
+| Insurance | 5 | CVS/Aetna, NY Life, Lloyd's, Southern Mutual, AIG |
+| Railroads | 4 | CSX, Norfolk Southern, Union Pacific, Canadian National |
+| Tobacco | 4 | RJ Reynolds, British American, Vector Group, Loews |
+
+**Test Results (Dec 18, 2025):**
+- Lloyd's of London: $1.8 quadrillion (insured entire Trans-Atlantic trade 1688-1807)
+- CSX Corporation: $6.4 trillion (12 predecessor lines, 15,000 enslaved workers)
+- Norfolk Southern: $4.1 trillion (10 predecessor lines, 12,000 enslaved)
+- Brown Brothers Harriman: Direct slaveholding of 346 enslaved (4,614 acres Louisiana)
+
+**IPUMS Census Status:**
+- Request submitted to ipumsres@umn.edu for restricted slaveholder names
+- 1850 Slave Schedule: 3,203,109 enslaved in 358,095 holdings
+- 1860 Slave Schedule: 3,936,602 enslaved in 400,898 holdings
+- Total: 7.1 million enslaved + ~395,000 named slaveholders (pending access)
+
+**Files Created:**
+- `migrations/021-corporate-entities-farmer-paellmann.sql`
+- `migrations/022-ipums-census-integration.sql`
+- `src/services/reparations/InsuranceCalculator.js`
+- `src/services/reparations/BankingCalculator.js`
+- `src/services/reparations/RailroadCalculator.js`
+- `src/api/routes/corporate-debts.js`
+
+---
+
+### Phase 16: FamilySearch Census OCR Extraction (Dec 18, 2025) ✅
+**Goal:** Extract enslaved persons from 1850/1860 Slave Schedule census images via OCR
+
+**Completed Features:**
+
+#### Location Crawler
+- ✅ Enumerated 25,041 locations across FamilySearch collections
+- ✅ 1850 Slave Schedule: 16,573 locations stored
+- ✅ 1860 Slave Schedule: 8,468 locations stored
+- ✅ All locations have waypoint URLs for image access
+
+#### OCR Extraction Pipeline (`scripts/extract-census-ocr.js`)
+- ✅ Puppeteer with stealth plugin for authenticated FamilySearch access
+- ✅ Waypoint API integration (fetches from authenticated browser context)
+- ✅ Drills down from County → District → Images hierarchy
+- ✅ Google Vision OCR for census page text extraction
+- ✅ Slave schedule format parser (Owner at top, enslaved by Age/Sex/Color)
+- ✅ Owner-enslaved relationship linking via context_text
+- ✅ Neon serverless database storage
+
+**Test Results (20-County Batch):**
+- Locations processed: 20
+- Images processed: 100
+- Owners extracted: 82
+- Enslaved extracted: 170
+- Errors: 0
+- Elapsed time: 18m 41s
+
+**Technical Fixes:**
+- Fixed 403 Forbidden from waypoint API (use `page.evaluate()` with `credentials: 'include'`)
+- Fixed location data ("county" → "district" in FamilySearch hierarchy)
+- Fixed person endpoint using Neon serverless HTTP instead of pg Pool TCP
+- Fixed owner linkage format: `"Name | Owner: OwnerName | County, State (Year)"`
+
+**Files Created:**
+- `scripts/extract-census-ocr.js` - Comprehensive OCR extraction script
+
+---
+
+### Phase 15: Production-Ready Refactoring (Dec 17, 2025) ✅
+**Goal:** Comprehensive codebase refactoring, multi-table search, all tests passing
+
+**Completed Features:**
+
+#### Frontend Decomposition
+- ✅ Split `index.html` from 2,765 lines to 346 lines
+- ✅ Extracted `styles/main.css` (1,093 lines)
+- ✅ Extracted `js/app.js` (1,331 lines)
+- ✅ Updated `src/server.js` to serve new static directories
+
+#### Codebase Cleanup
+- ✅ Archived 89 obsolete files to `_archive/` directory
+- ✅ Removed duplicate files (server.js, familysearch-integration.js, etc.)
+- ✅ Organized into subdirectories by type (tests, html, js, docs, frontend, logs)
+
+#### Chat Multi-Table Search
+- ✅ Chat now searches ALL entity tables (was only `unconfirmed_persons`)
+- ✅ Includes `enslaved_individuals` and `canonical_persons`
+- ✅ Shows `[Confirmed]` and `[Canonical]` tags for verified records
+- ✅ Fixed natural language parsing ("records about X", "people documented")
+
+#### Search API Bug Fix
+- ✅ Fixed UUID parsing error on `/api/contribute/search`
+- ✅ Added explicit `/search` route before `/:sessionId` dynamic routes
+
+#### Contribute.js Modularization
+- ✅ Created `src/api/routes/contribute/` directory structure
+- ✅ Added `shared.js` and `index.js` for future module composition
+
+**Test Results:**
+- Chat: 45/45 (100%)
+- Documents: 8/8 (100%)
+- Refactoring: 12/12 (100%)
+
+**Files Created:**
+- `styles/main.css` - Extracted CSS
+- `js/app.js` - Extracted JavaScript
+- `src/api/routes/contribute/shared.js` - Shared utilities
+- `src/api/routes/contribute/index.js` - Module composition
+
+**Files Modified:**
+- `src/server.js` - Static file serving for new directories
+- `src/api/routes/chat.js` - Multi-table search, improved NLP
+- `src/api/routes/contribute.js` - Added `/search` route with query params
+- `index.html` - Reduced to HTML structure only
+
+---
+
+### Phase 14: Document Viewer & Deduplication System (Dec 14, 2025) ✅
+**Goal:** Fix document viewer S3 access, consolidate James Hopewell documents, add deduplication
+
+**Completed Features:**
+
+#### Document Viewer Fix
+- ✅ Fixed `ecosystem.config.js` to load from `.env` (was using hardcoded old Render credentials)
+- ✅ Added `/api/documents/archive/presign` endpoint for S3 presigned URLs
+- ✅ Updated `openArchiveViewer()` in `index.html` to fetch presigned URLs before displaying
+
+#### James Hopewell Documents
+- ✅ Uploaded 2-page will to S3: `owners/James-Hopewell/will/page-1.pdf` and `page-2.pdf`
+- ✅ Created unified document record with `ocr_page_count: 2`
+- ✅ Added to `canonical_persons` (id: 1070) with descendant tracking notes
+- ✅ Context: Slave owner (d. 1817, St. Mary's County, MD) with descendants traced to Nancy Miller Brown (Gen 8)
+
+#### Document Deduplication System (Migration 017)
+- ✅ New columns on `documents`: `document_group_id`, `page_number`, `is_primary_page`, `content_hash`
+- ✅ `potential_duplicate_documents` view - finds suspicious document pairs
+- ✅ `check_document_duplicates()` function - pre-insert duplicate check
+- ✅ `merge_document_pages()` function - consolidates pages into single logical document
+- ✅ `trg_warn_duplicate_document` trigger - logs warning on potential duplicates
+
+#### Person Documents Index (Migration 016)
+- ✅ `person_documents` junction table linking persons to S3 archived documents
+- ✅ Views: `person_documents_with_names`, `person_document_counts`, `document_persons`
+- ✅ Function: `get_person_documents(search_name)` for fuzzy search
+- ✅ FamilySearch scraper updated to index documents during extraction
+
+**Files Modified:**
+- `ecosystem.config.js` - Now loads environment from `.env`
+- `src/api/routes/documents.js` - Added presign endpoint
+- `index.html` - Updated archive viewer
+- `migrations/016-person-documents-index.sql` - New
+- `migrations/017-document-deduplication.sql` - New
+
+---
+
+### Phase 13: Neon Database Migration & Search Fixes (Dec 14, 2025) ✅
 **Goal:** Migrate to Neon serverless PostgreSQL and fix critical search bugs
 
 **Completed Features:**
