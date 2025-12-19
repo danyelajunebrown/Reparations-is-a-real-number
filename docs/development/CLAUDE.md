@@ -529,3 +529,89 @@ curl "https://reparations-platform.onrender.com/api/contribute/$SESSION_ID/extra
 - CORS is enabled in server.js for cross-origin requests
 - Check browser console for API connection errors
 - Verify API_BASE_URL points to: `https://reparations-platform.onrender.com`
+
+## Data Quality System (December 2024)
+
+### Overview
+Built a comprehensive data quality dashboard for cleaning garbage records and training the parser through human feedback.
+
+### Database Status (as of Dec 15, 2024)
+- **canonical_persons**: 1,164 records (cleaned - 47 garbage removed)
+  - 1,109 valid enslavers (Ravenel family, James Hopewell, etc.)
+  - 55 confirmed enslaved persons
+- **unconfirmed_persons**: ~71,000+ records (needs ongoing cleanup)
+  - Many low confidence OCR extractions
+  - Missing owner links
+  - Placeholder records removed
+
+### Data Quality API Endpoints
+
+```
+GET /api/contribute/data-quality
+  - Returns issue counts, fixable patterns, sample garbage records
+  - Analyzes: placeholders, low confidence, missing owner links, names with numbers
+
+POST /api/contribute/data-quality/fix
+  - Body: { fixType: "strip_leading_numbers" | "delete_placeholders" | "delete_very_low_confidence" }
+  - Applies bulk automated fixes
+
+PUT /api/contribute/data-quality/record/:id
+  - Body: { full_name: "Corrected Name", confidence_score: 0.9 }
+  - Fixes individual record AND adds corrected name to training data
+
+DELETE /api/contribute/data-quality/record/:id
+  - Deletes garbage record
+
+GET /api/contribute/canonical-audit
+  - Audits canonical_persons table for garbage (organizations, placeholders, numbers)
+  - Returns: { summary, garbageRecords, sampleValidOwners, sampleValidEnslaved }
+
+DELETE /api/contribute/canonical-audit/cleanup
+  - Removes garbage patterns from canonical_persons
+  - Patterns: Army, University, Congress, Museum, ISBN citations, numbers in names
+```
+
+### Frontend Integration
+- **Dashboard** (`/dashboard`) - Full-page data quality view
+- **Main App** (`/`) - "Clean Data" button in bottom nav with badge showing issue count
+- Both load from `/api/contribute/data-quality`
+- Fix/Delete operations work in real-time with toast notifications
+
+### Training Feedback Loop
+1. User corrects a name via Fix button
+2. Corrected name saved to database with confidence 0.9
+3. Name added to `data/learned-patterns.json`
+4. UnifiedNameExtractor loads patterns on next scrape
+5. Parser learns to recognize similar names
+
+### Known Data Issues
+
+**Source Documents Not Archived**:
+- Scrapers extract names but DON'T archive source document images
+- `canonical_persons` has context text but no linked documents
+- Only James Hopewell has actual document (will PDF in S3)
+- FamilySearch/MSA documents need retroactive archiving
+
+**BeyondKin Records**:
+- Reference FamilySearch sources in context but don't link them
+- Example: Thomas Ellison has BeyondKin URL but not the FamilySearch slave schedule
+- Need to follow source links and archive original documents
+
+**Schema Note**:
+- `canonical_persons` uses `canonical_name` column (not `full_name`)
+- `unconfirmed_persons` uses `full_name` column
+- Different schemas - be careful with queries
+
+### Files Modified
+- `src/api/routes/contribute.js` - Added data quality endpoints (lines 1003-1240)
+- `index.html` - Added Clean Data nav item and quality panel
+- `dashboard.html` - Data Quality tab as default view
+- `src/services/UnifiedNameExtractor.js` - System-wide name extraction service
+
+### Running the Server
+```bash
+cd "/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main"
+node src/server.js
+# Access at http://localhost:3000
+# Dashboard at http://localhost:3000/dashboard
+```

@@ -21,7 +21,11 @@ const { Pool } = require('pg');
 
 // Import services
 const OCRProcessor = require('../../src/services/document/OCRProcessor');
+const UnifiedNameExtractor = require('../../src/services/UnifiedNameExtractor');
 const config = require('../../config');
+
+// Global name extractor instance (initialized in scrapeVolume())
+let nameExtractor = null;
 
 // S3 client setup
 let s3Client = null;
@@ -77,6 +81,11 @@ async function scrapeVolume(volumeId, startPage = 1, endPage = null) {
     console.log(`OCR: ${ocrProcessor.googleVisionAvailable ? 'Google Vision' : 'Tesseract (fallback)'}`);
     console.log(`S3: ${s3Enabled ? 'Enabled' : 'Disabled'}`);
     console.log('='.repeat(70) + '\n');
+
+    // Initialize UnifiedNameExtractor with training data
+    nameExtractor = new UnifiedNameExtractor();
+    await nameExtractor.initialize();
+    console.log('✅ UnifiedNameExtractor initialized with training data\n');
 
     // Find the last page if not specified
     if (!endPage) {
@@ -188,9 +197,9 @@ async function processPage(volumeId, page) {
         console.log(`   ✅ OCR completed: ${ocrResult.text.length} chars, ${(ocrResult.confidence * 100).toFixed(1)}% confidence`);
     }
 
-    // Step 4: Parse extracted data
+    // Step 4: Parse extracted data using UnifiedNameExtractor
     console.log('   📝 Parsing extracted data...');
-    const parsedData = parseOcrText(ocrResult.text, volumeId, page);
+    const parsedData = await parseOcrText(ocrResult.text, volumeId, page);
     console.log(`   ✅ Found: ${parsedData.enslavedPersons.length} enslaved, ${parsedData.slaveholders.length} slaveholders`);
 
     // Step 5: Upload to S3 (if enabled)
@@ -314,8 +323,10 @@ async function runOcr(imageBuffer) {
  * - Gender/age: "female 50", "Male 45", "male 15"
  * - Conditions: "healthy", "Healthy", "unsound"
  * - Terms: "for life", "For life"
+ *
+ * NOW ENHANCED with UnifiedNameExtractor for better name extraction
  */
-function parseOcrText(text, volumeId, page) {
+async function parseOcrText(text, volumeId, page) {
     const result = {
         enslavedPersons: [],
         slaveholders: [],
@@ -323,6 +334,49 @@ function parseOcrText(text, volumeId, page) {
     };
 
     if (!text || text.length < 50) return result;
+
+    // Use UnifiedNameExtractor first for improved name extraction
+    if (nameExtractor) {
+        try {
+            const extraction = await nameExtractor.extract(text, {
+                source: 'msa',
+                volumeId,
+                page,
+                documentType: 'slave_schedule' // MSA SC 2908 is slave schedules
+            });
+
+            if (extraction.success && extraction.enslavedPersons.length > 0) {
+                // Add names from UnifiedExtractor with higher confidence
+                for (const person of extraction.enslavedPersons) {
+                    result.enslavedPersons.push({
+                        name: person.name,
+                        gender: person.gender || null,
+                        age: person.age || null,
+                        condition: null,
+                        owner: null,
+                        page,
+                        confidence: Math.max(person.confidence, 0.8),
+                        source: 'unified_extractor'
+                    });
+                }
+
+                for (const owner of extraction.slaveholders) {
+                    result.slaveholders.push({
+                        name: owner.name,
+                        page,
+                        confidence: owner.confidence
+                    });
+                }
+
+                console.log(`   📊 UnifiedExtractor found: ${extraction.enslavedPersons.length} enslaved, ${extraction.slaveholders.length} owners`);
+            }
+        } catch (err) {
+            console.log(`   ⚠️ UnifiedExtractor error: ${err.message}, using MSA-specific patterns`);
+        }
+    }
+
+    // Track already found names to avoid duplicates
+    const foundNames = new Set(result.enslavedPersons.map(p => p.name.toLowerCase()));
 
     // Normalize text - replace multiple spaces/tabs with single space
     const normalizedText = text.replace(/\s+/g, ' ');
@@ -345,8 +399,7 @@ function parseOcrText(text, volumeId, page) {
         'that', 'your', 'petitioner', 'petition', 'here', 'limbs', 'body', 'sound'
     ]);
 
-    // Track found names to avoid duplicates
-    const foundNames = new Set();
+    // (foundNames already initialized above with names from UnifiedExtractor)
 
     // Pattern 1: Look for "Name Gender Age" patterns (most common in OCR)
     // Example: "Saydia King female 50 healthy" or "William Hall Male 45"
