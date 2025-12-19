@@ -1,6 +1,6 @@
 # Technical Context: Reparations Is A Real Number
 
-**Last Updated:** December 4, 2025
+**Last Updated:** December 17, 2025
 
 ## Technology Stack
 
@@ -52,32 +52,25 @@
 
 ## Server Architecture (CRITICAL)
 
-### Two Server Files Exist
-The project has TWO server files - understanding this is critical:
-
-1. **`server.js` (root)** - Legacy monolithic server (~2,400 lines)
-   - Contains ALL endpoints in one file
-   - NOT used in production
-
-2. **`src/server.js`** - Refactored modular server (~900 lines)
-   - **THIS IS USED IN PRODUCTION**
-   - Uses modular routes from `src/api/routes/`
-   - Plus inline legacy endpoints for frontend compatibility
-
-**Render deployment command:** `npm start` → `node src/server.js`
+### Single Production Server
+- **`src/server.js`** - Main production server (~2,600 lines)
+- **Render deployment:** `npm start` → `node src/server.js`
+- Legacy root `server.js` archived to `_archive/obsolete-js/`
 
 ### Route Structure (src/server.js)
 
 ```javascript
 // Modular routes
 app.use('/api/documents', documentsRouter);  // src/api/routes/documents.js
-app.use('/api/research', researchRouter);    // src/api/routes/research.js
+app.use('/api/chat', chatRouter);            // src/api/routes/chat.js
+app.use('/api/contribute', contributeRouter);// src/api/routes/contribute.js
 app.use('/api/health', healthRouter);        // src/api/routes/health.js
 app.use('/api/errors', errorsRouter);        // src/api/routes/errors.js
 
-// Legacy compatibility routes (inline in src/server.js)
-app.get('/api/carousel-data', ...)
-app.get('/api/documents', ...)
+// Static file serving
+app.use(express.static(path.join(__dirname, '..')));
+app.use('/styles', express.static('../styles'));
+app.use('/js', express.static('../js'));
 app.get('/api/search-documents', ...)
 app.get('/api/queue-stats', ...)
 app.get('/api/population-stats', ...)
@@ -344,8 +337,12 @@ reparations-is-a-real-number/
 │   ├── server.js                 # ⭐ PRODUCTION SERVER (used by Render)
 │   ├── api/
 │   │   └── routes/
+│   │       ├── chat.js           # ⭐ Chat/Research API (45 tests)
+│   │       ├── contribute.js     # Contribution pipeline (3,457 lines)
+│   │       ├── contribute/       # Modular structure (future split)
+│   │       │   ├── index.js
+│   │       │   └── shared.js
 │   │       ├── documents.js      # Document endpoints
-│   │       ├── research.js       # LLM/research endpoints
 │   │       ├── health.js         # Health check
 │   │       └── errors.js         # Error logging
 │   ├── services/
@@ -353,25 +350,38 @@ reparations-is-a-real-number/
 │   │   │   ├── EnhancedDocumentProcessor.js
 │   │   │   ├── S3StorageAdapter.js
 │   │   │   └── OCRProcessor.js
-│   │   └── scraping/
-│   │       ├── UnifiedScraper.js # ⭐ MAIN SCRAPER (8 handlers)
-│   │       └── Orchestrator.js   # Legacy (broken dependencies)
+│   │   ├── scraping/
+│   │   │   ├── UnifiedScraper.js # ⭐ MAIN SCRAPER (8 handlers)
+│   │   │   └── Orchestrator.js
+│   │   ├── contribution/
+│   │   │   ├── ContributionSession.js
+│   │   │   └── OwnerPromotion.js
+│   │   └── reparations/
+│   │       └── index.js
 │   ├── database/
 │   │   └── connection.js
 │   └── utils/
 │       └── logger.js
 │
-├── server.js                     # Legacy server (NOT used in production)
-├── config.js                     # Central configuration
-├── middleware/
-│   ├── error-handler.js
-│   ├── rate-limit.js
-│   ├── validation.js
-│   └── auth.js
+├── styles/                       # ⭐ Extracted CSS (Dec 17 refactor)
+│   └── main.css                  # 1,093 lines from index.html
 │
-├── index.html                    # Main dashboard
-├── portal.html                   # Reparations search
-├── contribute.html               # URL submission (enhanced with metadata)
+├── js/                           # ⭐ Extracted JavaScript (Dec 17 refactor)
+│   └── app.js                    # 1,331 lines from index.html
+│
+├── config.js                     # Central configuration
+├── index.html                    # Main dashboard (346 lines, HTML only)
+├── dashboard.html                # Admin monitoring dashboard
+├── review.html                   # Data review queue
+├── contribute-v2.html            # Chat-based contribution
+│
+├── _archive/                     # ⭐ Archived obsolete files (89 files)
+│   ├── obsolete-tests/           # 27 test files
+│   ├── obsolete-html/            # 10 HTML files
+│   ├── obsolete-js/              # 20 JS files (incl. root server.js)
+│   ├── obsolete-docs/            # 21 MD files
+│   ├── obsolete-frontend/        # Legacy frontend folder
+│   └── obsolete-logs/            # Old log files
 │
 ├── memory-bank/                  # AI context persistence
 │   ├── projectbrief.md
@@ -386,6 +396,9 @@ reparations-is-a-real-number/
 │   │   ├── ReparationsEscrow.sol
 │   │   └── ReparationsLedger.sol
 │   └── truffle-config.js
+│
+├── scripts/                      # Utility scripts
+│   └── scrapers/                 # FamilySearch, MSA scrapers
 │
 ├── package.json
 └── .env                          # Environment variables (gitignored)
