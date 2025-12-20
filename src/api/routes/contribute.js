@@ -264,7 +264,8 @@ router.get('/search/:query', async (req, res) => {
         }
 
         // Build query to search unconfirmed_persons, enslaved_individuals, AND canonical_persons
-        let unconfirmedWhere = whereClause;
+        // Exclude records marked as 'duplicate' (already merged into canonical_persons)
+        let unconfirmedWhere = `${whereClause} AND (status IS NULL OR status != 'duplicate')`;
         let enslavedWhere = whereClause;
         // For canonical_persons, we search canonical_name instead of full_name
         let canonicalWhere = hasTextSearch
