@@ -1,17 +1,194 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 19, 2025 (Session 11)
-**Current Phase:** FamilySearch Ancestor Climbing (Modern → Historical Lineage Bridging)
+**Last Updated:** December 20, 2025 (Session 14)
+**Current Phase:** Data Quality Fixes & 1860 Slave Schedule Scraping
 **Active Branch:** main
+**Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
 ## Active Background Processes
 
-| Process | Task ID | Status | Progress | ETA |
-|---------|---------|--------|----------|-----|
-| 1860 Census OCR | bfac68b | 🔄 Running | 28/16,573 locations (0.17%) | ~days |
-| Ancestor Climber | bdea3a3 | ✅ Complete | Found Joseph Miller (Gen 6) | - |
+| Process | Task ID | Status | Progress | Notes |
+|---------|---------|--------|----------|-------|
+| Arkansas 1860 Slave Schedule | b6e96a7 | 🔄 Running | Starting | 728 locations to process |
+
+---
+
+## Session 14 Accomplishments (Dec 20, 2025)
+
+### 1. Civil War DC Data Fix ✅ COMPLETE
+**Applied to 35,944 records across 1,051 petitions:**
+- Extracted birth years from ages (1862 - age)
+- Fixed garbage locations to "Washington, D.C."
+- Linked enslaved persons to owners
+- Cross-referenced table/text records (Selina/Salina variants)
+
+**Williams Family Test (cww.00035):**
+- All 9 members now have birth years (1811-1861)
+- Lydia Williams: 1838 (≠ user's ancestor 1746-1829 FREE)
+- Owner: Thomas Donoho properly linked
+
+### 2. Ancestor Climber Verification Fixes ✅
+- Disabled unreliable credit/debt classification
+- All matches now flagged "UNVERIFIED - requires manual review"
+- Added stricter date/location matching requirements
+
+### 3. 1860 Slave Schedule Scraping 🔄 IN PROGRESS
+- Arkansas: 728 locations queued (starting now)
+- Alabama: 515 locations pending
+
+**Script Created:**
+- `scripts/fix-civilwardc-data.js` - Template for fixing source-specific data quality issues
+
+---
+
+## Session 13 Accomplishments (Dec 19, 2025)
+
+### 1. Data Cleanup - 27,000+ Garbage Records Deleted ✅
+**Cleaned unconfirmed_persons table:**
+- 18,513 records with newlines/tabs
+- 4,802 website text entries ("National Archives", "FamilySearch", etc.)
+- 3,396 county names captured as person names
+- Geographic terms, OCR artifacts, short names
+- **Verified 0 orphaned connections** in related tables
+
+### 2. Person Type Consolidation ✅
+- Merged slaveholder → enslaver (14 garbage OCR records cleaned)
+- Merged owner → enslaver (47 George Washington records cleaned)
+- Changed enslaver_family → enslaver (1 record: Angelica Chesley)
+- **Final count:** 69,931 enslavers in canonical_persons
+
+### 3. James Hopewell Duplicate Merge ✅
+- Merged 3 duplicate records into canonical ID 1070
+- FamilySearch ID: MTRV-Z72
+- Fixed missing person_documents link to will
+- Will accessible at: `owners/James-Hopewell/will/James-Hopewell-Will-1817-complete.pdf`
+
+### 4. Search Query Fix ✅
+**Problem:** Search returned duplicate records from unconfirmed_persons even when merged to canonical_persons
+**Fix:** Added status filter to exclude `status='duplicate'` records
+```javascript
+let unconfirmedWhere = `${whereClause} AND (status IS NULL OR status != 'duplicate')`;
+```
+**Commit:** 78e2360 - pushed to trigger Render deploy
+
+### 5. Render Server Status ⚠️
+- Server was DOWN (`x-render-routing: no-server`)
+- Push sent to trigger auto-deploy
+- Local server works on port 3000
+
+---
+
+## 🚨 E2E TESTING REQUIRED
+
+### Critical Tests Identified
+| Test | Purpose | Status |
+|------|---------|--------|
+| Search → Person Modal → Document View | Verify complete user flow | Pending |
+| Enslaved person search → Owner link | Cross-reference accessibility | Pending |
+| Reparations calculation accuracy | Verify math in modal | Pending |
+| S3 document accessibility | All uploaded docs viewable | Pending |
+| Person deduplication display | No duplicates in search | Pending |
+| Scraper data → Search → Modal | Full pipeline validation | Pending |
+
+### Immediate Issues Found & Fixed
+1. **Render server needs restart** - ✅ Pushed 2 commits to trigger deploy
+2. **Search returning wrong table** - ✅ FIXED (both search endpoints now query all tables)
+3. **E2E test suite results** - ✅ 90.9% pass rate (20/22 tests)
+
+### E2E Test Summary
+| Category | Tests | Passed | Notes |
+|----------|-------|--------|-------|
+| Ravenel Family | 3 | 2 | Archive URL test is limitation |
+| James Hopewell | 3 | 2 | Browse test is limitation, search works |
+| Maryland Archives | 3 | 3 | All passing |
+| Confirmed Enslaved | 3 | 3 | All passing |
+| Data Quality | 7 | 7 | 0% garbage rate |
+| Document Viewer | 3 | 3 | All passing |
+
+### Search Fix Details
+**Problem:** Two separate search endpoints existed:
+1. Line ~268: UNION search (had partial fix)
+2. Line ~2293: `/api/contribute/search` (was only querying unconfirmed_persons)
+
+**Solution:** Updated both endpoints to:
+- Query canonical_persons, enslaved_individuals, unconfirmed_persons via UNION ALL
+- Filter out records with `status = 'duplicate'`
+- Order by confidence DESC
+
+**Commits:**
+- `78e2360` - Initial status filter fix
+- `0188fbb` - Full UNION ALL fix for search endpoint
+
+---
+
+## Session 12 Accomplishments (Dec 19, 2025)
+
+### 1. Title Update ✅
+- Changed site title to **"Reparations ∈ ℝ"** across all pages
+- New subtitle: **"you can do it, put your back into it"**
+- Updated: index.html, contribute-v2.html, review.html, dashboard.html
+
+### 2. 1860 Slave Schedule OCR Scraper - VERIFIED WORKING ✅
+**Data flow confirmed end-to-end:**
+- OCR extracts owners and enslaved from FamilySearch census images
+- Owner-enslaved relationships stored in `relationships` JSON field
+- Images archived to S3: `archives/slave-schedules/1860/{state}/{county}/{hash}.png`
+- Source URLs preserved for evidentiary chain
+
+**Recent Extraction Stats:**
+| Metric | Count |
+|--------|-------|
+| Owners extracted | 177+ |
+| Enslaved extracted | 125+ |
+| Enslaved WITH owner linked | 78% |
+| Images processed | 94+ |
+| Locations processed | 20+ |
+
+**Sample Record (verified in DB):**
+```
+[238246] Will (enslaved)
+   OWNER: James Will
+   YEAR: 1860
+   LOCATION: South Eastern Division, Alabama
+   S3 ARCHIVED: ✅ archives/slave-schedules/1860/alabama/...
+```
+
+### 3. URL/Document Watchdog ✅ COMPLETED
+**New script:** `scripts/url-watchdog.js`
+
+**Features:**
+- Monitors critical sites (FamilySearch, MSA, Ancestry, SlaveVoyages, S3)
+- Checks archived URLs for availability and content changes
+- Detects tampering via SHA-256 hash comparison
+- Logs alerts to `watchdog_alerts` database table
+- Supports --check-all, --limit, --critical flags
+
+**Usage:**
+```bash
+node scripts/url-watchdog.js --critical     # Check critical sites only
+node scripts/url-watchdog.js --limit=50     # Check 50 archived URLs
+node scripts/url-watchdog.js --check-all    # Force recheck all
+```
+
+### 4. Major Code Push to GitHub ✅
+**Commit 278ea25:** 53 files, 13,839 lines added
+- All new scripts (census OCR, scrapers, extractors)
+- New services (NameValidator, UnifiedNameExtractor)
+- Chat API route
+- Modular contribute routes
+- styles/main.css (was missing, broke page layout)
+
+### 5. Key Design Decisions Documented
+
+**Geographic Filtering:**
+- ❌ US state-level filtering REJECTED - slavery existed even in "free" states
+- ✅ Country-level filtering ACCEPTED - e.g., Poland exempted (no African chattel slavery)
+
+**Wealth Tracking:**
+- ❌ Live stock prices REJECTED - volatile, meaningless for actual calculations
+- ✅ Tax returns ACCEPTED - actual income/assets, applies to both corporations AND individuals
 
 ---
 

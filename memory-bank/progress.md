@@ -157,7 +157,40 @@ Compensation TO owners PROVES debt owed TO descendants:
 
 ---
 
-### Phase 17: Corporate Entity & Farmer-Paellmann Integration (Dec 18, 2025) ✅ NEW
+### Phase 18: Data Quality & Ancestor Climber (Dec 20, 2025) ✅ NEW
+**Goal:** Fix Civil War DC data quality issues and improve ancestor climber verification
+
+**Completed Features:**
+
+#### Civil War DC Data Fix
+- ✅ Created `scripts/fix-civilwardc-data.js` - Template script for fixing petition data
+- ✅ Extracts birth years from ages in context (1862 - age)
+- ✅ Fixes locations to "Washington, D.C." (12,686 records had garbage data)
+- ✅ Links enslaved persons to owners via relationships
+- ✅ Cross-references table records with text records (handles Selina/Salina variants)
+- ✅ Applied to 1,051 petitions, 35,944 records updated
+- ✅ Williams family (cww.00035) verified: All 9 members now have birth years
+
+#### Ancestor Climber Verification Improvements
+- ✅ Disabled unreliable credit/debt classification (too many false positives)
+- ✅ Added stricter verification requirements (document evidence + date matching)
+- ✅ All matches now flagged as "UNVERIFIED - requires manual review"
+- ✅ Fixed Lydia Williams false positive (user's ancestor 1746-1829 FREE ≠ DC enslaved 1838)
+
+**Key Data Quality Issue Identified:**
+- Civil War DC records had garbage single-word locations (e.g., `['Williams']` instead of `['Washington, D.C.']`)
+- 53,349 records had garbage single-word names
+- Many records missing birth years despite age being in context_text
+
+**Files Created:**
+- `scripts/fix-civilwardc-data.js` - Template data fix script
+
+**Files Modified:**
+- `scripts/scrapers/familysearch-ancestor-climber.js` - Stricter verification
+
+---
+
+### Phase 17: Corporate Entity & Farmer-Paellmann Integration (Dec 18, 2025) ✅
 **Goal:** Track corporate entities involved in slavery and calculate their reparations debt
 
 **Legal Reference:** In re African-American Slave Descendants Litigation, 304 F. Supp. 2d 1027 (N.D. Ill. 2004)

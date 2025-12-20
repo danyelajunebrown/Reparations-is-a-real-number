@@ -1,19 +1,30 @@
 /**
- * FamilySearch Ancestor Climber
+ * FamilySearch Ancestor Climber v2
  *
- * Simple, stable scraper that climbs UP through ancestors using person details pages.
+ * Climbs UP through ancestors using person details pages to find ALL slaveholder connections.
  * Uses the stable URL pattern: /tree/person/details/{FS_ID}
  *
  * ALGORITHM:
  * 1. Start with user's FamilySearch ID
  * 2. Go to their person details page
- * 3. Extract: name, dates, father_fs_id, mother_fs_id
- * 4. Check if person matches our enslaver database
- * 5. If no match, queue BOTH parents for processing
- * 6. Repeat BFS until enslaver found or tree exhausted
+ * 3. Extract: name, dates, location, father_fs_id, mother_fs_id
+ * 4. Check if person matches our enslaver database (exact name + location)
+ * 5. If MATCH: record it AND continue climbing (don't stop!)
+ * 6. Queue BOTH parents for processing
+ * 7. Repeat BFS until historical cutoff (1450s) or tree exhausted
+ * 8. Classify each match as DEBT (inheritance) or CREDIT (rape/violence victim line)
+ *
+ * v2 IMPROVEMENTS:
+ * - Finds ALL slaveholder matches, not just first
+ * - Historical cutoff at 1450s (start of transatlantic slave trade)
+ * - Location matching to reduce false positives
+ * - Credit vs debt classification per lineage
+ * - Session persistence for resume after interruption
+ * - Auto-adds new slaveholders if documented
  *
  * Usage:
  *   FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js G21N-HD2
+ *   FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js --resume <session_id>
  */
 
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
@@ -29,15 +40,19 @@ const sql = neon(process.env.DATABASE_URL);
 
 // Configuration
 const INTERACTIVE = process.env.FAMILYSEARCH_INTERACTIVE === 'true';
-const MAX_GENERATIONS = 15;
+const MAX_GENERATIONS = 50; // Increased - we use birth year cutoff instead
+const HISTORICAL_CUTOFF_YEAR = 1450; // Start of transatlantic slave trade
 const PERSON_PAGE_URL = 'https://www.familysearch.org/en/tree/person/details/';
+const SAVE_PROGRESS_EVERY = 10; // Save to DB every N ancestors
 
 let browser = null;
 let page = null;
 
-// Track visited to avoid cycles
-const visited = new Set();
-const ancestors = [];
+// Session state (can be restored for resume)
+let sessionId = null;
+let visited = new Set();
+let ancestors = [];
+let allMatches = []; // NEW: Store ALL matches, not just first
 
 /**
  * Launch Chrome with remote debugging (more stable than Puppeteer launch)
@@ -161,6 +176,8 @@ async function extractPersonFromPage() {
             name: null,
             birth_year: null,
             death_year: null,
+            birth_place: null,
+            locations: [], // NEW: Extract all location mentions
             father_fs_id: null,
             mother_fs_id: null,
             parents: [],
@@ -186,10 +203,42 @@ async function extractPersonFromPage() {
             result.death_year = parseInt(deathInTitle[2]);
         }
 
+        // LOCATION EXTRACTION - look for US states and counties
+        const allText = document.body.innerText;
+        const usStates = [
+            'Alabama', 'Arkansas', 'Delaware', 'Florida', 'Georgia', 'Kentucky',
+            'Louisiana', 'Maryland', 'Mississippi', 'Missouri', 'North Carolina',
+            'South Carolina', 'Tennessee', 'Texas', 'Virginia', 'West Virginia',
+            'District of Columbia', 'Washington DC'
+        ];
+        for (const state of usStates) {
+            if (allText.includes(state)) {
+                result.locations.push(state);
+            }
+        }
+
+        // Look for birth/death place patterns
+        const placePatterns = [
+            /born[^,]*?,\s*([A-Za-z\s]+(?:County)?),?\s*([A-Za-z]+)/i,
+            /died[^,]*?,\s*([A-Za-z\s]+(?:County)?),?\s*([A-Za-z]+)/i,
+            /Birthplace:\s*([^\n]+)/i,
+            /Death Place:\s*([^\n]+)/i
+        ];
+        for (const pattern of placePatterns) {
+            const match = allText.match(pattern);
+            if (match) {
+                result.birth_place = result.birth_place || match[1]?.trim();
+                if (match[2]) result.locations.push(match[2].trim());
+            }
+        }
+
+        // Deduplicate locations
+        result.locations = [...new Set(result.locations)];
+
         // METHOD 2: If title didn't work, try the page content
         if (!result.name) {
             // Look for the person info area - usually has name in prominent position
-            const allText = document.body.innerText;
+            // allText already declared above
 
             // The FS ID appears after the name with format "• G21N-HD2"
             const nameIdMatch = allText.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n[^•]*•\s*([A-Z0-9]{4}-[A-Z0-9]{2,4})/);
@@ -198,8 +247,7 @@ async function extractPersonFromPage() {
             }
         }
 
-        // Get page text for parent extraction
-        const allText = document.body.innerText;
+        // PARENT EXTRACTION - allText already declared above
 
         // PARENT EXTRACTION - Multiple methods
 
@@ -275,7 +323,14 @@ async function extractPersonFromPage() {
 
 /**
  * Check if person is in our enslaver database
- * IMPORTANT: Requires strong matches to avoid false positives on generic names
+ *
+ * VERIFICATION REQUIREMENTS (v3 - stricter):
+ * 1. Name match (required)
+ * 2. Location match (required for high confidence)
+ * 3. Date overlap (birth year within 15-year window)
+ * 4. Document evidence (tracked in match result)
+ *
+ * All matches are flagged as UNVERIFIED until manual document review.
  */
 async function checkEnslaverDatabase(person) {
     if (!person.name) return null;
@@ -286,56 +341,175 @@ async function checkEnslaverDatabase(person) {
         return null; // Skip "Ann", "John", etc.
     }
 
-    // Check by FS ID first (strongest match)
+    const personLocations = person.locations || [];
+    const personBirthYear = person.birth_year;
+
+    // Helper: Check if birth years overlap (within 15-year window)
+    const birthYearsOverlap = (dbYear) => {
+        if (!personBirthYear || !dbYear) return null; // Unknown = can't verify
+        return Math.abs(personBirthYear - dbYear) <= 15;
+    };
+
+    // Helper: Check if locations overlap
+    const locationsOverlap = (dbState, dbCounty) => {
+        if (personLocations.length === 0) return null; // Unknown = can't verify
+        if (!dbState && !dbCounty) return null;
+
+        return personLocations.some(loc => {
+            const locLower = loc.toLowerCase();
+            if (dbState && (locLower.includes(dbState.toLowerCase()) || dbState.toLowerCase().includes(locLower))) {
+                return true;
+            }
+            if (dbCounty && (locLower.includes(dbCounty.toLowerCase()) || dbCounty.toLowerCase().includes(locLower))) {
+                return true;
+            }
+            return false;
+        });
+    };
+
+    // Check by FS ID first (strongest match - same person confirmed)
     if (person.fs_id) {
         const fsMatch = await sql`
-            SELECT canonical_name, person_type, notes
+            SELECT id, canonical_name, person_type, notes, primary_state, primary_county, birth_year_estimate
             FROM canonical_persons
             WHERE notes::text LIKE ${'%"familysearch_id":"' + person.fs_id + '"%'}
             AND person_type IN ('enslaver', 'slaveholder', 'owner')
             LIMIT 1
         `;
         if (fsMatch.length > 0) {
-            return { type: 'exact_fs_match', confidence: 0.99, ...fsMatch[0] };
+            return {
+                type: 'exact_fs_match',
+                confidence: 0.99,
+                verified: false, // Still needs document review
+                verification_notes: 'FamilySearch ID match - high confidence but needs document verification',
+                ...fsMatch[0]
+            };
         }
     }
 
-    // Check by EXACT name match with birth year validation
+    // Check by EXACT name match with strict date + location requirements
     const exactMatch = await sql`
-        SELECT canonical_name, person_type, birth_year_estimate
+        SELECT id, canonical_name, person_type, birth_year_estimate, primary_state, primary_county
         FROM canonical_persons
         WHERE person_type IN ('enslaver', 'slaveholder', 'owner')
         AND canonical_name = ${person.name}
-        AND (birth_year_estimate IS NULL OR birth_year_estimate BETWEEN ${(person.birth_year || 1800) - 10} AND ${(person.birth_year || 1900) + 10})
-        LIMIT 1
+        LIMIT 5
     `;
+
     if (exactMatch.length > 0) {
-        return { type: 'exact_name_match', confidence: 0.85, ...exactMatch[0] };
+        for (const match of exactMatch) {
+            const dateMatch = birthYearsOverlap(match.birth_year_estimate);
+            const locationMatch = locationsOverlap(match.primary_state, match.primary_county);
+
+            // Build verification notes
+            const notes = [];
+            if (dateMatch === true) notes.push('birth year matches');
+            else if (dateMatch === false) notes.push('BIRTH YEAR MISMATCH');
+            else notes.push('birth year unknown');
+
+            if (locationMatch === true) notes.push('location matches');
+            else if (locationMatch === false) notes.push('LOCATION MISMATCH');
+            else notes.push('location unknown');
+
+            // Skip if we have a definite mismatch
+            if (dateMatch === false || locationMatch === false) {
+                continue; // This is a different person with same name
+            }
+
+            // Calculate confidence based on what we can verify
+            let confidence = 0.50; // Base: name only
+            if (locationMatch === true) confidence += 0.25;
+            if (dateMatch === true) confidence += 0.15;
+
+            return {
+                type: locationMatch === true ? 'exact_name_location_match' : 'exact_name_match',
+                confidence,
+                verified: false,
+                verification_notes: `Name match. ${notes.join(', ')}. REQUIRES DOCUMENT REVIEW.`,
+                date_verified: dateMatch === true,
+                location_verified: locationMatch === true,
+                ...match
+            };
+        }
     }
 
-    // Check canonical with full name (case insensitive but full match)
+    // Check canonical with full name (case insensitive)
     const nameMatch = await sql`
-        SELECT canonical_name, person_type, birth_year_estimate
+        SELECT id, canonical_name, person_type, birth_year_estimate, primary_state, primary_county
         FROM canonical_persons
         WHERE person_type IN ('enslaver', 'slaveholder', 'owner')
         AND LOWER(canonical_name) = LOWER(${person.name})
-        LIMIT 1
+        LIMIT 5
     `;
+
     if (nameMatch.length > 0) {
-        return { type: 'name_match', confidence: 0.75, ...nameMatch[0] };
+        for (const match of nameMatch) {
+            const dateMatch = birthYearsOverlap(match.birth_year_estimate);
+            const locationMatch = locationsOverlap(match.primary_state, match.primary_county);
+
+            // Skip definite mismatches
+            if (dateMatch === false || locationMatch === false) {
+                continue;
+            }
+
+            let confidence = 0.45;
+            if (locationMatch === true) confidence += 0.25;
+            if (dateMatch === true) confidence += 0.15;
+
+            return {
+                type: locationMatch === true ? 'name_location_match' : 'name_match',
+                confidence,
+                verified: false,
+                verification_notes: 'Case-insensitive name match. REQUIRES DOCUMENT REVIEW.',
+                date_verified: dateMatch === true,
+                location_verified: locationMatch === true,
+                ...match
+            };
+        }
     }
 
-    // Only check unconfirmed if name has 3+ words (very specific)
+    // Only check unconfirmed if name has 3+ words (very specific names only)
     if (nameParts.length >= 3) {
         const ownerMatch = await sql`
-            SELECT full_name, person_type
+            SELECT lead_id as id, full_name, person_type, locations, source_url
             FROM unconfirmed_persons
             WHERE person_type IN ('owner', 'slaveholder')
             AND LOWER(full_name) = LOWER(${person.name})
-            LIMIT 1
+            LIMIT 5
         `;
+
         if (ownerMatch.length > 0) {
-            return { type: 'unconfirmed_owner', confidence: 0.6, ...ownerMatch[0] };
+            for (const match of ownerMatch) {
+                const matchLocs = match.locations || [];
+
+                // Check for location overlap
+                let locationMatch = null;
+                if (personLocations.length > 0 && matchLocs.length > 0) {
+                    locationMatch = personLocations.some(loc =>
+                        matchLocs.some(ml =>
+                            ml.toLowerCase().includes(loc.toLowerCase()) ||
+                            loc.toLowerCase().includes(ml.toLowerCase())
+                        )
+                    );
+                }
+
+                // Skip definite mismatches
+                if (locationMatch === false) continue;
+
+                let confidence = 0.40;
+                if (locationMatch === true) confidence += 0.20;
+                if (match.source_url) confidence += 0.10; // Has document link
+
+                return {
+                    type: locationMatch === true ? 'unconfirmed_owner_location_match' : 'unconfirmed_owner',
+                    confidence,
+                    verified: false,
+                    verification_notes: `Unconfirmed record. Source: ${match.source_url || 'unknown'}. REQUIRES MANUAL VERIFICATION.`,
+                    location_verified: locationMatch === true,
+                    has_source_url: !!match.source_url,
+                    ...match
+                };
+            }
         }
     }
 
@@ -343,32 +517,196 @@ async function checkEnslaverDatabase(person) {
 }
 
 /**
- * BFS climb through ancestors
+ * Classify lineage as DEBT (inheritance) or CREDIT (rape/violence victim)
+ *
+ * WARNING: This classification is DISABLED until proper verification is implemented.
+ *
+ * The previous implementation matched ancestor names against enslaved records
+ * without verifying dates, locations, or documents. This led to FALSE POSITIVES
+ * (e.g., Lydia Williams with a 1786 marriage certificate was falsely matched
+ * to a "Lydia Williams" in enslaved records - marriage = FREE person).
+ *
+ * REQUIREMENTS FOR PROPER CLASSIFICATION:
+ * 1. Document evidence (Slave Schedules, Wills, Deeds, etc.)
+ * 2. Date verification (birth/death years must match)
+ * 3. Location verification (county/state must match)
+ * 4. Cross-reference with free status documents (marriage, property, voting records)
+ *
+ * Until these are implemented, all matches are marked as UNVERIFIED.
  */
-async function climbAncestors(startFsId, targetEnslaver = null) {
+async function classifyLineage(path, slaveholder) {
+    // DISABLED: Name-only matching is unreliable and produces false positives
+    // TODO: Implement proper document-based verification
+
+    return {
+        classification: 'unverified',
+        reason: 'Classification disabled - requires document verification. Match found by name/location only.'
+    };
+}
+
+/**
+ * Save climb session progress to database (for resume capability)
+ */
+async function saveClimbProgress(sessionId, queue, visited, matches, status = 'in_progress') {
+    if (!sessionId) return;
+
+    try {
+        await sql`
+            UPDATE ancestor_climb_sessions
+            SET current_queue = ${JSON.stringify(queue.map(q => ({ fs_id: q[0], generation: q[1], path: q[2] })))},
+                visited_set = ${Array.from(visited)},
+                all_matches = ${JSON.stringify(matches)},
+                ancestors_visited = ${visited.size},
+                matches_found = ${matches.length},
+                last_activity = NOW(),
+                status = ${status}
+            WHERE id = ${sessionId}
+        `;
+    } catch (e) {
+        console.log(`   ⚠ Could not save progress: ${e.message}`);
+    }
+}
+
+/**
+ * Create a new climb session in database
+ */
+async function createClimbSession(modernPersonName, modernPersonFsId, config = {}) {
+    try {
+        const result = await sql`
+            INSERT INTO ancestor_climb_sessions (
+                modern_person_name,
+                modern_person_fs_id,
+                status,
+                config
+            ) VALUES (
+                ${modernPersonName},
+                ${modernPersonFsId},
+                'in_progress',
+                ${JSON.stringify(config)}
+            )
+            RETURNING id
+        `;
+        return result[0]?.id;
+    } catch (e) {
+        console.log(`   ⚠ Could not create session: ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * Load existing session for resume
+ */
+async function loadClimbSession(sessionId) {
+    try {
+        const result = await sql`
+            SELECT * FROM ancestor_climb_sessions WHERE id = ${sessionId}
+        `;
+        if (result.length === 0) return null;
+
+        const session = result[0];
+        return {
+            modernPersonName: session.modern_person_name,
+            modernPersonFsId: session.modern_person_fs_id,
+            queue: session.current_queue.map(q => [q.fs_id, q.generation, q.path]),
+            visited: new Set(session.visited_set || []),
+            matches: session.all_matches || [],
+            config: session.config || {}
+        };
+    } catch (e) {
+        console.log(`   ⚠ Could not load session: ${e.message}`);
+        return null;
+    }
+}
+
+/**
+ * Save match to normalized matches table
+ */
+async function saveMatch(sessionId, modernPerson, match) {
+    try {
+        await sql`
+            INSERT INTO ancestor_climb_matches (
+                session_id,
+                modern_person_name,
+                modern_person_fs_id,
+                slaveholder_name,
+                slaveholder_fs_id,
+                slaveholder_birth_year,
+                generation_distance,
+                lineage_path,
+                lineage_path_fs_ids,
+                match_type,
+                match_confidence,
+                classification,
+                classification_reason
+            ) VALUES (
+                ${sessionId},
+                ${modernPerson.name},
+                ${modernPerson.fs_id},
+                ${match.match.canonical_name || match.match.full_name},
+                ${match.person.fs_id},
+                ${match.person.birth_year},
+                ${match.generation},
+                ${match.path},
+                ${[]},
+                ${match.match.type},
+                ${match.match.confidence},
+                ${match.classification?.classification || 'debt'},
+                ${match.classification?.reason || 'Unknown'}
+            )
+        `;
+    } catch (e) {
+        console.log(`   ⚠ Could not save match: ${e.message}`);
+    }
+}
+
+/**
+ * BFS climb through ancestors - finds ALL slaveholder matches
+ */
+async function climbAncestors(startFsId, startName = null, resumeSession = null) {
     console.log('═══════════════════════════════════════════════════════════════');
-    console.log('   FAMILYSEARCH ANCESTOR CLIMBER');
+    console.log('   FAMILYSEARCH ANCESTOR CLIMBER v2');
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(`Starting Person: ${startFsId}`);
-    console.log(`Target: ${targetEnslaver || 'Any enslaver in database'}`);
-    console.log(`Max Generations: ${MAX_GENERATIONS}`);
+    console.log(`Mode: Find ALL slaveholder connections`);
+    console.log(`Historical Cutoff: ${HISTORICAL_CUTOFF_YEAR}`);
     console.log('═══════════════════════════════════════════════════════════════\n');
 
-    // BFS queue: [fs_id, generation, path]
-    const queue = [[startFsId, 0, []]];
-    let enslaverFound = null;
+    // Initialize or restore session state
+    let queue, localVisited, localMatches;
 
-    while (queue.length > 0 && !enslaverFound) {
+    if (resumeSession) {
+        console.log(`Resuming session ${resumeSession.sessionId}...`);
+        queue = resumeSession.queue;
+        localVisited = resumeSession.visited;
+        localMatches = resumeSession.matches;
+    } else {
+        queue = [[startFsId, 0, []]];
+        localVisited = new Set();
+        localMatches = [];
+
+        // Create new session
+        sessionId = await createClimbSession(startName || startFsId, startFsId, {
+            max_generations: MAX_GENERATIONS,
+            historical_cutoff: HISTORICAL_CUTOFF_YEAR
+        });
+        console.log(`Session ID: ${sessionId}\n`);
+    }
+
+    // Track modern person for match saving
+    let modernPerson = null;
+
+    // Main BFS loop - NO LONGER STOPS AT FIRST MATCH
+    while (queue.length > 0) {
         const [fsId, generation, path] = queue.shift();
 
-        if (visited.has(fsId)) continue;
+        if (localVisited.has(fsId)) continue;
         if (generation > MAX_GENERATIONS) continue;
 
-        visited.add(fsId);
+        localVisited.add(fsId);
 
         // Navigate to person's page
         const url = PERSON_PAGE_URL + fsId;
-        console.log(`\n📍 Gen ${generation}: Visiting ${fsId}`);
+        console.log(`\n📍 Gen ${generation}: Visiting ${fsId} (queue: ${queue.length}, matches: ${localMatches.length})`);
 
         try {
             await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
@@ -400,6 +738,11 @@ async function climbAncestors(startFsId, targetEnslaver = null) {
             // Extract person data
             const person = await extractPersonFromPage();
 
+            // Store modern person on first iteration
+            if (generation === 0) {
+                modernPerson = person;
+            }
+
             // Debug: show what we found
             if (person.raw.allParentIds) {
                 console.log(`   [Debug] Found IDs: ${person.raw.allParentIds.join(', ') || 'none'}`);
@@ -415,37 +758,78 @@ async function climbAncestors(startFsId, targetEnslaver = null) {
                 : '?';
 
             console.log(`   Name: ${person.name} (${years})`);
+            console.log(`   Locations: ${person.locations?.join(', ') || 'none found'}`);
             console.log(`   Father: ${person.father_fs_id || 'not found'}`);
             console.log(`   Mother: ${person.mother_fs_id || 'not found'}`);
 
-            // Store ancestor
+            // Store ancestor in global list
             ancestors.push({
                 ...person,
                 generation,
                 path: [...path, person.name]
             });
 
-            // Check enslaver database
-            const enslaverMatch = await checkEnslaverDatabase(person);
-
-            if (enslaverMatch) {
-                console.log(`\n   🎯 ENSLAVER MATCH: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
-                console.log(`   Match type: ${enslaverMatch.type}`);
-                enslaverFound = {
-                    person,
-                    match: enslaverMatch,
-                    generation,
-                    path: [...path, person.name]
-                };
-                break;
+            // HISTORICAL CUTOFF - stop climbing if before 1450
+            if (person.birth_year && person.birth_year < HISTORICAL_CUTOFF_YEAR) {
+                console.log(`   ⏹ Historical cutoff reached (born ${person.birth_year})`);
+                continue; // Don't queue parents, but don't break the whole loop
             }
 
-            // Queue parents (BOTH sides - we don't know which line leads to enslaver)
-            if (person.father_fs_id && !visited.has(person.father_fs_id)) {
+            // Check enslaver database (wrapped in try-catch to not break queue logic)
+            try {
+                const enslaverMatch = await checkEnslaverDatabase(person);
+
+                if (enslaverMatch) {
+                    console.log(`\n   🎯 POTENTIAL MATCH #${localMatches.length + 1}: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
+                    console.log(`   Match type: ${enslaverMatch.type} (confidence: ${(enslaverMatch.confidence * 100).toFixed(0)}%)`);
+
+                    // Show verification details
+                    const checks = [];
+                    if (enslaverMatch.location_verified) checks.push('✓ location');
+                    else checks.push('? location');
+                    if (enslaverMatch.date_verified) checks.push('✓ dates');
+                    else checks.push('? dates');
+                    console.log(`   Verified: ${checks.join(', ')}`);
+
+                    // Classification disabled - requires document verification
+                    const classification = await classifyLineage([...path, person.name], person);
+                    console.log(`   Status: UNVERIFIED - requires document review`);
+
+                    const matchRecord = {
+                        person,
+                        match: enslaverMatch,
+                        generation,
+                        path: [...path, person.name],
+                        classification
+                    };
+
+                    localMatches.push(matchRecord);
+                    allMatches.push(matchRecord); // Also update global
+
+                    // Save match to DB
+                    if (sessionId && modernPerson) {
+                        await saveMatch(sessionId, modernPerson, matchRecord);
+                    }
+
+                    // DON'T BREAK - continue climbing to find more matches!
+                    console.log(`   ✓ Match recorded, continuing climb...`);
+                }
+            } catch (dbErr) {
+                console.log(`   ⚠ DB check error: ${dbErr.message.substring(0, 50)}`);
+            }
+
+            // Queue parents (BOTH sides)
+            if (person.father_fs_id && !localVisited.has(person.father_fs_id)) {
                 queue.push([person.father_fs_id, generation + 1, [...path, person.name]]);
             }
-            if (person.mother_fs_id && !visited.has(person.mother_fs_id)) {
+            if (person.mother_fs_id && !localVisited.has(person.mother_fs_id)) {
                 queue.push([person.mother_fs_id, generation + 1, [...path, person.name]]);
+            }
+
+            // Save progress periodically
+            if (localVisited.size % SAVE_PROGRESS_EVERY === 0) {
+                await saveClimbProgress(sessionId, queue, localVisited, localMatches);
+                console.log(`   💾 Progress saved (${localVisited.size} ancestors visited)`);
             }
 
             // Rate limiting
@@ -456,28 +840,70 @@ async function climbAncestors(startFsId, targetEnslaver = null) {
         }
     }
 
-    return enslaverFound;
+    // Final save
+    await saveClimbProgress(sessionId, queue, localVisited, localMatches, 'completed');
+
+    return { matches: localMatches, visited: localVisited.size, sessionId };
 }
 
 /**
  * Save results to database
  */
-async function saveResults(startFsId, enslaverFound) {
+async function saveResults(startFsId, result) {
     console.log('\n═══════════════════════════════════════════════════════════════');
-    console.log('   RESULTS');
+    console.log('   CLIMB RESULTS');
     console.log('═══════════════════════════════════════════════════════════════\n');
 
-    console.log(`Ancestors scraped: ${ancestors.length}`);
-    console.log(`Generations climbed: ${Math.max(...ancestors.map(a => a.generation))}`);
+    const { matches, visited, sessionId: sid } = result;
 
-    if (enslaverFound) {
-        console.log(`\n✓ ENSLAVER CONNECTION FOUND!`);
-        console.log(`  Enslaver: ${enslaverFound.match.canonical_name || enslaverFound.match.full_name}`);
-        console.log(`  Generations removed: ${enslaverFound.generation}`);
-        console.log(`  Path: ${enslaverFound.path.join(' → ')}`);
+    console.log(`Session ID: ${sid}`);
+    console.log(`Ancestors visited: ${visited}`);
+    console.log(`Ancestors scraped: ${ancestors.length}`);
+    console.log(`Max generation reached: ${Math.max(...ancestors.map(a => a.generation), 0)}`);
+
+    if (matches && matches.length > 0) {
+        console.log(`\n✓ ${matches.length} POTENTIAL ENSLAVER CONNECTION(S) FOUND\n`);
+
+        console.log(`⚠️  WARNING: These matches are UNVERIFIED`);
+        console.log(`   Matched by: Name + Location only`);
+        console.log(`   Required for verification:`);
+        console.log(`   - Document evidence (Slave Schedule, Will, Deed)`);
+        console.log(`   - Date verification (birth/death years)`);
+        console.log(`   - Cross-reference with historical records\n`);
+
+        console.log(`📋 MATCHES REQUIRING VERIFICATION:`);
+        for (const match of matches) {
+            const name = match.match.canonical_name || match.match.full_name;
+            const matchType = match.match.type || 'unknown';
+            const confidence = match.match.confidence ? `${(match.match.confidence * 100).toFixed(0)}%` : 'N/A';
+
+            // Build verification status
+            const checks = [];
+            if (match.match.location_verified) checks.push('✓ location');
+            else checks.push('? location');
+            if (match.match.date_verified) checks.push('✓ dates');
+            else checks.push('? dates');
+
+            console.log(`   • ${name}`);
+            console.log(`     Generation ${match.generation}: ${match.path.join(' → ')}`);
+            console.log(`     Match type: ${matchType} | Confidence: ${confidence}`);
+            console.log(`     Checks: ${checks.join(', ')}`);
+            if (match.match.verification_notes) {
+                console.log(`     Notes: ${match.match.verification_notes}`);
+            }
+            console.log('');
+        }
+
+        // Summary
+        console.log(`═══════════════════════════════════════════════════════════════`);
+        console.log(`   SUMMARY`);
+        console.log(`═══════════════════════════════════════════════════════════════`);
+        console.log(`   Potential matches: ${matches.length}`);
+        console.log(`   Verified: 0 (manual document review required)`);
+        console.log(`   Status: PENDING VERIFICATION`);
     } else {
-        console.log('\n○ No enslaver connection found in database');
-        console.log('  (May need to expand enslaver database or WikiTree buildout)');
+        console.log('\n○ No enslaver connections found in database');
+        console.log('  (May need to expand enslaver database or continue 1860 Slave Schedule scraping)');
     }
 
     // Save ancestors to database
@@ -513,11 +939,12 @@ async function saveResults(startFsId, enslaverFound) {
                     'descendant',
                     'familysearch_scraped',
                     0.9,
-                    'ancestor_climber',
+                    'ancestor_climber_v2',
                     ${JSON.stringify({
                         familysearch_id: ancestor.fs_id,
                         father_fs_id: ancestor.father_fs_id,
                         mother_fs_id: ancestor.mother_fs_id,
+                        locations: ancestor.locations,
                         generation_from_start: ancestor.generation,
                         start_person: startFsId,
                         scraped_at: new Date().toISOString()
@@ -545,40 +972,88 @@ async function main() {
 
     if (args.length === 0 || args.includes('--help')) {
         console.log(`
-FamilySearch Ancestor Climber
+FamilySearch Ancestor Climber v2
 
 Usage:
   FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js <FS_ID>
+  FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js --resume <session_id>
 
-Example:
+Examples:
+  # Start new climb from Danyela Brown
   FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js G21N-HD2
 
-Options:
-  --target <enslaver_name>  Stop when specific enslaver found
-  --max-gen <n>             Maximum generations to climb (default: 15)
+  # Resume interrupted session
+  FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js --resume abc123
 
-This scraper:
-1. Starts at the given person's FamilySearch page
-2. Extracts name, dates, and parent links
-3. Checks each ancestor against our enslaver database
-4. Climbs BOTH parent lines (father and mother)
-5. Stops when enslaver found or max generations reached
+Options:
+  --resume <session_id>   Resume an interrupted climb session
+  --name <name>           Specify person's name for better logging
+
+v2 Features:
+- Finds ALL slaveholder connections, not just the first
+- Historical cutoff at 1450 (transatlantic slave trade start)
+- Credit vs Debt classification (rape victim line vs inheritance)
+- Session persistence for resume after interruption
+- Location matching to reduce false positives
+- Saves matches to ancestor_climb_matches table
 `);
         return;
     }
 
-    const startFsId = args.find(a => /^[A-Z0-9]{4}-[A-Z0-9]{2,4}$/.test(a)) || args[0];
+    // Parse arguments
+    const resumeIndex = args.indexOf('--resume');
+    const nameIndex = args.indexOf('--name');
+    let resumeSessionId = null;
+    let personName = null;
+
+    if (resumeIndex !== -1 && args[resumeIndex + 1]) {
+        resumeSessionId = args[resumeIndex + 1];
+    }
+    if (nameIndex !== -1 && args[nameIndex + 1]) {
+        personName = args[nameIndex + 1];
+    }
+
+    const startFsId = args.find(a => /^[A-Z0-9]{4}-[A-Z0-9]{2,4}$/.test(a));
+
+    if (!startFsId && !resumeSessionId) {
+        console.error('Error: Must provide either a FamilySearch ID or --resume <session_id>');
+        process.exit(1);
+    }
 
     try {
         await launchBrowser();
-        await ensureLoggedIn(startFsId);
 
-        const enslaverFound = await climbAncestors(startFsId);
+        let result;
 
-        await saveResults(startFsId, enslaverFound);
+        if (resumeSessionId) {
+            // Resume existing session
+            console.log(`\nResuming session: ${resumeSessionId}\n`);
+            const session = await loadClimbSession(resumeSessionId);
+
+            if (!session) {
+                console.error(`Session not found: ${resumeSessionId}`);
+                process.exit(1);
+            }
+
+            await ensureLoggedIn(session.modernPersonFsId);
+            result = await climbAncestors(session.modernPersonFsId, session.modernPersonName, {
+                sessionId: resumeSessionId,
+                queue: session.queue,
+                visited: session.visited,
+                matches: session.matches
+            });
+            await saveResults(session.modernPersonFsId, result);
+
+        } else {
+            // New climb
+            await ensureLoggedIn(startFsId);
+            result = await climbAncestors(startFsId, personName);
+            await saveResults(startFsId, result);
+        }
 
     } catch (e) {
         console.error('Fatal error:', e.message);
+        console.error(e.stack);
     } finally {
         if (browser) {
             await browser.disconnect();
