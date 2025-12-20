@@ -2343,16 +2343,43 @@ router.get('/search', async (req, res) => {
             params.push(detectedType);
         }
 
+        // Search across all tables: unconfirmed_persons, enslaved_individuals, canonical_persons
+        // Exclude records marked as 'duplicate' (already merged into canonical_persons)
         const searchQuery = `
-            SELECT
-                lead_id::text as id, full_name as name, person_type as type,
-                source_url, source_type, confidence_score as confidence,
-                array_to_string(locations, ', ') as locations,
-                context_text as "contextText",
-                scraped_at as created_at, 'unconfirmed_persons' as table_source
-            FROM unconfirmed_persons
-            WHERE (full_name ILIKE $1 OR context_text ILIKE $2) ${typeFilter}
-            ORDER BY confidence_score DESC, scraped_at DESC
+            SELECT * FROM (
+                SELECT
+                    lead_id::text as id, full_name as name, person_type as type,
+                    source_url, source_type, confidence_score as confidence,
+                    array_to_string(locations, ', ') as locations,
+                    context_text as "contextText",
+                    scraped_at as created_at, 'unconfirmed_persons' as table_source
+                FROM unconfirmed_persons
+                WHERE (full_name ILIKE $1 OR context_text ILIKE $2)
+                  AND (status IS NULL OR status != 'duplicate')
+                  ${typeFilter}
+
+                UNION ALL
+
+                SELECT
+                    enslaved_id as id, full_name as name, 'enslaved' as type,
+                    NULL as source_url, 'confirmed' as source_type, 1.0 as confidence,
+                    NULL::text as locations, notes as "contextText",
+                    created_at, 'enslaved_individuals' as table_source
+                FROM enslaved_individuals
+                WHERE full_name ILIKE $1
+
+                UNION ALL
+
+                SELECT
+                    id::text as id, canonical_name as name, person_type as type,
+                    NULL as source_url, 'canonical' as source_type,
+                    COALESCE(confidence_score, 1.0) as confidence,
+                    CONCAT_WS(', ', primary_county, primary_state) as locations,
+                    notes as "contextText", created_at, 'canonical_persons' as table_source
+                FROM canonical_persons
+                WHERE canonical_name ILIKE $1
+            ) combined
+            ORDER BY confidence DESC NULLS LAST, created_at DESC
             LIMIT $3
         `;
 
