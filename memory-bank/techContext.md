@@ -1,6 +1,6 @@
 # Technical Context: Reparations Is A Real Number
 
-**Last Updated:** December 17, 2025
+**Last Updated:** December 23, 2025
 
 ## Technology Stack
 
@@ -402,6 +402,150 @@ reparations-is-a-real-number/
 │
 ├── package.json
 └── .env                          # Environment variables (gitignored)
+```
+
+---
+
+## Extraction Scripts Infrastructure ⭐ NEW (Dec 2025)
+
+### FamilySearch Extraction Scripts
+
+**Pre-Indexed Extraction (`scripts/extract-preindexed-data.js`)**
+```javascript
+// Extracts volunteer-transcribed data from FamilySearch "Image Index" panel
+// 95% confidence vs 60-80% OCR fallback
+// Uses Puppeteer with stealth plugin for authenticated access
+
+// Key patterns:
+// 1. Check for Image Index panel availability
+// 2. Extract structured data (Owner, Age, Sex, Birth Year)
+// 3. Fall back to OCR only if pre-indexed unavailable
+```
+
+**OCR Extraction (`scripts/extract-census-ocr.js`)**
+```javascript
+// Full OCR pipeline for 1850/1860 Slave Schedules
+// Includes garbage filtering for FamilySearch UI text
+const ocrGarbage = new Set(['genealogies', 'catalog', 'full', 'text', ...]);
+const garbagePhrases = new Set(['genealogies catalog', 'full text', ...]);
+```
+
+### Civil War DC Extraction Scripts
+
+**Genealogy Extractor (`scripts/extract-civilwardc-genealogy.js`)**
+```javascript
+// Parses semantic HTML from DC Emancipation petitions
+// <span class="persName"> for names
+// <span class="placeName"> for locations
+// Extracts: petitioners, enslaved, demographics, inheritance chains
+```
+
+**Family Re-Extraction (`scripts/reextract-civilwardc-families.js`)**
+```javascript
+// Family relationship pattern detection
+const patterns = [
+  /(?:children|are the children) of (?:said )?([\w\s]+)/gi,
+  /(\w+) (?:is )?(?:the )?(?:daughter|son) of (?:said )?([\w\s]+)/gi,
+  /(\w+) (?:is )?(?:the )?(?:wife|husband) of (?:said )?([\w\s]+)/gi
+];
+```
+
+### WikiTree Tracking Scripts
+
+**Batch Search (`scripts/wikitree-batch-search.js`)**
+```javascript
+// Lightweight background WikiTree profile search
+// Rate-limited: 1 request per 3 seconds
+// Tries: LastName-1 through LastName-200
+// Resume capability via wikitree_search_queue table
+
+// Usage:
+// node scripts/wikitree-batch-search.js --queue 100  # Queue top enslavers
+// node scripts/wikitree-batch-search.js              # Run continuously
+```
+
+**Descendant Scraper (`scripts/wikitree-descendant-scraper.js`)**
+```javascript
+// Scrapes descendants from found WikiTree profiles
+// Max 8 generations, 500 descendants (safety limits)
+// Stores in slave_owner_descendants_suspected table
+// Parses GEDCOM data from WikiTree HTML
+```
+
+### Automation Wrapper
+
+**Resilient Scraper (`scripts/run-census-scraper-resilient.sh`)**
+```bash
+#!/bin/bash
+# Auto-restart on crash with exponential backoff
+# Max 10 retries, 30-second delay between attempts
+# Logs to /tmp/arkansas-alabama-1860.log
+```
+
+---
+
+## Descendant Tracking Database Schema ⭐ NEW (Dec 2025)
+
+### Enslaved Descendants (CREDIT Side)
+
+```sql
+-- Private genealogy research
+CREATE TABLE enslaved_descendants_suspected (
+  id SERIAL PRIMARY KEY,
+  enslaved_id INTEGER REFERENCES enslaved_individuals(id),
+  enslaved_name TEXT,
+  enslaver_name TEXT,
+  descendant_name TEXT,
+  generation_from_ancestor INTEGER,
+  familysearch_person_id TEXT,
+  genealogy_proof_urls TEXT[],
+  source_documents TEXT[],
+  confidence_score DECIMAL(3,2),
+  is_living BOOLEAN DEFAULT FALSE,
+  status TEXT DEFAULT 'suspected', -- suspected, researching, probable, confirmed_lineage
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Opt-in verified descendants (OWED money)
+CREATE TABLE enslaved_descendants_confirmed (
+  id SERIAL PRIMARY KEY,
+  suspected_id INTEGER REFERENCES enslaved_descendants_suspected(id),
+  verification_status TEXT, -- pending, approved, rejected
+  claim_status TEXT,        -- pending, filed, approved, paid
+  total_credits_owed DECIMAL(20,2),
+  total_received DECIMAL(20,2) DEFAULT 0,
+  wallet_address TEXT,
+  contact_consent BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Credit calculations
+CREATE TABLE enslaved_credit_calculations (
+  id SERIAL PRIMARY KEY,
+  confirmed_descendant_id INTEGER REFERENCES enslaved_descendants_confirmed(id),
+  enslaved_ancestor_id INTEGER,
+  annual_labor_value_1860 DECIMAL(10,2),
+  total_labor_value_1860 DECIMAL(15,2),
+  compound_interest_rate DECIMAL(5,4) DEFAULT 0.02,
+  present_value DECIMAL(20,2),
+  share_of_inheritance DECIMAL(5,4) DEFAULT 1.0,
+  amount_received DECIMAL(20,2) DEFAULT 0,
+  amount_remaining DECIMAL(20,2)
+);
+
+-- WikiTree search queue
+CREATE TABLE wikitree_search_queue (
+  id SERIAL PRIMARY KEY,
+  person_name TEXT NOT NULL,
+  person_type TEXT, -- enslaver, enslaved, freedperson
+  source_id INTEGER,
+  status TEXT DEFAULT 'pending', -- pending, searching, found, not_found, error
+  wikitree_id TEXT,
+  match_confidence DECIMAL(3,2),
+  search_attempts INTEGER DEFAULT 0,
+  last_searched_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ---
