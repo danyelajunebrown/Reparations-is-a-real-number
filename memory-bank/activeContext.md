@@ -1,7 +1,7 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 20, 2025 (Session 14)
-**Current Phase:** Data Quality Fixes & 1860 Slave Schedule Scraping
+**Last Updated:** December 23, 2025 (Session 17)
+**Current Phase:** Family Extraction & Descendant Tracking System
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
@@ -11,7 +11,152 @@
 
 | Process | Task ID | Status | Progress | Notes |
 |---------|---------|--------|----------|-------|
-| Arkansas 1860 Slave Schedule | b6e96a7 | 🔄 Running | Starting | 728 locations to process |
+| Arkansas 1860 Slave Schedule | be162f1 | ✅ Batch 8+ complete | 1,346+ owners, 8,361+ enslaved | ~400 locations remaining |
+| WikiTree Batch Search | - | ✅ Infrastructure complete | 20 enslavers queued | Ready for continuous processing |
+| MSA Vol 812 Reprocessing | - | 🔄 In progress | Pages 1-96 of 132 | Need to finish pages 97-132 |
+
+---
+
+## Session 17 Summary (Dec 23, 2025)
+
+### Memory Bank Sync
+- Reviewed all recent codebase developments
+- Updated memory bank files to reflect current state
+- Documented new scripts, patterns, and architectural changes
+
+---
+
+## Session 16 Accomplishments (Dec 22, 2025)
+
+### 1. Arkansas Batch 8 Complete ✅
+- **1,346 owners** and **8,361 enslaved** extracted from 34 locations
+- Jackson, Jefferson, Johnson, Kiamitia, LaFayette, Lafayette, Lawrence, Madison counties
+- Pre-indexed extraction at 95% confidence working
+- ~400 locations remaining for Arkansas
+
+### 2. Civil War DC Family Extraction Script ✅
+**Created:** `scripts/reextract-civilwardc-families.js`
+
+**Purpose:** Extract parent-child, spouse, and sibling relationships from Civil War DC Emancipation petition text (1,051 petitions)
+
+**Patterns detected:**
+- "Said X, Y, Z are the children of [said] Parent" - family groups
+- "FirstName LastName daughter/son of [said] FirstName LastName"
+- "FirstName LastName wife/husband of [said] FirstName LastName"
+- "FirstName LastName brother/sister of [said] FirstName LastName"
+
+**Dry run results (1,051 petitions):**
+| Metric | Count |
+|--------|-------|
+| Total relationships found | 467 |
+| Parent-child links matched | 366 |
+| Spouse links matched | 10 |
+| Sibling links | 0 |
+| Persons not in DB | 91 |
+
+**Sample relationships found:**
+- Rose Goans daughter of Malinda Goans ✓
+- George Dyer son of Mary Dyer ✓
+- Eliza Thomas wife of John Thomas ✓
+- Mary Shorter → Jacob, Andrew, Frank Shorter ✓
+- Lucy Gordon → Clement, Vincent, Jane, Jerry Gordon ✓
+- Charlotte Sims → Elias, Daniel Sims ✓
+
+**Usage:**
+```bash
+node scripts/reextract-civilwardc-families.js           # Dry run
+node scripts/reextract-civilwardc-families.js --execute # Apply changes
+```
+
+### 3. API/Search Verification ✅
+**Verified Render API works correctly:**
+- Base URL: `reparations-platform.onrender.com` (not `reparations-is-a-real-number.onrender.com`)
+- Search returns enslaved persons with owners linked via `relationships.owner`
+- Person profiles return full data with reparations calculations
+
+### 4. Family Linking Gap Identified
+**Current state:**
+- ✅ Enslaved persons are searchable
+- ✅ Owner IS linked via `relationships.owner`
+- ❌ Family members NOT linked to each other (no parent_id, child_id, spouse_id)
+
+**Civil War DC is best source for family extraction** - longer narrative text with explicit relationships like "Mary Bruce daughter of Ellen Covington"
+
+---
+
+## Session 15 Accomplishments (Dec 22, 2025)
+
+### 1. Enslaved Descendants CREDIT Tracking Schema ✅
+**Created 4 new tables for CREDIT side (enslaved descendants are OWED money):**
+- `enslaved_descendants_suspected` - Private genealogy research
+- `enslaved_descendants_confirmed` - Opt-in verified descendants
+- `enslaved_credit_calculations` - Calculates reparations owed based on stolen labor
+- `wikitree_search_queue` - Lightweight queue for background WikiTree searches
+
+**Migration:** `025-enslaved-descendant-credits.sql`
+
+### 2. WikiTree Batch Search Script ✅
+**Created lightweight background process:** `scripts/wikitree-batch-search.js`
+
+Features:
+- Rate-limited profile checking (500ms between requests)
+- Tries WikiTree IDs `LastName-1` through `LastName-200`
+- Validates matches by checking name + location in profile
+- Resumable via database queue tracking
+- Graceful shutdown on Ctrl+C
+
+Usage:
+```bash
+node scripts/wikitree-batch-search.js --queue 100    # Queue top 100 enslavers
+node scripts/wikitree-batch-search.js --test "Name"  # Test single name
+node scripts/wikitree-batch-search.js --stats        # Show queue stats
+node scripts/wikitree-batch-search.js               # Run continuously
+```
+
+Tested successfully:
+- James Hopewell → Hopewell-1 (70% confidence)
+- Stephen Ravenel → Ravenel-5 (70% confidence)
+- 20 enslavers queued for processing
+
+### 3. Arkansas Pre-indexed Extraction ✅
+**Scrape session extracted 7,600+ high-quality records:**
+- 7,620 pre-indexed (FamilySearch volunteer transcriptions, 95% confidence)
+- Only 15 OCR fallback needed
+- 62/728 Arkansas locations processed
+- 666 locations remaining
+
+**Data Quality Check (Dec 22, 2025):**
+| Metric | Value |
+|--------|-------|
+| Total today | 13,099 records |
+| Pre-indexed | 7,620 (92%) |
+| 90%+ confidence | 12,053 (92%) |
+| Enslaved | 9,942 |
+| Slaveholders | 3,157 |
+
+### 4. High-Confidence Slaveholders Identified ✅
+**For WikiTree testing:**
+- James Hopewell (Maryland) - 100%
+- Thomas Aston Coffin (SC, 1795-1863) - 95%
+- Stephen Ravenel (Charleston, SC) - 95%
+- Daniel James Ravenel (Charleston, SC) - 95%
+- 6 Civil War DC petitioners with primary source documents
+
+### 5. OCR Garbage Filter Fix ✅
+**Problem:** OCR fallback was extracting FamilySearch website UI text as person names
+- "Genealogies Catalog" - navigation UI
+- "Full Text" - button text
+- "July" - date fragments ("day of July 1860")
+
+**Solution:**
+1. Added garbage words to `ocrGarbage` set in `parseSlaveSchedule()`
+2. Added `garbagePhrases` set for multi-word garbage detection
+3. Cleaned 659 existing garbage records from database
+
+**Files Modified:**
+- `scripts/extract-census-ocr.js` - Enhanced garbage filtering
+
+**Result:** OCR records reduced from 15 to 12 (legitimate edge cases only)
 
 ---
 

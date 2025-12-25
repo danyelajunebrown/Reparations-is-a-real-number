@@ -1,8 +1,8 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Production Ready - All Tests Passing
-**Last Updated:** December 18, 2025
+**Current Phase:** Production Ready - Family & Descendant Tracking Active
+**Last Updated:** December 23, 2025
 
 ---
 
@@ -157,7 +157,122 @@ Compensation TO owners PROVES debt owed TO descendants:
 
 ---
 
-### Phase 18: Data Quality & Ancestor Climber (Dec 20, 2025) ✅ NEW
+### Phase 20: Comprehensive Script Infrastructure (Dec 22-23, 2025) ✅ NEW
+**Goal:** Build complete extraction, family linking, and descendant tracking infrastructure
+
+**Completed Features:**
+
+#### Civil War DC Genealogy Extraction Scripts
+1. **`scripts/extract-civilwardc-genealogy.js`** (825 lines)
+   - Extracts FULL genealogical data from 1,051 DC Emancipation petitions
+   - Parses semantic HTML markup (`<span class="persName">`, `<span class="placeName">`)
+   - Extracts: petitioners, enslaved persons, demographics, family relationships
+   - Detects inheritance chains and previous owners from wills
+
+2. **`scripts/reextract-civilwardc-families.js`** (590 lines)
+   - Family-aware re-extraction for missed relationships
+   - Detects patterns: "children of", "daughter/son of", "wife/husband of"
+   - Dry run results: 467 relationships, 366 parent-child, 10 spouse links
+   - Includes garbage name filtering
+
+#### FamilySearch Pre-Indexed Extraction
+3. **`scripts/extract-preindexed-data.js`** (509 lines)
+   - Extracts volunteer-transcribed data from FamilySearch "Image Index" panel
+   - Bypasses OCR errors by using pre-indexed (95% confidence) data
+   - Puppeteer with stealth plugin for authenticated access
+   - Supports interactive mode for cookie refresh
+
+4. **`scripts/check-preindexed-coverage.js`**
+   - Checks which pages have pre-indexed data vs need OCR fallback
+   - Tests 15+ FamilySearch URLs from different states
+   - Logs coverage statistics for data quality planning
+
+#### WikiTree Descendant Tracking Suite
+5. **`scripts/wikitree-batch-search.js`** (16KB)
+   - Lightweight background process for continuous WikiTree searching
+   - Rate-limited (1 search per 3 seconds)
+   - Tries WikiTree IDs: `LastName-1` through `LastName-200`
+   - Resumable via database queue
+   - Modes: `--queue`, `--test`, `--stats`
+
+6. **`scripts/wikitree-descendant-scraper.js`** (20KB)
+   - Scrapes descendants from WikiTree profiles of confirmed enslavers
+   - Max 8 generations, 500 descendants per profile (safety limits)
+   - Parses GEDCOM descendant data from WikiTree HTML
+   - Stores in `slave_owner_descendants_suspected`
+
+#### Automation & Testing
+7. **`scripts/run-census-scraper-resilient.sh`**
+   - Shell wrapper for long-running census scraping
+   - Auto-restarts on crash (10 max retries)
+   - 30-second delay between retry attempts
+   - Logs to `/tmp/arkansas-alabama-1860.log`
+
+8. **`scripts/test-family-pattern.js`**, **`scripts/test-preindexed-batch.js`**, **`scripts/test-wikitree-debug.js`**
+   - Testing and validation scripts for each system
+
+---
+
+### Phase 19: Descendant Tracking & WikiTree Integration (Dec 22, 2025) ✅
+**Goal:** Build enslaved descendant credit tracking and systematic WikiTree search
+
+**Completed Features:**
+
+#### Enslaved Descendants CREDIT Schema
+- ✅ `enslaved_descendants_suspected` - Private genealogy research (mirrors slaveholder schema)
+- ✅ `enslaved_descendants_confirmed` - Opt-in verified descendants who are OWED credits
+- ✅ `enslaved_credit_calculations` - Calculates reparations based on stolen labor value
+- ✅ `wikitree_search_queue` - Lightweight queue for background WikiTree processing
+
+**Migration:** `025-enslaved-descendant-credits.sql`
+
+#### WikiTree Batch Search System
+- ✅ Created `scripts/wikitree-batch-search.js` - Background-friendly search script
+- ✅ Rate-limited profile checking (500ms between requests)
+- ✅ Tries WikiTree ID patterns `LastName-1` through `LastName-200`
+- ✅ Validates by checking name + location in profile HTML
+- ✅ Queue-based with database persistence for resume capability
+- ✅ Tested: Hopewell-1, Ravenel-5, multiple Coffin profiles found
+- ✅ 20 high-confidence enslavers queued for processing
+
+**Usage:**
+```bash
+node scripts/wikitree-batch-search.js --queue 100    # Queue enslavers
+node scripts/wikitree-batch-search.js --test "Name"  # Test single name
+node scripts/wikitree-batch-search.js               # Run continuously
+```
+
+#### Arkansas 1860 Slave Schedule Progress
+- ✅ Pre-indexed extraction working (7,620 records at 95% confidence)
+- ✅ 62/728 locations processed
+- ✅ Data quality: 92% at 90%+ confidence
+- 🔄 666 locations remaining
+
+#### OCR Garbage Filter Fix
+- ✅ Identified website UI text being extracted as person names
+- ✅ Added garbage words: `genealogies`, `catalog`, `full`, `text`, `browse`, etc.
+- ✅ Added garbage phrase detection: "genealogies catalog", "full text", etc.
+- ✅ Cleaned 659 existing garbage records from database
+- ✅ OCR fallback now properly filters UI artifacts
+
+**Garbage Types Cleaned:**
+| Type | Count | Issue |
+|------|-------|-------|
+| "Genealogies Catalog" | ~400 | FamilySearch navigation |
+| "July" | ~250 | Date fragments |
+| "Full Text" | ~9 | Button text |
+
+**Files Created:**
+- `migrations/025-enslaved-descendant-credits.sql`
+- `scripts/wikitree-batch-search.js`
+- `scripts/test-wikitree-debug.js`
+
+**Files Modified:**
+- `scripts/extract-census-ocr.js` - Enhanced `parseSlaveSchedule()` garbage filtering
+
+---
+
+### Phase 18: Data Quality & Ancestor Climber (Dec 20, 2025) ✅
 **Goal:** Fix Civil War DC data quality issues and improve ancestor climber verification
 
 **Completed Features:**
@@ -687,28 +802,55 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 ### Q4 2025 🎯
 
 #### December 2025 (Remaining)
-**Focus:** Process New Data Sources
+**Focus:** Complete Active Extraction & WikiTree Processing
 
 **In Progress:**
-- [ ] Run migration 009 for British colonial tables
-- [ ] Create scrapers for new queue categories
-- [ ] Process Louisiana parish records
-- [ ] Import UCL LBS British compensation claims
+- [ ] Complete Arkansas 1860 Slave Schedule (~400 locations remaining)
+- [ ] Finish MSA Vol 812 reprocessing (pages 97-132)
+- [ ] Run WikiTree batch search continuously
+- [ ] Execute Civil War DC family re-extraction
 
-**Completed This Week:**
-- [x] Built CompensationTracker financial system
-- [x] Added Louisiana Slave DB to queue (32 URLs)
-- [x] Fixed DebtTracker syntax errors
-- [x] Tested financial system with sample data
+**Completed This Month:**
+- [x] Built comprehensive script infrastructure (8 major scripts)
+- [x] Enslaved descendant credit tracking schema (migration 025)
+- [x] WikiTree batch search + descendant scraper
+- [x] Pre-indexed data extraction (95% confidence)
+- [x] Civil War DC genealogy extraction
+- [x] Family relationship pattern detection
+- [x] OCR garbage filtering improvements
+- [x] Data quality fixes for 35,944 DC records
+- [x] CompensationTracker financial system
+- [x] Corporate entity Farmer-Paellmann integration
 
 ### Q1 2026 🔮
 
 #### January 2026
-**Focus:** Financial System Integration
+**Focus:** WikiTree Descendant Scraping & Financial Integration
+- [ ] Run wikitree-descendant-scraper on all queued profiles
 - [ ] Connect CompensationTracker to live UCL LBS data
-- [ ] Build reparations payment tracking
+- [ ] Build enslaved credit calculations for confirmed descendants
+- [ ] Execute Alabama 1860 Slave Schedule extraction
 - [ ] Implement blockchain smart contract integration
+
+#### February-March 2026
+**Focus:** Cross-Reference & Payment System
+- [ ] Match enslaved descendants ↔ enslaver descendants
+- [ ] Build participant KYC/identity verification
+- [ ] Create payment distribution UI
 - [ ] Add more compensation programs (French, Spanish, etc.)
+
+---
+
+## Current Active Scripts Reference
+
+| Script | Purpose | Status |
+|--------|---------|--------|
+| `wikitree-batch-search.js` | Background WikiTree profile search | Ready |
+| `wikitree-descendant-scraper.js` | Descendant extraction from WikiTree | Ready |
+| `extract-preindexed-data.js` | FamilySearch pre-indexed extraction | Active |
+| `extract-census-ocr.js` | 1860 Slave Schedule OCR extraction | Active |
+| `reextract-civilwardc-families.js` | Family relationship extraction | Ready |
+| `run-census-scraper-resilient.sh` | Long-running scraper wrapper | Active |
 
 ---
 

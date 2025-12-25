@@ -418,6 +418,147 @@ const result = await retryWithBackoff(() =>
 );
 ```
 
+## Extraction & Data Quality Patterns ⭐ NEW (Dec 2025)
+
+### Two-Tier Extraction Pattern
+FamilySearch data uses a tiered extraction approach:
+
+```
+┌─────────────────────────────────────────┐
+│  Pre-Indexed Check                       │
+│  (Volunteer transcriptions, 95% conf)    │
+└─────────────────────────────────────────┘
+         ↓ Available?
+    ┌────┴────┐
+    ↓ Yes     ↓ No
+┌───────┐  ┌──────────────────────────────┐
+│ Use   │  │ OCR Fallback                 │
+│ Pre-  │  │ (Google Vision, 60-80% conf) │
+│ Index │  │ + Garbage Filtering          │
+└───────┘  └──────────────────────────────┘
+```
+
+**Implementation:**
+```javascript
+// extract-preindexed-data.js
+const preIndexedPanel = await page.$('.image-index-panel');
+if (preIndexedPanel) {
+  // Use high-quality volunteer data
+  return await extractPreIndexed(page);
+} else {
+  // Fall back to OCR with garbage filtering
+  return await extractWithOCR(page, ocrGarbage, garbagePhrases);
+}
+```
+
+### Family Relationship Pattern Detection
+Extracts genealogical links from narrative text:
+
+```javascript
+// reextract-civilwardc-families.js
+const familyPatterns = [
+  // "X, Y, Z are the children of Parent"
+  /(?:said )?(\w+(?:,\s*\w+)*) are the children of (?:said )?(\w+[\w\s]*)/gi,
+
+  // "FirstName daughter/son of Parent"
+  /(\w+) (?:is )?(?:the )?(?:daughter|son) of (?:said )?(\w+[\w\s]*)/gi,
+
+  // "FirstName wife/husband of Spouse"
+  /(\w+) (?:is )?(?:the )?(?:wife|husband) of (?:said )?(\w+[\w\s]*)/gi
+];
+
+// Result: 467 relationships from 1,051 petitions
+```
+
+### Background Queue Processing Pattern
+For long-running, resumable tasks:
+
+```javascript
+// wikitree-batch-search.js
+class BackgroundQueueProcessor {
+  constructor(options = {}) {
+    this.rateLimit = options.rateLimit || 3000; // ms between requests
+    this.maxRetries = options.maxRetries || 3;
+  }
+
+  async processQueue() {
+    while (true) {
+      const item = await this.getNextPendingItem();
+      if (!item) break;
+
+      try {
+        await this.markAsProcessing(item.id);
+        const result = await this.process(item);
+        await this.saveResult(item.id, result);
+      } catch (error) {
+        await this.handleError(item.id, error);
+      }
+
+      await this.delay(this.rateLimit);
+    }
+  }
+}
+```
+
+**Benefits:**
+- Resumable after crashes
+- Rate-limited to respect external APIs
+- Database-backed state for recovery
+- Graceful shutdown support
+
+### Private-to-Public Pipeline Pattern
+For descendant tracking with privacy protection:
+
+```
+┌─────────────────────────────────────────┐
+│  1. Private Research                     │
+│  (enslaved_descendants_suspected)        │
+│  - Genealogy tracing                     │
+│  - NOT contacted, NOT public             │
+│  - Confidence scoring                    │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  2. Opt-In Verification                  │
+│  (enslaved_descendants_confirmed)        │
+│  - Person consented to participate       │
+│  - Identity verified                     │
+│  - Claim status tracked                  │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  3. Credit Calculation                   │
+│  (enslaved_credit_calculations)          │
+│  - Labor value computation               │
+│  - Interest accumulation                 │
+│  - Payment tracking                      │
+└─────────────────────────────────────────┘
+```
+
+### Semantic HTML Parsing Pattern
+For sources with structured markup (Civil War DC):
+
+```javascript
+// extract-civilwardc-genealogy.js
+const extractFromSemanticHTML = async (html) => {
+  const $ = cheerio.load(html);
+
+  // Extract names from semantic spans
+  const names = $('.persName').map((i, el) => ({
+    name: $(el).text().trim(),
+    role: $(el).attr('role') || 'unknown',
+    ref: $(el).attr('ref')
+  })).get();
+
+  // Extract places from placeName spans
+  const places = $('.placeName').map((i, el) => $(el).text().trim()).get();
+
+  return { names, places };
+};
+```
+
+---
+
 ## Security Patterns
 
 ### Input Validation

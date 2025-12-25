@@ -13,6 +13,7 @@
  *
  * Options:
  *   --state "Alabama"    - Process single state
+ *   --states "Arkansas,Alabama" - Process multiple states with one login
  *   --county "Autauga"   - Process single county
  *   --limit 10           - Limit number of locations
  *   --dry-run            - Don't save to database
@@ -322,8 +323,8 @@ async function fetchImageList(waypointUrl, collectionId) {
 
         console.log(`   Found ${districts.length} districts, drilling down...`);
 
-        // For each district, get its images (limit to first 3 districts to avoid timeout)
-        for (const district of districts.slice(0, 3)) {
+        // For each district, get its images (process ALL districts)
+        for (const district of districts) {
             const districtName = district.titles?.[0]?.value || 'Unknown';
             console.log(`      📂 District: ${districtName}`);
 
@@ -529,7 +530,18 @@ function parseSlaveSchedule(ocrText, metadata) {
         'family', 'tree', 'search', 'memories', 'attach', 'print', 'share',
         'details', 'record', 'save', 'view', 'source', 'film', 'digital',
         'get', 'involved', 'sign', 'help', 'center', 'about', 'activities',
-        'home', 'indexing', 'temple', 'blog', 'wiki', 'feedback', 'settings'
+        'home', 'indexing', 'temple', 'blog', 'wiki', 'feedback', 'settings',
+        // Additional website UI garbage - Dec 22, 2025
+        'genealogies', 'catalog', 'full', 'text', 'browse', 'next', 'previous',
+        'first', 'last', 'zoom', 'download', 'cite', 'research', 'collection',
+        'collections', 'records', 'index', 'images', 'historical', 'archives'
+    ]);
+
+    // Multi-word phrases that are definitely not person names
+    const garbagePhrases = new Set([
+        'genealogies catalog', 'full text', 'image index', 'browse images',
+        'research help', 'collection details', 'historical records',
+        'family tree', 'source citation', 'record details'
     ]);
 
     // State names to filter (not owner names)
@@ -594,6 +606,8 @@ function parseSlaveSchedule(ocrText, metadata) {
                     !ocrGarbage.has(ownerWords[0]) &&
                     // Last word not OCR garbage either
                     !ocrGarbage.has(ownerWords[ownerWords.length - 1]) &&
+                    // Not a known garbage phrase (Dec 22, 2025)
+                    !garbagePhrases.has(lowerOwner) &&
                     // Not a state name
                     !stateNames.has(lowerOwner) &&
                     // Not the county name we're in
@@ -699,6 +713,196 @@ function parseSlaveSchedule(ocrText, metadata) {
 }
 
 /**
+ * Extract pre-indexed data from the Image Index panel
+ *
+ * FamilySearch has volunteer-transcribed data for many pages.
+ * This is far more accurate than OCR (95% vs 30% accuracy).
+ *
+ * @param {string} imageUrl - FamilySearch image URL
+ * @param {object} metadata - Location metadata (state, county, year)
+ * @returns {object} { owners: [], enslaved: [], hasPreIndexedData: boolean }
+ */
+async function extractPreIndexedData(imageUrl, metadata = {}) {
+    const result = {
+        owners: [],
+        enslaved: [],
+        hasPreIndexedData: false,
+        rawRows: []
+    };
+
+    try {
+        // Navigate to the image page
+        await page.goto(imageUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // Wait for page to fully render
+        await new Promise(r => setTimeout(r, 3000));
+
+        // Try to click on "Image Index" tab if it exists
+        try {
+            const indexTabSelector = 'button:has-text("Image Index"), [role="tab"]:has-text("Image Index"), .tab:has-text("Image Index")';
+            await page.click(indexTabSelector).catch(() => {});
+            await new Promise(r => setTimeout(r, 1000));
+        } catch (e) {
+            // Tab might not exist or already selected
+        }
+
+        // Extract data from the page
+        const extractedData = await page.evaluate(() => {
+            const data = {
+                rows: [],
+                found: false
+            };
+
+            // Find all rows that contain Owner/Slave designation
+            const allRows = document.querySelectorAll('tr, [role="row"], .record-row, .index-row');
+
+            allRows.forEach(row => {
+                const cells = row.querySelectorAll('td, [role="cell"], .cell, div[class*="cell"], span');
+                const rowText = row.textContent || '';
+
+                if (rowText.includes('Owner') || rowText.includes('Slave')) {
+                    data.found = true;
+
+                    const rowData = {
+                        name: '',
+                        sex: '',
+                        age: '',
+                        birthYear: '',
+                        status: '',
+                        pageNumber: '',
+                        cellTexts: []
+                    };
+
+                    // Capture all cell contents
+                    cells.forEach((cell, idx) => {
+                        const text = cell.textContent.trim();
+                        rowData.cellTexts.push({ idx, text: text.substring(0, 50), tag: cell.tagName });
+                    });
+
+                    // Extract structured data from cells
+                    cells.forEach(cell => {
+                        const text = cell.textContent.trim();
+
+                        if (text === 'Owner' || text === 'Slave') {
+                            rowData.status = text;
+                        } else if (text === 'Male' || text === 'Female') {
+                            rowData.sex = text;
+                        } else if (text.match(/^\d{1,3}\s*years?$/i)) {
+                            rowData.age = parseInt(text);
+                        } else if (text.match(/^\d{4}$/)) {
+                            if (parseInt(text) >= 1700 && parseInt(text) <= 1870) {
+                                rowData.birthYear = parseInt(text);
+                            } else {
+                                rowData.pageNumber = text;
+                            }
+                        } else if (text.match(/^\d{1,2}$/)) {
+                            rowData.pageNumber = text;
+                        } else if (text.length > 1 && !text.match(/^(ATTACH|More|years?)$/i)) {
+                            if (!rowData.name && text.length > 1) {
+                                rowData.name = text;
+                            }
+                        }
+                    });
+
+                    if (rowData.status) {
+                        data.rows.push(rowData);
+                    }
+                }
+            });
+
+            // Alternative: Look for ATTACH buttons
+            if (!data.found) {
+                const attachButtons = document.querySelectorAll('button, a');
+                let currentOwner = null;
+
+                attachButtons.forEach(btn => {
+                    if (btn.textContent.includes('ATTACH')) {
+                        const parentRow = btn.closest('tr, [role="row"], div');
+                        if (parentRow) {
+                            const rowText = parentRow.textContent;
+                            if (rowText.includes('Owner')) {
+                                const nameMatch = rowText.match(/ATTACH\s+([A-Z][a-zA-Z\s\.]+?)\s+Owner/);
+                                if (nameMatch) {
+                                    currentOwner = nameMatch[1].trim();
+                                    data.rows.push({
+                                        name: currentOwner,
+                                        status: 'Owner'
+                                    });
+                                    data.found = true;
+                                }
+                            } else if (rowText.includes('Slave')) {
+                                const ageMatch = rowText.match(/(\d+)\s*years/i);
+                                const sexMatch = rowText.match(/(Male|Female)/i);
+                                const yearMatch = rowText.match(/\b(1[78]\d{2})\b/);
+
+                                data.rows.push({
+                                    name: '',
+                                    sex: sexMatch ? sexMatch[1] : '',
+                                    age: ageMatch ? parseInt(ageMatch[1]) : null,
+                                    birthYear: yearMatch ? parseInt(yearMatch[1]) : null,
+                                    status: 'Slave',
+                                    owner: currentOwner
+                                });
+                                data.found = true;
+                            }
+                        }
+                    }
+                });
+            }
+
+            return data;
+        });
+
+        if (extractedData.found && extractedData.rows.length > 0) {
+            result.hasPreIndexedData = true;
+            result.rawRows = extractedData.rows;
+
+            let currentOwner = null;
+
+            // Process rows into owners and enslaved
+            for (const row of extractedData.rows) {
+                if (row.status === 'Owner') {
+                    currentOwner = row.name;
+                    result.owners.push({
+                        name: row.name,
+                        type: 'slaveholder',
+                        sourceUrl: imageUrl,
+                        state: metadata.state,
+                        county: metadata.county,
+                        year: metadata.year,
+                        confidence: 0.95,
+                        extractionMethod: 'pre_indexed'
+                    });
+                } else if (row.status === 'Slave') {
+                    const enslaved = {
+                        name: row.age && row.sex
+                            ? `Unknown (${row.sex}, age ${row.age})`
+                            : 'Unknown',
+                        age: row.age,
+                        sex: row.sex ? row.sex.toLowerCase() : null,
+                        birthYear: row.birthYear,
+                        type: 'enslaved',
+                        owner: row.owner || currentOwner,
+                        sourceUrl: imageUrl,
+                        state: metadata.state,
+                        county: metadata.county,
+                        year: metadata.year,
+                        confidence: 0.95,
+                        extractionMethod: 'pre_indexed'
+                    };
+                    result.enslaved.push(enslaved);
+                }
+            }
+        }
+
+    } catch (error) {
+        console.error(`   ❌ Pre-indexed extraction error: ${error.message}`);
+    }
+
+    return result;
+}
+
+/**
  * Store extracted person in database
  */
 async function storePerson(personData, dryRun = false) {
@@ -756,7 +960,7 @@ async function storePerson(personData, dryRun = false) {
                 ${personData.sourceUrl},
                 ${contextText},
                 ${personData.confidence || 0.6},
-                ${'census_ocr_extraction'},
+                ${personData.extractionMethod || 'census_ocr_extraction'},
                 ${personData.sex || null},
                 ${locations},
                 ${JSON.stringify(relationships)}
@@ -837,41 +1041,13 @@ async function processLocation(location, dryRun = false) {
 
     console.log(`   📸 Found ${images.length} images`);
 
-    // Process first 5 images per location (to avoid rate limits)
-    const imagesToProcess = images.slice(0, 5);
+    // Process ALL images per location (removed 5-image limit)
+    const imagesToProcess = images;
 
     for (let i = 0; i < imagesToProcess.length; i++) {
         const image = imagesToProcess[i];
         console.log(`   [${i + 1}/${imagesToProcess.length}] Processing: ${image.title}`);
 
-        // Capture screenshot
-        const screenshot = await captureImage(image.url);
-        if (!screenshot) {
-            stats.errors++;
-            continue;
-        }
-
-        stats.imagesProcessed++;
-
-        // Run OCR
-        console.log('      🔍 Running OCR...');
-        const ocrText = await performOCR(screenshot);
-
-        if (!ocrText || ocrText.length < 50) {
-            console.log('      ⚠️ OCR returned little text - may be title page');
-            continue;
-        }
-
-        console.log(`      ✅ OCR extracted ${ocrText.length} characters`);
-
-        // Archive to S3 for permanent preservation (non-blocking)
-        archiveToS3(screenshot, image.url, {
-            state: location.state,
-            county: location.district || location.county,
-            year: year
-        }).catch(() => {}); // Don't fail if archiving fails
-
-        // Parse for enslaved persons
         // Note: In our data, "district" contains the actual county name (Autauga, Benton, etc.)
         // because "county" contains "Alabama" (a parent level in the FamilySearch hierarchy)
         const actualCounty = location.district || location.county;
@@ -885,18 +1061,72 @@ async function processLocation(location, dryRun = false) {
             year: year
         };
 
-        const parsed = parseSlaveSchedule(ocrText, metadata);
+        // ============================================================
+        // HYBRID EXTRACTION: Try pre-indexed data FIRST, OCR as fallback
+        // ============================================================
 
-        console.log(`      👥 Found: ${parsed.owners.length} owners, ${parsed.enslaved.length} enslaved`);
+        // Step 1: Try to extract pre-indexed data from Image Index panel
+        console.log('      📊 Checking for pre-indexed data...');
+        const preIndexedResult = await extractPreIndexedData(image.url, metadata);
+
+        let parsed;
+        let extractionMethod;
+
+        if (preIndexedResult.hasPreIndexedData && preIndexedResult.owners.length > 0) {
+            // Use pre-indexed data (high confidence, accurate)
+            console.log(`      ✅ Pre-indexed: ${preIndexedResult.owners.length} owners, ${preIndexedResult.enslaved.length} enslaved`);
+            parsed = preIndexedResult;
+            extractionMethod = 'pre_indexed';
+            stats.imagesProcessed++;
+        } else {
+            // Fall back to OCR (lower confidence, may have errors)
+            console.log('      ⚠️ No pre-indexed data, falling back to OCR...');
+
+            // Capture screenshot
+            const screenshot = await captureImage(image.url);
+            if (!screenshot) {
+                stats.errors++;
+                continue;
+            }
+
+            stats.imagesProcessed++;
+
+            // Run OCR
+            console.log('      🔍 Running OCR...');
+            const ocrText = await performOCR(screenshot);
+
+            if (!ocrText || ocrText.length < 50) {
+                console.log('      ⚠️ OCR returned little text - may be title page');
+                continue;
+            }
+
+            console.log(`      ✅ OCR extracted ${ocrText.length} characters`);
+
+            // Archive to S3 for permanent preservation (non-blocking)
+            archiveToS3(screenshot, image.url, {
+                state: location.state,
+                county: actualCounty,
+                year: year
+            }).catch(() => {}); // Don't fail if archiving fails
+
+            parsed = parseSlaveSchedule(ocrText, metadata);
+            extractionMethod = 'census_ocr_extraction';
+
+            console.log(`      👥 Found: ${parsed.owners.length} owners, ${parsed.enslaved.length} enslaved (OCR - needs review)`);
+        }
 
         // Store owners
         for (const owner of parsed.owners) {
+            owner.extractionMethod = extractionMethod;
+            owner.confidence = extractionMethod === 'pre_indexed' ? 0.95 : 0.60;
             const leadId = await storePerson(owner, dryRun);
             if (leadId) stats.ownersExtracted++;
         }
 
         // Store enslaved persons
         for (const enslaved of parsed.enslaved) {
+            enslaved.extractionMethod = extractionMethod;
+            enslaved.confidence = extractionMethod === 'pre_indexed' ? 0.95 : 0.60;
             const leadId = await storePerson(enslaved, dryRun);
             if (leadId) {
                 stats.personsExtracted++;
@@ -940,19 +1170,51 @@ async function main() {
     console.log(`Interactive: ${INTERACTIVE}`);
     console.log('======================================================================\n');
 
-    // Parse command line args
+    // Parse command line args - handle both --arg value and --arg=value formats
     const args = process.argv.slice(2);
-    const stateFilter = args.includes('--state') ? args[args.indexOf('--state') + 1] : null;
-    const countyFilter = args.includes('--county') ? args[args.indexOf('--county') + 1] : null;
-    const limitArg = args.includes('--limit') ? parseInt(args[args.indexOf('--limit') + 1]) : 50;
+
+    function getArgValue(argName) {
+        // Check for --arg=value format first
+        const equalsArg = args.find(a => a.startsWith(`--${argName}=`));
+        if (equalsArg) {
+            return equalsArg.split('=')[1];
+        }
+        // Then check for --arg value format
+        const idx = args.indexOf(`--${argName}`);
+        if (idx !== -1 && args[idx + 1]) {
+            return args[idx + 1];
+        }
+        return null;
+    }
+
+    // Support single state (--state) or multiple states (--states)
+    let stateFilter = getArgValue('state');
+    const statesArg = getArgValue('states');
+    const statesFilter = statesArg ? statesArg.split(',').map(s => s.trim()) : (stateFilter ? [stateFilter] : null);
+
+    const countyFilter = getArgValue('county');
+    // Use high limit for multi-state runs (2000 per state should cover most states)
+    const defaultLimit = statesFilter && statesFilter.length > 1 ? statesFilter.length * 2000 : 50;
+    const limitArgStr = getArgValue('limit');
+    const limitArg = limitArgStr ? parseInt(limitArgStr) : defaultLimit;
     const dryRun = args.includes('--dry-run');
+
+    if (statesFilter && statesFilter.length > 1) {
+        console.log(`📍 Multi-state mode: ${statesFilter.join(', ')} (limit: ${limitArg})`);
+    } else if (statesFilter) {
+        console.log(`📍 State filter: ${statesFilter[0]} (limit: ${limitArg})`);
+    }
 
     // Year filter: 1850 = collection 1420440 (slave schedule), 1860 = collection 3161105
     // NOTE: Collection 1401638 is the REGULAR 1850 census, NOT slave schedule!
-    const yearFilter = args.includes('--year') ? parseInt(args[args.indexOf('--year') + 1]) : null;
-    const collectionFilter = yearFilter === 1850 ? '1420440' : yearFilter === 1860 ? '3161105' : null;
+    const yearFilterStr = getArgValue('year');
+    const yearFilter = yearFilterStr ? parseInt(yearFilterStr) : null;
+    const directCollection = getArgValue('collection');
+    const collectionFilter = directCollection || (yearFilter === 1850 ? '1420440' : yearFilter === 1860 ? '3161105' : null);
 
-    if (yearFilter) {
+    if (directCollection) {
+        console.log(`📅 Collection filter: ${collectionFilter}`);
+    } else if (yearFilter) {
         console.log(`📅 Year filter: ${yearFilter} (collection ${collectionFilter})`);
     }
 
@@ -982,10 +1244,10 @@ async function main() {
         params.push(collectionFilter);
     }
 
-    if (stateFilter) {
+    if (statesFilter) {
         const paramNum = params.length + 1;
-        query += ` AND state = $${paramNum}`;
-        params.push(stateFilter);
+        query += ` AND state = ANY($${paramNum})`;
+        params.push(statesFilter);
     }
 
     if (countyFilter) {
@@ -1001,7 +1263,7 @@ async function main() {
         // Use neon tagged template for the query
         // Filter for actual districts (not parent entries where district=state or district=county)
         // Build dynamic query based on filters
-        if (collectionFilter && stateFilter && countyFilter) {
+        if (collectionFilter && statesFilter && countyFilter) {
             locations = await sql`
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
@@ -1009,12 +1271,12 @@ async function main() {
                 AND district != state AND district != county
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND collection_id = ${collectionFilter}
-                AND state = ${stateFilter}
+                AND state = ANY(${statesFilter})
                 AND county = ${countyFilter}
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
             `;
-        } else if (collectionFilter && stateFilter) {
+        } else if (collectionFilter && statesFilter) {
             locations = await sql`
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
@@ -1022,7 +1284,7 @@ async function main() {
                 AND district != state AND district != county
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND collection_id = ${collectionFilter}
-                AND state = ${stateFilter}
+                AND state = ANY(${statesFilter})
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
             `;
@@ -1037,39 +1299,58 @@ async function main() {
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
             `;
-        } else if (stateFilter && countyFilter) {
+        } else if (statesFilter && countyFilter) {
             locations = await sql`
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state AND district != county
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
-                AND state = ${stateFilter}
+                AND state = ANY(${statesFilter})
                 AND county = ${countyFilter}
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
             `;
-        } else if (stateFilter) {
+        } else if (statesFilter) {
             locations = await sql`
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state AND district != county
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
-                AND state = ${stateFilter}
+                AND state = ANY(${statesFilter})
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
             `;
         } else {
-            locations = await sql`
-                SELECT * FROM familysearch_locations
-                WHERE waypoint_id IS NOT NULL
-                AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
-                ORDER BY collection_id, state, county, district
-                LIMIT ${limitArg}
-            `;
+            // FALLBACK: Always apply collection filter if specified, even with no other filters
+            // BUG FIX: Previously this clause had NO collection filter which caused
+            // the scraper to pull from wrong collections (e.g., 1401638 regular census
+            // when 3161105 slave schedule was requested)
+            if (collectionFilter) {
+                console.log(`   🔒 Applying collection filter: ${collectionFilter}`);
+                locations = await sql`
+                    SELECT * FROM familysearch_locations
+                    WHERE waypoint_id IS NOT NULL
+                    AND waypoint_id NOT LIKE '%collection%'
+                    AND district != state AND district != county
+                    AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                    AND collection_id = ${collectionFilter}
+                    ORDER BY collection_id, state, county, district
+                    LIMIT ${limitArg}
+                `;
+            } else {
+                console.log('⚠️ WARNING: No collection filter - fetching from ALL collections');
+                locations = await sql`
+                    SELECT * FROM familysearch_locations
+                    WHERE waypoint_id IS NOT NULL
+                    AND waypoint_id NOT LIKE '%collection%'
+                    AND district != state AND district != county
+                    AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                    ORDER BY collection_id, state, county, district
+                    LIMIT ${limitArg}
+                `;
+            }
         }
     } else {
         console.log('⚠️ No database - cannot fetch locations');

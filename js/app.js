@@ -294,7 +294,7 @@
         }
 
         function renderPersonProfile(data, result) {
-            const { person, reparations, owner, documents, ownerDocuments, enslavedPersons, links } = data;
+            const { person, reparations, owner, documents, ownerDocuments, enslavedPersons, descendants, links } = data;
             const bodyEl = document.getElementById('modalPersonBody');
 
             // Determine status
@@ -316,14 +316,32 @@
             // Check if this is a slaveholder
             const isSlaveholder = person.person_type === 'slaveholder' || person.person_type === 'owner';
 
+            // Check if source URL is a database homepage (not an actual document)
+            const sourceUrl = result.sourceUrl || person.source_url;
+            const isDbHomepage = isDatabaseHomepage(sourceUrl);
+            const hasRealDocument = (sourceUrl && !isDbHomepage) || result.archiveUrl;
+
             bodyEl.innerHTML = `
                 <div class="person-status-banner ${statusClass}">
                     <span>${statusClass === 'confirmed' ? '✓' : statusClass === 'needs-document' ? '⚠' : '○'}</span>
                     <span>${statusText}</span>
                 </div>
 
-                <!-- EVIDENTIARY SOURCE DOCUMENT - Most Important Section -->
-                ${(result.sourceUrl || result.archiveUrl || person.source_url) ? `
+                <!-- DATA SOURCE (for database homepages) or EVIDENTIARY DOCUMENT (for actual docs) -->
+                ${isDbHomepage ? `
+                <div class="person-section" style="background: rgba(100, 100, 200, 0.1); border: 1px solid rgba(100, 100, 200, 0.3); border-radius: 12px; padding: 15px; margin-bottom: 15px;">
+                    <div class="person-section-title" style="color: #9aa5b1; font-size: 0.95em; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2em;">🗃️</span> Data Source
+                    </div>
+                    <div style="margin-top: 10px; color: #9aa5b1; font-size: 0.85em;">
+                        Record from: <a href="${sourceUrl}" target="_blank" style="color: #64b5f6;">${getSourceDescription(sourceUrl)}</a>
+                    </div>
+                    <div style="margin-top: 8px; padding: 10px; background: rgba(255, 200, 100, 0.1); border-radius: 8px; border: 1px solid rgba(255, 200, 100, 0.3);">
+                        <div style="color: #ffb74d; font-size: 0.85em;">⚠ Primary source document needed</div>
+                        <div style="color: #9aa5b1; font-size: 0.8em; margin-top: 3px;">This record is from a compiled database. Link to original census/deed record to verify.</div>
+                    </div>
+                </div>
+                ` : (result.sourceUrl || result.archiveUrl || person.source_url) ? `
                 <div class="person-section" style="background: linear-gradient(135deg, rgba(100, 200, 255, 0.15), rgba(100, 255, 100, 0.1)); border: 2px solid rgba(100, 200, 255, 0.4); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
                     <div class="person-section-title" style="color: #64c8ff; font-size: 1.1em; display: flex; align-items: center; gap: 10px;">
                         <span style="font-size: 1.5em;">📜</span> Evidentiary Source Document
@@ -372,7 +390,7 @@
                 </div>
                 ` : `
                 <div class="person-section" style="background: rgba(255, 100, 100, 0.1); border: 2px solid rgba(255, 100, 100, 0.3); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                    <div class="person-section-title" style="color: #ff6464; font-size: 1.1em; display: flex; align-items: center; gap: 10px;">
+                    <div class="person-section-title" style="color: #ff6464; font-size: 1.1em; display: flex; align-items: center; gap: 10px;">`}
                         <span style="font-size: 1.5em;">⚠️</span> Source Document Required
                     </div>
                     <div style="margin-top: 10px; color: #9aa5b1; font-size: 0.9em;">
@@ -470,10 +488,45 @@
                 </div>
                 ` : ''}
 
+                <!-- Descendants (for slaveholders from WikiTree scraping) -->
+                ${descendants && descendants.length > 0 ? `
+                <div class="person-section">
+                    <div class="person-section-title" style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2em;">👨‍👩‍👧‍👦</span> Known Descendants (${descendants.length})
+                    </div>
+                    <div style="font-size: 0.85em; color: #9aa5b1; margin-bottom: 10px;">
+                        Genealogical connections traced via WikiTree
+                    </div>
+                    <div style="max-height: 250px; overflow-y: auto; background: rgba(30, 40, 70, 0.5); border-radius: 10px; padding: 10px;">
+                        ${descendants.map(d => {
+                            const genLabel = d.generation_from_owner === 1 ? 'Child' :
+                                           d.generation_from_owner === 2 ? 'Grandchild' :
+                                           d.generation_from_owner === 3 ? 'Great-grandchild' :
+                                           d.generation_from_owner === 4 ? 'Great-great-grandchild' :
+                                           'Gen ' + d.generation_from_owner;
+                            const years = d.descendant_birth_year ?
+                                '(' + d.descendant_birth_year + (d.descendant_death_year ? '-' + d.descendant_death_year : '') + ')' : '';
+                            const wikitreeLink = d.wikitree_id ?
+                                '<a href="https://www.wikitree.com/wiki/' + d.wikitree_id + '" target="_blank" style="color: #64b5f6; font-size: 0.8em; margin-left: 8px;">WikiTree ↗</a>' : '';
+                            return '<div style="padding: 8px 10px; border-radius: 5px; margin-bottom: 5px; background: rgba(0,0,0,0.2);">' +
+                                '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                                    '<div>' +
+                                        '<span style="color: #e0e0e0;">' + escapeHtml(d.descendant_name) + '</span>' +
+                                        '<span style="color: #9aa5b1; font-size: 0.85em;"> ' + years + '</span>' +
+                                        wikitreeLink +
+                                    '</div>' +
+                                    '<span style="color: #64b5f6; font-size: 0.75em; background: rgba(100,180,246,0.2); padding: 2px 8px; border-radius: 4px;">' + genLabel + '</span>' +
+                                '</div>' +
+                            '</div>';
+                        }).join('')}
+                    </div>
+                </div>
+                ` : ''}
+
                 <!-- Links & Actions -->
                 <div class="person-section">
                     <div class="person-section-title">Actions</div>
-                    ${result.sourceUrl ? `<a href="${result.sourceUrl}" target="_blank" class="person-link-btn">📄 View Source Document</a>` : ''}
+                    ${result.sourceUrl && !isDbHomepage ? `<a href="${result.sourceUrl}" target="_blank" class="person-link-btn">📄 View Source Document</a>` : ''}
                     ${result.archiveUrl ? `<button class="person-link-btn" onclick="closePersonModal(); openArchiveViewer(window.searchResults[${window.searchResults?.indexOf(result) || 0}])">📁 View Archive</button>` : ''}
                     ${links?.familySearch ? `<a href="${links.familySearch}" target="_blank" class="person-link-btn">🌳 FamilySearch</a>` : ''}
                     ${links?.ancestry ? `<a href="${links.ancestry}" target="_blank" class="person-link-btn">🌳 Ancestry</a>` : ''}
@@ -598,6 +651,38 @@
             }
         }
 
+        // Helper function to check if URL is a database homepage (not an actual document)
+        function isDatabaseHomepage(url) {
+            if (!url) return false;
+            try {
+                const urlObj = new URL(url);
+                const pathname = urlObj.pathname.toLowerCase();
+                const hostname = urlObj.hostname.toLowerCase();
+
+                // These are database homepages, NOT actual documents
+                const databaseHomepages = [
+                    'ibiblio.org/laslave',      // Louisiana Slave Database
+                    'slavevoyages.org',          // Slave Voyages Database
+                    'freedmensbureau.com',       // Freedmen's Bureau
+                    'slaveryinamerica.org'       // Various slavery databases
+                ];
+
+                // Check if it's a database homepage (short path, no specific document)
+                for (const db of databaseHomepages) {
+                    if ((hostname + pathname).includes(db)) {
+                        // Only count as homepage if path is short (no specific record)
+                        if (pathname === '/' || pathname.length < 10) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            } catch {
+                return false;
+            }
+        }
+
         // Helper function to describe source URLs in human-readable form
         function getSourceDescription(url) {
             if (!url) return 'Unknown source';
@@ -605,7 +690,11 @@
                 const urlObj = new URL(url);
                 const hostname = urlObj.hostname.toLowerCase();
 
-                if (hostname.includes('familysearch')) {
+                if (hostname.includes('ibiblio.org') && hostname.includes('laslave')) {
+                    return 'Louisiana Slave Database (ibiblio.org)';
+                } else if (hostname.includes('ibiblio')) {
+                    return 'Louisiana Slave Database (ibiblio.org)';
+                } else if (hostname.includes('familysearch')) {
                     return 'FamilySearch.org - Historical Records';
                 } else if (hostname.includes('msa.maryland.gov')) {
                     return 'Maryland State Archives - Official Records';

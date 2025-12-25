@@ -1042,6 +1042,7 @@ router.get('/person/:id', async (req, res) => {
         // For slaveholders, get their documents from documents table
         let ownerDocuments = [];
         let enslavedPersons = [];
+        let descendants = [];
         if (person.person_type === 'slaveholder' || person.person_type === 'owner' || tableSource === 'canonical_persons' || tableSource === 'documents') {
             // Get documents for this owner
             const ownerDocsResult = await pool.query(`
@@ -1126,6 +1127,32 @@ router.get('/person/:id', async (req, res) => {
                     `, [`%${person.full_name}%`]);
                     enslavedPersons = altResult.rows;
                 }
+            }
+
+            // Get descendants from WikiTree scraping (slave_owner_descendants_suspected)
+            let descendants = [];
+            try {
+                const descendantsResult = await pool.query(`
+                    SELECT
+                        id,
+                        descendant_name,
+                        descendant_birth_year,
+                        descendant_death_year,
+                        generation_from_owner,
+                        is_living,
+                        estimated_living_probability,
+                        familysearch_person_id as wikitree_id,
+                        discovered_via,
+                        research_notes
+                    FROM slave_owner_descendants_suspected
+                    WHERE owner_individual_id = $1
+                    OR owner_name ILIKE $2
+                    ORDER BY generation_from_owner ASC, descendant_birth_year ASC
+                    LIMIT 50
+                `, [id, `%${person.full_name}%`]);
+                descendants = descendantsResult.rows;
+            } catch (e) {
+                console.log('Descendants query error:', e.message);
             }
 
             // Calculate reparations owed BY this slaveholder
@@ -1239,6 +1266,7 @@ router.get('/person/:id', async (req, res) => {
             documents,
             ownerDocuments,  // Documents belonging to slaveholders
             enslavedPersons, // Enslaved persons connected to this owner
+            descendants,     // Descendants of slaveholder from WikiTree
             rawData: {
                 contextText: person.context_text || null,
                 locations: person.locations || null,
@@ -1825,6 +1853,158 @@ router.get('/data-quality-metrics', async (req, res) => {
 
     } catch (error) {
         console.error('Data quality metrics error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * GET /api/contribute/ocr-issues
+ * Get all OCR-flagged records that need rescraping or review
+ * Used by review.html to surface data quality issues
+ */
+router.get('/ocr-issues', async (req, res) => {
+    try {
+        const { Pool } = require('pg');
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
+        });
+
+        // Get summary by issue type and state
+        const summary = await pool.query(`
+            WITH parsed AS (
+                SELECT
+                    lead_id,
+                    full_name,
+                    data_quality_flags->>'ocr_issue' as issue_type,
+                    data_quality_flags->>'priority' as priority,
+                    CASE
+                        WHEN context_text ILIKE '%arkansas%' THEN 'Arkansas'
+                        WHEN context_text ILIKE '%louisiana%' THEN 'Louisiana'
+                        WHEN context_text ILIKE '%maryland%' THEN 'Maryland'
+                        WHEN context_text ILIKE '%tennessee%' THEN 'Tennessee'
+                        WHEN context_text ILIKE '%georgia%' THEN 'Georgia'
+                        WHEN context_text ILIKE '%alabama%' THEN 'Alabama'
+                        WHEN context_text ILIKE '%district of columbia%' THEN 'DC'
+                        ELSE 'Other'
+                    END as state,
+                    context_text
+                FROM unconfirmed_persons
+                WHERE data_quality_flags->>'ocr_issue' IS NOT NULL
+            )
+            SELECT
+                issue_type,
+                state,
+                COUNT(*) as count,
+                COUNT(*) FILTER (WHERE priority = 'high') as high_priority
+            FROM parsed
+            GROUP BY issue_type, state
+            ORDER BY count DESC
+        `);
+
+        // Get sample records for each issue type
+        const samples = await pool.query(`
+            SELECT
+                lead_id,
+                full_name,
+                data_quality_flags->>'ocr_issue' as issue_type,
+                data_quality_flags->>'priority' as priority,
+                LEFT(context_text, 150) as context_preview
+            FROM unconfirmed_persons
+            WHERE data_quality_flags->>'ocr_issue' IS NOT NULL
+            ORDER BY
+                CASE WHEN data_quality_flags->>'priority' = 'high' THEN 0 ELSE 1 END,
+                data_quality_flags->>'ocr_issue'
+            LIMIT 100
+        `);
+
+        // Get county-level breakdown for Arkansas (worst affected)
+        const arkansasCounties = await pool.query(`
+            SELECT
+                SUBSTRING(context_text FROM '\\| ([^,]+), Arkansas') as county,
+                COUNT(*) as flagged_count
+            FROM unconfirmed_persons
+            WHERE context_text ILIKE '%arkansas%'
+            AND data_quality_flags->>'ocr_issue' IS NOT NULL
+            GROUP BY county
+            ORDER BY flagged_count DESC
+            LIMIT 20
+        `);
+
+        // Total counts
+        const totals = await pool.query(`
+            SELECT
+                COUNT(*) as total_flagged,
+                COUNT(*) FILTER (WHERE data_quality_flags->>'priority' = 'high') as high_priority,
+                COUNT(*) FILTER (WHERE data_quality_flags->>'needs_rescrape' = 'true') as needs_rescrape
+            FROM unconfirmed_persons
+            WHERE data_quality_flags->>'ocr_issue' IS NOT NULL
+        `);
+
+        await pool.end();
+
+        res.json({
+            success: true,
+            totals: totals.rows[0],
+            summaryByIssueAndState: summary.rows,
+            arkansasCountyBreakdown: arkansasCounties.rows,
+            sampleRecords: samples.rows,
+            actions: {
+                rescrapeUrl: '/api/contribute/ocr-issues/rescrape',
+                deleteUrl: '/api/contribute/ocr-issues/delete',
+                clearFlagsUrl: '/api/contribute/ocr-issues/clear-flags'
+            },
+            message: 'Use pre-indexed FamilySearch data when rescraping. See OCR-QUALITY-CRISIS-PLAN.md'
+        });
+
+    } catch (error) {
+        console.error('OCR issues endpoint error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/contribute/ocr-issues/mark-for-rescrape
+ * Mark records for rescraping with improved OCR
+ */
+router.post('/ocr-issues/mark-for-rescrape', async (req, res) => {
+    try {
+        const { issueType, state, county } = req.body;
+
+        const { Pool } = require('pg');
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
+        });
+
+        let query = `
+            UPDATE unconfirmed_persons
+            SET data_quality_flags = data_quality_flags || '{"marked_for_rescrape": true, "rescrape_requested_at": "${new Date().toISOString()}"}'::jsonb
+            WHERE data_quality_flags->>'ocr_issue' IS NOT NULL
+        `;
+
+        const conditions = [];
+        if (issueType) conditions.push(`data_quality_flags->>'ocr_issue' = '${issueType}'`);
+        if (state) conditions.push(`context_text ILIKE '%${state}%'`);
+        if (county) conditions.push(`context_text ILIKE '%${county}%'`);
+
+        if (conditions.length > 0) {
+            query += ' AND ' + conditions.join(' AND ');
+        }
+
+        query += ' RETURNING lead_id';
+
+        const result = await pool.query(query);
+        await pool.end();
+
+        res.json({
+            success: true,
+            markedCount: result.rowCount,
+            message: `${result.rowCount} records marked for rescraping with pre-indexed data priority`
+        });
+
+    } catch (error) {
+        console.error('Mark for rescrape error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
