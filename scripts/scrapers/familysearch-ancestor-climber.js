@@ -33,10 +33,21 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { neon } = require('@neondatabase/serverless');
 const fs = require('fs');
 const { execSync, spawn } = require('child_process');
+const DocumentVerifier = require('../../src/services/genealogy/DocumentVerifier');
 
 puppeteer.use(StealthPlugin());
 
 const sql = neon(process.env.DATABASE_URL);
+
+// Initialize DocumentVerifier
+const documentVerifier = new DocumentVerifier(process.env.DATABASE_URL, {
+    bucket: process.env.S3_BUCKET_NAME,
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: process.env.AWS_ACCESS_KEY_ID ? {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    } : undefined
+});
 
 // Configuration
 const INTERACTIVE = process.env.FAMILYSEARCH_INTERACTIVE === 'true';
@@ -251,6 +262,26 @@ async function extractPersonFromPage() {
 
         // PARENT EXTRACTION - Multiple methods
 
+        // UI Garbage Filter - patterns to exclude
+        const uiGarbagePatterns = [
+            /Family Tree/i,
+            /Search/i,
+            /Memories/i,
+            /Get Involved/i,
+            /Activities/i,
+            /Sign In/i,
+            /Help/i,
+            /\n.*\n.*\n/  // Multi-line strings (likely UI menus)
+        ];
+
+        const isUIGarbage = (text) => {
+            if (!text) return true;
+            // Check for newlines (UI menu text)
+            if (text.includes('\n')) return true;
+            // Check against known UI patterns
+            return uiGarbagePatterns.some(pattern => pattern.test(text));
+        };
+
         // Method 1: Find "Parents and Siblings" section and extract FS IDs
         // The section shows parents with format: "Name\ndate • FS_ID"
         const parentsSection = allText.match(/Parents and Siblings([\s\S]*?)(?=Children\s*\(|Add Parent|$)/i);
@@ -297,16 +328,29 @@ async function extractPersonFromPage() {
             const parentEntries = allText.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n\s*(?:\d{4}[–-])?(?:Living)?\s*•?\s*([A-Z0-9]{4}-[A-Z0-9]{2,4})/g);
             if (parentEntries) {
                 for (const entry of parentEntries) {
+                    // Extract name and ID
+                    const nameMatch = entry.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/);
                     const idMatch = entry.match(/([A-Z0-9]{4}-[A-Z0-9]{2,4})/);
-                    if (idMatch && idMatch[1] !== result.fs_id && !result.parents.includes(idMatch[1])) {
-                        result.parents.push(idMatch[1]);
+                    
+                    if (nameMatch && idMatch) {
+                        const name = nameMatch[1];
+                        const foundId = idMatch[1];
+                        
+                        // Skip if UI garbage
+                        if (isUIGarbage(name)) {
+                            continue;
+                        }
+                        
+                        if (foundId !== result.fs_id && !result.parents.includes(foundId)) {
+                            result.parents.push(foundId);
+                        }
                     }
                 }
                 result.parents = result.parents.slice(0, 2);
             }
         }
 
-        // Assign to father/mother slots
+        // Assign to father/mother slots (after filtering)
         if (result.parents.length >= 1) result.father_fs_id = result.parents[0];
         if (result.parents.length >= 2) result.mother_fs_id = result.parents[1];
 
@@ -314,7 +358,8 @@ async function extractPersonFromPage() {
             url: window.location.href,
             title: document.title,
             parentsFound: result.parents.length,
-            allParentIds: result.parents
+            allParentIds: result.parents,
+            garbageFiltered: true
         };
 
         return result;
@@ -791,16 +836,43 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
                     else checks.push('? dates');
                     console.log(`   Verified: ${checks.join(', ')}`);
 
+                    // NEW: Check for supporting documents
+                    console.log(`   🔍 Checking for documents...`);
+                    const docVerification = await documentVerifier.verifyMatch(
+                        enslaverMatch.canonical_name || enslaverMatch.full_name,
+                        modernPerson?.name || person.name,
+                        [...path, person.name]
+                    );
+
+                    if (docVerification.hasDocuments) {
+                        console.log(`   📄 Found ${docVerification.documentCount} document(s): ${docVerification.documentTypes.join(', ')}`);
+                        console.log(`   📊 Verification level: ${docVerification.verificationLevel.toUpperCase()}`);
+                        if (docVerification.enslavedPersonsDocumented.length > 0) {
+                            console.log(`   👥 ${docVerification.enslavedPersonsDocumented.length} enslaved person(s) documented`);
+                        }
+                    } else {
+                        console.log(`   ⚠️  No documents found - requires research`);
+                    }
+
                     // Classification disabled - requires document verification
                     const classification = await classifyLineage([...path, person.name], person);
-                    console.log(`   Status: UNVERIFIED - requires document review`);
+                    
+                    // Update status based on document verification
+                    let status = 'UNVERIFIED - requires document review';
+                    if (docVerification.verificationLevel === 'documented') {
+                        status = 'DOCUMENTED - has primary source evidence';
+                    } else if (docVerification.verificationLevel === 'partial') {
+                        status = 'PARTIAL - has documents but needs full verification';
+                    }
+                    console.log(`   Status: ${status}`);
 
                     const matchRecord = {
                         person,
                         match: enslaverMatch,
                         generation,
                         path: [...path, person.name],
-                        classification
+                        classification,
+                        documentVerification: docVerification // NEW: Include doc verification
                     };
 
                     localMatches.push(matchRecord);
