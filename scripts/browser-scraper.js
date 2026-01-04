@@ -23,7 +23,7 @@
     // CONFIGURATION
     // ========================================================================
     const CONFIG = {
-        API_BASE: 'https://reparations-is-a-real-number.onrender.com/api/scraper',
+        API_BASE: 'https://reparations-platform.onrender.com/api/scraper',
         COLLECTION_ID: '3161105', // 1860 Slave Schedule
         HEARTBEAT_INTERVAL: 30000, // 30 seconds
         DELAY_BETWEEN_PAGES: 3000, // 3 seconds between image loads
