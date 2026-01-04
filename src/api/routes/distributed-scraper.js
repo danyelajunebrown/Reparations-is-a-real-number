@@ -355,7 +355,7 @@ router.get('/status', async (req, res) => {
         const devices = await db.query(`SELECT * FROM scraper_dashboard ORDER BY last_heartbeat DESC`);
 
         // Get state progress
-        const states = await db.query(`SELECT * FROM scraper_state_progress ORDER BY priority`);
+        const states = await db.query(`SELECT * FROM scraper_state_assignments WHERE year = 1860 ORDER BY priority`);
 
         // Get recent events
         const events = await db.query(`
