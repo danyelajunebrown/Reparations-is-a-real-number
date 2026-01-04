@@ -143,6 +143,11 @@ app.use('/api/names', namesRouter);
 // Corporate debts API (Farmer-Paellmann defendants) - Added Dec 18, 2025
 app.use('/api/corporate-debts', require('./api/routes/corporate-debts'));
 
+// Distributed scraper API (browser-based multi-device scraping)
+const { router: scraperRouter, initializeRouter: initScraper } = require('./api/routes/distributed-scraper');
+initScraper(db);
+app.use('/api/scraper', scraperRouter);
+
 // Legacy compatibility routes (redirect to new routes)
 app.post('/api/upload-document', (req, res) => {
   logger.warn('Legacy endpoint /api/upload-document called, redirecting to /api/documents/upload');
