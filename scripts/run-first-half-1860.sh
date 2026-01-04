@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
-# 1860 SLAVE SCHEDULE MASTER SCRAPER (FIXED)
+# 1860 SLAVE SCHEDULE - FIRST HALF (Alabama through Maryland)
 # =============================================================================
-# Processes all 15 slave states alphabetically
-# LOOPS until each state has 0 locations remaining
+# Processes states 0-7: Alabama, Delaware, Florida, Georgia, Kentucky, Louisiana, Maryland
+# Skips Arkansas (already done)
 # =============================================================================
 
 set -e
@@ -11,56 +11,44 @@ set -e
 # Configuration
 YEAR=1860
 LOG_DIR="logs/1860-slave-schedules"
-PROGRESS_FILE="$LOG_DIR/.master-progress"
+PROGRESS_FILE="$LOG_DIR/.master-progress-first-half"
 MAX_CONSECUTIVE_FAILURES=5
-DELAY_BETWEEN_RUNS=30      # seconds between batches
-DELAY_BETWEEN_STATES=60    # seconds between states
+DELAY_BETWEEN_RUNS=30
+DELAY_BETWEEN_STATES=60
 
-# All 1860 slave states in alphabetical order
+# First half states (Alabama through Maryland, skipping Arkansas)
 STATES=(
     "Alabama"
-    "Arkansas"
     "Delaware"
     "Florida"
     "Georgia"
     "Kentucky"
     "Louisiana"
     "Maryland"
-    "Mississippi"
-    "Missouri"
-    "North Carolina"
-    "South Carolina"
-    "Tennessee"
-    "Texas"
-    "Virginia"
 )
 
 # Change to project directory
 cd "$(dirname "$0")/.."
 PROJECT_DIR=$(pwd)
 
-# Create log directory
 mkdir -p "$LOG_DIR"
 
-# Initialize progress file if not exists
 if [ ! -f "$PROGRESS_FILE" ]; then
     echo "0" > "$PROGRESS_FILE"
 fi
 
-# Read current progress
 CURRENT_INDEX=$(cat "$PROGRESS_FILE")
 
 echo "========================================================================"
-echo "  1860 SLAVE SCHEDULE MASTER SCRAPER"
+echo "  1860 SLAVE SCHEDULE - FIRST HALF"
 echo "========================================================================"
 echo "  Started: $(date)"
 echo "  Project: $PROJECT_DIR"
-echo "  States:  ${#STATES[@]} total"
+echo "  States:  Alabama → Maryland (7 states, Arkansas already done)"
 echo "  Resume:  Starting from state #$((CURRENT_INDEX + 1)) (${STATES[$CURRENT_INDEX]})"
 echo "========================================================================"
 echo ""
 
-# Function to process a single state - LOOPS until truly complete
 process_state() {
     local state="$1"
     local state_log="$LOG_DIR/${state// /-}-$(date +%Y%m%d).log"
@@ -73,14 +61,12 @@ process_state() {
     echo "  Log file:   $state_log"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Keep looping until no more locations to process
     while true; do
         batch_num=$((batch_num + 1))
         echo "" >> "$state_log"
         echo ">>> Batch $batch_num at $(date)" >> "$state_log"
         echo ">>> Batch $batch_num starting..."
 
-        # Run the scraper (no limit - process all available)
         FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js \
             --state "$state" \
             --year $YEAR \
@@ -88,7 +74,6 @@ process_state() {
 
         EXIT_CODE=$?
 
-        # Check last lines of log for "0 locations to process"
         if grep -q "Found 0 locations to process" "$state_log" 2>/dev/null; then
             echo "✅ $state FULLY completed at $(date)" >> "$state_log"
             echo "✅ $state FULLY completed (all locations scraped)"
@@ -96,7 +81,6 @@ process_state() {
         fi
 
         if [ $EXIT_CODE -eq 0 ]; then
-            # Successful batch but more to do
             consecutive_failures=0
             echo "   Batch $batch_num done. Waiting ${DELAY_BETWEEN_RUNS}s before next batch..."
             sleep $DELAY_BETWEEN_RUNS
@@ -116,23 +100,16 @@ process_state() {
     done
 }
 
-# Main loop - process each state
 for i in "${!STATES[@]}"; do
-    # Skip already completed states
     if [ $i -lt $CURRENT_INDEX ]; then
         echo "⏭️  Skipping ${STATES[$i]} (already completed)"
         continue
     fi
 
     state="${STATES[$i]}"
-
-    # Process this state (loops until truly complete)
     process_state "$state"
-
-    # Update progress
     echo "$((i + 1))" > "$PROGRESS_FILE"
 
-    # Delay between states (except for last one)
     if [ $i -lt $((${#STATES[@]} - 1)) ]; then
         echo ""
         echo "⏳ Waiting ${DELAY_BETWEEN_STATES}s before next state..."
@@ -142,9 +119,6 @@ done
 
 echo ""
 echo "========================================================================"
-echo "  ALL STATES COMPLETE"
+echo "  FIRST HALF COMPLETE (Alabama through Maryland)"
 echo "  Finished: $(date)"
 echo "========================================================================"
-
-# Reset progress for future runs
-echo "0" > "$PROGRESS_FILE"
