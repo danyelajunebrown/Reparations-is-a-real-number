@@ -615,3 +615,106 @@ node src/server.js
 # Access at http://localhost:3000
 # Dashboard at http://localhost:3000/dashboard
 ```
+
+## Dedicated Mac Mini Scraper (January 2025)
+
+### Overview
+Long-running scraping tasks (1860 Slave Schedules, ancestor climbing, WikiTree) require 24/7 stable operation. A dedicated Mac Mini (2018 i5, 8GB RAM, 512GB SSD) runs these tasks autonomously with auto-restart on crash.
+
+### Setup Commands
+```bash
+# One-time setup on fresh Mac Mini
+npm run setup:mac-mini      # Installs Homebrew, Node.js, Chrome, dependencies
+
+# Install auto-restart service
+npm run setup:services      # Creates launchd service for 24/7 operation
+
+# Manual scraping commands
+npm run scrape:test         # Test with 1 record (Delaware)
+npm run scrape:1860         # Run 1860 slave schedule scraper (50 records batch)
+npm run scrape:alabama      # Scrape Alabama specifically
+npm run scrape:ancestor     # Run ancestor climber
+
+# View logs
+npm run logs                # Tail today's scraper log
+```
+
+### Long-Running Tasks
+
+**1860 Slave Schedule Scraping** (`scripts/extract-census-ocr.js`):
+- Extracts slaveholder and enslaved person data from FamilySearch
+- 15 slave states: Alabama, Arkansas, Delaware, Florida, Georgia, Kentucky, Louisiana, Maryland, Mississippi, Missouri, North Carolina, South Carolina, Tennessee, Texas, Virginia
+- Uses Puppeteer with Chrome for browser automation
+- Saves to `unconfirmed_persons` table
+- Progress: Arkansas complete, Alabama in progress
+
+**Ancestor Climber** (`scripts/scrapers/familysearch-ancestor-climber.js`):
+- Climbs FamilySearch family trees to find ancestors
+- Requires FamilySearch login cookies
+
+**WikiTree Scrapers** (`scripts/wikitree-*.js`):
+- Batch search and descendant scraping from WikiTree
+
+### Architecture
+
+**Auto-Restart Service** (`~/Library/LaunchAgents/com.reparations.scraper.plist`):
+- Starts scraper on login
+- Restarts automatically if process crashes
+- Logs to `logs/scraper-YYYYMMDD.log`
+- Throttle: 60 seconds between restarts
+
+**Cross-Platform Chrome Detection** (`scripts/extract-census-ocr.js:getChromePath()`):
+- macOS: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+- Windows: Checks Program Files for Chrome, falls back to Edge
+- Linux: `/usr/bin/google-chrome`
+
+### Service Management
+```bash
+# Check if service is running
+launchctl list | grep reparations
+
+# Stop service
+launchctl unload ~/Library/LaunchAgents/com.reparations.scraper.plist
+
+# Start service
+launchctl load ~/Library/LaunchAgents/com.reparations.scraper.plist
+
+# View recent logs
+tail -100 logs/scraper-$(date +%Y%m%d).log
+```
+
+### Files
+
+**Setup Scripts** (`scripts/mac-mini-setup/`):
+- `install.sh` - One-time setup (Homebrew, Node, Chrome, npm install, .env check)
+- `install-services.sh` - Creates launchd plist for auto-restart
+- `run-scraper.sh` - Wrapper script with logging and restart logic
+
+### Database Connection
+- Uses Neon PostgreSQL serverless (`@neondatabase/serverless`)
+- Connection string in `.env` as `DATABASE_URL`
+- No persistent connections (serverless-friendly)
+
+### Scraper State Tracking
+The distributed scraper API tracks progress:
+```bash
+# Check scraper status
+curl https://reparations-platform.onrender.com/api/scraper/status
+
+# Reset a crashed state assignment
+curl -X POST https://reparations-platform.onrender.com/api/scraper/reassign \
+  -H "Content-Type: application/json" \
+  -d '{"stateName": "Delaware"}'
+```
+
+### Archived Approaches (Deprecated)
+
+The following approaches were attempted but didn't work:
+
+**USB Portable Approach** (archived in `_archive/usb-approach/`):
+- Attempted to create portable Node.js package for library computers
+- Failed due to: USB execution blocked, 1.4GB too large to copy, library restrictions
+
+**Browser-Based Scraper** (archived):
+- JavaScript to paste in browser console
+- Failed due to: FamilySearch API returning HTML not JSON, script lost on navigation

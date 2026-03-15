@@ -1,9 +1,164 @@
 # Active Context: Current Development State
 
-**Last Updated:** December 23, 2025 (Session 17)
-**Current Phase:** Family Extraction & Descendant Tracking System
+**Last Updated:** March 11, 2026 (Session 20)
+**Current Phase:** Ancestor Climber Debugging & Pi Optimization
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
+
+---
+
+## Session 20 Accomplishments (Mar 11, 2026) ✅ NEW
+
+### 1) Ancestor Climber Fixed & Verified Working at Scale on Mac ✅
+**Root causes found and fixed:**
+- `launchBrowser()` was killing ALL Chrome instances (including logged-in sessions) via `pkill -9`. Fixed to reuse existing Chrome with remote debugging on port 9222, only kill climber-specific temp profile instances.
+- FamilySearch SPA not rendering before extraction. Added `waitForFunction` checks for page title pattern before extracting person data.
+- FamilySearch redirecting `/tree/person/details/{ID}` to `/tree/pedigree/portrait/{ID}`. Added redirect detection and re-navigation, plus fallback portrait view parsing (Method 4 & 5 in extractPersonFromPage).
+- Session expiration mid-climb. Added re-login detection and 3-minute manual login window in BFS loop.
+- Reduced excessive wait times (was 5-12 seconds per ancestor, now 2-3 seconds adaptive).
+
+**Test results (Mac):**
+- Successfully climbed 20+ ancestors through 4+ generations
+- Both parents found consistently for most ancestors
+- Reaching 1860s-era ancestors (slavery period) by generation 4
+- API endpoint (POST /api/ancestor-climb/start) spawns background process correctly
+- Sessions trackable via GET /api/ancestor-climb/sessions and /session/:id
+
+### 2) TODO: Pi Optimization (Pending)
+- Ancestor climb was built for kiosk mode on Raspberry Pi
+- Pi was too slow - need to optimize:
+  - Use Chromium instead of Chrome (lighter)
+  - Reduce wait times further for Pi hardware
+  - Consider headless mode option
+  - Pre-cache FamilySearch cookies
+  - Batch parent extraction from portrait view (all ancestors visible at once)
+  - Add progress indicator to kiosk UI for slow climbs
+  - Consider FamilySearch API approach if developer app gets approved
+
+---
+
+## Session 19 Accomplishments (Feb 28, 2026) ✅
+
+### 1) Ancestor Climber made operational via API + UI (FamilySearch OAuth fallback) ✅
+Problem: FamilySearch developer application was not approved; we need an in-person/assisted flow that lets a participant log in on our machine and run the “ancestor climber” at scale without official OAuth.
+
+What we built today:
+- Backend API endpoints (work with existing v2 climber script):
+  - POST `/api/ancestor-climb/start` → launches `scripts/scrapers/familysearch-ancestor-climber.js` with FAMILYSEARCH_INTERACTIVE=true (opens Chrome for login if needed)
+  - GET `/api/ancestor-climb/sessions?fsId=...` → list sessions (from `ancestor_climb_sessions`)
+  - GET `/api/ancestor-climb/session/:id` → session details + matches (from `ancestor_climb_matches`)
+  - GET `/api/ancestor-climb/pending-verification` → unverified matches for human review queue
+
+- Frontend UI (index.html + js/app.js):
+  - New “Trace Ancestors” quick action and bottom-nav “Climb” tab
+  - Ancestor panel with:
+    - FamilySearch ID + optional name inputs
+    - Start Climb button (calls POST /api/ancestor-climb/start)
+    - Sessions list (filterable by FS ID), click to view live matches
+    - “Pending Verification” stub listing unverified matches
+  - App logic added:
+    - startAncestorClimbUI(), loadAncestorSessions(), loadAncestorSessionMatches(), loadPendingVerification()
+
+- Server wiring:
+  - Added `src/api/routes/ancestor-climb.js`
+  - Mounted in `src/server.js`: `app.use('/api/ancestor-climb', ancestorClimbRouter)`
+
+Key properties of the v2 climber (already in script, now surfacing via UI/API):
+- Finds ALL slaveholder matches (no early stop), BFS climb with 1450 cutoff
+- Session persistence + resume capabilities (tables in `migrations/027-ancestor-climb-sessions.sql`)
+- Diagnostics capture for failed profile extraction
+- DocumentVerifier invoked for each potential match (classification remains ‘unverified’ until documents prove it)
+
+Operator instructions (in-person session):
+1. Start server locally (port 3000). If EADDRINUSE occurs, an instance is already running.
+2. Visit http://localhost:3000 → “Trace Ancestors” → enter FS ID (e.g., G21N-HD2) and click Start Climb.
+3. Chrome window opens on host; have participant log in to FamilySearch (first time per machine/profile).
+4. Return to “Climb Sessions” to monitor ancestors visited and matches found; click a session to see live matches.
+5. Use “Pending Verification” to triage unverified matches for human review.
+
+Notes & limitations:
+- This flow is intended for on-site/assisted use (no credentials handled by our server; login happens in local Chrome).
+- Classification into DEBT or CREDIT remains disabled until document verification confirms match context.
+
+Next steps (scale-up):
+1. Background runner + queue for multi-session concurrency (Mac minis, distinct Chrome profiles).
+2. Headless mode trials with authenticated cookies, where appropriate (while preserving ToS).
+3. Reviewer UI with evidence linking and one-click verification decisions.
+4. Auto-hand-off from verified matches → DAAOrchestrator to generate participant’s comprehensive DAA.
+
+Files changed in this session:
+- Added: `src/api/routes/ancestor-climb.js`
+- Updated: `src/server.js` (mounted new router)
+- Updated: `index.html` (new panel + nav + quick action)
+- Updated: `js/app.js` (UI logic for start/monitor/pending verification)
+
+---
+
+## Session 18 Accomplishments (Jan 31, 2026) ✅ NEW
+
+### 1. DAA System Architecture Complete ✅
+**Goal:** Engineer production system to generate Debt Acknowledgement Agreements from ancestor climb data
+
+**Discovered:** 
+- 74,095 CivilWarDC records in `unconfirmed_persons` (data WAS there, just not promoted!)
+- 10 Biscoe/Chew slaveholders found and promoted to `canonical_persons`
+- 1051 petition URLs with 100+ enslaved persons linked
+
+**Files Created:**
+- `scripts/promote-civilwardc-slaveholders.js` - Promotes CivilWarDC slaveholders from unconfirmed → canonical
+- `scripts/generate-comprehensive-daa.js` - Main DAA generation script
+- `docs/COMPREHENSIVE-DAA-GENERATION.md` - Complete system documentation
+- `src/services/reparations/DAAOrchestrator.js` - Coordinates DAA generation
+- `src/services/reparations/DAADocumentGenerator.js` - Generates DOCX documents
+
+**Key Technical Achievement:**
+Enhanced name matching in DAAOrchestrator for common variations:
+- "Angelica Chesley" → "Angelica Chew" (FamilySearch vs CivilWarDC naming)
+- "Angelica Chesley" → "Maria Angelica Biscoe" 
+- Biscoe/Bisco spelling variations
+- All Chew family name matching
+
+**Promoted Slaveholders:**
+| Name | ID | Status |
+|------|-----|--------|
+| Angelica Chew | 141014 | ✅ Promoted |
+| Ann M. Biscoe | 141015 | ✅ Promoted |
+| Ann Maria Biscoe and Emma Biscoe | 141016 | ✅ Promoted |
+| Bennet Biscoe | 141017 | ✅ Promoted |
+| Bennett Biscoe | 141018 | ✅ Promoted |
+| Emma Biscoe | 141019 | ✅ Promoted |
+| Geo Biscoe | 141020 | ✅ Promoted |
+| Miss Ann Biscoe | 141021 | ✅ Promoted |
+| Phil. Chew | 141022 | ✅ Promoted |
+| Walter B. Chew | 141023 | ✅ Promoted |
+
+**System Architecture:**
+```
+User provides FamilySearch ID
+         ↓
+Ancestor Climb runs (finds ALL slaveholders in lineage)
+         ↓
+DAAOrchestrator queries database for documented slaveholders
+         ↓
+Fuzzy name matching (handles spelling variations)
+         ↓
+Aggregates ALL enslaved persons per slaveholder
+         ↓
+Calculates total debt across ALL slaveholders
+         ↓
+DAADocumentGenerator creates DOCX with primary sources
+```
+
+**Data Pipeline Fixed:**
+1. CivilWarDC scrapers had extracted 74K records → `unconfirmed_persons`
+2. Created promotion script to move to `canonical_persons`
+3. Enhanced name matching to handle variations
+4. DAA system now finds complete lineage
+
+**Next Steps:**
+- Run: `node scripts/generate-comprehensive-daa.js --fs-id G21N-4JF --name "Nancy Brown" --email "nancy@example.com" --income 65000`
+- Should now generate complete DAA with ALL Biscoe/Chew/Hopewell slaveholders
+- Test validates system finds all connections
 
 ---
 

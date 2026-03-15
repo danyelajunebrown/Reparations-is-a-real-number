@@ -1,0 +1,151 @@
+/* Debt River Animation Styles */
+
+/* Container - behind all other content */
+#debtRiverContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* Individual debt particles */
+.debt-particle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    padding: 10px 15px;
+    background: rgba(20, 25, 50, 0.6);
+    border: 1px solid rgba(100, 200, 255, 0.15);
+    border-left: 3px solid #64c8ff; /* Regional color set via JS */
+    border-radius: 8px;
+    pointer-events: auto;
+    will-change: transform, opacity;
+    transition: opacity 1s ease, cursor 0.2s;
+    backdrop-filter: blur(5px);
+    min-width: 200px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.debt-particle:hover {
+    background: rgba(30, 35, 60, 0.8);
+    border-color: rgba(100, 200, 255, 0.4);
+}
+
+/* Name styling */
+.debt-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #e0e0e0;
+    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+/* Amount and region styling */
+.debt-amount {
+    font-size: 13px;
+    color: #ff6464; /* Debt red */
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.debt-amount::before {
+    content: '⚖ ';
+    opacity: 0.7;
+}
+
+/* When particle is a search match and pulled to center */
+.debt-particle.matched {
+    border-width: 2px;
+    box-shadow: 0 8px 30px rgba(100, 200, 255, 0.4);
+    z-index: 10;
+}
+
+/* Mobile optimization */
+@media (max-width: 768px) {
+    .debt-particle {
+        min-width: 160px;
+        padding: 8px 12px;
+        font-size: 14px;
+    }
+    
+    .debt-name {
+        font-size: 14px;
+    }
+    
+    .debt-amount {
+        font-size: 11px;
+    }
+    
+    /* Reduce particle count on mobile - handled in JS */
+    /* Simplify animation - handled in JS */
+}
+
+/* Ensure hero container stays above river */
+.hero-container {
+    position: relative;
+    z-index: 1;
+}
+
+/* Ensure other UI elements stay above */
+.bottom-bar,
+.feature-panel,
+.search-results-panel,
+.person-modal-overlay,
+.document-viewer-modal,
+.toast,
+.wallet-btn,
+.system-status-badge {
+    z-index: 1000;
+}
+
+/* Animation performance optimizations */
+.debt-particle {
+    /* Use GPU acceleration */
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+/* Hover state for matched particles */
+.debt-particle[style*="cursor: pointer"]:hover {
+    background: rgba(40, 50, 90, 0.9);
+    border-left-width: 4px;
+}
+
+/* Subtle glow effect for high-value debts (>$5M) */
+.debt-particle[data-high-value="true"] {
+    box-shadow: 0 4px 20px rgba(255, 100, 100, 0.2);
+}
+
+/* Regional color variations */
+.debt-particle[data-region="Maryland"],
+.debt-particle[data-region="Virginia"] {
+    border-left-color: #8b4513; /* Brown */
+}
+
+.debt-particle[data-region="South Carolina"],
+.debt-particle[data-region="Georgia"] {
+    border-left-color: #2e7d32; /* Dark green */
+}
+
+.debt-particle[data-region="Louisiana"],
+.debt-particle[data-region="Mississippi"] {
+    border-left-color: #5e35b1; /* Purple */
+}
+
+.debt-particle[data-region="Washington DC"] {
+    border-left-color: #1976d2; /* Blue */
+}
+
+.debt-particle[data-region="Alabama"] {
+    border-left-color: #d84315; /* Orange-red */
+}
+
+.debt-particle[data-region="North Carolina"] {
+    border-left-color: #6a1b9a; /* Deep purple */
+}

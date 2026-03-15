@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kiosk • Contribute Your Ancestry</title>
+  <link rel="stylesheet" href="styles/kiosk.css" />
+</head>
+<body>
+  <div id="kiosk-container">
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen active">
+      <div class="center-wrap">
+        <h1 class="brand">Contribute Your Ancestry to Reparations ∈ ℝ</h1>
+        <p class="tag">Touch to begin</p>
+        <button id="start-btn" class="primary-btn">Connect FamilySearch</button>
+        <div class="foot-note">A FamilySearch login window will open (visible)</div>
+      </div>
+    </div>
+
+    <!-- FS ID Prompt Modal -->
+    <div id="prompt-overlay" class="overlay">
+      <div class="dialog">
+        <h2>Enter Your FamilySearch ID</h2>
+        <p class="hint">Example: G21N-HD2 (found on your FamilySearch profile)</p>
+        <input id="fsid-input" type="text" placeholder="e.g., G21N-HD2" autofocus />
+        <input id="name-input" type="text" placeholder="Your name (optional)" />
+        <div class="row">
+          <button id="cancel-prompt" class="secondary-btn">Cancel</button>
+          <button id="confirm-prompt" class="primary-btn">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Screen -->
+    <div id="progress-screen" class="screen">
+      <div class="header">
+        <div class="title">Climbing your ancestor tree…</div>
+        <div class="clock" id="idle-timer"></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Ancestors Visited</div>
+          <div class="value" id="stat-visited">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">Matches Found</div>
+          <div class="value" id="stat-matches">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">Status</div>
+          <div class="value" id="stat-status">starting…</div>
+        </div>
+      </div>
+
+      <div class="list" id="matches-list">
+        <div class="empty">Waiting for results… Log in to FamilySearch in the window that opened.</div>
+      </div>
+
+      <div class="footer">
+        <button id="reset-btn" class="secondary-btn">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/kiosk.js"></script>
+</body>
+</html>

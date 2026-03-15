@@ -1,8 +1,8 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Production Ready - Family & Descendant Tracking Active
-**Last Updated:** December 23, 2025
+**Current Phase:** Ancestor Climber Debugging & Pi Optimization
+**Last Updated:** March 11, 2026
 
 ---
 
@@ -146,6 +146,64 @@ Compensation TO owners PROVES debt owed TO descendants:
 ---
 
 ### Phase 9: Data Source Expansion (Dec 10, 2025) ✅
+### Phase 22: Ancestor Climber Debugging & Scale Testing (Mar 11, 2026) ✅ NEW
+**Goal:** Fix broken ancestor climb, verify working at scale on Mac, plan Pi optimization
+
+**Root Causes Found & Fixed:**
+- `launchBrowser()` was killing ALL Chrome instances via `pkill -9` — including logged-in sessions. Fixed to reuse existing Chrome with remote debugging on port 9222; only kills climber-specific temp profile instances.
+- FamilySearch React SPA not rendering before data extraction — "Sign In" text extracted as person name. Added `waitForFunction` for page title pattern before extraction.
+- FamilySearch redirecting `/tree/person/details/{ID}` to `/tree/pedigree/portrait/{ID}`. Added redirect detection + re-navigation, plus fallback portrait view parsing (Methods 4 & 5 in `extractPersonFromPage`).
+- Session expiration mid-climb unhandled. Added re-login detection with 3-minute manual login window in BFS loop.
+- Reduced excessive wait times (was 5–12s per ancestor, now 2–3s adaptive).
+
+**Test Results (Mac):**
+- Successfully climbed 20+ ancestors through 4+ generations
+- Both parents found consistently for most ancestors
+- Reaching 1860s-era ancestors (slavery period) by generation 4
+- API endpoint (POST /api/ancestor-climb/start) spawns background process correctly
+- Sessions trackable via GET /api/ancestor-climb/sessions and /session/:id
+
+**TODO — Pi Optimization (Pending):**
+- [ ] Use Chromium instead of Chrome (lighter on Pi)
+- [ ] Reduce wait times further for Pi hardware constraints
+- [ ] Consider headless mode option for kiosk deployments
+- [ ] Pre-cache FamilySearch cookies to skip login
+- [ ] Batch parent extraction from portrait view (all ancestors visible at once)
+- [ ] Add progress indicator to kiosk UI for slow climbs
+- [ ] Explore FamilySearch API if developer app eventually approved
+
+**Files Modified:**
+- `scripts/scrapers/familysearch-ancestor-climber.js` — launchBrowser(), ensureLoggedIn(), BFS loop, extractPersonFromPage()
+
+---
+
+### Phase 21: Ancestor Climber Operationalization (Feb 28, 2026) ✅
+**Goal:** Enable in-person sessions to trace a participant's ancestors to slaveholders using the FamilySearch workaround (no OAuth approval), with UI and API support.
+
+**Completed Features:**
+- ✅ Added backend API for climbs (work with existing v2 climber):
+  - POST `/api/ancestor-climb/start` – launches local Chrome + climber script
+  - GET `/api/ancestor-climb/sessions?fsId=...` – list climb sessions
+  - GET `/api/ancestor-climb/session/:id` – session + matches
+  - GET `/api/ancestor-climb/pending-verification` – review queue (unverified)
+- ✅ Mounted routes in `src/server.js` and created `src/api/routes/ancestor-climb.js`
+- ✅ Frontend “Trace Ancestors” panel + “Climb” nav in index.html
+- ✅ js/app.js functions: `startAncestorClimbUI()`, `loadAncestorSessions()`, `loadAncestorSessionMatches()`, `loadPendingVerification()`
+- ✅ Uses climber v2 strengths: ALL matches (no early stop), 1450 cutoff, session persistence, DocumentVerifier integration, diagnostics capture
+
+**Operator Flow (Local Mac, Assisted Login):**
+1. Ensure server is running on port 3000 (if EADDRINUSE, one is already running).
+2. Visit http://localhost:3000 → “Trace Ancestors” → enter FamilySearch ID → Start Climb
+3. Chrome opens locally; participant logs in to FamilySearch (first-time per machine/profile)
+4. Monitor “Climb Sessions” and click a session to view live matches
+5. Triage items in “Pending Verification”; classification remains UNVERIFIED until documents confirm
+
+**Next Steps:**
+- Background job/queue for multi-session concurrency on Mac minis
+- Reviewer UI for document-backed verification and classification
+- Headless mode trials with authenticated cookies (respecting ToS)
+- Pipe verified matches to DAAOrchestrator for DAA generation
+
 **Goal:** Add major historical data sources to scraping queue
 
 **Completed:**
@@ -822,10 +880,50 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 - [x] CompensationTracker financial system
 - [x] Corporate entity Farmer-Paellmann integration
 
-### Q1 2026 🔮
+### Ph
+**Goal:** Build comprehensive legal infrastructure for reparations claims across ALL Triangle Trade jurisdictions
+
+**Completed Features:**
+- ✅ Migration 031: Triangle Trade Legal Framework
+  - Legal jurisdictions table (UK, France, Haiti, US, Spain, Netherlands, Portugal)
+  - Legal texts and statutes table with key provisions
+  - UK 1833 loan data (paid off 2015 - PRIMARY PRECEDENT)
+  - Haiti independence debt ($21B inverse reparations)
+  - Farmer-Paellmann failure analysis with changed circumstances
+  - Legal doctrines (unjust enrichment, constructive trust, successor liability, badges/incidents)
+  - Garnishment mechanisms with Mullen/Darity assessment
+  - Escrow tracking for when "somebody bites"
+- ✅ LegalPrecedentService.js - Query service for all legal data
+- ✅ API routes (/api/legal/*) for:
+  - GET /precedents - All precedents ranked by strength
+  - GET /uk-1833 - Primary precedent
+  - GET /haiti - Counter-precedent (inverse reparations)
+  - GET /farmer-paellmann - Strategic lessons from 2004 failure
+  - GET /jurisdictions - All Triangle Trade jurisdictions
+  - GET /doctrines - Legal theories applicable to reparations
+  - GET /mechanisms - Garnishment approaches by defendant type
+  - GET /daa-citations/:jurisdiction/:defendantType - Build DAA citations
+
+**Key Strategic Decisions:**
+1. **Individual DAAs (A)** = Our way in (avoids Farmer-Paellmann standing issues)
+2. **Class action (B)** = Secondary, always thinking class action
+3. **Government taxation (C)** = ONLY ethical mechanism per Mullen/Darity - ultimate goal
+4. **Escrow strategy** = Credit distribution when payments arrive, not before
+
+**Legal Texts Added:**
+- Slavery Abolition Act 1833 (UK)
+- Code Noir 1685 & Louisiana 1724 (France)
+- Treaty of Utrecht / British Asiento 1713 (Spain)
+- Moret Law 1870 & Cuba Abolition 1886 (Spain)
+- Netherlands 2023 Apology & €200M Fund
+
+---
+
+### Q1 2026 🔮 (Updated Feb 28, 2026)
 
 #### January 2026
-**Focus:** WikiTree Descendant Scraping & Financial Integration
+**Focus:** Legal Framework Integration & WikiTree Processing
+- [x] Triangle Trade Legal Framework complete
 - [ ] Run wikitree-descendant-scraper on all queued profiles
 - [ ] Connect CompensationTracker to live UCL LBS data
 - [ ] Build enslaved credit calculations for confirmed descendants
@@ -833,7 +931,12 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 - [ ] Implement blockchain smart contract integration
 
 #### February-March 2026
-**Focus:** Cross-Reference & Payment System
+**Focus:** Ancestor Climber rollout + Cross-Reference & Payment System
+- [x] In-person ancestor climber operational (UI + API + script integration)
+- [x] Ancestor climber debugged & verified working at scale on Mac (Mar 11, 2026)
+- [ ] Optimize ancestor climber for Raspberry Pi (Chromium, headless, reduced waits)
+- [ ] Background queue + headless worker profiles for concurrency
+- [ ] Reviewer UI for unverified matches → document-backed decisions
 - [ ] Match enslaved descendants ↔ enslaver descendants
 - [ ] Build participant KYC/identity verification
 - [ ] Create payment distribution UI

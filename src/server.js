@@ -29,6 +29,8 @@ const errorsRouter = require('./api/routes/errors');
 const { router: contributeRouter, initializeService: initContribute } = require('./api/routes/contribute');
 const bibliographyRouter = require('./api/routes/bibliography');
 const { router: namesRouter, initializeService: initNames } = require('./api/routes/names');
+const ancestorClimbRouter = require('./api/routes/ancestor-climb');
+const kioskRouter = require('./api/routes/kiosk');
 
 // Initialize Express app
 const app = express();
@@ -95,6 +97,11 @@ app.get('/index.html', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
+// Serve kiosk mode page
+app.get('/kiosk', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'kiosk.html'));
+});
+
 // Rate limiting
 app.use('/api', generalLimiter);
 
@@ -126,6 +133,8 @@ app.use('/api/chat', require('./api/routes/chat'));
 app.use('/api/health', healthRouter);
 app.use('/api/errors', errorsRouter);
 app.use('/api/bibliography', bibliographyRouter);
+app.use('/api/ancestor-climb', ancestorClimbRouter);
+app.use('/api/kiosk', kioskRouter);
 
 // Make database pool available to routes (for bibliography manager)
 app.set('pool', db);
@@ -142,6 +151,10 @@ app.use('/api/names', namesRouter);
 
 // Corporate debts API (Farmer-Paellmann defendants) - Added Dec 18, 2025
 app.use('/api/corporate-debts', require('./api/routes/corporate-debts'));
+
+// Legal precedents API (Triangle Trade legal framework) - Added Jan 5, 2026
+// UK 1833 loan, Haiti inverse debt, Farmer-Paellmann analysis, all jurisdictions
+app.use('/api/legal', require('./api/routes/legal-precedents'));
 
 // Distributed scraper API (browser-based multi-device scraping)
 const { router: scraperRouter, initializeRouter: initScraper } = require('./api/routes/distributed-scraper');

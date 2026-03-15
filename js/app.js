@@ -20,17 +20,163 @@
         });
 
         async function initializeApp() {
+            console.log('Initializing Reparations Platform...');
+
+            // Initialize Obsidian-style graph visualization (with error handling)
+            try {
+                if (typeof initGraph === 'function') {
+                    initGraph();
+                } else if (typeof GraphVisualization !== 'undefined') {
+                    window.graphViz = new GraphVisualization('graphContainer');
+                }
+            } catch (e) {
+                console.warn('Graph initialization failed:', e);
+            }
+
             // Load stats immediately without waiting for health check
-            loadStats();
+            try {
+                loadStats();
+            } catch (e) {
+                console.warn('Stats loading failed:', e);
+            }
 
             // Load data quality badge count
-            loadDataQualityBadge();
+            try {
+                loadDataQualityBadge();
+            } catch (e) {
+                console.warn('Data quality badge loading failed:', e);
+            }
 
             // Load extraction progress indicator (for the green dot)
-            loadExtractionProgress();
+            try {
+                loadExtractionProgress();
+            } catch (e) {
+                console.warn('Extraction progress loading failed:', e);
+            }
 
             // Ping backend in background
             pingBackend();
+
+            console.log('Initialization complete');
+        }
+
+        // ============================================
+        // ANCESTOR CLIMBER (UI + API integration)
+        // ============================================
+        async function startAncestorClimbUI() {
+            const fsId = (document.getElementById('ancestorFsIdInput')?.value || '').trim();
+            const name = (document.getElementById('ancestorNameInput')?.value || '').trim();
+            if (!fsId) {
+                showToast('Enter a FamilySearch ID (e.g., G21N-HD2)', 'error');
+                return;
+            }
+            try {
+                showToast('Starting ancestor climb...', 'info');
+                const res = await fetch(`${API_BASE_URL}/api/ancestor-climb/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fsId, name })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('Climb started. Check Chrome for FamilySearch login.', 'success');
+                    // Auto-refresh sessions list filtered by this FS ID
+                    const filterEl = document.getElementById('sessionsFsIdFilter');
+                    if (filterEl) filterEl.value = fsId;
+                    setTimeout(loadAncestorSessions, 1500);
+                } else {
+                    showToast(data.error || 'Failed to start climb', 'error');
+                }
+            } catch (e) {
+                showToast('Error starting climb: ' + e.message, 'error');
+            }
+        }
+
+        async function loadAncestorSessions() {
+            const container = document.getElementById('ancestorSessionsList');
+            if (!container) return;
+            container.innerHTML = '<div style="text-align:center; padding:12px; color:#9aa5b1;"><div class="spinner" style="margin:0 auto 8px;"></div>Loading sessions...</div>';
+            const fsId = (document.getElementById('sessionsFsIdFilter')?.value || '').trim();
+            const url = fsId ? `${API_BASE_URL}/api/ancestor-climb/sessions?fsId=${encodeURIComponent(fsId)}`
+                             : `${API_BASE_URL}/api/ancestor-climb/sessions`;
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load');
+                if (!data.sessions || data.sessions.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:#9aa5b1; padding:12px;">No sessions found</div>';
+                    document.getElementById('ancestorSessionMatches').innerHTML = '<div style="text-align:center; color:#9aa5b1; padding:16px;">Select a session to view matches</div>';
+                    return;
+                }
+                container.innerHTML = data.sessions.map(s => `
+                    <div class="quality-record" style="cursor:pointer;" onclick="loadAncestorSessionMatches('${s.id}')">
+                        <div class="quality-record-name" style="font-size:1em;">${escapeHtml(s.modern_person_name || s.modern_person_fs_id)}</div>
+                        <div class="quality-record-meta">
+                            FS ID: ${escapeHtml(s.modern_person_fs_id)} | Status: ${escapeHtml(s.status)} | Ancestors: ${s.ancestors_visited || 0} | Matches: ${s.matches_found || 0}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = `<div style="text-align:center; color:#ff6464; padding:12px;">Failed to load sessions: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function loadAncestorSessionMatches(sessionId) {
+            const container = document.getElementById('ancestorSessionMatches');
+            if (!container) return;
+            container.innerHTML = '<div style="text-align:center; padding:12px; color:#9aa5b1;"><div class="spinner" style="margin:0 auto 8px;"></div>Loading matches...</div>';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/ancestor-climb/session/${encodeURIComponent(sessionId)}`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load');
+                const matches = data.matches || [];
+                if (matches.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:#9aa5b1; padding:12px;">No matches yet (still climbing)</div>';
+                    return;
+                }
+                container.innerHTML = matches.map(m => {
+                    const conf = m.match_confidence ? Math.round(m.match_confidence * 100) + '%' : 'N/A';
+                    const badgeColor = m.classification === 'unverified' ? '#ffc864' : (m.classification === 'debt' ? '#ff6464' : '#64ff64');
+                    const reason = m.classification_reason || '';
+                    return `
+                        <div style="background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:8px; margin-bottom:8px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <div style="font-weight:600; color:#e0e0e0;">${escapeHtml(m.slaveholder_name)}</div>
+                                    <div style="color:#9aa5b1; font-size:0.85em;">Gen ${m.generation_distance} • Confidence ${conf} • Type ${escapeHtml(m.match_type || 'unknown')}</div>
+                                </div>
+                                <span style="font-size:0.75em; color:${badgeColor}; border:1px solid ${badgeColor}; padding:2px 8px; border-radius:6px; text-transform:uppercase;">${escapeHtml(m.classification || 'unverified')}</span>
+                            </div>
+                            ${reason ? `<div style="margin-top:6px; color:#9aa5b1; font-size:0.85em;">${escapeHtml(reason)}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = `<div style="text-align:center; color:#ff6464; padding:12px;">Failed to load matches: ${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function loadPendingVerification() {
+            const container = document.getElementById('pendingVerificationList');
+            if (!container) return;
+            container.innerHTML = '<div style="text-align:center; padding:12px; color:#9aa5b1;"><div class="spinner" style="margin:0 auto 8px;"></div>Loading...</div>';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/ancestor-climb/pending-verification?limit=50`);
+                const data = await res.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load');
+                if (!data.matches || data.matches.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; color:#9aa5b1; padding:12px;">No pending matches</div>';
+                    return;
+                }
+                container.innerHTML = data.matches.map(m => `
+                    <div class="quality-record" style="cursor:default;">
+                        <div class="quality-record-name" style="font-size:1em;">${escapeHtml(m.slaveholder_name)}</div>
+                        <div class="quality-record-meta">FS: ${escapeHtml(m.modern_person_fs_id)} • Gen ${m.generation_distance} • ${Math.round((m.match_confidence||0)*100)}% • ${escapeHtml(m.match_type||'')}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = `<div style="text-align:center; color:#ff6464; padding:12px;">Failed to load: ${escapeHtml(e.message)}</div>`;
+            }
         }
 
         async function loadDataQualityBadge() {
@@ -58,12 +204,18 @@
 
             while (retries < maxRetries && !backendReady) {
                 try {
+                    // Create AbortController for proper timeout handling
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
                     const response = await fetch(`${API_BASE_URL}/api/health`, {
                         method: 'GET',
                         mode: 'cors',
                         cache: 'no-cache',
-                        timeout: 10000
+                        signal: controller.signal
                     });
+
+                    clearTimeout(timeoutId);
 
                     if (response.ok) {
                         const data = await response.json();
@@ -157,6 +309,11 @@
                 return;
             }
 
+            // Trigger debt river animation search effect
+            if (window.debtRiver) {
+                window.debtRiver.onSearch(query);
+            }
+
             const resultsList = document.getElementById('resultsList');
             resultsList.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner" style="margin: 0 auto;"></div></div>';
             document.getElementById('searchResultsPanel').classList.add('active');
@@ -245,6 +402,11 @@
 
         function closeSearchResults() {
             document.getElementById('searchResultsPanel').classList.remove('active');
+            
+            // Reset debt river animation
+            if (window.debtRiver) {
+                window.debtRiver.onSearch('');
+            }
         }
 
         function viewResult(resultIndex) {
@@ -390,7 +552,7 @@
                 </div>
                 ` : `
                 <div class="person-section" style="background: rgba(255, 100, 100, 0.1); border: 2px solid rgba(255, 100, 100, 0.3); border-radius: 12px; padding: 20px; margin-bottom: 20px;">
-                    <div class="person-section-title" style="color: #ff6464; font-size: 1.1em; display: flex; align-items: center; gap: 10px;">`}
+                    <div class="person-section-title" style="color: #ff6464; font-size: 1.1em; display: flex; align-items: center; gap: 10px;">
                         <span style="font-size: 1.5em;">⚠️</span> Source Document Required
                     </div>
                     <div style="margin-top: 10px; color: #9aa5b1; font-size: 0.9em;">
@@ -929,6 +1091,7 @@
             if (panelId === 'people') loadPeople();
             if (panelId === 'quality') loadDataQuality();
             if (panelId === 'progress') startProgressRefresh();
+            if (panelId === 'ancestor') { loadAncestorSessions(); loadPendingVerification(); }
         }
 
         function closePanel(panelId) {

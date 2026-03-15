@@ -40,5 +40,27 @@ fix*.py
 fix*.pl
 RUN-THIS-TO-UPLOAD-PDFS.sh
 s3-setup-instructions.sh
-.env
 .chrome-profile/
+
+# Debug output
+debug/
+
+# Archive (dead code)
+_archive/
+
+# Cookie/session files
+fs-cookies.json
+fs-climber-cookies.json
+
+# Generated output
+generated-daas/
+
+# Memory bank (AI context, not code)
+memory-bank/
+
+# Tesseract training data (large, reinstallable)
+eng.traineddata
+
+# Test PDFs at root
+*.pdf
+!docs/**/*.pdf
