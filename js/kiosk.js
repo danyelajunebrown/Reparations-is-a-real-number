@@ -159,6 +159,21 @@
         statMatches.textContent = s.matches_found || 0;
         statStatus.textContent = s.status || 'in_progress';
         renderMatches(d.matches || []);
+
+        // Handle terminal states
+        if (s.status === 'failed') {
+          statStatus.textContent = 'Error — person not found or climb failed';
+          showToast('Climb failed. Check the FamilySearch ID and try again.', 'error');
+          clearInterval(pollInterval);
+          scheduleAutoReset();
+          return;
+        }
+        if (s.status === 'completed') {
+          clearInterval(pollInterval);
+          scheduleAutoReset();
+          return;
+        }
+
         scheduleAutoReset();
       } catch (err) {
         // Keep UI responsive with a helpful status
