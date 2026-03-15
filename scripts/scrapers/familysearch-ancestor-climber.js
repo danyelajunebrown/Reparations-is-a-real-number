@@ -338,15 +338,30 @@ async function ensureLoggedIn(startFsId) {
     console.log('Waiting for person page to fully render...');
     try {
         await page.waitForFunction(() => {
+            const bodyText = document.body.innerText;
             const title = document.title;
-            // Title should contain a person name pattern like "Name (year" or "Name (Deceased"
-            return title.match(/^[A-Z].*\((\d{4}|Deceased|Living)/) !== null;
+            // Check for actual content rendering (not just nav bar)
+            const hasPersonContent = bodyText.includes('Family Members') ||
+                                     bodyText.includes('Parents and Siblings') ||
+                                     bodyText.includes('Person Not Found') ||
+                                     bodyText.includes('Vital Information');
+            const hasTitleName = title.match(/^[A-Z].*\(/) !== null;
+            const hasH1 = document.querySelector('h1')?.innerText?.length > 2;
+            return hasPersonContent || hasTitleName || hasH1;
         }, { timeout: 15000 });
         console.log(`Page rendered: ${await page.title()}`);
     } catch (e) {
         // Fallback: wait extra time for SPA to load
         console.log('Page title not in expected format, waiting extra time...');
         await new Promise(r => setTimeout(r, 5000));
+    }
+
+    // Check if the starting person actually exists
+    const startPageText = await page.evaluate(() => document.body.innerText);
+    if (startPageText.includes('Person Not Found') ||
+        (await page.title()).includes('[Unknown Name]') ||
+        (await page.title()).includes('UNKNOWN')) {
+        throw new Error(`Starting person ${startFsId} not found on FamilySearch. Verify the FamilySearch ID is correct.`);
     }
 
     console.log('✓ Logged in and ready to climb ancestors\n');
@@ -1055,16 +1070,33 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
                 }
             }
 
-            // Wait for React app to render the person name in the title
+            // Wait for React app to render actual person content
             try {
                 await page.waitForFunction(() => {
+                    const bodyText = document.body.innerText;
                     const title = document.title;
-                    return title.match(/^[A-Z].*\((\d{4}|Deceased|Living)/) !== null;
-                }, { timeout: 8000 });
+                    // Check for any sign the SPA has rendered person data
+                    const hasPersonContent = bodyText.includes('Family Members') ||
+                                             bodyText.includes('Parents and Siblings') ||
+                                             bodyText.includes('Vital Information') ||
+                                             bodyText.includes('Person Not Found');
+                    const hasTitleName = title.match(/^[A-Z].*\(/) !== null;
+                    const hasH1 = document.querySelector('h1')?.innerText?.length > 2;
+                    return hasPersonContent || hasTitleName || hasH1;
+                }, { timeout: 10000 });
             } catch (e) {
-                // Title may not match pattern for some ancestors - that's OK
-                // Just wait a bit more for content to load
-                await new Promise(r => setTimeout(r, 2000));
+                // SPA may still be loading - give it a bit more time
+                await new Promise(r => setTimeout(r, 3000));
+            }
+
+            // Check for "Person Not Found" before attempting extraction
+            const pageBodyText = await page.evaluate(() => document.body.innerText);
+            const pageTitle = await page.title();
+            if (pageBodyText.includes('Person Not Found') ||
+                pageTitle.includes('[Unknown Name]') ||
+                pageTitle.includes('UNKNOWN')) {
+                console.log(`   ⚠ Person Not Found on FamilySearch (${fsId}), skipping`);
+                continue;
             }
 
             // ADAPTIVE WAIT TIMES based on generation depth
@@ -1536,6 +1568,18 @@ v2 Features:
     } catch (e) {
         console.error('Fatal error:', e.message);
         console.error(e.stack);
+        // Save failed status to DB so kiosk UI can show the error
+        if (sessionId) {
+            try {
+                await sql`
+                    UPDATE ancestor_climb_sessions
+                    SET status = 'failed',
+                        last_activity = NOW(),
+                        config = jsonb_set(COALESCE(config, '{}'), '{error}', ${JSON.stringify(e.message)}::jsonb)
+                    WHERE id = ${sessionId}
+                `;
+            } catch (_) { /* best effort */ }
+        }
     } finally {
         if (browser) {
             await browser.disconnect();
