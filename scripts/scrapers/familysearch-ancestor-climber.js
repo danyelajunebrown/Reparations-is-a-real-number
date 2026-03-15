@@ -64,6 +64,113 @@ let sessionId = null;
 let visited = new Set();
 let ancestors = [];
 let allMatches = []; // NEW: Store ALL matches, not just first
+let failedExtractions = []; // Track failed profiles for diagnostics
+
+/**
+ * Capture diagnostics for failed extraction
+ * 
+ * Saves HTML, screenshot, and metadata to debug folder for analysis
+ */
+async function captureFailedExtraction(fsId, generation, page, failureType = 'no_name') {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const debugDir = `debug/logs/failed-extractions/${sessionId || 'unknown'}`;
+    
+    // Create debug directory
+    if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+    }
+    
+    const baseFilename = `${fsId}-gen${generation}-${failureType}`;
+    
+    try {
+        // 1. Save full HTML
+        const html = await page.content();
+        const htmlPath = `${debugDir}/${baseFilename}.html`;
+        fs.writeFileSync(htmlPath, html);
+        
+        // 2. Take screenshot
+        const screenshotPath = `${debugDir}/${baseFilename}.png`;
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        
+        // 3. Extract visible text
+        const visibleText = await page.evaluate(() => document.body.innerText);
+        const textPath = `${debugDir}/${baseFilename}-text.txt`;
+        fs.writeFileSync(textPath, visibleText);
+        
+        // 4. Extract all links and IDs
+        const links = await page.evaluate(() => {
+            const anchors = document.querySelectorAll('a[href*="/tree/person/details/"]');
+            return Array.from(anchors).map(a => ({
+                href: a.getAttribute('href'),
+                text: a.innerText?.trim() || '',
+                id: a.href.match(/details\/([A-Z0-9]{4}-[A-Z0-9]{2,4})/)?.[1]
+            }));
+        });
+        
+        // 5. Check for key indicators
+        const indicators = await page.evaluate(() => {
+            const text = document.body.innerText;
+            return {
+                hasFamilyMembers: text.includes('Family Members'),
+                hasParentsAndSiblings: text.includes('Parents and Siblings'),
+                hasLoginPrompt: text.includes('Sign In') || text.includes('Log In'),
+                hasErrorMessage: text.includes('error') || text.includes('Error'),
+                pageTitle: document.title,
+                bodyTextLength: text.length,
+                hasReactMarkers: !!document.querySelector('[data-reactroot]') || 
+                                !!document.querySelector('[data-react-helmet]')
+            };
+        });
+        
+        // 6. Save metadata
+        const metadata = {
+            fs_id: fsId,
+            generation,
+            failure_type: failureType,
+            timestamp,
+            url: page.url(),
+            indicators,
+            links_found: links.length,
+            fs_ids_on_page: links.map(l => l.id).filter(Boolean),
+            html_size: html.length,
+            text_length: visibleText.length,
+            debug_files: {
+                html: htmlPath,
+                screenshot: screenshotPath,
+                text: textPath
+            }
+        };
+        
+        const metadataPath = `${debugDir}/${baseFilename}-metadata.json`;
+        fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+        
+        // Track for summary
+        failedExtractions.push({
+            fs_id: fsId,
+            generation,
+            failure_type: failureType,
+            folder: debugDir,
+            ...metadata
+        });
+        
+        return {
+            folder: debugDir,
+            htmlSize: html.length,
+            linkCount: links.length,
+            textLength: visibleText.length,
+            screenshotPath,
+            textSample: visibleText.substring(0, 200),
+            indicators,
+            fsIdsFound: links.map(l => l.id).filter(Boolean)
+        };
+    } catch (e) {
+        console.log(`   ⚠ Error capturing diagnostics: ${e.message}`);
+        return {
+            error: e.message,
+            folder: debugDir
+        };
+    }
+}
 
 /**
  * Launch Chrome with remote debugging (more stable than Puppeteer launch)
@@ -76,48 +183,108 @@ async function launchBrowser() {
     console.log('║  Log in if needed, then scraper will start automatically.  ║');
     console.log('╚════════════════════════════════════════════════════════════╝\n');
 
-    // Kill existing Chrome
+    // Try to connect to existing Chrome with remote debugging first
+    let connected = false;
     try {
-        execSync('pkill -9 -f "Google Chrome"', { stdio: 'ignore' });
-    } catch (e) {}
-
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Create temp profile
-    const tempProfileDir = '/tmp/familysearch-ancestor-climber';
-    if (!fs.existsSync(tempProfileDir)) {
-        fs.mkdirSync(tempProfileDir, { recursive: true });
+        browser = await puppeteer.connect({
+            browserURL: 'http://127.0.0.1:9222',
+            defaultViewport: null
+        });
+        connected = true;
+        console.log('Connected to existing Chrome instance!\n');
+    } catch (e) {
+        console.log('No existing Chrome with remote debugging found, launching new instance...');
     }
 
-    // Launch Chrome with remote debugging
-    const chromeProcess = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
-        '--remote-debugging-port=9222',
-        `--user-data-dir=${tempProfileDir}`,
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--window-size=1200,900',
-        'about:blank'
-    ], { detached: true, stdio: 'ignore' });
+    if (!connected) {
+        // Determine executable (Pi/Linux vs Mac)
+        const envExecutable = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.BROWSER_EXECUTABLE;
+        // Common defaults
+        const candidates = [
+            envExecutable,
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+            'chromium-browser',
+            'chromium',
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        ].filter(Boolean);
 
-    chromeProcess.unref();
+        // Resolve an executable: if absolute path, must exist; if command name, must be found via `which`
+        function resolveExecutable(cmd) {
+            if (!cmd) return null;
+            try {
+                const fs = require('fs');
+                if (cmd.includes('/')) {
+                    return fs.existsSync(cmd) ? cmd : null;
+                }
+                // command without path: check PATH via which
+                try {
+                    const out = execSync(`which ${cmd}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+                    return out && fs.existsSync(out) ? out : null;
+                } catch {
+                    return null;
+                }
+            } catch {
+                return null;
+            }
+        }
 
-    // Wait for Chrome to start
-    console.log('Waiting for Chrome to initialize...');
-    await new Promise(r => setTimeout(r, 4000));
+        // Pick first resolvable executable, fallback to last candidate (usually Google Chrome on macOS)
+        let executable = null;
+        for (const c of candidates) {
+            const r = resolveExecutable(c);
+            if (r) { executable = r; break; }
+        }
+        if (!executable) executable = candidates[candidates.length - 1];
 
-    // Connect Puppeteer
-    let connected = false;
-    for (let i = 0; i < 10; i++) {
+        const execBase = executable.split('/').pop();
+
+        // Kill existing Chrome instances that use our temp profile (not user's regular Chrome)
         try {
-            browser = await puppeteer.connect({
-                browserURL: 'http://127.0.0.1:9222',
-                defaultViewport: null
-            });
-            connected = true;
-            console.log('Connected to Chrome!\n');
-            break;
-        } catch (e) {
-            await new Promise(r => setTimeout(r, 1000));
+            execSync(`pkill -9 -f "familysearch-ancestor-climber"`, { stdio: 'ignore' });
+        } catch (e) {}
+
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Create temp profile
+        const tempProfileDir = '/tmp/familysearch-ancestor-climber';
+        if (!fs.existsSync(tempProfileDir)) {
+            fs.mkdirSync(tempProfileDir, { recursive: true });
+        }
+
+        // Launch Chrome with remote debugging
+        const chromeArgs = [
+            '--remote-debugging-port=9222',
+            `--user-data-dir=${tempProfileDir}`,
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--window-size=1200,900',
+            // Helpful on some Pi setups
+            '--password-store=basic',
+            'about:blank'
+        ];
+
+        const chromeProcess = spawn(executable, chromeArgs, { detached: true, stdio: 'ignore' });
+
+        chromeProcess.unref();
+
+        // Wait for Chrome to start
+        console.log(`Launching ${execBase} and waiting for remote debugger...`);
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Connect Puppeteer
+        for (let i = 0; i < 20; i++) {
+            try {
+                browser = await puppeteer.connect({
+                    browserURL: 'http://127.0.0.1:9222',
+                    defaultViewport: null
+                });
+                connected = true;
+                console.log('Connected to Chrome!\n');
+                break;
+            } catch (e) {
+                await new Promise(r => setTimeout(r, 1000));
+            }
         }
     }
 
@@ -154,8 +321,8 @@ async function ensureLoggedIn(startFsId) {
         let attempts = 0;
         while (attempts < 90) {
             await new Promise(r => setTimeout(r, 2000));
-            const url = page.url();
-            if (url.includes('/tree/person/details/')) {
+            const navUrl = page.url();
+            if (navUrl.includes('/tree/person/details/')) {
                 break;
             }
             attempts++;
@@ -165,6 +332,21 @@ async function ensureLoggedIn(startFsId) {
         const cookies = await page.cookies();
         fs.writeFileSync('./fs-climber-cookies.json', JSON.stringify(cookies, null, 2));
         console.log(`Saved ${cookies.length} cookies\n`);
+    }
+
+    // Wait for the React app to actually render the person data
+    console.log('Waiting for person page to fully render...');
+    try {
+        await page.waitForFunction(() => {
+            const title = document.title;
+            // Title should contain a person name pattern like "Name (year" or "Name (Deceased"
+            return title.match(/^[A-Z].*\((\d{4}|Deceased|Living)/) !== null;
+        }, { timeout: 15000 });
+        console.log(`Page rendered: ${await page.title()}`);
+    } catch (e) {
+        // Fallback: wait extra time for SPA to load
+        console.log('Page title not in expected format, waiting extra time...');
+        await new Promise(r => setTimeout(r, 5000));
     }
 
     console.log('✓ Logged in and ready to climb ancestors\n');
@@ -200,11 +382,24 @@ async function extractPersonFromPage() {
         if (urlMatch) result.fs_id = urlMatch[1];
 
         // METHOD 1: Get name from page title
-        // Format: "Danyele Brown (1996–Living) • Person • Family Tree"
-        const titleMatch = document.title.match(/^([^(]+)\s*\((\d{4})/);
-        if (titleMatch) {
-            result.name = titleMatch[1].trim();
-            result.birth_year = parseInt(titleMatch[2]);
+        // Format examples:
+        // "Danyele Brown (1996–Living) • Person • Family Tree"
+        // "Fannie (Deceased) • Person • Family Tree"
+        // "John Smith (Living) • Person • Family Tree"
+        
+        // Try with birth year first (preferred)
+        const titleMatchWithYear = document.title.match(/^([^(]+)\s*\((\d{4})/);
+        if (titleMatchWithYear) {
+            result.name = titleMatchWithYear[1].trim();
+            result.birth_year = parseInt(titleMatchWithYear[2]);
+        } else {
+            // Fallback: Extract name without year (handles "Fannie (Deceased)" cases)
+            const titleMatchNoYear = document.title.match(/^([^(]+)\s*\((Deceased|Living|[\d?])/);
+            if (titleMatchNoYear) {
+                result.name = titleMatchNoYear[1].trim();
+                // Mark as unknown year but person exists
+                result.birth_year = null;
+            }
         }
 
         // Check for death year in title
@@ -246,15 +441,42 @@ async function extractPersonFromPage() {
         // Deduplicate locations
         result.locations = [...new Set(result.locations)];
 
-        // METHOD 2: If title didn't work, try the page content
+        // METHOD 2: Try H1 element (most reliable for person pages)
         if (!result.name) {
-            // Look for the person info area - usually has name in prominent position
-            // allText already declared above
+            const h1 = document.querySelector('h1');
+            if (h1) {
+                // H1 contains: "Name\nMale\nLiving\n•\nFS_ID"
+                // Extract just the first line (the name)
+                const h1Text = h1.innerText || h1.textContent;
+                const lines = h1Text.split('\n');
+                if (lines.length > 0) {
+                    const nameCandidate = lines[0].trim();
+                    // Verify it's a name (has at least 2 words, not a UI element)
+                    const words = nameCandidate.split(/\s+/);
+                    if (words.length >= 2 && !nameCandidate.match(/Family Tree|Search|Memories|Activities/i)) {
+                        result.name = nameCandidate;
+                    }
+                }
+            }
+        }
 
+        // METHOD 3: If H1 didn't work, try page content (but avoid UI elements)
+        if (!result.name) {
+            // Try to find main content area first (excludes navigation)
+            const mainContent = document.querySelector('main') || 
+                              document.querySelector('[role="main"]') ||
+                              document;
+            
+            const contentText = mainContent.innerText || mainContent.textContent;
+            
             // The FS ID appears after the name with format "• G21N-HD2"
-            const nameIdMatch = allText.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n[^•]*•\s*([A-Z0-9]{4}-[A-Z0-9]{2,4})/);
+            const nameIdMatch = contentText.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*\n[^•]*•\s*([A-Z0-9]{4}-[A-Z0-9]{2,4})/);
             if (nameIdMatch && nameIdMatch[2] === result.fs_id) {
-                result.name = nameIdMatch[1].trim();
+                const nameCandidate = nameIdMatch[1].trim();
+                // Verify not UI garbage
+                if (!nameCandidate.match(/Family Tree|Search|Memories|Activities/i)) {
+                    result.name = nameCandidate;
+                }
             }
         }
 
@@ -350,6 +572,44 @@ async function extractPersonFromPage() {
             }
         }
 
+        // Method 4: Portrait/Pedigree view - parse FS IDs from visible text
+        // In portrait view, persons appear as blocks of text with FS IDs visible
+        // Format: "FirstName\nLastName\nMale/Female\nFS_ID\nYears"
+        if (result.parents.length === 0) {
+            const fsIdPattern = /([A-Z0-9]{4}-[A-Z0-9]{2,4})/g;
+            let match;
+            const allFoundIds = [];
+            while ((match = fsIdPattern.exec(allText)) !== null) {
+                const foundId = match[1];
+                if (foundId !== result.fs_id && !allFoundIds.includes(foundId)) {
+                    allFoundIds.push(foundId);
+                }
+            }
+            // In portrait view, the first 2 IDs after the person's own ID are typically the parents
+            if (allFoundIds.length > 0) {
+                result.parents = allFoundIds.slice(0, 2);
+            }
+        }
+
+        // Method 5: Find links to person pages (broader selector for pedigree view)
+        if (result.parents.length === 0) {
+            const allLinks = document.querySelectorAll('a[href*="/tree/person/"]');
+            const foundIds = [];
+            for (const link of allLinks) {
+                const href = link.getAttribute('href');
+                const idMatch = href.match(/(?:details|portrait)\/([A-Z0-9]{4}-[A-Z0-9]{2,4})/);
+                if (idMatch) {
+                    const foundId = idMatch[1];
+                    if (foundId !== result.fs_id && !foundIds.includes(foundId)) {
+                        foundIds.push(foundId);
+                    }
+                }
+            }
+            if (foundIds.length > 0) {
+                result.parents = foundIds.slice(0, 2);
+            }
+        }
+
         // Assign to father/mother slots (after filtering)
         if (result.parents.length >= 1) result.father_fs_id = result.parents[0];
         if (result.parents.length >= 2) result.mother_fs_id = result.parents[1];
@@ -359,7 +619,9 @@ async function extractPersonFromPage() {
             title: document.title,
             parentsFound: result.parents.length,
             allParentIds: result.parents,
-            garbageFiltered: true
+            garbageFiltered: true,
+            viewType: window.location.href.includes('portrait') ? 'portrait' :
+                      window.location.href.includes('pedigree') ? 'pedigree' : 'details'
         };
 
         return result;
@@ -757,28 +1019,90 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
             await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
             await new Promise(r => setTimeout(r, 2000));
 
-            // IMPORTANT: Scroll down to load Family Members section
+            // Check if we got redirected away from details page (e.g., to portrait/pedigree view)
+            let currentUrl = page.url();
+            if (!currentUrl.includes('/tree/person/details/')) {
+                if (currentUrl.includes('ident.familysearch') || currentUrl.includes('/auth/')) {
+                    console.log('   ⚠ Session expired - re-login required');
+                    console.log('   Please log in via the Chrome window...');
+                    try {
+                        await page.waitForFunction(() => {
+                            return window.location.href.includes('/tree/person/') ||
+                                   window.location.href.includes('/tree/pedigree/');
+                        }, { timeout: 180000 });
+                        const cookies = await page.cookies();
+                        fs.writeFileSync('./fs-climber-cookies.json', JSON.stringify(cookies, null, 2));
+                        console.log(`   ✓ Re-logged in, saved ${cookies.length} cookies`);
+                        currentUrl = page.url();
+                    } catch (loginErr) {
+                        console.log('   ⚠ Login timeout - skipping this ancestor');
+                        continue;
+                    }
+                }
+
+                // Redirected to portrait/pedigree view - navigate explicitly to details
+                if (!currentUrl.includes('/tree/person/details/')) {
+                    console.log(`   [Debug] Redirected to ${currentUrl}, forcing details view...`);
+                    await page.goto(PERSON_PAGE_URL + fsId, { waitUntil: 'networkidle2', timeout: 30000 });
+                    await new Promise(r => setTimeout(r, 2000));
+                    currentUrl = page.url();
+
+                    // If STILL redirected, it means FS doesn't have details for this person
+                    // or user preference forces portrait view - try to parse what we have
+                    if (!currentUrl.includes('/tree/person/details/')) {
+                        console.log(`   [Debug] Still on ${currentUrl.split('?')[0]}, will parse current view`);
+                    }
+                }
+            }
+
+            // Wait for React app to render the person name in the title
+            try {
+                await page.waitForFunction(() => {
+                    const title = document.title;
+                    return title.match(/^[A-Z].*\((\d{4}|Deceased|Living)/) !== null;
+                }, { timeout: 8000 });
+            } catch (e) {
+                // Title may not match pattern for some ancestors - that's OK
+                // Just wait a bit more for content to load
+                await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // ADAPTIVE WAIT TIMES based on generation depth
+            const baseScrollDelay = generation <= 3 ? 1500 :
+                                   generation <= 6 ? 2000 :
+                                   generation <= 10 ? 2500 : 3000;
+            const baseSectionWait = generation <= 3 ? 5000 :
+                                   generation <= 6 ? 7000 :
+                                   generation <= 10 ? 8000 : 10000;
+
+            // Step 1: Scroll down to trigger Family Members section loading
             await page.evaluate(() => {
                 window.scrollTo(0, 500);
             });
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, baseScrollDelay));
 
-            // Scroll more to ensure section loads
+            // Step 2: Scroll more to ensure section is in viewport
             await page.evaluate(() => {
                 window.scrollTo(0, 1000);
             });
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, baseScrollDelay));
 
-            // Click "Details" tab if exists to ensure we're on right view
+            // Step 3: Wait for Family Members section to appear (with adaptive timeout)
             try {
-                await page.evaluate(() => {
-                    const detailsTab = [...document.querySelectorAll('button, a')].find(
-                        el => el.textContent.trim() === 'Details'
-                    );
-                    if (detailsTab) detailsTab.click();
-                });
-                await new Promise(r => setTimeout(r, 1000));
-            } catch (e) {}
+                await page.waitForFunction(() => {
+                    const bodyText = document.body.innerText;
+                    return bodyText.includes('Family Members') ||
+                           bodyText.includes('Parents and Siblings') ||
+                           bodyText.includes('Children');
+                }, { timeout: baseSectionWait });
+
+                console.log('   [Debug] Family Members section loaded');
+            } catch (e) {
+                console.log('   [Debug] Family Members section not found (may have no family data)');
+            }
+
+            // Step 4: Brief wait for any final dynamic content
+            await new Promise(r => setTimeout(r, 1000));
 
             // Extract person data
             const person = await extractPersonFromPage();
@@ -794,7 +1118,42 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
             }
 
             if (!person.name) {
-                console.log('   ⚠ Could not extract name, skipping');
+                console.log('   ⚠ Could not extract name, capturing diagnostics...');
+                
+                const diagnostic = await captureFailedExtraction(fsId, generation, page, 'no_name');
+                
+                console.log(`   📁 Saved to: ${diagnostic.folder}`);
+                console.log(`   📄 HTML: ${diagnostic.htmlSize || 0} bytes`);
+                console.log(`   🔗 Links found: ${diagnostic.linkCount || 0}`);
+                if (diagnostic.fsIdsFound && diagnostic.fsIdsFound.length > 0) {
+                    console.log(`   🆔 FS IDs on page: ${diagnostic.fsIdsFound.join(', ')}`);
+                }
+                if (diagnostic.indicators) {
+                    console.log(`   📊 Page indicators:`);
+                    console.log(`      - Family Members section: ${diagnostic.indicators.hasFamilyMembers ? 'YES' : 'NO'}`);
+                    console.log(`      - Body text length: ${diagnostic.indicators.bodyTextLength} chars`);
+                    console.log(`      - Login prompt: ${diagnostic.indicators.hasLoginPrompt ? 'YES' : 'NO'}`);
+                }
+                if (diagnostic.textSample) {
+                    console.log(`   Preview: "${diagnostic.textSample.substring(0, 80)}..."`);
+                }
+                
+                continue;
+            }
+
+            // UI GARBAGE CHECK - Skip if person name is UI garbage
+            const isUIGarbage = (text) => {
+                if (!text) return true;
+                if (text.includes('\n')) return true; // Multi-line text (UI menus)
+                const uiPatterns = [
+                    /Family Tree/i, /Search/i, /Memories/i, /Get Involved/i,
+                    /Activities/i, /Sign In/i, /Help/i
+                ];
+                return uiPatterns.some(pattern => pattern.test(text));
+            };
+
+            if (isUIGarbage(person.name)) {
+                console.log(`   ⚠ UI garbage detected in name ("${person.name.substring(0, 30)}..."), skipping`);
                 continue;
             }
 
@@ -806,6 +1165,13 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
             console.log(`   Locations: ${person.locations?.join(', ') || 'none found'}`);
             console.log(`   Father: ${person.father_fs_id || 'not found'}`);
             console.log(`   Mother: ${person.mother_fs_id || 'not found'}`);
+            
+            // Capture diagnostics if no parents found
+            if (!person.father_fs_id && !person.mother_fs_id) {
+                console.log('   ⚠ No parents found, capturing diagnostics...');
+                const diagnostic = await captureFailedExtraction(fsId, generation, page, 'no_parents');
+                console.log(`   📁 Debug saved: ${diagnostic.folder}/${fsId}-gen${generation}-no_parents.*`);
+            }
 
             // Store ancestor in global list
             ancestors.push({
@@ -1033,6 +1399,50 @@ async function saveResults(startFsId, result) {
     }
 
     console.log(`Saved ${saved} new ancestors to database`);
+    
+    // Show failed extractions summary
+    if (failedExtractions.length > 0) {
+        console.log('\n═══════════════════════════════════════════════════════════════');
+        console.log('   EXTRACTION FAILURES SUMMARY');
+        console.log('═══════════════════════════════════════════════════════════════\n');
+        
+        console.log(`Failed profiles: ${failedExtractions.length}`);
+        console.log(`Debug files saved to: debug/logs/failed-extractions/${sessionId || 'unknown'}/\n`);
+        
+        // Breakdown by failure type
+        const byType = {};
+        const byGen = {};
+        for (const failure of failedExtractions) {
+            byType[failure.failure_type] = (byType[failure.failure_type] || 0) + 1;
+            byGen[failure.generation] = (byGen[failure.generation] || 0) + 1;
+        }
+        
+        console.log('Failure breakdown:');
+        for (const [type, count] of Object.entries(byType)) {
+            console.log(`  - ${type.replace(/_/g, ' ')}: ${count} profiles`);
+        }
+        
+        console.log('\nBy generation:');
+        for (const [gen, count] of Object.entries(byGen).sort((a, b) => a[0] - b[0])) {
+            console.log(`  - Gen ${gen}: ${count} failures`);
+        }
+        
+        // Show sample of indicators
+        const hasLoginIssues = failedExtractions.filter(f => f.indicators?.hasLoginPrompt).length;
+        const emptyPages = failedExtractions.filter(f => f.indicators?.bodyTextLength < 1000).length;
+        const noFamilySection = failedExtractions.filter(f => !f.indicators?.hasFamilyMembers).length;
+        
+        console.log('\nCommon issues detected:');
+        if (hasLoginIssues > 0) console.log(`  - Login/session issues: ${hasLoginIssues} profiles`);
+        if (emptyPages > 0) console.log(`  - Empty/incomplete pages: ${emptyPages} profiles`);
+        if (noFamilySection > 0) console.log(`  - No Family Members section: ${noFamilySection} profiles`);
+        
+        console.log('\nTo review debug files:');
+        console.log(`  cd debug/logs/failed-extractions/${sessionId || 'unknown'}`);
+        console.log(`  open *.html  # View HTML in browser`);
+        console.log(`  cat *-metadata.json | jq .  # View metadata`);
+    }
+    
     console.log('═══════════════════════════════════════════════════════════════\n');
 }
 

@@ -5,14 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reparations ∈ ℝ</title>
 
-    <!-- External Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- External Libraries with error handling for slow connections -->
+    <script>
+        // Track CDN loading status
+        window.cdnStatus = { web3: false, papa: false, d3: false };
+        function cdnLoaded(name) { window.cdnStatus[name] = true; console.log(name + ' loaded'); }
+        function cdnFailed(name) { console.warn(name + ' CDN failed to load - some features may be limited'); }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js" onload="cdnLoaded('web3')" onerror="cdnFailed('web3')"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" onload="cdnLoaded('papa')" onerror="cdnFailed('papa')"></script>
+    <script src="https://d3js.org/d3.v7.min.js" onload="cdnLoaded('d3')" onerror="cdnFailed('d3')"></script>
 
     <!-- Main Stylesheet (extracted from inline) -->
-    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/main.css?v=2">
+    <link rel="stylesheet" href="styles/debt-river.css">
 </head>
 <body>
+    <!-- Obsidian-style Graph Background -->
+    <div id="graphContainer"></div>
+    <div id="graph-stats"></div>
+
+    <!-- Debt River Animation Background (legacy, hidden by default) -->
+    <div id="debtRiverContainer" style="display: none;"></div>
     <!-- Toast Notification -->
     <div class="toast" id="toast"></div>
 
@@ -106,6 +120,7 @@
             </button>
             <a href="bibliography.html" class="quick-action-btn">View Sources</a>
             <button class="quick-action-btn" onclick="openPanel('formula')">Calculate Reparations</button>
+            <button class="quick-action-btn" onclick="openPanel('ancestor')">Trace Ancestors</button>
         </div>
     </div>
 
@@ -135,6 +150,10 @@
         <div class="nav-item" onclick="openPanel('upload')">
             <span class="nav-icon">📤</span>
             <span class="nav-label">Upload</span>
+        </div>
+        <div class="nav-item" onclick="openPanel('ancestor')">
+            <span class="nav-icon">🌳</span>
+            <span class="nav-label">Climb</span>
         </div>
         <div class="nav-item" onclick="openPanel('quality')" id="qualityNavItem">
             <span class="nav-icon">🧹</span>
@@ -246,6 +265,60 @@
             <div class="formula-result-box">
                 <div class="amount">$2,200,000</div>
                 <div class="label">Average Per Person (25 years enslavement)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ancestor Climb Panel -->
+    <div class="feature-panel" id="ancestorPanel">
+        <div class="panel-header">
+            <h2>Ancestor Climber (FamilySearch Workaround)</h2>
+            <button class="panel-close" onclick="closePanel('ancestor')">&times;</button>
+        </div>
+        <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: end; margin-bottom: 16px;">
+            <div style="display:flex; gap:10px; align-items:end;">
+                <div style="flex: 0 0 220px;">
+                    <label style="display:block; color:#9aa5b1; font-size:0.85em; margin-bottom:6px;">FamilySearch ID</label>
+                    <input id="ancestorFsIdInput" placeholder="e.g., G21N-HD2" style="width:100%; padding:10px; border-radius:8px; border:1px solid #3a4a6b; background:#1e2a4a; color:white;" />
+                </div>
+                <div style="flex:1;">
+                    <label style="display:block; color:#9aa5b1; font-size:0.85em; margin-bottom:6px;">Name (optional)</label>
+                    <input id="ancestorNameInput" placeholder="Person's name for logs (optional)" style="width:100%; padding:10px; border-radius:8px; border:1px solid #3a4a6b; background:#1e2a4a; color:white;" />
+                </div>
+                <button onclick="startAncestorClimbUI()" class="quality-btn-bulk" style="height:40px;">Start Climb</button>
+            </div>
+            <div style="font-size:0.85em; color:#9aa5b1; line-height:1.4;">
+                <div>Note: This opens a Chrome window on the machine running the server for FamilySearch login. Use locally on your Mac.</div>
+                <div style="margin-top:6px;">After starting, monitor below or with Sessions filter by FS ID.</div>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+            <div style="background: rgba(0,0,0,0.25); border:1px solid rgba(100,200,255,0.2); border-radius:10px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <h3 style="color:#64c8ff; font-size:1.05em;">Climb Sessions</h3>
+                    <div>
+                        <input id="sessionsFsIdFilter" placeholder="Filter by FS ID" style="padding:6px 8px; border-radius:6px; border:1px solid #3a4a6b; background:#1e2a4a; color:white; width: 160px;" />
+                        <button class="quality-btn" onclick="loadAncestorSessions()" style="padding:6px 10px;">Refresh</button>
+                    </div>
+                </div>
+                <div id="ancestorSessionsList" style="max-height:300px; overflow-y:auto;">
+                    <div style="text-align:center; color:#9aa5b1; padding:16px;">No sessions loaded yet</div>
+                </div>
+            </div>
+            <div style="background: rgba(0,0,0,0.25); border:1px solid rgba(255,200,100,0.2); border-radius:10px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <h3 style="color:#ffc864; font-size:1.05em;">Pending Verification</h3>
+                    <button class="quality-btn" onclick="loadPendingVerification()" style="padding:6px 10px;">Refresh</button>
+                </div>
+                <div id="pendingVerificationList" style="max-height:300px; overflow-y:auto;">
+                    <div style="text-align:center; color:#9aa5b1; padding:16px;">No pending matches</div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:16px; background: rgba(0,0,0,0.25); border:1px solid rgba(100,255,100,0.2); border-radius:10px; padding:12px;">
+            <h3 style="color:#64ff64; font-size:1.05em; margin-bottom:8px;">Session Matches</h3>
+            <div id="ancestorSessionMatches" style="max-height:320px; overflow-y:auto;">
+                <div style="text-align:center; color:#9aa5b1; padding:16px;">Select a session to view matches</div>
             </div>
         </div>
     </div>
@@ -398,6 +471,8 @@
 
 
     <!-- Main Application JavaScript (extracted from inline) -->
-    <script src="js/app.js"></script>
+    <script src="js/debt-river-animation.js"></script>
+    <script src="js/graph-visualization.js?v=3"></script>
+    <script src="js/app.js?v=3"></script>
 </body>
 </html>

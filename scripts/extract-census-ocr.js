@@ -222,6 +222,43 @@ async function initBrowser() {
 }
 
 /**
+ * Reinitialize page if detached frame error occurs
+ */
+async function ensurePageValid() {
+    try {
+        // Test if page is still valid by checking URL
+        const url = page.url();
+        if (!url || url === 'about:blank') {
+            console.log('🔄 Reinitializing detached page...');
+            page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1200 });
+            
+            // Navigate back to FamilySearch
+            await page.goto('https://www.familysearch.org/search/catalog', {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            });
+            await new Promise(r => setTimeout(r, 3000));
+            console.log('✅ Page reinitialized');
+        }
+    } catch (e) {
+        console.log('🔄 Reinitializing page after error...');
+        try {
+            page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1200 });
+            await page.goto('https://www.familysearch.org/search/catalog', {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+            });
+            await new Promise(r => setTimeout(r, 3000));
+            console.log('✅ Page reinitialized');
+        } catch (e2) {
+            console.log('⚠️ Could not reinitialize page:', e2.message);
+        }
+    }
+}
+
+/**
  * Ensure user is logged into FamilySearch
  */
 async function ensureLoggedIn() {
@@ -1268,7 +1305,8 @@ async function main() {
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
+                AND district != state
+                AND county != state
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND collection_id = ${collectionFilter}
                 AND state = ANY(${statesFilter})
@@ -1281,7 +1319,8 @@ async function main() {
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
+                AND district != state
+                AND county != state
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND collection_id = ${collectionFilter}
                 AND state = ANY(${statesFilter})
@@ -1293,7 +1332,8 @@ async function main() {
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
+                AND district != state
+                AND county != state
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND collection_id = ${collectionFilter}
                 ORDER BY collection_id, state, county, district
@@ -1304,7 +1344,8 @@ async function main() {
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
+                AND district != state
+                AND county != state
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND state = ANY(${statesFilter})
                 AND county = ${countyFilter}
@@ -1316,7 +1357,8 @@ async function main() {
                 SELECT * FROM familysearch_locations
                 WHERE waypoint_id IS NOT NULL
                 AND waypoint_id NOT LIKE '%collection%'
-                AND district != state AND district != county
+                AND district != state
+                AND county != state
                 AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                 AND state = ANY(${statesFilter})
                 ORDER BY collection_id, state, county, district
@@ -1333,7 +1375,7 @@ async function main() {
                     SELECT * FROM familysearch_locations
                     WHERE waypoint_id IS NOT NULL
                     AND waypoint_id NOT LIKE '%collection%'
-                    AND district != state AND district != county
+                    AND district != state
                     AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                     AND collection_id = ${collectionFilter}
                     ORDER BY collection_id, state, county, district
@@ -1345,7 +1387,7 @@ async function main() {
                     SELECT * FROM familysearch_locations
                     WHERE waypoint_id IS NOT NULL
                     AND waypoint_id NOT LIKE '%collection%'
-                    AND district != state AND district != county
+                    AND district != state
                     AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
                     ORDER BY collection_id, state, county, district
                     LIMIT ${limitArg}
@@ -1371,6 +1413,9 @@ async function main() {
     // Process each location
     for (const location of locations) {
         try {
+            // Ensure page is valid before processing (handle detached frame errors)
+            await ensurePageValid();
+            
             // Update progress with current location
             await updateProgress(location.state, location.county, location.district);
 
@@ -1378,6 +1423,12 @@ async function main() {
         } catch (error) {
             console.log(`   ❌ Error: ${error.message}`);
             stats.errors++;
+            
+            // Try to recover from detached frame error
+            if (error.message.includes('detached Frame')) {
+                console.log('   🔄 Attempting to recover from detached frame...');
+                await ensurePageValid();
+            }
         }
 
         // Save progress periodically

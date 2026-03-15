@@ -186,19 +186,8 @@ router.get('/search/:query', async (req, res) => {
             });
         }
 
-        // Use direct connection to ensure we connect to the right database
-        const { Pool } = require('pg');
-        const connectionString = process.env.DATABASE_URL;
-        if (!connectionString) {
-            return res.status(500).json({
-                success: false,
-                error: 'DATABASE_URL not configured'
-            });
-        }
-        const pool = new Pool({
-            connectionString,
-            ssl: { rejectUnauthorized: false }
-        });
+        // Use shared connection pool for better performance
+        const pool = sharedPool;
 
         // Natural language processing for person type detection
         const queryLower = query.toLowerCase();
@@ -371,7 +360,7 @@ router.get('/search/:query', async (req, res) => {
             bySource[sourceKey].push(row);
         });
 
-        await pool.end();
+        // Note: Don't end shared pool - it's reused across requests
 
         res.json({
             success: true,
@@ -2575,6 +2564,103 @@ router.get('/search', async (req, res) => {
         });
     } catch (error) {
         console.error('Search error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// =============================================================================
+// GRAPH VISUALIZATION API - Obsidian-style network view
+// Must be defined BEFORE /:sessionId to avoid route conflicts
+// =============================================================================
+
+/**
+ * GET /api/contribute/graph
+ * Returns nodes and edges for force-directed graph visualization
+ */
+router.get('/graph', async (req, res) => {
+    try {
+        const pool = sharedPool;
+        const { limit = 200, type = 'all', state, search } = req.query;
+        const maxLimit = Math.min(parseInt(limit), 500);
+
+        let whereConditions = [];
+        let params = [];
+        let paramIndex = 1;
+
+        if (type === 'enslaved') {
+            whereConditions.push(`person_type IN ('enslaved', 'suspected_enslaved')`);
+        } else if (type === 'slaveholder') {
+            whereConditions.push(`person_type IN ('slaveholder', 'owner', 'suspected_owner')`);
+        }
+
+        if (state) {
+            whereConditions.push(`locations::text ILIKE $${paramIndex}`);
+            params.push(`%${state}%`);
+            paramIndex++;
+        }
+
+        if (search) {
+            whereConditions.push(`full_name ILIKE $${paramIndex}`);
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+
+        const whereClause = whereConditions.length > 0
+            ? 'WHERE ' + whereConditions.join(' AND ')
+            : '';
+
+        const nodesQuery = `
+            SELECT
+                lead_id as id,
+                full_name as name,
+                person_type as type,
+                confidence_score,
+                COALESCE(locations[1], 'Unknown') as location,
+                CASE
+                    WHEN person_type IN ('slaveholder', 'owner', 'suspected_owner') THEN 'owner'
+                    WHEN person_type IN ('enslaved', 'suspected_enslaved') THEN 'enslaved'
+                    ELSE 'unknown'
+                END as category
+            FROM unconfirmed_persons
+            ${whereClause}
+            ORDER BY confidence_score DESC NULLS LAST
+            LIMIT $${paramIndex}
+        `;
+        params.push(maxLimit);
+
+        const nodesResult = await pool.query(nodesQuery, params);
+
+        const typeBreakdown = {};
+        const locationBreakdown = {};
+        nodesResult.rows.forEach(node => {
+            typeBreakdown[node.category] = (typeBreakdown[node.category] || 0) + 1;
+            locationBreakdown[node.location] = (locationBreakdown[node.location] || 0) + 1;
+        });
+
+        res.json({
+            success: true,
+            graph: {
+                nodes: nodesResult.rows.map(node => ({
+                    id: node.id,
+                    name: node.name || 'Unknown',
+                    type: node.category,
+                    location: node.location,
+                    confidence: parseFloat(node.confidence_score) || 0.5,
+                    size: 5 + (parseFloat(node.confidence_score) || 0.5) * 10
+                })),
+                edges: []
+            },
+            stats: {
+                nodeCount: nodesResult.rows.length,
+                edgeCount: 0,
+                byType: typeBreakdown,
+                byLocation: locationBreakdown
+            },
+            filters: { type, state, search, limit: maxLimit }
+        });
+
+    } catch (error) {
+        console.error('Graph API error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

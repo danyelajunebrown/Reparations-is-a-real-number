@@ -18,7 +18,14 @@
     "migrate:down": "node-pg-migrate down",
     "migrate:create": "node-pg-migrate create",
     "migrate:status": "node-pg-migrate status",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "scrape:test": "FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js --state Delaware --year 1860 --limit 1",
+    "scrape:1860": "FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js --year 1860 --limit 50",
+    "scrape:alabama": "FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js --state Alabama --year 1860 --limit 50",
+    "scrape:ancestor": "FAMILYSEARCH_INTERACTIVE=true node scripts/scrapers/familysearch-ancestor-climber.js",
+    "setup:mac-mini": "bash scripts/mac-mini-setup/install.sh",
+    "setup:services": "bash scripts/mac-mini-setup/install-services.sh",
+    "logs": "tail -f logs/scraper-$(date +%Y%m%d).log"
   },
   "keywords": [
     "blockchain",
@@ -44,6 +51,7 @@
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
     "dbffile": "^1.12.0",
+    "docx": "^9.5.1",
     "dotenv": "^16.0.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",

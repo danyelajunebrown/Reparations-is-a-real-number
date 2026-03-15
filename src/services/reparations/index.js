@@ -42,6 +42,9 @@ const InsuranceCalculator = require('./InsuranceCalculator');
 const BankingCalculator = require('./BankingCalculator');
 const RailroadCalculator = require('./RailroadCalculator');
 
+// Legal precedent service (Added Jan 5, 2026)
+const LegalPrecedentService = require('./LegalPrecedentService');
+
 /**
  * Unified Reparations System
  * Combines all three trackers into a single coherent system
@@ -418,6 +421,9 @@ module.exports = {
     InsuranceCalculator,
     BankingCalculator,
     RailroadCalculator,
+
+    // Legal precedent service (Added Jan 5, 2026)
+    LegalPrecedentService,
 
     // Factory function to create initialized system with database
     createReparationsSystem: async (db) => {

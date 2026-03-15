@@ -163,12 +163,14 @@ class DocumentVerifier {
         try {
             const docs = await this.sql`
                 SELECT DISTINCT
-                    pd.archive_url,
+                    pd.s3_url,
+                    pd.s3_key,
                     pd.document_type,
                     pd.document_date,
-                    pd.notes
+                    pd.source_url,
+                    pd.name_as_appears
                 FROM person_documents pd
-                WHERE LOWER(pd.person_name) = LOWER(${slaveholderName})
+                WHERE LOWER(pd.name_as_appears) = LOWER(${slaveholderName})
                 ORDER BY pd.document_date DESC
                 LIMIT 10
             `;
@@ -242,14 +244,18 @@ class DocumentVerifier {
 
                 // Also check enslaved_individuals table for confirmed records
                 if (doc.owner_name) {
+                    // enslaved_by_individual_id is VARCHAR, so we need to cast or match differently
                     const confirmed = await this.sql`
                         SELECT 
-                            name as full_name,
+                            full_name,
                             'enslaved' as person_type,
                             1.0 as confidence_score,
-                            document_id as source_url
+                            enslaved_id as source_url
                         FROM enslaved_individuals
-                        WHERE enslaved_by_name = ${doc.owner_name}
+                        WHERE enslaved_by_individual_id IN (
+                            SELECT id::text FROM canonical_persons 
+                            WHERE LOWER(canonical_name) = LOWER(${doc.owner_name})
+                        )
                         LIMIT 20
                     `;
                     enslaved.push(...confirmed);
