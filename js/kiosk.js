@@ -47,7 +47,7 @@
     promptOverlay.classList.add('active');
     fsidInput.value = '';
     nameInput.value = '';
-    setTimeout(() => fsidInput.focus(), 50);
+    setActiveInput(fsidInput);
   }
 
   function closePrompt() {
@@ -217,6 +217,33 @@
     div.textContent = t || '';
     return div.innerHTML;
   }
+
+  // Virtual keyboard
+  let activeInput = fsidInput;
+
+  function setActiveInput(input) {
+    activeInput = input;
+    fsidInput.classList.toggle('vkb-active', input === fsidInput);
+    nameInput.classList.toggle('vkb-active', input === nameInput);
+  }
+
+  fsidInput.addEventListener('click', () => setActiveInput(fsidInput));
+  fsidInput.addEventListener('touchstart', (e) => { e.preventDefault(); setActiveInput(fsidInput); });
+  nameInput.addEventListener('click', () => setActiveInput(nameInput));
+  nameInput.addEventListener('touchstart', (e) => { e.preventDefault(); setActiveInput(nameInput); });
+
+  document.querySelectorAll('.vkb-key').forEach(key => {
+    key.addEventListener('click', (e) => {
+      e.preventDefault();
+      const val = key.dataset.key;
+      if (!activeInput) return;
+      if (val === 'BACKSPACE') {
+        activeInput.value = activeInput.value.slice(0, -1);
+      } else {
+        activeInput.value += val;
+      }
+    });
+  });
 
   // Wire events
   startBtn.addEventListener('click', openPrompt);

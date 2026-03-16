@@ -108,5 +108,18 @@ html, body {
 .toast.error { background: rgba(120,0,0,0.7); }
 .toast.info { background: rgba(0,0,0,0.7); }
 
+/* Virtual keyboard */
+.vkb { margin: 12px 0 4px; }
+.vkb-row { display: flex; gap: 4px; justify-content: center; margin: 4px 0; }
+.vkb-key {
+  min-width: 38px; height: 44px; border: 1px solid #2a3b6e; border-radius: 8px;
+  background: #0b1838; color: #e5eefc; font-size: 16px; font-weight: 600;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation;
+}
+.vkb-key:active { background: #1a2e5e; }
+.vkb-wide { min-width: 64px; font-size: 13px; }
+input.vkb-active { border-color: #7bd3ff; box-shadow: 0 0 0 2px rgba(123, 211, 255, 0.3); }
+
 /* Touch targets */
 button { touch-action: manipulation; }
