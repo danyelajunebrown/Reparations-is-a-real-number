@@ -56,7 +56,8 @@ router.post('/start-climb', async (req, res) => {
     proc.stderr.pipe(out);
     proc.unref();
 
-    // Optimistic, fast response path: poll the DB for up to 20s to find a session created for this fsId
+    // Optimistic, fast response path: poll the DB for up to 20s to find a NEW session created for this fsId
+    const requestTime = new Date().toISOString();
     const startedAt = Date.now();
     const timeoutMs = 20000;
     let foundSession = null;
@@ -64,10 +65,10 @@ router.post('/start-climb', async (req, res) => {
     async function tryFindSession() {
       const rows = (await db.query(
         `SELECT id, status, started_at FROM ancestor_climb_sessions
-         WHERE modern_person_fs_id = $1
+         WHERE modern_person_fs_id = $1 AND started_at >= $2
          ORDER BY started_at DESC
          LIMIT 1`,
-        [fsId]
+        [fsId, requestTime]
       )).rows;
       return rows && rows[0] ? rows[0] : null;
     }

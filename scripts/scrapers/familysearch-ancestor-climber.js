@@ -239,12 +239,7 @@ async function launchBrowser() {
 
         const execBase = executable.split('/').pop();
 
-        // Kill existing Chrome instances that use our temp profile (not user's regular Chrome)
-        try {
-            execSync(`pkill -9 -f "familysearch-ancestor-climber"`, { stdio: 'ignore' });
-        } catch (e) {}
-
-        await new Promise(r => setTimeout(r, 2000));
+        // NOTE: Do NOT kill other climber processes — multiple climbs may run concurrently
 
         // Create temp profile
         const tempProfileDir = '/tmp/familysearch-ancestor-climber';
@@ -297,8 +292,8 @@ async function launchBrowser() {
         throw new Error('Could not connect to Chrome');
     }
 
-    const pages = await browser.pages();
-    page = pages[0] || await browser.newPage();
+    // Always create a new tab so concurrent climbs don't collide
+    page = await browser.newPage();
 }
 
 /**
@@ -1586,10 +1581,14 @@ v2 Features:
             } catch (_) { /* best effort */ }
         }
     } finally {
+        // Close our tab but leave Chrome and other tabs running
+        if (page) {
+            try { await page.close(); } catch (_) {}
+        }
         if (browser) {
             await browser.disconnect();
         }
-        // Don't close Chrome - let user keep it open
+        // Don't close Chrome - other climbs may be using it
     }
 }
 
