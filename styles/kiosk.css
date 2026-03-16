@@ -119,6 +119,7 @@ html, body {
 }
 .vkb-key:active { background: #1a2e5e; }
 .vkb-wide { min-width: 64px; font-size: 13px; }
+.vkb-dash { background: #1a2e5e; border-color: #7bd3ff; color: #7bd3ff; font-size: 20px; font-weight: 800; }
 input.vkb-active { border-color: #7bd3ff; box-shadow: 0 0 0 2px rgba(123, 211, 255, 0.3); }
 
 /* Touch targets */
