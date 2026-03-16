@@ -1223,6 +1223,11 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
                 const enslaverMatch = await checkEnslaverDatabase(person);
 
                 if (enslaverMatch) {
+                    // Skip low-confidence name-only matches (too many false positives)
+                    if (enslaverMatch.confidence < 0.65) {
+                        console.log(`   ↳ Skipped low-confidence name-only match: ${enslaverMatch.canonical_name || enslaverMatch.full_name} (${(enslaverMatch.confidence * 100).toFixed(0)}%)`);
+                    } else {
+
                     console.log(`\n   🎯 POTENTIAL MATCH #${localMatches.length + 1}: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
                     console.log(`   Match type: ${enslaverMatch.type} (confidence: ${(enslaverMatch.confidence * 100).toFixed(0)}%)`);
 
@@ -1283,6 +1288,8 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null)
 
                     // DON'T BREAK - continue climbing to find more matches!
                     console.log(`   ✓ Match recorded, continuing climb...`);
+
+                    } // end else (confidence >= 0.65)
                 }
             } catch (dbErr) {
                 console.log(`   ⚠ DB check error: ${dbErr.message.substring(0, 50)}`);
