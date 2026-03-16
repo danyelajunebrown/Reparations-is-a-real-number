@@ -1978,7 +1978,7 @@ async function startServer() {
 
     // Start listening
     const port = config.port;
-    app.listen(port, () => {
+    app.listen(port, '0.0.0.0', () => {
       logger.info(`🚀 Reparations Platform server started`, {
         port,
         environment: config.env,
