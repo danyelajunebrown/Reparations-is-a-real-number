@@ -48,8 +48,6 @@ router.post('/start', async (req, res) => {
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const logPath = path.join(logsDir, `ancestor-climb-${fsId || 'unknown'}-${ts}.log`);
-    // Open file descriptors for the child — no pipes back to parent
-    const outFd = fs.openSync(logPath, 'a');
 
     const env = {
       ...process.env,
@@ -58,13 +56,13 @@ router.post('/start', async (req, res) => {
       DISPLAY: process.env.DISPLAY || (process.platform === 'linux' ? ':0' : process.env.DISPLAY)
     };
 
-    // stdio uses file descriptors directly so child survives parent (PM2) restarts
-    const proc = spawn('node', args, {
+    // Use shell wrapper to fully orphan the process from PM2's process group
+    const shellCmd = `nohup node ${args.map(a => `"${a}"`).join(' ')} >> "${logPath}" 2>&1 &`;
+    const proc = spawn('sh', ['-c', shellCmd], {
       env,
       detached: true,
-      stdio: ['ignore', outFd, outFd]
+      stdio: 'ignore'
     });
-    fs.closeSync(outFd);
 
     // Detach and let it run independently
     proc.unref();
