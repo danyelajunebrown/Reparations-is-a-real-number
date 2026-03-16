@@ -48,7 +48,8 @@ router.post('/start', async (req, res) => {
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const logPath = path.join(logsDir, `ancestor-climb-${fsId || 'unknown'}-${ts}.log`);
-    const out = fs.createWriteStream(logPath, { flags: 'a' });
+    // Open file descriptors for the child — no pipes back to parent
+    const outFd = fs.openSync(logPath, 'a');
 
     const env = {
       ...process.env,
@@ -57,14 +58,13 @@ router.post('/start', async (req, res) => {
       DISPLAY: process.env.DISPLAY || (process.platform === 'linux' ? ':0' : process.env.DISPLAY)
     };
 
+    // stdio uses file descriptors directly so child survives parent (PM2) restarts
     const proc = spawn('node', args, {
       env,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', outFd, outFd]
     });
-
-    proc.stdout.pipe(out);
-    proc.stderr.pipe(out);
+    fs.closeSync(outFd);
 
     // Detach and let it run independently
     proc.unref();

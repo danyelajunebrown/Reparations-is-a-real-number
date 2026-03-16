@@ -43,7 +43,8 @@ router.post('/start-climb', async (req, res) => {
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const logPath = path.join(logsDir, `kiosk-ancestor-climb-${(fsId || 'unknown')}-${ts}.log`);
-    const out = fs.createWriteStream(logPath, { flags: 'a' });
+    // Open file descriptors for the child — no pipes back to parent
+    const outFd = fs.openSync(logPath, 'a');
 
     const env = {
       ...process.env,
@@ -51,10 +52,10 @@ router.post('/start-climb', async (req, res) => {
       DISPLAY: process.env.DISPLAY || (process.platform === 'linux' ? ':0' : process.env.DISPLAY)
     };
 
-    const proc = spawn('node', args, { env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    proc.stdout.pipe(out);
-    proc.stderr.pipe(out);
+    // stdio uses file descriptors directly so child is fully detached from parent
+    const proc = spawn('node', args, { env, detached: true, stdio: ['ignore', outFd, outFd] });
     proc.unref();
+    fs.closeSync(outFd);
 
     // Optimistic, fast response path: poll the DB for up to 20s to find a NEW session created for this fsId
     const requestTime = new Date().toISOString();
