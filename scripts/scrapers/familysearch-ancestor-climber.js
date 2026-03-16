@@ -259,14 +259,19 @@ async function launchBrowser() {
             '--no-first-run',
             '--no-default-browser-check',
             '--window-size=1200,900',
-            // Helpful on some Pi setups
             '--password-store=basic',
             'about:blank'
         ];
 
-        const chromeProcess = spawn(executable, chromeArgs, { detached: true, stdio: 'ignore' });
-
-        chromeProcess.unref();
+        // On macOS, use 'open -a' to launch Chrome through the window server
+        // (direct spawn from SSH/PM2 can't access the GUI session)
+        if (process.platform === 'darwin') {
+            const escaped = chromeArgs.map(a => `"${a}"`).join(' ');
+            execSync(`open -a "Google Chrome" --args ${chromeArgs.join(' ')}`, { stdio: 'ignore' });
+        } else {
+            const chromeProcess = spawn(executable, chromeArgs, { detached: true, stdio: 'ignore' });
+            chromeProcess.unref();
+        }
 
         // Wait for Chrome to start
         console.log(`Launching ${execBase} and waiting for remote debugger...`);
