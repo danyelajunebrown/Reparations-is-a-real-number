@@ -638,6 +638,106 @@ class NameResolver {
     }
 
     // ============================
+    // TIERED MATCHING (Identity System v2)
+    // ============================
+
+    /**
+     * Resolve a person by external ID (FamilySearch, WikiTree, etc.)
+     * Uses person_external_ids table for Tier 1 matching.
+     * Returns { canonicalPerson, confidence, tier } or null.
+     */
+    async resolveByExternalId(idSystem, externalId) {
+        try {
+            const result = await this.db.query(`
+                SELECT cp.*, pei.confidence as ext_confidence, pei.verified
+                FROM person_external_ids pei
+                JOIN canonical_persons cp ON cp.id = pei.canonical_person_id
+                WHERE pei.id_system = $1 AND pei.external_id = $2
+                LIMIT 1
+            `, [idSystem, externalId]);
+
+            if (result.rows.length > 0) {
+                return {
+                    canonicalPerson: result.rows[0],
+                    confidence: parseFloat(result.rows[0].ext_confidence) || 0.95,
+                    tier: 1
+                };
+            }
+            return null;
+        } catch (e) {
+            // Table may not exist if migration 033 hasn't been applied
+            return null;
+        }
+    }
+
+    /**
+     * Resolve a person using the database's find_person_match() function.
+     * Wraps the PostgreSQL tiered matching in a JS-friendly interface.
+     * Returns array of { canonicalPersonId, uuid, name, tier, confidence, details }.
+     */
+    async resolveWithTiers(name, birthYear = null, location = null, externalId = null, idSystem = null) {
+        try {
+            const result = await this.db.query(`
+                SELECT * FROM find_person_match($1, $2, $3, $4, $5, $6)
+            `, [name, birthYear, location, null, externalId, idSystem]);
+
+            return result.rows.map(row => ({
+                canonicalPersonId: row.canonical_person_id,
+                uuid: row.canonical_uuid,
+                name: row.canonical_name,
+                tier: row.match_tier,
+                confidence: parseFloat(row.match_confidence),
+                details: row.match_details,
+                personType: row.person_type,
+                birthYear: row.birth_year_estimate,
+                state: row.primary_state
+            }));
+        } catch (e) {
+            // find_person_match() may not exist if migration 033 hasn't been applied
+            // Fall back to existing findCandidateMatches
+            if (e.message.includes('find_person_match')) {
+                const candidates = await this.findCandidateMatches(name);
+                return candidates.map(c => ({
+                    canonicalPersonId: c.id,
+                    uuid: null,
+                    name: c.canonical_name,
+                    tier: 3,
+                    confidence: c.match_confidence,
+                    details: 'Legacy matching (migration 033 not applied)',
+                    personType: c.person_type,
+                    birthYear: c.birth_year_estimate,
+                    state: c.primary_state
+                }));
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Link an external ID to an existing canonical person.
+     */
+    async linkExternalId(canonicalPersonId, idSystem, externalId, options = {}) {
+        try {
+            await this.db.query(`
+                INSERT INTO person_external_ids
+                    (canonical_person_id, id_system, external_id, external_url, confidence, discovered_by, verified)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id_system, external_id) DO UPDATE
+                SET confidence = GREATEST(person_external_ids.confidence, $5)
+            `, [
+                canonicalPersonId, idSystem, externalId,
+                options.url || null,
+                options.confidence || 0.90,
+                options.discoveredBy || 'system',
+                options.verified || false
+            ]);
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ============================
     // STATISTICS
     // ============================
 

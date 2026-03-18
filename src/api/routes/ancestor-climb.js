@@ -89,6 +89,7 @@ router.get('/sessions', async (req, res) => {
   try {
     const { fsId, limit = 25 } = req.query;
 
+    const { name } = req.query;
     let rows;
     if (fsId && isValidFsId(fsId)) {
       rows = (await db.query(
@@ -99,6 +100,16 @@ router.get('/sessions', async (req, res) => {
           ORDER BY started_at DESC
           LIMIT $2`,
         [fsId, Math.min(parseInt(limit) || 25, 100)]
+      )).rows;
+    } else if (name && typeof name === 'string' && name.trim().length >= 3) {
+      rows = (await db.query(
+        `SELECT id, modern_person_name, modern_person_fs_id, status, started_at, last_activity,
+                ancestors_visited, matches_found
+           FROM ancestor_climb_sessions
+          WHERE modern_person_name = $1
+          ORDER BY started_at DESC
+          LIMIT $2`,
+        [name.trim(), Math.min(parseInt(limit) || 25, 100)]
       )).rows;
     } else {
       rows = (await db.query(

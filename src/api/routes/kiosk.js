@@ -25,24 +25,51 @@ function isValidFsId(id) {
 // Start a climb and try to return the created session id quickly by polling the DB
 router.post('/start-climb', async (req, res) => {
   try {
-    const { fsId, name } = req.body || {};
+    const { fsId, name, fatherName, motherName, birthYear, birthLocation } = req.body || {};
 
-    if (!isValidFsId(fsId)) {
-      return res.status(400).json({ success: false, error: 'Valid FamilySearch ID (e.g., G21N-HD2) is required' });
+    const hasFsId = isValidFsId(fsId);
+    const hasName = name && typeof name === 'string' && name.trim().length >= 3;
+    const hasParents = (fatherName && fatherName.trim().length >= 3) || (motherName && motherName.trim().length >= 3);
+
+    // Must have either a valid FS ID, or a name + at least one parent
+    if (!hasFsId && !hasName) {
+      return res.status(400).json({ success: false, error: 'Provide a FamilySearch ID or your full name' });
+    }
+    if (!hasFsId && hasName && !hasParents) {
+      return res.status(400).json({ success: false, error: 'Without a FamilySearch ID, provide at least one parent name' });
     }
 
     // Launch the existing climber script in background (VISIBLE browser via FAMILYSEARCH_INTERACTIVE)
     const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'scrapers', 'familysearch-ancestor-climber.js');
 
-    const args = [scriptPath, fsId];
-    if (name && typeof name === 'string' && name.trim()) {
+    // Build command-line arguments
+    const args = [scriptPath];
+
+    if (hasFsId) {
+      args.push(fsId.trim().toUpperCase());
+    }
+    if (hasName) {
       args.push('--name', name.trim());
+    }
+    if (fatherName && fatherName.trim()) {
+      args.push('--father-name', fatherName.trim());
+    }
+    if (motherName && motherName.trim()) {
+      args.push('--mother-name', motherName.trim());
+    }
+    if (birthYear) {
+      const yr = parseInt(birthYear);
+      if (yr > 1800 && yr < 2030) args.push('--birth-year', String(yr));
+    }
+    if (birthLocation && birthLocation.trim()) {
+      args.push('--birth-location', birthLocation.trim());
     }
 
     const logsDir = path.join(__dirname, '..', '..', '..', 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const logPath = path.join(logsDir, `kiosk-ancestor-climb-${(fsId || 'unknown')}-${ts}.log`);
+    const label = hasFsId ? fsId.trim() : name.trim().replace(/\s+/g, '-').substring(0, 30);
+    const logPath = path.join(logsDir, `kiosk-ancestor-climb-${label}-${ts}.log`);
 
     const env = {
       ...process.env,
@@ -59,19 +86,23 @@ router.post('/start-climb', async (req, res) => {
     });
     proc.unref();
 
-    // Optimistic, fast response path: poll the DB for up to 20s to find a NEW session created for this fsId
+    // Optimistic, fast response path: poll the DB for up to 20s to find a NEW session
     const requestTime = new Date().toISOString();
     const startedAt = Date.now();
     const timeoutMs = 20000;
     let foundSession = null;
 
+    // Session lookup: by FS ID if available, otherwise by name
+    const lookupField = hasFsId ? 'modern_person_fs_id' : 'modern_person_name';
+    const lookupValue = hasFsId ? fsId.trim().toUpperCase() : name.trim();
+
     async function tryFindSession() {
       const rows = (await db.query(
         `SELECT id, status, started_at FROM ancestor_climb_sessions
-         WHERE modern_person_fs_id = $1 AND started_at >= $2
+         WHERE ${lookupField} = $1 AND started_at >= $2
          ORDER BY started_at DESC
          LIMIT 1`,
-        [fsId, requestTime]
+        [lookupValue, requestTime]
       )).rows;
       return rows && rows[0] ? rows[0] : null;
     }
@@ -95,12 +126,15 @@ router.post('/start-climb', async (req, res) => {
       });
     }
 
-    // If the session hasn’t been created yet (e.g., user still logging in), return a pending response with fsId
+    // Session not created yet — return pending response
     return res.status(202).json({
       success: true,
-      message: 'Ancestor climb starting; waiting for session to initialize (login may be required).',
+      message: hasFsId
+        ? 'Ancestor climb starting; waiting for session to initialize (login may be required).'
+        : 'Searching historical records for your ancestors…',
       pending: true,
-      fsId,
+      fsId: hasFsId ? fsId : null,
+      lookupName: hasName ? name.trim() : null,
       logPath
     });
   } catch (error) {
@@ -127,7 +161,7 @@ router.get('/climb-status/:sessionId', async (req, res) => {
 
     const s = sessionQ.rows[0];
 
-    // We’ll return the latest 10 matches for a lightweight UI render
+    // We'll return the latest 10 matches for a lightweight UI render
     const matchesQ = await db.query(
       `SELECT id, slaveholder_name, match_type, match_confidence, classification,
               classification_reason, generation_distance, found_at

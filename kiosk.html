@@ -13,18 +13,21 @@
       <div class="center-wrap">
         <h1 class="brand">Contribute Your Ancestry to Reparations ∈ ℝ</h1>
         <p class="tag">Touch to begin</p>
-        <button id="start-btn" class="primary-btn">Connect FamilySearch</button>
-        <div class="foot-note">A FamilySearch login window will open (visible)</div>
+        <button id="start-btn" class="primary-btn">Begin</button>
+        <div class="foot-note">FamilySearch ID optional — you can start with just your name and parents</div>
       </div>
     </div>
 
     <!-- FS ID Prompt Modal -->
     <div id="prompt-overlay" class="overlay">
       <div class="dialog">
-        <h2>Enter Your FamilySearch ID</h2>
-        <p class="hint">Example: G21N-HD2 (found on your FamilySearch profile)</p>
-        <input id="fsid-input" type="text" placeholder="e.g., G21N-HD2" readonly />
-        <input id="name-input" type="text" placeholder="Your name (optional)" readonly />
+        <h2>Enter Your Information</h2>
+        <p class="hint">FamilySearch ID <em>or</em> your name + parent names</p>
+        <input id="fsid-input" type="text" placeholder="FamilySearch ID (e.g., G21N-HD2) — optional" readonly />
+        <input id="name-input" type="text" placeholder="Your full name" readonly />
+        <input id="father-input" type="text" placeholder="Father's full name (optional)" readonly />
+        <input id="mother-input" type="text" placeholder="Mother's full name (optional)" readonly />
+        <input id="birthyear-input" type="text" placeholder="Your birth year (optional)" readonly />
         <div id="virtual-keyboard" class="vkb">
           <div class="vkb-row">
             <button class="vkb-key" data-key="1">1</button>
