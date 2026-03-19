@@ -161,14 +161,13 @@ router.get('/climb-status/:sessionId', async (req, res) => {
 
     const s = sessionQ.rows[0];
 
-    // We'll return the latest 10 matches for a lightweight UI render
+    // Return all matches with lineage paths for tree view
     const matchesQ = await db.query(
       `SELECT id, slaveholder_name, match_type, match_confidence, classification,
-              classification_reason, generation_distance, found_at
+              classification_reason, generation_distance, lineage_path, found_at
          FROM ancestor_climb_matches
         WHERE session_id = $1
-        ORDER BY found_at DESC, id DESC
-        LIMIT 10`,
+        ORDER BY generation_distance ASC, match_confidence DESC`,
       [sessionId]
     );
 
@@ -177,6 +176,37 @@ router.get('/climb-status/:sessionId', async (req, res) => {
       session: s,
       matches: matchesQ.rows
     });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Review (approve/reject) a match from the kiosk
+router.post('/match/:id/review', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, notes } = req.body || {};
+
+    if (decision !== 'approve' && decision !== 'reject') {
+      return res.status(400).json({ success: false, error: 'Decision must be "approve" or "reject"' });
+    }
+
+    const classification = decision === 'approve' ? 'pending_review' : 'rejected';
+
+    const result = await db.query(
+      `UPDATE ancestor_climb_matches
+          SET classification = $1, classification_reason = $2
+        WHERE id = $3
+        RETURNING id, slaveholder_name, match_type, match_confidence, classification,
+                  classification_reason, generation_distance, lineage_path, found_at`,
+      [classification, notes || null, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Match not found' });
+    }
+
+    return res.json({ success: true, match: result.rows[0] });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
   }
