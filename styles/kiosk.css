@@ -122,5 +122,37 @@ html, body {
 .vkb-dash { background: #1a2e5e; border-color: #7bd3ff; color: #7bd3ff; font-size: 20px; font-weight: 800; }
 input.vkb-active { border-color: #7bd3ff; box-shadow: 0 0 0 2px rgba(123, 211, 255, 0.3); }
 
+/* Active climbs on start screen */
+#start-screen {
+  grid-template-rows: 1fr auto;
+}
+.active-climbs {
+  width: 100%; max-width: 600px; justify-self: center;
+  padding: 0 20px 24px;
+}
+.active-climbs-header {
+  color: #9fb6e3; font-size: 14px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 10px; text-align: center;
+}
+.active-climbs-list { display: flex; flex-direction: column; gap: 8px; }
+.climb-card {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 16px; border-radius: 12px; cursor: pointer;
+  background: rgba(100, 200, 255, 0.06); border: 1px solid rgba(100, 200, 255, 0.18);
+  touch-action: manipulation;
+}
+.climb-card:active { background: rgba(100, 200, 255, 0.14); }
+.climb-card .cc-name { font-size: 16px; font-weight: 700; }
+.climb-card .cc-meta { font-size: 12px; color: #9fb6e3; margin-top: 2px; }
+.climb-card .cc-stats { text-align: right; }
+.climb-card .cc-count { font-size: 20px; font-weight: 800; color: #7bd3ff; }
+.climb-card .cc-label { font-size: 11px; color: #9fb6e3; }
+.climb-card .cc-status {
+  font-size: 10px; padding: 3px 8px; border-radius: 999px;
+  background: rgba(100, 255, 150, 0.15); color: #64ff96; border: 1px solid rgba(100, 255, 150, 0.3);
+}
+.climb-card .cc-status.completed { background: rgba(255,255,255,0.08); color: #9fb6e3; border-color: rgba(255,255,255,0.15); }
+.climb-card .cc-status.failed { background: rgba(255,100,100,0.15); color: #ff7a7a; border-color: rgba(255,100,100,0.3); }
+
 /* Touch targets */
 button { touch-action: manipulation; }

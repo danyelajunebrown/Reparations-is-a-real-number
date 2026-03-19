@@ -309,4 +309,72 @@
     startClimb(hasFsId ? fsId : null, name, participantInfo);
   });
   resetBtn.addEventListener('click', resetKiosk);
+
+  // ============================
+  // ACTIVE CLIMBS on start screen
+  // ============================
+  const activeClimbsContainer = document.getElementById('active-climbs');
+  const activeClimbsList = document.getElementById('active-climbs-list');
+
+  async function loadActiveClimbs() {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/ancestor-climb/sessions?limit=10`);
+      const d = await r.json();
+      if (!d.success || !d.sessions || d.sessions.length === 0) {
+        activeClimbsContainer.style.display = 'none';
+        return;
+      }
+
+      // Show recent climbs (in_progress first, then recent completed)
+      const climbs = d.sessions.filter(s =>
+        s.status === 'in_progress' || s.status === 'completed' || s.status === 'failed'
+      ).slice(0, 5);
+
+      if (climbs.length === 0) {
+        activeClimbsContainer.style.display = 'none';
+        return;
+      }
+
+      activeClimbsList.innerHTML = climbs.map(s => {
+        const statusClass = s.status === 'completed' ? 'completed' : s.status === 'failed' ? 'failed' : '';
+        const statusLabel = s.status === 'in_progress' ? 'climbing' : s.status;
+        const visited = s.ancestors_visited || 0;
+        const matches = s.matches_found || 0;
+        return `<div class="climb-card" data-session-id="${escapeHtml(s.id)}" data-fs-id="${escapeHtml(s.modern_person_fs_id || '')}">
+          <div>
+            <div class="cc-name">${escapeHtml(s.modern_person_name || s.modern_person_fs_id || 'Unknown')}</div>
+            <div class="cc-meta">${visited} ancestors &bull; ${matches} matches &bull; <span class="cc-status ${statusClass}">${statusLabel}</span></div>
+          </div>
+          <div class="cc-stats">
+            <div class="cc-count">${matches}</div>
+            <div class="cc-label">matches</div>
+          </div>
+        </div>`;
+      }).join('');
+
+      activeClimbsContainer.style.display = '';
+
+      // Wire click handlers
+      activeClimbsList.querySelectorAll('.climb-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const sid = card.dataset.sessionId;
+          if (!sid) return;
+          statVisited.textContent = '0';
+          statMatches.textContent = '0';
+          statStatus.textContent = 'loading…';
+          matchesList.innerHTML = '<div class="empty">Loading climb data…</div>';
+          switchScreen(progressScreen);
+          pollKioskStatus(sid);
+        });
+      });
+    } catch (e) {
+      activeClimbsContainer.style.display = 'none';
+    }
+  }
+
+  // Load active climbs on start, refresh every 15s while on start screen
+  loadActiveClimbs();
+  setInterval(() => {
+    if (startScreen.classList.contains('active')) loadActiveClimbs();
+  }, 15000);
 })();
