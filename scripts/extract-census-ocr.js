@@ -226,23 +226,11 @@ async function initBrowser() {
  */
 async function ensurePageValid() {
     try {
-        // Test if page is still valid by checking URL
-        const url = page.url();
-        if (!url || url === 'about:blank') {
-            console.log('🔄 Reinitializing detached page...');
-            page = await browser.newPage();
-            await page.setViewport({ width: 1920, height: 1200 });
-            
-            // Navigate back to FamilySearch
-            await page.goto('https://www.familysearch.org/search/catalog', {
-                waitUntil: 'domcontentloaded',
-                timeout: 60000
-            });
-            await new Promise(r => setTimeout(r, 3000));
-            console.log('✅ Page reinitialized');
-        }
+        // Test if page is still valid by running a simple evaluate
+        await page.evaluate(() => document.title);
     } catch (e) {
-        console.log('🔄 Reinitializing page after error...');
+        // Page is detached or stale — create a new one
+        console.log('🔄 Reinitializing detached page...');
         try {
             page = await browser.newPage();
             await page.setViewport({ width: 1920, height: 1200 });
@@ -250,7 +238,7 @@ async function ensurePageValid() {
                 waitUntil: 'domcontentloaded',
                 timeout: 60000
             });
-            await new Promise(r => setTimeout(r, 3000));
+            await new Promise(r => setTimeout(r, 2000));
             console.log('✅ Page reinitialized');
         } catch (e2) {
             console.log('⚠️ Could not reinitialize page:', e2.message);
@@ -303,19 +291,27 @@ async function ensureLoggedIn() {
  * Fetch waypoint data via authenticated browser
  */
 async function fetchWaypointData(waypointUrl) {
-    try {
-        const response = await page.evaluate(async (url) => {
-            const res = await fetch(url, {
-                headers: { 'Accept': 'application/json' },
-                credentials: 'include'
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return await res.json();
-        }, waypointUrl);
-        return response;
-    } catch (error) {
-        return { error: error.message };
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const response = await page.evaluate(async (url) => {
+                const res = await fetch(url, {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'include'
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return await res.json();
+            }, waypointUrl);
+            return response;
+        } catch (error) {
+            if (attempt === 0 && (error.message.includes('detached Frame') || error.message.includes('Execution context'))) {
+                console.log('   🔄 Page frame detached, reinitializing...');
+                await ensurePageValid();
+                continue; // Retry with fresh page
+            }
+            return { error: error.message };
+        }
     }
+    return { error: 'fetchWaypointData failed after retries' };
 }
 
 /**

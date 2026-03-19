@@ -52,7 +52,9 @@ const documentVerifier = new DocumentVerifier(process.env.DATABASE_URL, {
 // Configuration
 const INTERACTIVE = process.env.FAMILYSEARCH_INTERACTIVE === 'true';
 const MAX_GENERATIONS = 50; // Increased - we use birth year cutoff instead
+const MAX_NAME_ONLY_GENERATIONS = 12; // Hard cap for name-only BFS (no FS tree to validate)
 const HISTORICAL_CUTOFF_YEAR = 1450; // Start of transatlantic slave trade
+const MIN_ANCESTOR_BIRTH_YEAR = 1600; // Don't create identity records for estimated births before this
 const PERSON_PAGE_URL = 'https://www.familysearch.org/en/tree/person/details/';
 const SAVE_PROGRESS_EVERY = 10; // Save to DB every N ancestors
 
@@ -1375,17 +1377,33 @@ async function findOrCreatePerson(name, birthYear, location, source) {
 
     // Reject garbage names
     if (name.length < 3) return null;
-    if (/^(and|the|or|of|OPEN|ALL|Census|More|Principal)$/i.test(name)) return null;
+    if (/^(and|the|or|of|OPEN|ALL|Census|More|Principal|UNKNOWN|Matrimonio)$/i.test(name)) return null;
     if (!/^[A-Z]/i.test(name)) return null;
     // Reject WikiTree IDs passed as names (e.g., "Rockwood-697")
     if (/^[A-Za-z]+-\d+$/.test(name)) return null;
 
+    // FIX 3: For non-enslaved ancestor climbing, require at least first + last name
+    // (Enslaved persons may have single names, but we're climbing UP through free ancestors)
+    const nameParts = name.trim().split(/\s+/);
+    if (nameParts.length < 2) {
+        console.log(`   [Identity] Skipping single-word name "${name}" — need first + last for ancestor chain`);
+        return null;
+    }
+
+    // FIX 4: Birth year sanity — don't create records for estimated births before 1600
+    // No American slaveholder ancestor is verifiable before that
+    if (birthYear && birthYear < 1600) {
+        console.log(`   [Identity] Skipping "${name}" — estimated birth ${birthYear} is before 1600`);
+        return null;
+    }
+
     try {
-        // Try tiered matching first
+        // FIX 5: Dedup check — look for existing record with same name before creating
         const matches = await sql`SELECT * FROM find_person_match(
             ${name}, ${birthYear || null}, ${location || null}, NULL, NULL, NULL
         )`;
 
+        // Accept Tier 1-2 as before
         if (matches.length > 0 && matches[0].match_tier <= 2) {
             return {
                 id: matches[0].canonical_person_id,
@@ -1395,8 +1413,23 @@ async function findOrCreatePerson(name, birthYear, location, source) {
             };
         }
 
-        // No confident match — create new canonical_persons entry
-        const nameParts = name.trim().split(/\s+/);
+        // Also accept Tier 3 exact name match if it exists — reuse instead of creating duplicate
+        if (matches.length > 0 && matches[0].match_tier === 3) {
+            const existing = matches[0];
+            // If same name and close birth year (or both null), reuse existing
+            const yearClose = !birthYear || !existing.birth_year_estimate ||
+                Math.abs(existing.birth_year_estimate - birthYear) <= 30;
+            if (existing.canonical_name.toLowerCase() === name.toLowerCase() && yearClose) {
+                return {
+                    id: existing.canonical_person_id,
+                    uuid: existing.canonical_uuid,
+                    isNew: false,
+                    matchTier: 3
+                };
+            }
+        }
+
+        // No match — create new canonical_persons entry
         const firstName = nameParts[0];
         const lastName = nameParts[nameParts.length - 1];
 
@@ -1929,6 +1962,11 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
 
         // ─── Handle name_only entries: search FS tree, then records ───
         if (nameOnlyPerson && !fsId) {
+            // FIX 1: Generation cap for name-only entries
+            if (generation > MAX_NAME_ONLY_GENERATIONS) {
+                console.log(`\n📍 Gen ${generation}: Skipping name-only "${nameOnlyPerson.name}" — exceeds max name-only depth (${MAX_NAME_ONLY_GENERATIONS})`);
+                continue;
+            }
             console.log(`\n📍 Gen ${generation}: Name-only search for "${nameOnlyPerson.name}" (queue: ${queue.length})`);
             try {
                 const treeResult = await searchTreeForPerson(
@@ -2290,9 +2328,12 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                 const enslaverMatch = await checkEnslaverDatabase(person);
 
                 if (enslaverMatch) {
-                    // Skip low-confidence name-only matches (too many false positives)
-                    if (enslaverMatch.confidence < 0.65) {
-                        console.log(`   ↳ Skipped low-confidence name-only match: ${enslaverMatch.canonical_name || enslaverMatch.full_name} (${(enslaverMatch.confidence * 100).toFixed(0)}%)`);
+                    // FIX 2: Require at least 0.65 confidence AND either date or location verification
+                    // Pure name-only matches (50%) are the John Smith problem — always false positives at depth
+                    const hasVerification = enslaverMatch.date_verified || enslaverMatch.location_verified ||
+                        enslaverMatch.type === 'exact_fs_match' || enslaverMatch.type === 'external_id_match';
+                    if (enslaverMatch.confidence < 0.65 || (!hasVerification && generation > 6)) {
+                        console.log(`   ↳ Skipped unverified match: ${enslaverMatch.canonical_name || enslaverMatch.full_name} (${(enslaverMatch.confidence * 100).toFixed(0)}%, verified=${hasVerification ? 'yes' : 'no'}, gen=${generation})`);
                     } else {
 
                     console.log(`\n   🎯 POTENTIAL MATCH #${localMatches.length + 1}: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
