@@ -110,8 +110,81 @@
         </div>
       </div>
 
-      <div class="list" id="matches-list">
-        <div class="empty">Waiting for results… Log in to FamilySearch in the window that opened.</div>
+      <!-- View tabs -->
+      <div class="view-tabs">
+        <button class="view-tab active" data-view="tree">Tree</button>
+        <button class="view-tab" data-view="cards">Cards</button>
+      </div>
+
+      <!-- Tree view -->
+      <div class="view-panel active" id="tree-view">
+        <div class="tree-viewport" id="tree-viewport">
+          <div class="tree-canvas" id="tree-canvas">
+            <div class="empty" id="tree-empty">Waiting for results… Log in to FamilySearch in the window that opened.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cards view -->
+      <div class="view-panel" id="cards-view">
+        <div class="cards-list" id="cards-list">
+          <div class="empty">Waiting for results…</div>
+        </div>
+      </div>
+
+      <!-- Lineage detail overlay (bottom sheet) -->
+      <div class="lineage-overlay" id="lineage-overlay">
+        <div class="lineage-sheet" id="lineage-sheet">
+          <div class="lineage-header">
+            <div class="lineage-title" id="lineage-title">Lineage</div>
+            <button class="lineage-close" id="lineage-close">&#x2715;</button>
+          </div>
+          <div class="lineage-chain" id="lineage-chain"></div>
+          <div class="lineage-meta" id="lineage-meta"></div>
+          <div class="lineage-notes-wrap" id="lineage-notes-wrap">
+            <input id="lineage-notes" type="text" placeholder="Notes (optional)" class="lineage-notes-input" readonly />
+            <div id="review-keyboard" class="vkb vkb-mini">
+              <div class="vkb-row">
+                <button class="vkb-key" data-rkey="Q">Q</button>
+                <button class="vkb-key" data-rkey="W">W</button>
+                <button class="vkb-key" data-rkey="E">E</button>
+                <button class="vkb-key" data-rkey="R">R</button>
+                <button class="vkb-key" data-rkey="T">T</button>
+                <button class="vkb-key" data-rkey="Y">Y</button>
+                <button class="vkb-key" data-rkey="U">U</button>
+                <button class="vkb-key" data-rkey="I">I</button>
+                <button class="vkb-key" data-rkey="O">O</button>
+                <button class="vkb-key" data-rkey="P">P</button>
+              </div>
+              <div class="vkb-row">
+                <button class="vkb-key" data-rkey="A">A</button>
+                <button class="vkb-key" data-rkey="S">S</button>
+                <button class="vkb-key" data-rkey="D">D</button>
+                <button class="vkb-key" data-rkey="F">F</button>
+                <button class="vkb-key" data-rkey="G">G</button>
+                <button class="vkb-key" data-rkey="H">H</button>
+                <button class="vkb-key" data-rkey="J">J</button>
+                <button class="vkb-key" data-rkey="K">K</button>
+                <button class="vkb-key" data-rkey="L">L</button>
+              </div>
+              <div class="vkb-row">
+                <button class="vkb-key" data-rkey="Z">Z</button>
+                <button class="vkb-key" data-rkey="X">X</button>
+                <button class="vkb-key" data-rkey="C">C</button>
+                <button class="vkb-key" data-rkey="V">V</button>
+                <button class="vkb-key" data-rkey="B">B</button>
+                <button class="vkb-key" data-rkey="N">N</button>
+                <button class="vkb-key" data-rkey="M">M</button>
+                <button class="vkb-key vkb-wide" data-rkey=" ">SPACE</button>
+                <button class="vkb-key vkb-wide" data-rkey="BACKSPACE">&#x232B;</button>
+              </div>
+            </div>
+          </div>
+          <div class="lineage-actions" id="lineage-actions">
+            <button class="approve-btn" id="approve-btn">APPROVE</button>
+            <button class="reject-btn" id="reject-btn">REJECT</button>
+          </div>
+        </div>
       </div>
 
       <div class="footer">
