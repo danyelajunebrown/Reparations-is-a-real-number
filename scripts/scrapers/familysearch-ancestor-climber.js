@@ -34,6 +34,7 @@ const { neon } = require('@neondatabase/serverless');
 const fs = require('fs');
 const { execSync, spawn } = require('child_process');
 const DocumentVerifier = require('../../src/services/genealogy/DocumentVerifier');
+const MatchVerifier = require('../../src/services/match-verification');
 
 puppeteer.use(StealthPlugin());
 
@@ -48,6 +49,9 @@ const documentVerifier = new DocumentVerifier(process.env.DATABASE_URL, {
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
     } : undefined
 });
+
+// Initialize MatchVerifier for race-aware post-match verification
+const matchVerifier = new MatchVerifier(sql);
 
 // Configuration
 const INTERACTIVE = process.env.FAMILYSEARCH_INTERACTIVE === 'true';
@@ -478,6 +482,22 @@ async function extractPersonFromPage() {
 
         // Deduplicate locations
         result.locations = [...new Set(result.locations)];
+
+        // RACE INDICATOR EXTRACTION - parse race/color from page text (no extra navigation)
+        const racePatterns = [
+            /(?:Race|Color|Colour)[\s:]+(\w+)/i,
+            /(Black|Negro|Colored|Mulatto|White)\s+(?:male|female)/i,
+            /Free\s+(?:Black|Negro|Colored|Person of Color)/i
+        ];
+        result.race_indicators = [];
+        for (const rPattern of racePatterns) {
+            const rMatch = allText.match(rPattern);
+            if (rMatch) result.race_indicators.push(rMatch[0].trim());
+        }
+
+        // OCCUPATION EXTRACTION
+        const occMatch = allText.match(/Occupation[\s:]+([^\n]+)/i);
+        if (occMatch) result.occupation = occMatch[1].trim();
 
         // METHOD 2: Try H1 element (most reliable for person pages)
         if (!result.name) {
@@ -1783,10 +1803,11 @@ async function loadClimbSession(sessionId) {
 }
 
 /**
- * Save match to normalized matches table
+ * Save match to normalized matches table (with verification columns from migration 034)
  */
 async function saveMatch(sessionId, modernPerson, match) {
     try {
+        const verdict = match.verdict;
         await sql`
             INSERT INTO ancestor_climb_matches (
                 session_id,
@@ -1801,7 +1822,12 @@ async function saveMatch(sessionId, modernPerson, match) {
                 match_type,
                 match_confidence,
                 classification,
-                classification_reason
+                classification_reason,
+                verification_status,
+                verification_evidence,
+                confidence_adjusted,
+                requires_human_review,
+                review_reason
             ) VALUES (
                 ${sessionId},
                 ${modernPerson.name},
@@ -1814,12 +1840,75 @@ async function saveMatch(sessionId, modernPerson, match) {
                 ${[]},
                 ${match.match.type},
                 ${match.match.confidence},
-                ${match.classification?.classification || 'debt'},
-                ${match.classification?.reason || 'Unknown'}
+                ${verdict ? verdict.classification : (match.classification?.classification || 'unverified')},
+                ${verdict ? verdict.evidence.map(e => e.detail).join('; ') : (match.classification?.reason || 'Unknown')},
+                ${verdict ? (verdict.requires_human_review ? 'needs_review' : 'auto_verified') : 'unverified'},
+                ${verdict ? JSON.stringify(verdict.evidence) : '[]'},
+                ${verdict ? verdict.confidence_adjusted : null},
+                ${verdict ? verdict.requires_human_review : false},
+                ${verdict ? verdict.review_reason : null}
             )
         `;
     } catch (e) {
-        console.log(`   ⚠ Could not save match: ${e.message}`);
+        // Fallback: if new columns don't exist yet (migration 034 not applied), save without them
+        if (e.message.includes('column') && (e.message.includes('verification_status') || e.message.includes('confidence_adjusted'))) {
+            try {
+                await sql`
+                    INSERT INTO ancestor_climb_matches (
+                        session_id, modern_person_name, modern_person_fs_id,
+                        slaveholder_name, slaveholder_fs_id, slaveholder_birth_year,
+                        generation_distance, lineage_path, lineage_path_fs_ids,
+                        match_type, match_confidence, classification, classification_reason
+                    ) VALUES (
+                        ${sessionId}, ${modernPerson.name}, ${modernPerson.fs_id},
+                        ${match.match.canonical_name || match.match.full_name},
+                        ${match.person.fs_id}, ${match.person.birth_year},
+                        ${match.generation}, ${match.path}, ${[]},
+                        ${match.match.type}, ${match.match.confidence},
+                        ${match.classification?.classification || 'unverified'},
+                        ${match.classification?.reason || 'Unknown'}
+                    )
+                `;
+                console.log(`   ⚠ Saved match without verification columns (run migration 034)`);
+            } catch (e2) {
+                console.log(`   ⚠ Could not save match: ${e2.message}`);
+            }
+        } else {
+            console.log(`   ⚠ Could not save match: ${e.message}`);
+        }
+    }
+}
+
+/**
+ * Learning loop: when the climber extracts race indicators from a FamilySearch page,
+ * feed that data back into free_persons to improve future climbs.
+ */
+async function registerRaceEvidence(person) {
+    if (!person.race_indicators || person.race_indicators.length === 0) return;
+    if (!person.name || person.name.trim().split(/\s+/).length < 2) return;
+
+    const raceText = person.race_indicators.join(' ').toLowerCase();
+    let raceDesignation = null;
+    if (raceText.includes('black') || raceText.includes('negro')) raceDesignation = 'black';
+    else if (raceText.includes('mulatto')) raceDesignation = 'mulatto';
+    else if (raceText.includes('colored')) raceDesignation = 'colored';
+    else if (raceText.includes('white')) raceDesignation = 'white';
+
+    if (!raceDesignation) return;
+    // Only register non-white race evidence (white is the default assumption for slaveholders)
+    if (raceDesignation === 'white') return;
+
+    const location = (person.locations && person.locations[0]) || null;
+    const fsUrl = person.fs_id ? `https://www.familysearch.org/tree/person/details/${person.fs_id}` : null;
+
+    try {
+        await sql`
+            INSERT INTO free_persons (full_name, race_designation, birth_year, state, source_type, source_url, freedom_status)
+            VALUES (${person.name}, ${raceDesignation}, ${person.birth_year || null}, ${location}, 'familysearch_climb', ${fsUrl}, 'unknown')
+            ON CONFLICT DO NOTHING
+        `;
+    } catch (e) {
+        // Non-fatal — table may not exist or have different constraints
     }
 }
 
@@ -2328,27 +2417,20 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                 const enslaverMatch = await checkEnslaverDatabase(person);
 
                 if (enslaverMatch) {
-                    // FIX 2: Require at least 0.65 confidence AND either date or location verification
-                    // Pure name-only matches (50%) are the John Smith problem — always false positives at depth
-                    const hasVerification = enslaverMatch.date_verified || enslaverMatch.location_verified ||
-                        enslaverMatch.type === 'exact_fs_match' || enslaverMatch.type === 'external_id_match';
-                    if (enslaverMatch.confidence < 0.65 || (!hasVerification && generation > 6)) {
-                        console.log(`   ↳ Skipped unverified match: ${enslaverMatch.canonical_name || enslaverMatch.full_name} (${(enslaverMatch.confidence * 100).toFixed(0)}%, verified=${hasVerification ? 'yes' : 'no'}, gen=${generation})`);
-                    } else {
+                    // Run race-aware verification pipeline
+                    const verdict = await matchVerifier.verify(person, enslaverMatch, generation);
 
-                    console.log(`\n   🎯 POTENTIAL MATCH #${localMatches.length + 1}: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
-                    console.log(`   Match type: ${enslaverMatch.type} (confidence: ${(enslaverMatch.confidence * 100).toFixed(0)}%)`);
+                    console.log(`\n   🎯 MATCH CANDIDATE: ${enslaverMatch.canonical_name || enslaverMatch.full_name}`);
+                    console.log(`   Match type: ${enslaverMatch.type} (raw: ${(enslaverMatch.confidence * 100).toFixed(0)}%, adjusted: ${(verdict.confidence_adjusted * 100).toFixed(0)}%)`);
+                    console.log(`   Classification: ${verdict.classification}${verdict.requires_human_review ? ' [NEEDS REVIEW]' : ''}`);
+                    if (verdict.evidence.length > 0) {
+                        for (const e of verdict.evidence) {
+                            const prefix = e.type === 'disqualifying' ? '  ✗' : '  ✓';
+                            console.log(`   ${prefix} ${e.detail}`);
+                        }
+                    }
 
-                    // Show verification details
-                    const checks = [];
-                    if (enslaverMatch.location_verified) checks.push('✓ location');
-                    else checks.push('? location');
-                    if (enslaverMatch.date_verified) checks.push('✓ dates');
-                    else checks.push('? dates');
-                    console.log(`   Verified: ${checks.join(', ')}`);
-
-                    // NEW: Check for supporting documents
-                    console.log(`   🔍 Checking for documents...`);
+                    // Check for supporting documents
                     const docVerification = await documentVerifier.verifyMatch(
                         enslaverMatch.canonical_name || enslaverMatch.full_name,
                         modernPerson?.name || person.name,
@@ -2357,47 +2439,32 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
 
                     if (docVerification.hasDocuments) {
                         console.log(`   📄 Found ${docVerification.documentCount} document(s): ${docVerification.documentTypes.join(', ')}`);
-                        console.log(`   📊 Verification level: ${docVerification.verificationLevel.toUpperCase()}`);
-                        if (docVerification.enslavedPersonsDocumented.length > 0) {
-                            console.log(`   👥 ${docVerification.enslavedPersonsDocumented.length} enslaved person(s) documented`);
-                        }
-                    } else {
-                        console.log(`   ⚠️  No documents found - requires research`);
                     }
-
-                    // Classification disabled - requires document verification
-                    const classification = await classifyLineage([...path, person.name], person);
-                    
-                    // Update status based on document verification
-                    let status = 'UNVERIFIED - requires document review';
-                    if (docVerification.verificationLevel === 'documented') {
-                        status = 'DOCUMENTED - has primary source evidence';
-                    } else if (docVerification.verificationLevel === 'partial') {
-                        status = 'PARTIAL - has documents but needs full verification';
-                    }
-                    console.log(`   Status: ${status}`);
 
                     const matchRecord = {
                         person,
                         match: enslaverMatch,
                         generation,
                         path: [...path, person.name],
-                        classification,
-                        documentVerification: docVerification // NEW: Include doc verification
+                        classification: { classification: verdict.classification, reason: verdict.evidence.map(e => e.detail).join('; ') || 'No evidence' },
+                        documentVerification: docVerification,
+                        verdict // Store full verdict for DB save
                     };
 
                     localMatches.push(matchRecord);
-                    allMatches.push(matchRecord); // Also update global
+                    allMatches.push(matchRecord);
 
-                    // Save match to DB
+                    // Save ALL matches (even disqualified ones are valuable data)
                     if (sessionId && modernPerson) {
                         await saveMatch(sessionId, modernPerson, matchRecord);
                     }
 
-                    // DON'T BREAK - continue climbing to find more matches!
-                    console.log(`   ✓ Match recorded, continuing climb...`);
+                    // Learning loop: feed race data back to free_persons table
+                    if (person.race_indicators && person.race_indicators.length > 0) {
+                        await registerRaceEvidence(person);
+                    }
 
-                    } // end else (confidence >= 0.65)
+                    console.log(`   ✓ Match recorded (${verdict.classification}), continuing climb...`);
                 }
             } catch (dbErr) {
                 console.log(`   ⚠ DB check error: ${dbErr.message.substring(0, 50)}`);

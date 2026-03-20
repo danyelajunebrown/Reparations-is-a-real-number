@@ -147,7 +147,8 @@ router.get('/session/:id', async (req, res) => {
   const matches = (await db.query(
       `SELECT id, modern_person_name, modern_person_fs_id, slaveholder_name, slaveholder_fs_id,
               slaveholder_birth_year, generation_distance, match_type, match_confidence,
-              classification, classification_reason, found_at AS created_at
+              classification, classification_reason, found_at AS created_at,
+              verification_status, confidence_adjusted, requires_human_review, review_reason
          FROM ancestor_climb_matches
         WHERE session_id = $1
         ORDER BY generation_distance ASC, match_confidence DESC, id ASC`,

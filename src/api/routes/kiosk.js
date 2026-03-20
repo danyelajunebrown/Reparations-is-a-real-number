@@ -164,7 +164,8 @@ router.get('/climb-status/:sessionId', async (req, res) => {
     // Return all matches with lineage paths for tree view
     const matchesQ = await db.query(
       `SELECT id, slaveholder_name, match_type, match_confidence, classification,
-              classification_reason, generation_distance, lineage_path, found_at
+              classification_reason, generation_distance, lineage_path, found_at,
+              verification_status, confidence_adjusted, requires_human_review, review_reason
          FROM ancestor_climb_matches
         WHERE session_id = $1
         ORDER BY generation_distance ASC, match_confidence DESC`,

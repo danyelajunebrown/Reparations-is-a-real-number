@@ -151,6 +151,25 @@
     }
   }
 
+  // Classification label helper
+  function classificationLabel(cls) {
+    const labels = {
+      confirmed_slaveholder: 'CONFIRMED',
+      enslaved_ancestor: 'ENSLAVED',
+      free_poc: 'FREE POC',
+      free_poc_slaveholder: 'FREE POC OWNER',
+      temporal_impossible: 'TEMPORAL',
+      common_name_suspect: 'COMMON NAME',
+      ambiguous_needs_review: 'NEEDS REVIEW',
+      unverified: 'UNVERIFIED',
+      debt: 'DEBT',
+      credit: 'CREDIT',
+      pending_review: 'PENDING',
+      rejected: 'REJECTED'
+    };
+    return labels[cls] || cls.toUpperCase().replace(/_/g, ' ');
+  }
+
   // ============================
   // 4a. BUILD LINEAGE TREE
   // ============================
@@ -338,14 +357,18 @@
       if (n.isParticipant) cls.push('participant');
       if (n.isSlaveholder) cls.push('slaveholder');
       if (!n.isParticipant && !n.isSlaveholder) cls.push('on-path');
-      if (n.matchData && (n.matchData.classification === 'pending_review' || n.matchData.classification === 'rejected')) {
+      const matchCls = n.matchData ? (n.matchData.classification || 'unverified').toLowerCase() : '';
+      if (n.matchData && ['pending_review', 'rejected', 'temporal_impossible', 'common_name_suspect'].includes(matchCls)) {
         cls.push('reviewed');
       }
+
+      const nodeBadge = n.isSlaveholder && matchCls ? `<div class="tn-badge badge ${matchCls}">${escapeHtml(classificationLabel(matchCls))}</div>` : '';
 
       html += `<div class="${cls.join(' ')}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;min-height:${n.h}px;"
                     data-match-id="${n.matchId || ''}" data-key="${escapeHtml(n.key)}">
         <div class="tn-name">${escapeHtml(n.name)}</div>
         <div class="tn-gen">${n.isParticipant ? 'You' : n.isSlaveholder ? 'Match' : 'Gen ' + n.gen}</div>
+        ${nodeBadge}
       </div>`;
     }
 
@@ -373,7 +396,7 @@
     cardsList.innerHTML = matches.map(m => {
       const conf = m.match_confidence ? Math.round(m.match_confidence * 100) + '%' : 'N/A';
       const cls = (m.classification || 'unverified').toLowerCase();
-      const badge = cls.toUpperCase();
+      const badge = classificationLabel(cls);
       return `<div class="match-card" data-match-id="${m.id}">
         <div class="mc-name">${escapeHtml(m.slaveholder_name || 'Unknown')}</div>
         <div class="mc-gen">Generation ${m.generation_distance || '?'}</div>
@@ -428,13 +451,20 @@
     lineageMeta.innerHTML = `${escapeHtml(match.match_type || 'match')} &bull; ${conf} confidence &bull; Gen ${match.generation_distance || '?'}`;
 
     // Show/hide actions based on review status
-    const alreadyReviewed = match.classification === 'pending_review' || match.classification === 'rejected';
+    const cls = (match.classification || 'unverified').toLowerCase();
+    const autoResolved = ['temporal_impossible', 'common_name_suspect', 'enslaved_ancestor', 'confirmed_slaveholder', 'free_poc', 'pending_review', 'rejected'];
+    const alreadyReviewed = autoResolved.includes(cls);
     lineageActions.style.display = alreadyReviewed ? 'none' : '';
     lineageNotesWrap.style.display = alreadyReviewed ? 'none' : '';
     lineageNotesInput.value = '';
 
-    if (alreadyReviewed) {
-      lineageMeta.innerHTML += ` &bull; <strong>${escapeHtml((match.classification || '').toUpperCase())}</strong>`;
+    const label = classificationLabel(cls);
+    lineageMeta.innerHTML += ` &bull; <span class="badge ${cls}">${escapeHtml(label)}</span>`;
+    if (match.confidence_adjusted != null) {
+      lineageMeta.innerHTML += ` &bull; Adj: ${Math.round(match.confidence_adjusted * 100)}%`;
+    }
+    if (match.review_reason) {
+      lineageMeta.innerHTML += `<br><small>${escapeHtml(match.review_reason)}</small>`;
     }
 
     lineageOverlay.classList.add('active');

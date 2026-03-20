@@ -130,6 +130,7 @@ html, body {
 .tree-node.reviewed {
   opacity: 0.5;
 }
+.tree-node .tn-badge { font-size: 9px; padding: 1px 6px; margin-top: 2px; display: inline-block; }
 .tree-line {
   position: absolute; background: rgba(123, 211, 255, 0.2); pointer-events: none;
 }
@@ -161,6 +162,13 @@ html, body {
 .badge.credit { color: #64ff96; }
 .badge.pending_review { color: #7bd3ff; }
 .badge.rejected { color: #666; }
+.badge.confirmed_slaveholder { color: #ff7a7a; border-color: #ff7a7a; background: rgba(255,122,122,0.1); }
+.badge.enslaved_ancestor { color: #64ff96; border-color: #64ff96; background: rgba(100,255,150,0.1); }
+.badge.free_poc { color: #a8e6cf; border-color: #a8e6cf; }
+.badge.free_poc_slaveholder { color: #ffb347; border-color: #ffb347; background: rgba(255,179,71,0.1); }
+.badge.temporal_impossible { color: #888; border-color: #666; background: rgba(128,128,128,0.08); text-decoration: line-through; }
+.badge.common_name_suspect { color: #c4a35a; border-color: #c4a35a; background: rgba(196,163,90,0.08); }
+.badge.ambiguous_needs_review { color: #e0a0ff; border-color: #e0a0ff; background: rgba(224,160,255,0.1); }
 .mc-conf { font-size: 14px; color: #9fb6e3; }
 
 /* Lineage overlay (bottom sheet) */
