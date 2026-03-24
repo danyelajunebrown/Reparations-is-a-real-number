@@ -35,6 +35,12 @@ const fs = require('fs');
 const { execSync, spawn } = require('child_process');
 const DocumentVerifier = require('../../src/services/genealogy/DocumentVerifier');
 const MatchVerifier = require('../../src/services/match-verification');
+const BranchClassifier = require('../../src/services/genealogy/BranchClassifier');
+const GarbageDetector = require('../../src/services/genealogy/GarbageDetector');
+
+// Initialize branch classifier and garbage detector for context-aware climbing
+const branchClassifier = new BranchClassifier();
+const garbageDetector = new GarbageDetector();
 
 puppeteer.use(StealthPlugin());
 
@@ -65,12 +71,182 @@ const SAVE_PROGRESS_EVERY = 10; // Save to DB every N ancestors
 let browser = null;
 let page = null;
 
+/**
+ * Build a flat lookup map from a nested participant family tree JSON.
+ * Keys are normalized (lowercase, trimmed) person names.
+ * Values contain the person's birth info and their declared parents.
+ *
+ * @param {object} node - Nested tree node: { name, birthYear, birthLocation, parents: [...] }
+ * @param {object} map - Accumulator (internal use for recursion)
+ * @returns {object} Flat map keyed by lowercase name
+ */
+function buildFamilyTreeMap(node, map = {}) {
+    if (!node || !node.name) return map;
+    const key = node.name.toLowerCase().trim();
+    const entry = {
+        name: node.name,
+        birthYear: node.birthYear || null,
+        birthLocation: node.birthLocation || null,
+        parents: {}
+    };
+    if (node.parents && Array.isArray(node.parents)) {
+        for (const p of node.parents) {
+            if (!p || !p.name) continue;
+            const rel = (p.relationship || '').toLowerCase();
+            if (rel === 'father') {
+                entry.parents.father = { name: p.name, birthYear: p.birthYear || null, birthLocation: p.birthLocation || null };
+            } else if (rel === 'mother') {
+                entry.parents.mother = { name: p.name, birthYear: p.birthYear || null, birthLocation: p.birthLocation || null };
+            }
+            buildFamilyTreeMap(p, map); // recurse into subtree
+        }
+    }
+    map[key] = entry;
+    return map;
+}
+
+/**
+ * Look up a person's participant-provided parents from the family tree map.
+ * Tries exact name match first, then first+last name match for fuzzy tolerance.
+ * @param {string} personName
+ * @param {object} familyTreeMap
+ * @returns {object|null} Entry with .parents.father and .parents.mother, or null
+ */
+function lookupInFamilyTree(personName, familyTreeMap) {
+    if (!personName || !familyTreeMap || Object.keys(familyTreeMap).length === 0) return null;
+    const key = personName.toLowerCase().trim();
+    // Exact match
+    if (familyTreeMap[key]) return familyTreeMap[key];
+    // Try first + last name only (handles middle name differences)
+    // Prefer entries that actually have parents defined (more useful for discovery)
+    const parts = key.split(/\s+/);
+    if (parts.length >= 2) {
+        const firstLast = parts[0] + ' ' + parts[parts.length - 1];
+        let bestMatch = null;
+        for (const [k, v] of Object.entries(familyTreeMap)) {
+            const kParts = k.split(/\s+/);
+            if (kParts.length >= 2) {
+                const kFirstLast = kParts[0] + ' ' + kParts[kParts.length - 1];
+                if (kFirstLast === firstLast) {
+                    const hasParents = v.parents.father || v.parents.mother;
+                    if (hasParents) return v; // Prefer entry with parents
+                    if (!bestMatch) bestMatch = v;
+                }
+            }
+        }
+        if (bestMatch) return bestMatch;
+    }
+    return null;
+}
+
 // Session state (can be restored for resume)
 let sessionId = null;
 let visited = new Set();
 let ancestors = [];
 let allMatches = []; // NEW: Store ALL matches, not just first
 let failedExtractions = []; // Track failed profiles for diagnostics
+
+/**
+ * Recover from detached frame errors by getting a fresh page from Chrome.
+ * Returns true if recovery succeeded, false otherwise.
+ */
+async function recoverPage() {
+    console.log('   🔄 Page frame detached — recovering...');
+    try {
+        // Close the dead page if possible
+        try { await page.close(); } catch (_) {}
+        // Get a fresh page from the connected browser
+        page = await browser.newPage();
+        // Quick smoke test: can we navigate?
+        await page.goto('about:blank', { timeout: 10000 });
+        console.log('   ✓ Page recovered successfully');
+        return true;
+    } catch (err) {
+        console.log(`   ✗ Page recovery failed: ${err.message.substring(0, 60)}`);
+        // Last resort: try reconnecting to Chrome entirely
+        try {
+            browser = await puppeteer.connect({
+                browserURL: 'http://127.0.0.1:9222',
+                defaultViewport: null
+            });
+            page = await browser.newPage();
+            console.log('   ✓ Reconnected to Chrome and got fresh page');
+            return true;
+        } catch (reconnErr) {
+            console.log(`   ✗ Chrome reconnect failed: ${reconnErr.message.substring(0, 60)}`);
+            return false;
+        }
+    }
+}
+
+/**
+ * Safe page.goto wrapper that detects detached frames and recovers.
+ * Returns true if navigation succeeded, false if it failed even after recovery.
+ */
+async function safeGoto(url, options = {}) {
+    const defaults = { waitUntil: 'networkidle2', timeout: 30000 };
+    const opts = { ...defaults, ...options };
+    try {
+        await page.goto(url, opts);
+        return true;
+    } catch (err) {
+        if (err.message.includes('detached') || err.message.includes('Target closed') ||
+            err.message.includes('Session closed') || err.message.includes('Protocol error')) {
+            const recovered = await recoverPage();
+            if (recovered) {
+                try {
+                    await page.goto(url, opts);
+                    return true;
+                } catch (retryErr) {
+                    console.log(`   ✗ Navigation failed after recovery: ${retryErr.message.substring(0, 60)}`);
+                    return false;
+                }
+            }
+            return false;
+        }
+        throw err; // Re-throw non-detachment errors
+    }
+}
+
+/**
+ * Check if page is still usable (not detached).
+ */
+async function isPageHealthy() {
+    try {
+        await page.evaluate(() => true);
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
+/**
+ * Detect if we've been redirected to login and wait for re-login.
+ * Returns true if we were redirected and successfully re-logged in.
+ */
+async function checkAndRecoverLogin() {
+    try {
+        const currentUrl = page.url();
+        if (currentUrl.includes('ident.familysearch') || currentUrl.includes('/auth/')) {
+            console.log('   ⚠ Session expired — waiting for re-login (up to 3 min)...');
+            let attempts = 0;
+            while (attempts < 90) {
+                await new Promise(r => setTimeout(r, 2000));
+                const navUrl = page.url();
+                if (!navUrl.includes('ident.familysearch') && !navUrl.includes('/auth/')) {
+                    const cookies = await page.cookies();
+                    fs.writeFileSync('./fs-climber-cookies.json', JSON.stringify(cookies, null, 2));
+                    console.log(`   ✓ Re-logged in, saved ${cookies.length} cookies`);
+                    return true;
+                }
+                attempts++;
+            }
+            console.log('   ✗ Login timeout after 3 minutes');
+            return false;
+        }
+    } catch (_) {}
+    return false;
+}
 
 /**
  * Capture diagnostics for failed extraction
@@ -331,7 +507,9 @@ async function ensureLoggedIn(startFsId) {
         while (attempts < 90) {
             await new Promise(r => setTimeout(r, 2000));
             const navUrl = page.url();
-            if (navUrl.includes('/tree/person/details/')) {
+            // In name-only mode, login redirects back to search results, not a person page
+            if (navUrl.includes('/tree/person/details/') ||
+                (isNameOnly && !navUrl.includes('ident.familysearch') && !navUrl.includes('/auth/'))) {
                 break;
             }
             attempts++;
@@ -704,13 +882,99 @@ async function extractPersonFromPage() {
  * - ARK links in data-testid attributes: "/ark:/61903/1:1:XXXX-XXX"
  * - Result roles: Principal, Child, Bride, etc.
  */
-async function searchFamilySearchRecords(person) {
+
+// ─── US Census Collection IDs on FamilySearch ───
+const US_CENSUS_COLLECTIONS = {
+    1850: '1401638',
+    1860: '1473181',
+    1870: '1438024',
+    1880: '1417683',
+    1900: '1325221',
+    1910: '1727033',
+    1920: '1488411',
+    1930: '1810731',
+    1940: '2000219'
+};
+const CENSUS_YEARS = Object.keys(US_CENSUS_COLLECTIONS).map(Number); // [1850, 1860, ..., 1940]
+
+/**
+ * Determine which census years a person would appear in as a child (age ~2–18).
+ * Returns array of { censusYear, collectionId, estimatedAge } sorted by best fit.
+ */
+function getTargetCensusYears(birthYear) {
+    if (!birthYear) return [];
+    const targets = [];
+    for (const cy of CENSUS_YEARS) {
+        const age = cy - birthYear;
+        if (age >= 2 && age <= 18) {
+            targets.push({ censusYear: cy, collectionId: US_CENSUS_COLLECTIONS[cy], estimatedAge: age });
+        }
+    }
+    // Prefer ages 4–10 (most likely living with parents), sort by distance from ideal age 6
+    targets.sort((a, b) => Math.abs(a.estimatedAge - 6) - Math.abs(b.estimatedAge - 6));
+    return targets;
+}
+
+/**
+ * Check if a location string refers to a US location.
+ */
+function isUSLocation(location) {
+    if (!location) return false;
+    const loc = location.toLowerCase();
+    const usIndicators = [
+        'united states', 'usa', 'u.s.', 'america',
+        'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado',
+        'connecticut', 'delaware', 'florida', 'georgia', 'hawaii', 'idaho',
+        'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana',
+        'maine', 'maryland', 'massachusetts', 'michigan', 'minnesota',
+        'mississippi', 'missouri', 'montana', 'nebraska', 'nevada',
+        'new hampshire', 'new jersey', 'new mexico', 'new york',
+        'north carolina', 'north dakota', 'ohio', 'oklahoma', 'oregon',
+        'pennsylvania', 'rhode island', 'south carolina', 'south dakota',
+        'tennessee', 'texas', 'utah', 'vermont', 'virginia', 'washington',
+        'west virginia', 'wisconsin', 'wyoming', 'district of columbia',
+        'detroit', 'chicago', 'new orleans', 'philadelphia', 'baltimore',
+        'boston', 'st. louis', 'memphis', 'atlanta', 'richmond', 'charleston'
+    ];
+    return usIndicators.some(ind => loc.includes(ind));
+}
+
+async function searchFamilySearchRecords(person, branchContext = null) {
     if (!person.name) return [];
+
+    // ─── Branch context skip: non-US Eastern European branches won't appear in US census ───
+    const personLocation = person.birth_place || (person.locations && person.locations[0]) || '';
+    const isNonUSBranch = ['eastern_european_jewish', 'eastern_european'].includes(branchContext)
+        && !isUSLocation(personLocation);
+    if (isNonUSBranch) {
+        console.log(`   [RecordSearch] Skipping: branch=${branchContext}, non-US location "${personLocation}"`);
+        // Fall through to generic search only (no census targeting)
+    }
 
     const nameParts = person.name.trim().split(/\s+/);
     const givenName = nameParts[0];
     const surname = nameParts[nameParts.length - 1];
 
+    // ─── Census-targeted search: try targeted census collections first ───
+    const canDoCensus = !isNonUSBranch && person.birth_year && isUSLocation(personLocation);
+    if (canDoCensus) {
+        const censusTargets = getTargetCensusYears(person.birth_year);
+        if (censusTargets.length > 0) {
+            console.log(`   [RecordSearch] Census-targeted: ${censusTargets.map(t => `${t.censusYear}(age~${t.estimatedAge})`).join(', ')}`);
+            // Try up to 2 best census years
+            for (const target of censusTargets.slice(0, 2)) {
+                const censusResult = await searchCensusCollection(person, givenName, surname, target);
+                if (censusResult && censusResult.length > 0) {
+                    console.log(`   [RecordSearch] Census ${target.censusYear} found ${censusResult.length} parent(s)`);
+                    return censusResult;
+                }
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            console.log('   [RecordSearch] Census-targeted search found nothing, falling back to generic...');
+        }
+    }
+
+    // ─── Generic record search (original approach) ───
     const params = new URLSearchParams();
     params.set('q.givenName', givenName);
     params.set('q.surname', surname);
@@ -728,8 +992,14 @@ async function searchFamilySearchRecords(person) {
     console.log(`   [RecordSearch] Navigating to: ${searchUrl.substring(0, 100)}...`);
 
     try {
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        if (!await safeGoto(searchUrl)) {
+            console.log('   [RecordSearch] Navigation failed (page recovery unsuccessful)');
+            return [];
+        }
         await new Promise(r => setTimeout(r, 5000)); // Wait for React SPA to render results
+
+        // Check for login redirect mid-climb
+        await checkAndRecoverLogin();
 
         // Check for CAPTCHA
         if (await detectCaptcha()) return [];
@@ -874,6 +1144,337 @@ async function searchFamilySearchRecords(person) {
 }
 
 /**
+ * Search a specific US Census collection on FamilySearch for a person.
+ * Navigates to search results filtered by collection ID, then clicks into
+ * the top result to extract household members.
+ */
+async function searchCensusCollection(person, givenName, surname, target) {
+    const { censusYear, collectionId, estimatedAge } = target;
+
+    const params = new URLSearchParams();
+    params.set('q.givenName', givenName);
+    params.set('q.surname', surname);
+    // For census search, use the census year as the residence date, not birth date
+    params.set('q.residenceDate.from', String(censusYear));
+    params.set('q.residenceDate.to', String(censusYear));
+    if (person.birth_year) {
+        params.set('q.birthLikeDate.from', String(person.birth_year - 3));
+        params.set('q.birthLikeDate.to', String(person.birth_year + 3));
+    }
+    if (person.birth_place) {
+        params.set('q.residencePlace', person.birth_place);
+    } else if (person.locations && person.locations.length > 0) {
+        params.set('q.residencePlace', person.locations[0]);
+    }
+    params.set('f.collectionId', collectionId);
+
+    const searchUrl = `https://www.familysearch.org/search/record/results?${params.toString()}`;
+    console.log(`   [CensusSearch] ${censusYear} Census (age~${estimatedAge}): ${searchUrl.substring(0, 120)}...`);
+
+    try {
+        if (!await safeGoto(searchUrl)) {
+            console.log(`   [CensusSearch] Navigation failed for ${censusYear} Census`);
+            return [];
+        }
+        await new Promise(r => setTimeout(r, 5000));
+
+        await checkAndRecoverLogin();
+        if (await detectCaptcha()) return [];
+
+        // Get the first census record ARK link from results
+        const firstRecordUrl = await page.evaluate(() => {
+            // Check result count
+            const h1 = document.querySelector('h1');
+            if (h1 && h1.innerText.includes('(0)')) return null;
+
+            // Find the first ARK link to an individual record
+            const arkLinks = document.querySelectorAll('a[href*="/ark:/61903/1:1:"]');
+            for (const link of arkLinks) {
+                const href = link.href;
+                if (href && href.includes('/ark:/61903/1:1:')) return href;
+            }
+            return null;
+        });
+
+        if (!firstRecordUrl) {
+            console.log(`   [CensusSearch] No results for ${censusYear} Census`);
+            return [];
+        }
+
+        console.log(`   [CensusSearch] Clicking into record: ${firstRecordUrl.substring(0, 80)}...`);
+
+        // Navigate to the individual census record and extract household
+        const householdResult = await extractHouseholdFromCensusRecord(firstRecordUrl, person, censusYear);
+        return householdResult;
+    } catch (err) {
+        console.log(`   [CensusSearch] Error (${censusYear}): ${err.message.substring(0, 60)}`);
+        return [];
+    }
+}
+
+/**
+ * Navigate to a FamilySearch census record page and extract ALL household members.
+ * Census records show a household table with columns like:
+ *   Name | Relationship to Head | Age | Sex | Birthplace
+ *
+ * If the target person is listed as "Son"/"Daughter", the Head + Wife/Spouse
+ * are likely their parents (returned with high confidence).
+ */
+async function extractHouseholdFromCensusRecord(arkUrl, targetPerson, censusYear) {
+    console.log(`   [CensusHousehold] Navigating to: ${arkUrl.substring(0, 80)}`);
+
+    try {
+        if (!await safeGoto(arkUrl)) {
+            console.log('   [CensusHousehold] Navigation failed');
+            return [];
+        }
+        await new Promise(r => setTimeout(r, 4000));
+
+        await checkAndRecoverLogin();
+        if (await detectCaptcha()) return [];
+
+        // Try to expand household/family section if collapsed
+        try {
+            const expandBtn = await page.$('[data-testid*="household"] button, [data-testid*="family"] button, button[aria-expanded="false"]');
+            if (expandBtn) {
+                await expandBtn.click();
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        } catch (_) { /* no expand button, that's fine */ }
+
+        const result = await page.evaluate((targetName, targetSurname, year) => {
+            const bodyText = document.body.innerText;
+            const household = [];
+            const parents = [];
+
+            // Helper: clean a name string
+            const cleanName = (raw) => {
+                if (!raw) return null;
+                let name = raw.split('\n')[0].split('\t')[0].trim();
+                name = name.replace(/\s*(Siblings|Spouses|Children|More|Principal|OPEN|ALL)\b.*$/i, '').trim();
+                name = name.replace(/,\s*$/, '').trim();
+                if (name.length < 2 || !/^[A-Z]/i.test(name)) return null;
+                if (/^(and|the|or|of|OPEN|ALL|Census|United|States?)$/i.test(name)) return null;
+                return name;
+            };
+
+            // ─── Strategy 1: Parse household table rows ───
+            // FamilySearch census records often have a "Household Members" or
+            // "Other household members" section rendered as a table or list
+            const allRows = document.querySelectorAll('tr');
+            let foundHouseholdTable = false;
+
+            for (const row of allRows) {
+                const cells = row.querySelectorAll('td, th');
+                if (cells.length >= 2) {
+                    const cell0 = (cells[0].innerText || '').trim();
+                    const cell1 = (cells[1].innerText || '').trim();
+
+                    // Check if this is a household member row (has a link to a person record)
+                    const personLink = row.querySelector('a[href*="/ark:/61903/1:1:"]');
+                    if (personLink) {
+                        foundHouseholdTable = true;
+                        const member = {
+                            name: cleanName(personLink.innerText || cell0),
+                            relationship: null,
+                            age: null,
+                            sex: null,
+                            birthplace: null
+                        };
+
+                        // Parse remaining cells for relationship, age, sex, birthplace
+                        for (let i = 0; i < cells.length; i++) {
+                            const cellText = (cells[i].innerText || '').trim().toLowerCase();
+                            // Relationship keywords
+                            if (/^(head|wife|husband|spouse|son|daughter|child|mother|father|boarder|lodger|servant|sister|brother|aunt|uncle|nephew|niece|grandchild|grandson|granddaughter|mother-in-law|father-in-law|self)$/i.test(cellText)) {
+                                member.relationship = cellText;
+                            }
+                            // Age (1-3 digit number)
+                            const ageMatch = cellText.match(/^(\d{1,3})$/);
+                            if (ageMatch && !member.age) {
+                                member.age = parseInt(ageMatch[1]);
+                            }
+                            // Sex
+                            if (/^(m|f|male|female)$/i.test(cellText)) {
+                                member.sex = cellText.charAt(0).toUpperCase();
+                            }
+                        }
+                        if (member.name) household.push(member);
+                    }
+                }
+            }
+
+            // ─── Strategy 2: Parse body text for household member patterns ───
+            // Census records may render household as text lines:
+            //   "John Smith    Head    45    M    Virginia"
+            //   "Mary Smith    Wife    42    F    Kentucky"
+            if (!foundHouseholdTable || household.length === 0) {
+                const lines = bodyText.split('\n');
+                for (const line of lines) {
+                    // Match lines with relationship keywords
+                    const relKeywords = /\b(Head|Wife|Husband|Spouse|Son|Daughter|Child|Mother|Father|Self)\b/i;
+                    const relMatch = line.match(relKeywords);
+                    if (relMatch) {
+                        // Try to extract name (text before the relationship keyword)
+                        const beforeRel = line.substring(0, line.indexOf(relMatch[0])).trim();
+                        const memberName = cleanName(beforeRel);
+                        if (memberName) {
+                            const ageMatch = line.match(/\b(\d{1,3})\b/);
+                            const sexMatch = line.match(/\b(M|F|Male|Female)\b/i);
+                            household.push({
+                                name: memberName,
+                                relationship: relMatch[1].toLowerCase(),
+                                age: ageMatch ? parseInt(ageMatch[1]) : null,
+                                sex: sexMatch ? sexMatch[1].charAt(0).toUpperCase() : null,
+                                birthplace: null
+                            });
+                        }
+                    }
+                }
+            }
+
+            // ─── Strategy 3: Direct field extraction (single-person record view) ───
+            // If no household table, fall back to extracting Father/Mother fields
+            if (household.length === 0) {
+                const lines = bodyText.split('\n');
+                for (const line of lines) {
+                    const fatherMatch = line.match(/^(?:Father|Father'?s?\s*Name)\s*[\t:]\s*(.+)/i);
+                    if (fatherMatch) {
+                        const name = cleanName(fatherMatch[1]);
+                        if (name) parents.push({
+                            parentName: name, relationship: 'father',
+                            discoveryMethod: 'census_record', sourceType: 'census',
+                            sourceUrl: window.location.href, confidence: 0.85
+                        });
+                    }
+                    const motherMatch = line.match(/^(?:Mother|Mother'?s?\s*Name)\s*[\t:]\s*(.+)/i);
+                    if (motherMatch) {
+                        const name = cleanName(motherMatch[1]);
+                        if (name) parents.push({
+                            parentName: name, relationship: 'mother',
+                            discoveryMethod: 'census_record', sourceType: 'census',
+                            sourceUrl: window.location.href, confidence: 0.85
+                        });
+                    }
+                }
+                // Also check for "Relationship to Head" = Son/Daughter pattern
+                const relToHead = bodyText.match(/Relationship\s*(?:to\s*Head)?\s*[\t:]\s*(Son|Daughter|Child)/i);
+                if (relToHead && parents.length === 0) {
+                    const lines2 = bodyText.split('\n');
+                    for (const line of lines2) {
+                        const headMatch = line.match(/^Head\s*[\t:]\s*(.+)/i);
+                        if (headMatch) {
+                            const name = cleanName(headMatch[1]);
+                            if (name) parents.push({
+                                parentName: name, relationship: 'father',
+                                discoveryMethod: 'census_household', sourceType: 'census',
+                                sourceUrl: window.location.href, confidence: 0.80
+                            });
+                        }
+                        const wifeMatch = line.match(/^(?:Wife|Spouse)\s*[\t:]\s*(.+)/i);
+                        if (wifeMatch) {
+                            const name = cleanName(wifeMatch[1]);
+                            if (name) parents.push({
+                                parentName: name, relationship: 'mother',
+                                discoveryMethod: 'census_household', sourceType: 'census',
+                                sourceUrl: window.location.href, confidence: 0.80
+                            });
+                        }
+                    }
+                }
+                return parents;
+            }
+
+            // ─── Identify parents from household roster ───
+            // Find the target person in the household
+            const targetSurnameLower = targetSurname.toLowerCase();
+            const targetGivenLower = targetName.split(/\s+/)[0].toLowerCase();
+            let targetMember = household.find(m =>
+                m.name && m.name.toLowerCase().includes(targetGivenLower) &&
+                m.name.toLowerCase().includes(targetSurnameLower)
+            );
+            if (!targetMember) {
+                // Relaxed: just match given name
+                targetMember = household.find(m =>
+                    m.name && m.name.toLowerCase().includes(targetGivenLower) &&
+                    (m.relationship === 'son' || m.relationship === 'daughter' || m.relationship === 'child')
+                );
+            }
+
+            const isTargetChild = targetMember &&
+                ['son', 'daughter', 'child'].includes(targetMember.relationship);
+
+            // Find head of household and spouse
+            const head = household.find(m => m.relationship === 'head' || m.relationship === 'self');
+            const spouse = household.find(m =>
+                ['wife', 'husband', 'spouse'].includes(m.relationship)
+            );
+
+            if (isTargetChild || !targetMember) {
+                // Person is a child (or not found, assume record matched them) → head+spouse are parents
+                if (head && head.name) {
+                    const headSex = head.sex || 'M'; // Census heads default male in this era
+                    parents.push({
+                        parentName: head.name,
+                        relationship: headSex === 'F' ? 'mother' : 'father',
+                        discoveryMethod: 'census_household',
+                        sourceType: 'census',
+                        sourceUrl: window.location.href,
+                        confidence: isTargetChild ? 0.88 : 0.75, // Higher if we confirmed child relationship
+                        censusYear: year,
+                        householdRole: 'head'
+                    });
+                }
+                if (spouse && spouse.name) {
+                    const spouseSex = spouse.sex || 'F';
+                    parents.push({
+                        parentName: spouse.name,
+                        relationship: spouseSex === 'F' ? 'mother' : 'father',
+                        discoveryMethod: 'census_household',
+                        sourceType: 'census',
+                        sourceUrl: window.location.href,
+                        confidence: isTargetChild ? 0.88 : 0.75,
+                        censusYear: year,
+                        householdRole: 'spouse'
+                    });
+                }
+            }
+
+            // Attach full household roster as metadata on first parent result
+            if (parents.length > 0 && household.length > 0) {
+                parents[0]._householdMembers = household;
+            }
+
+            return parents;
+        }, person.name, nameParts[nameParts.length - 1], censusYear);
+
+        // Log household findings
+        const householdMembers = result.find(r => r._householdMembers)?._householdMembers;
+        if (householdMembers && householdMembers.length > 0) {
+            console.log(`   [CensusHousehold] ${censusYear} household (${householdMembers.length} members):`);
+            for (const m of householdMembers) {
+                console.log(`      ${m.relationship || '?'}: ${m.name}${m.age ? ' (age ' + m.age + ')' : ''}${m.sex ? ' ' + m.sex : ''}`);
+            }
+        }
+
+        // Clean up: remove _householdMembers metadata from results
+        const parents = result.map(r => {
+            const { _householdMembers, ...parent } = r;
+            return parent;
+        }).filter(r => r.parentName);
+
+        if (parents.length > 0) {
+            console.log(`   [CensusHousehold] Parents from ${censusYear}: ${parents.map(p => `${p.relationship}=${p.parentName}`).join(', ')}`);
+        }
+
+        return parents;
+    } catch (err) {
+        console.log(`   [CensusHousehold] Error: ${err.message.substring(0, 60)}`);
+        return [];
+    }
+}
+
+/**
  * Navigate to an individual FamilySearch record (ARK page) and extract parent info.
  *
  * Recon findings:
@@ -887,7 +1488,10 @@ async function extractParentsFromRecord(arkUrl) {
     console.log(`   [RecordDetail] Navigating to: ${arkUrl.substring(0, 80)}`);
 
     try {
-        await page.goto(arkUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        if (!await safeGoto(arkUrl)) {
+            console.log('   [RecordDetail] Navigation failed');
+            return [];
+        }
         await new Promise(r => setTimeout(r, 4000));
 
         if (await detectCaptcha()) return [];
@@ -1215,10 +1819,11 @@ async function searchTreeForPerson(name, birthYear, location) {
         }
 
         const searchUrl = `https://www.familysearch.org/search/record/results?${params.toString()}`;
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        if (!await safeGoto(searchUrl)) return null;
         await new Promise(r => setTimeout(r, 5000));
 
         if (await detectCaptcha()) return null;
+        await checkAndRecoverLogin();
 
         // Look for person links in results (tree person links have /tree/person/ pattern)
         const result = await page.evaluate((targetGiven, targetSurname) => {
@@ -1261,54 +1866,86 @@ async function searchTreeForPerson(name, birthYear, location) {
  *
  * @param {object} person - { name, birth_year, birth_place, locations, fs_id }
  * @param {object} participantInfo - { fatherName, motherName, birthYear, birthLocation }
+ * @param {object} familyTreeMap - Flat lookup map from buildFamilyTreeMap()
+ * @param {string|null} branchContext - Optional branch context (e.g. 'eastern_european_jewish') to skip irrelevant searches
  * @returns {Array} Array of { parentName, parentFsId, parentBirthYear, relationship, confidence, discoveryMethod, sourceUrl }
  */
-async function discoverParents(person, participantInfo = {}) {
+async function discoverParents(person, participantInfo = {}, familyTreeMap = {}, branchContext = null) {
     console.log('   ═══ PARENT DISCOVERY (multi-source) ═══');
     const allDiscovered = [];
 
-    // ─── Source 1: Participant-provided parent names ───
+    // ─── Source 0: Participant family tree (per-person ground truth) ───
+    const treeEntry = lookupInFamilyTree(person.name, familyTreeMap);
+    if (treeEntry && (treeEntry.parents.father || treeEntry.parents.mother)) {
+        console.log('   [0] Using participant-provided family tree for', person.name, '(ground truth)');
+
+        if (treeEntry.parents.father) {
+            const f = treeEntry.parents.father;
+            console.log('       Father:', f.name, f.birthYear ? '(b.' + f.birthYear + ')' : '', f.birthLocation || '');
+            // Skip expensive TreeSearch for family tree parents — they're ground truth
+            // FS ID lookup will happen when they're processed in the BFS queue
+            allDiscovered.push({
+                parentName: f.name,
+                parentFsId: null,
+                parentBirthYear: f.birthYear || null,
+                parentBirthLocation: f.birthLocation || null,
+                relationship: 'father',
+                confidence: 0.90,
+                discoveryMethod: 'participant_family_tree',
+                sourceUrl: null
+            });
+        }
+
+        if (treeEntry.parents.mother) {
+            const m = treeEntry.parents.mother;
+            console.log('       Mother:', m.name, m.birthYear ? '(b.' + m.birthYear + ')' : '', m.birthLocation || '');
+            allDiscovered.push({
+                parentName: m.name,
+                parentFsId: null,
+                parentBirthYear: m.birthYear || null,
+                parentBirthLocation: m.birthLocation || null,
+                relationship: 'mother',
+                confidence: 0.90,
+                discoveryMethod: 'participant_family_tree',
+                sourceUrl: null
+            });
+        }
+
+        // Participant tree is ground truth — return immediately, skip FS record search
+        console.log('   ═══ Parents from participant family tree (ground truth) ═══');
+        return allDiscovered;
+    }
+
+    // ─── Source 1: Legacy participant-provided parent names (single generation, backward compat) ───
     if (participantInfo.fatherName || participantInfo.motherName) {
-        console.log('   [1] Checking participant-provided parent names...');
+        console.log('   [1] Using participant-provided parent names');
 
         if (participantInfo.fatherName) {
-            const fatherResult = await searchTreeForPerson(
-                participantInfo.fatherName,
-                person.birth_year ? person.birth_year - 25 : null,
-                person.birth_place || (person.locations && person.locations[0])
-            );
             allDiscovered.push({
                 parentName: participantInfo.fatherName,
-                parentFsId: fatherResult?.fsId || null,
+                parentFsId: null,
                 relationship: 'father',
-                confidence: fatherResult ? 0.85 : 0.70, // Higher if we found tree person
+                confidence: 0.70,
                 discoveryMethod: 'participant_provided',
-                sourceUrl: fatherResult ? `https://www.familysearch.org/tree/person/details/${fatherResult.fsId}` : null
+                sourceUrl: null
             });
-            await new Promise(r => setTimeout(r, 2000));
         }
 
         if (participantInfo.motherName) {
-            const motherResult = await searchTreeForPerson(
-                participantInfo.motherName,
-                person.birth_year ? person.birth_year - 25 : null,
-                person.birth_place || (person.locations && person.locations[0])
-            );
             allDiscovered.push({
                 parentName: participantInfo.motherName,
-                parentFsId: motherResult?.fsId || null,
+                parentFsId: null,
                 relationship: 'mother',
-                confidence: motherResult ? 0.85 : 0.70,
+                confidence: 0.70,
                 discoveryMethod: 'participant_provided',
-                sourceUrl: motherResult ? `https://www.familysearch.org/tree/person/details/${motherResult.fsId}` : null
+                sourceUrl: null
             });
-            await new Promise(r => setTimeout(r, 2000));
         }
     }
 
-    // If we already have both parents with FS IDs, we're done
-    const fatherFound = allDiscovered.find(p => p.relationship === 'father' && p.parentFsId);
-    const motherFound = allDiscovered.find(p => p.relationship === 'mother' && p.parentFsId);
+    // If we already have both parents from participant info, skip record search
+    const fatherFound = allDiscovered.find(p => p.relationship === 'father' && p.parentName);
+    const motherFound = allDiscovered.find(p => p.relationship === 'mother' && p.parentName);
     if (fatherFound && motherFound) {
         console.log('   ═══ Both parents found via participant info ═══');
         return allDiscovered;
@@ -1317,28 +1954,23 @@ async function discoverParents(person, participantInfo = {}) {
     // ─── Source 2: FamilySearch record search ───
     if (allDiscovered.length === 0 || !fatherFound || !motherFound) {
         console.log('   [2] Searching FamilySearch historical records...');
-        const recordParents = await searchFamilySearchRecords(person);
+        const recordParents = await searchFamilySearchRecords(person, branchContext);
         for (const rp of recordParents) {
             // Don't duplicate parents already found
             if (!allDiscovered.some(d => d.relationship === rp.relationship && d.parentName)) {
-                // Try to find their FS ID
-                const treeResult = await searchTreeForPerson(
-                    rp.parentName,
-                    person.birth_year ? person.birth_year - 25 : null,
-                    null
-                );
+                // Skip TreeSearch for record-discovered parents — too expensive and rarely finds anyone.
+                // FS ID lookup will happen when they're processed in the BFS queue via searchTreeForPerson.
                 allDiscovered.push({
                     ...rp,
-                    parentFsId: treeResult?.fsId || null,
+                    parentFsId: null,
                     sourceUrl: rp.sourceUrl || null
                 });
-                await new Promise(r => setTimeout(r, 2000));
             }
         }
     }
 
     // ─── Source 3: WikiTree API ───
-    if (!allDiscovered.some(d => d.parentFsId)) {
+    if (allDiscovered.length === 0) {
         console.log('   [3] Searching WikiTree...');
         const wikiParents = await searchWikiTree(person);
         for (const wp of wikiParents) {
@@ -1578,13 +2210,39 @@ async function checkEnslaverDatabase(person) {
         );
         if (autoMatch) return formatTieredMatch(autoMatch);
 
-        // Tier 3 candidates: log for review, don't report as match
+        // Tier 3 candidates: save qualifying matches with human review flags
         const tier3 = matches.filter(m =>
             m.match_tier === 3 &&
             ['enslaver', 'slaveholder', 'owner'].includes(m.person_type)
         );
         if (tier3.length > 0) {
-            console.log(`   ~ ${tier3.length} Tier 3 (name-only) candidate(s) — logged for review`);
+            // Filter out obvious junk before saving
+            const qualifying = tier3.filter(m => {
+                const name = (m.canonical_name || '').trim();
+                // Skip single-word names (too common: "Ann", "John", etc.)
+                if (!name.includes(' ')) return false;
+                // Skip very short names
+                if (name.length < 5) return false;
+                // Skip pre-1600 births (predates American slavery)
+                if (m.birth_year_estimate && m.birth_year_estimate < 1600) return false;
+                return true;
+            });
+
+            if (qualifying.length > 0) {
+                // Return the best qualifying Tier 3 match with human review flags
+                const best = qualifying.reduce((a, b) =>
+                    parseFloat(b.match_confidence) > parseFloat(a.match_confidence) ? b : a
+                );
+                const result = formatTieredMatch(best);
+                result.requires_human_review = true;
+                result.review_reason = 'Name-only match (Tier 3) — needs human verification';
+                result.classification = 'unverified';
+                result.verification_status = 'pending_review';
+                console.log(`   ~ ${tier3.length} Tier 3 candidate(s), saving best: "${best.canonical_name}" (${(parseFloat(best.match_confidence) * 100).toFixed(0)}%) [pending review]`);
+                return result;
+            } else {
+                console.log(`   ~ ${tier3.length} Tier 3 candidate(s) — all filtered out (single-word name, too short, or pre-1600)`);
+            }
         }
     } catch (err) {
         if (!err.message.includes('find_person_match')) throw err;
@@ -1915,7 +2573,7 @@ async function registerRaceEvidence(person) {
 /**
  * BFS climb through ancestors - finds ALL slaveholder matches
  */
-async function climbAncestors(startFsId, startName = null, resumeSession = null, participantInfo = {}) {
+async function climbAncestors(startFsId, startName = null, resumeSession = null, participantInfo = {}, familyTreeMap = {}) {
     console.log('═══════════════════════════════════════════════════════════════');
     console.log('   FAMILYSEARCH ANCESTOR CLIMBER v2');
     console.log('═══════════════════════════════════════════════════════════════');
@@ -1945,6 +2603,15 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
         queue = [];
         localVisited = new Set();
         localMatches = [];
+
+        // Create session for name-only climbs so progress is tracked
+        sessionId = await createClimbSession(startName || 'Unknown', null, {
+            max_generations: MAX_GENERATIONS,
+            historical_cutoff: HISTORICAL_CUTOFF_YEAR,
+            mode: 'name_only',
+            participant_info: participantInfo
+        });
+        console.log(`Session ID: ${sessionId}\n`);
 
         // Create identity records for provided parents and queue them
         if (participantInfo.fatherName) {
@@ -1999,6 +2666,17 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
 
     // Track modern person for match saving
     let modernPerson = null;
+
+    // For name-only climbs, set modernPerson immediately so matches can be saved
+    if (startFsId === 'NAME-ONLY' && startName) {
+        modernPerson = {
+            name: startName,
+            fs_id: null,
+            birth_year: participantInfo.birthYear || null,
+            birth_place: participantInfo.birthLocation || null,
+            locations: participantInfo.birthLocation ? [participantInfo.birthLocation] : []
+        };
+    }
 
     // Main BFS loop - NO LONGER STOPS AT FIRST MATCH
     while (queue.length > 0) {
@@ -2058,6 +2736,10 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
             }
             console.log(`\n📍 Gen ${generation}: Name-only search for "${nameOnlyPerson.name}" (queue: ${queue.length})`);
             try {
+                // Check page health before expensive TreeSearch; recover if needed
+                if (!await isPageHealthy()) {
+                    await recoverPage();
+                }
                 const treeResult = await searchTreeForPerson(
                     nameOnlyPerson.name,
                     nameOnlyPerson.birth_year || null,
@@ -2083,31 +2765,64 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                 } else {
                     // No tree person found — try record search + discoverParents
                     console.log(`   ~ No tree person found, searching records...`);
+                    // Track name-only ancestors as visited for progress counting
+                    const nameKey = `name:${nameOnlyPerson.name.toLowerCase()}`;
+                    localVisited.add(nameKey);
+
                     const syntheticPerson = {
                         name: nameOnlyPerson.name,
                         birth_year: nameOnlyPerson.birth_year,
+                        birth_place: nameOnlyPerson.location || null,
                         locations: nameOnlyPerson.location ? [nameOnlyPerson.location] : [],
                         fs_id: null
                     };
 
                     // Check enslaver DB for this name-only person
                     const enslaverMatch = await checkEnslaverDatabase(syntheticPerson);
-                    if (enslaverMatch && enslaverMatch.confidence >= 0.65) {
-                        console.log(`   🎯 Name-only person "${nameOnlyPerson.name}" matches enslaver DB`);
-                        localMatches.push({
+                    if (enslaverMatch && enslaverMatch.confidence >= 0.50) {
+                        const isTier3 = enslaverMatch.requires_human_review && enslaverMatch.type === 'name_only_match';
+                        console.log(`   🎯 Name-only person "${nameOnlyPerson.name}" matches enslaver DB${isTier3 ? ' [Tier 3 — pending review]' : ''}`);
+                        const matchRecord = {
                             person: syntheticPerson,
                             match: enslaverMatch,
                             generation,
                             path: [...path, nameOnlyPerson.name],
-                            classification: { type: 'UNVERIFIED' },
-                            documentVerification: { hasDocuments: false }
-                        });
+                            classification: isTier3
+                                ? { classification: 'unverified', reason: 'Name-only match (Tier 3) — needs human verification' }
+                                : { type: 'UNVERIFIED' },
+                            documentVerification: { hasDocuments: false },
+                            verdict: isTier3 ? {
+                                classification: 'unverified',
+                                confidence_adjusted: enslaverMatch.confidence,
+                                requires_human_review: true,
+                                review_reason: 'Name-only match (Tier 3) — needs human verification',
+                                evidence: [{ type: 'info', detail: 'Tier 3 name-only match — requires human verification' }]
+                            } : null
+                        };
+                        localMatches.push(matchRecord);
+                        // Persist to DB
+                        if (sessionId && modernPerson) {
+                            await saveMatch(sessionId, modernPerson, matchRecord);
+                        }
                     }
 
-                    // Try to discover THEIR parents via records
-                    const discoveredParents = await discoverParents(syntheticPerson, {});
+                    // Classify branch context for garbage detection
+                    const branchCtx = branchClassifier.primaryContext(syntheticPerson);
+                    // Try to discover THEIR parents via records (family tree map has priority)
+                    const discoveredParents = await discoverParents(syntheticPerson, {}, familyTreeMap, branchCtx?.type || null);
                     for (const parent of discoveredParents) {
                         if (parent.confidence < 0.50) continue;
+                        // Garbage detection: validate discovered parent against branch context
+                        if (branchCtx && parent.discoveryMethod !== 'participant_family_tree' && parent.discoveryMethod !== 'participant_provided') {
+                            const garbageCheck = garbageDetector.validate(syntheticPerson, parent, branchCtx);
+                            if (garbageCheck.recommendation === 'reject') {
+                                console.log(`   ✗ REJECTED ${parent.parentName}: ${garbageCheck.reason}`);
+                                continue;
+                            }
+                            if (garbageCheck.adjustedConfidence !== undefined) {
+                                parent.confidence = garbageCheck.adjustedConfidence;
+                            }
+                        }
                         await saveInferredParentLink(sessionId, syntheticPerson, parent);
                         if (parent.parentFsId && !visitedFsIds.has(parent.parentFsId)) {
                             queue.push([parent.parentFsId, generation + 1, [...path, nameOnlyPerson.name], 'fs_id']);
@@ -2127,10 +2842,12 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                                         Math.round(parent.confidence * 100)
                                     );
                                 }
+                                // Carry parent's own location if available (from family tree), else inherit child's
+                                const parentLocation = parent.parentBirthLocation || parent.parentLocation || nameOnlyPerson.location;
                                 queue.push([personRecord.uuid || `cp_${personRecord.id}`, generation + 1,
                                     [...path, nameOnlyPerson.name], 'uuid',
                                     { name: parent.parentName, canonical_person_id: personRecord.id,
-                                      birth_year: parent.parentBirthYear, location: nameOnlyPerson.location }]);
+                                      birth_year: parent.parentBirthYear, location: parentLocation }]);
                             }
                         }
                     }
@@ -2156,7 +2873,10 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
         console.log(`\n📍 Gen ${generation}: Visiting ${fsId} (queue: ${queue.length}, matches: ${localMatches.length})`);
 
         try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+            if (!await safeGoto(url)) {
+                console.log('   ⚠ Navigation failed, skipping this ancestor');
+                continue;
+            }
             await new Promise(r => setTimeout(r, 2000));
 
             // Check if we got redirected away from details page (e.g., to portrait/pedigree view)
@@ -2183,7 +2903,7 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                 // Redirected to portrait/pedigree view - navigate explicitly to details
                 if (!currentUrl.includes('/tree/person/details/')) {
                     console.log(`   [Debug] Redirected to ${currentUrl}, forcing details view...`);
-                    await page.goto(PERSON_PAGE_URL + fsId, { waitUntil: 'networkidle2', timeout: 30000 });
+                    await safeGoto(PERSON_PAGE_URL + fsId);
                     await new Promise(r => setTimeout(r, 2000));
                     currentUrl = page.url();
 
@@ -2348,12 +3068,26 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                 const diagnostic = await captureFailedExtraction(fsId, generation, page, 'no_parents');
                 console.log(`   📁 Debug saved: ${diagnostic.folder}/${fsId}-gen${generation}-no_parents.*`);
 
+                // Classify branch context for garbage detection and source routing
+                const branchCtx = branchClassifier.primaryContext(person);
+
                 // MULTI-SOURCE PARENT DISCOVERY
                 // Only run for first few generations where participant info is most relevant
-                const discoveredParents = await discoverParents(person, participantInfo);
+                const discoveredParents = await discoverParents(person, participantInfo, familyTreeMap, branchCtx?.type || null);
 
                 for (const parent of discoveredParents) {
                     if (parent.confidence < 0.50) continue; // Skip very low confidence
+                    // Garbage detection: validate discovered parent against branch context
+                    if (branchCtx && parent.discoveryMethod !== 'participant_family_tree' && parent.discoveryMethod !== 'participant_provided') {
+                        const garbageCheck = garbageDetector.validate(person, parent, branchCtx);
+                        if (garbageCheck.recommendation === 'reject') {
+                            console.log(`   ✗ REJECTED ${parent.parentName}: ${garbageCheck.reason}`);
+                            continue;
+                        }
+                        if (garbageCheck.adjustedConfidence !== undefined) {
+                            parent.confidence = garbageCheck.adjustedConfidence;
+                        }
+                    }
 
                     // Save evidence to audit trail
                     await saveInferredParentLink(sessionId, person, parent);
@@ -2688,6 +3422,7 @@ Options:
   --birth-location <loc>  Participant's birth location
   --father-name <name>    Father's name (enables parent discovery)
   --mother-name <name>    Mother's name (enables parent discovery)
+  --family-tree <path>    JSON file with nested family tree (ground truth for parent discovery)
 
 v2 Features:
 - Finds ALL slaveholder connections, not just the first
@@ -2733,8 +3468,36 @@ v2 Features:
         participantInfo.motherName = args[motherNameIndex + 1];
     }
 
+    // Parse family tree JSON file (nested multi-generation tree)
+    const familyTreeArgIndex = args.indexOf('--family-tree');
+    let familyTreeMap = {};
+    if (familyTreeArgIndex !== -1 && args[familyTreeArgIndex + 1]) {
+        const treePath = args[familyTreeArgIndex + 1];
+        try {
+            const treeJson = JSON.parse(fs.readFileSync(treePath, 'utf8'));
+            familyTreeMap = buildFamilyTreeMap(treeJson);
+            console.log(`Family tree loaded: ${Object.keys(familyTreeMap).length} persons from ${treePath}`);
+            // Extract top-level info into participantInfo for backward compat
+            if (treeJson.name && !personName) personName = treeJson.name;
+            if (treeJson.birthYear && !participantInfo.birthYear) participantInfo.birthYear = treeJson.birthYear;
+            if (treeJson.birthLocation && !participantInfo.birthLocation) participantInfo.birthLocation = treeJson.birthLocation;
+            if (treeJson.parents) {
+                for (const p of treeJson.parents) {
+                    if (p.relationship === 'father' && !participantInfo.fatherName) participantInfo.fatherName = p.name;
+                    if (p.relationship === 'mother' && !participantInfo.motherName) participantInfo.motherName = p.name;
+                }
+            }
+        } catch (e) {
+            console.error('Failed to load family tree JSON:', e.message);
+            process.exit(1);
+        }
+    }
+
     if (Object.keys(participantInfo).length > 0) {
         console.log('Participant info provided:', JSON.stringify(participantInfo));
+    }
+    if (Object.keys(familyTreeMap).length > 0) {
+        console.log('Family tree map persons:', Object.keys(familyTreeMap).join(', '));
     }
 
     const startFsId = args.find(a => /^[A-Z0-9]{4}-[A-Z0-9]{2,4}$/.test(a));
@@ -2783,14 +3546,14 @@ v2 Features:
             // Still need Chrome for record searches
             ensureLoggedIn._hasParticipantInfo = true;
             await ensureLoggedIn(placeholderFsId);
-            result = await climbAncestors(placeholderFsId, personName, null, participantInfo);
+            result = await climbAncestors(placeholderFsId, personName, null, participantInfo, familyTreeMap);
             await saveResults(placeholderFsId, result);
 
         } else {
             // Normal FS ID climb
             ensureLoggedIn._hasParticipantInfo = hasParticipantInfo;
             await ensureLoggedIn(startFsId);
-            result = await climbAncestors(startFsId, personName, null, participantInfo);
+            result = await climbAncestors(startFsId, personName, null, participantInfo, familyTreeMap);
             await saveResults(startFsId, result);
         }
 

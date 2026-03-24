@@ -25,18 +25,37 @@ function isValidFsId(id) {
 // Start a climb and try to return the created session id quickly by polling the DB
 router.post('/start-climb', async (req, res) => {
   try {
-    const { fsId, name, fatherName, motherName, birthYear, birthLocation } = req.body || {};
+    const { fsId, name, fatherName, motherName, birthYear, birthLocation, familyTree } = req.body || {};
+
+    // If familyTree is provided, extract top-level fields from it for backward compat
+    let effectiveName = name;
+    let effectiveFatherName = fatherName;
+    let effectiveMotherName = motherName;
+    let effectiveBirthYear = birthYear;
+    let effectiveBirthLocation = birthLocation;
+    if (familyTree && typeof familyTree === 'object' && familyTree.name) {
+      if (!effectiveName) effectiveName = familyTree.name;
+      if (!effectiveBirthYear && familyTree.birthYear) effectiveBirthYear = familyTree.birthYear;
+      if (!effectiveBirthLocation && familyTree.birthLocation) effectiveBirthLocation = familyTree.birthLocation;
+      if (familyTree.parents && Array.isArray(familyTree.parents)) {
+        for (const p of familyTree.parents) {
+          if (p.relationship === 'father' && !effectiveFatherName) effectiveFatherName = p.name;
+          if (p.relationship === 'mother' && !effectiveMotherName) effectiveMotherName = p.name;
+        }
+      }
+    }
 
     const hasFsId = isValidFsId(fsId);
-    const hasName = name && typeof name === 'string' && name.trim().length >= 3;
-    const hasParents = (fatherName && fatherName.trim().length >= 3) || (motherName && motherName.trim().length >= 3);
+    const hasName = effectiveName && typeof effectiveName === 'string' && effectiveName.trim().length >= 3;
+    const hasParents = (effectiveFatherName && effectiveFatherName.trim().length >= 3) || (effectiveMotherName && effectiveMotherName.trim().length >= 3);
+    const hasFamilyTree = familyTree && typeof familyTree === 'object' && familyTree.name && familyTree.parents;
 
-    // Must have either a valid FS ID, or a name + at least one parent
-    if (!hasFsId && !hasName) {
-      return res.status(400).json({ success: false, error: 'Provide a FamilySearch ID or your full name' });
+    // Must have either a valid FS ID, or a name + at least one parent, or a family tree
+    if (!hasFsId && !hasName && !hasFamilyTree) {
+      return res.status(400).json({ success: false, error: 'Provide a FamilySearch ID, your full name, or a family tree' });
     }
-    if (!hasFsId && hasName && !hasParents) {
-      return res.status(400).json({ success: false, error: 'Without a FamilySearch ID, provide at least one parent name' });
+    if (!hasFsId && hasName && !hasParents && !hasFamilyTree) {
+      return res.status(400).json({ success: false, error: 'Without a FamilySearch ID, provide at least one parent name or a family tree' });
     }
 
     // Launch the existing climber script in background (VISIBLE browser via FAMILYSEARCH_INTERACTIVE)
@@ -49,26 +68,33 @@ router.post('/start-climb', async (req, res) => {
       args.push(fsId.trim().toUpperCase());
     }
     if (hasName) {
-      args.push('--name', name.trim());
+      args.push('--name', effectiveName.trim());
     }
-    if (fatherName && fatherName.trim()) {
-      args.push('--father-name', fatherName.trim());
+    if (effectiveFatherName && effectiveFatherName.trim()) {
+      args.push('--father-name', effectiveFatherName.trim());
     }
-    if (motherName && motherName.trim()) {
-      args.push('--mother-name', motherName.trim());
+    if (effectiveMotherName && effectiveMotherName.trim()) {
+      args.push('--mother-name', effectiveMotherName.trim());
     }
-    if (birthYear) {
-      const yr = parseInt(birthYear);
+    if (effectiveBirthYear) {
+      const yr = parseInt(effectiveBirthYear);
       if (yr > 1800 && yr < 2030) args.push('--birth-year', String(yr));
     }
-    if (birthLocation && birthLocation.trim()) {
-      args.push('--birth-location', birthLocation.trim());
+    if (effectiveBirthLocation && effectiveBirthLocation.trim()) {
+      args.push('--birth-location', effectiveBirthLocation.trim());
+    }
+
+    // Write family tree JSON to temp file for the climber
+    if (hasFamilyTree) {
+      const treePath = path.join('/tmp', `family-tree-${Date.now()}.json`);
+      fs.writeFileSync(treePath, JSON.stringify(familyTree));
+      args.push('--family-tree', treePath);
     }
 
     const logsDir = path.join(__dirname, '..', '..', '..', 'logs');
     if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const label = hasFsId ? fsId.trim() : name.trim().replace(/\s+/g, '-').substring(0, 30);
+    const label = hasFsId ? fsId.trim() : (effectiveName || 'unknown').trim().replace(/\s+/g, '-').substring(0, 30);
     const logPath = path.join(logsDir, `kiosk-ancestor-climb-${label}-${ts}.log`);
 
     const env = {
@@ -94,7 +120,7 @@ router.post('/start-climb', async (req, res) => {
 
     // Session lookup: by FS ID if available, otherwise by name
     const lookupField = hasFsId ? 'modern_person_fs_id' : 'modern_person_name';
-    const lookupValue = hasFsId ? fsId.trim().toUpperCase() : name.trim();
+    const lookupValue = hasFsId ? fsId.trim().toUpperCase() : (effectiveName || '').trim();
 
     async function tryFindSession() {
       const rows = (await db.query(
@@ -134,7 +160,7 @@ router.post('/start-climb', async (req, res) => {
         : 'Searching historical records for your ancestors…',
       pending: true,
       fsId: hasFsId ? fsId : null,
-      lookupName: hasName ? name.trim() : null,
+      lookupName: hasName ? effectiveName.trim() : null,
       logPath
     });
   } catch (error) {
