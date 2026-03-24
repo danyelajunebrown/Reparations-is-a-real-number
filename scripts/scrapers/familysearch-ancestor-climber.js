@@ -2422,7 +2422,7 @@ async function createClimbSession(modernPersonName, modernPersonFsId, config = {
                 config
             ) VALUES (
                 ${modernPersonName},
-                ${modernPersonFsId},
+                ${modernPersonFsId || 'NAME-ONLY'},
                 'in_progress',
                 ${JSON.stringify(config)}
             )
