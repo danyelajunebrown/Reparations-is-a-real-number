@@ -20,7 +20,9 @@ const HIGH_FREQUENCY_SURNAMES = new Set([
     'howard', 'wood', 'mason', 'james', 'bennett', 'gray', 'ross',
     'watson', 'brooks', 'kelly', 'sanders', 'price', 'reed', 'long',
     'foster', 'butler', 'barnes', 'fisher', 'henderson', 'coleman',
-    'washington', 'freeman', 'jordan', 'reynolds', 'hamilton', 'graham'
+    'washington', 'freeman', 'jordan', 'reynolds', 'hamilton', 'graham',
+    'ryan', 'grady', 'murphy', 'sullivan', 'kennedy', 'welch', 'walsh',
+    'collins', 'reade', 'read', 'reed', 'hogan', 'lowe', 'muir'
 ]);
 
 class MatchVerifier {
@@ -330,6 +332,21 @@ class MatchVerifier {
         const nameParts = ancestor.name.trim().split(/\s+/);
         const surname = nameParts[nameParts.length - 1].toLowerCase();
         const confidence = match.confidence || match.match_confidence || 0;
+        const isNameOnly = !ancestor.fs_id;
+        const hasNoBirthYear = !ancestor.birth_year || ancestor.birth_year < 0;
+        const isWeakMatch = match.type === 'name_only_match' || match.requires_human_review;
+
+        // Aggressive filter for name-only ancestors with no verifiable data
+        // "William Ryan" + no birth year + no FS ID + Tier 3 match = not credible
+        if (isNameOnly && HIGH_FREQUENCY_SURNAMES.has(surname) && isWeakMatch) {
+            return {
+                type: 'disqualifying',
+                source: 'common_name_check',
+                detail: `Common surname "${surname}" in name-only mode with no verifiable data (${match.type})`,
+                weight: -0.30,
+                common_name: true
+            };
+        }
 
         // Hardcoded high-frequency check
         if (HIGH_FREQUENCY_SURNAMES.has(surname) && confidence < 0.75 && generation > 8) {

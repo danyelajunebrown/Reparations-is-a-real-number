@@ -143,11 +143,24 @@
     });
   });
 
+  // Filter out disqualified matches from participant view
+  const HIDDEN_CLASSIFICATIONS = new Set([
+    'temporal_impossible', 'common_name_suspect'
+  ]);
+  function filterMatches(matches) {
+    if (!matches) return [];
+    return matches.filter(m => {
+      const cls = (m.classification || '').toLowerCase();
+      return !HIDDEN_CLASSIFICATIONS.has(cls);
+    });
+  }
+
   function renderCurrentView() {
+    const visible = filterMatches(currentMatches);
     if (currentView === 'tree') {
-      renderTreeView(currentMatches);
+      renderTreeView(visible);
     } else {
-      renderCardsView(currentMatches);
+      renderCardsView(visible);
     }
   }
 

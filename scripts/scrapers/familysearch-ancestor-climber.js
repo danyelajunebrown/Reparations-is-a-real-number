@@ -556,17 +556,12 @@ async function ensureLoggedIn(startFsId) {
     // Check if the starting person actually exists
     const startPageText = await page.evaluate(() => document.body.innerText);
     const pageTitle = await page.title();
-    if (startPageText.includes('Person Not Found') ||
-        pageTitle.includes('[Unknown Name]') ||
-        pageTitle.includes('UNKNOWN')) {
-        // If we have participant info (parent names, birth data), the person's tree page
-        // may be empty but we can still discover parents via record search.
-        // Don't fail — let the BFS loop handle it with discoverParents().
-        if (ensureLoggedIn._hasParticipantInfo) {
-            console.log(`⚠ Person ${startFsId} shows as Unknown on FamilySearch tree, but participant info provided — will use record search to discover parents.\n`);
-        } else {
-            throw new Error(`Starting person ${startFsId} not found on FamilySearch. Verify the FamilySearch ID is correct.`);
-        }
+    if (startPageText.includes('Person Not Found')) {
+        throw new Error(`Starting person ${startFsId} not found on FamilySearch. Verify the FamilySearch ID is correct.`);
+    } else if (pageTitle.includes('[Unknown Name]') || pageTitle.includes('UNKNOWN')) {
+        // Living person — FamilySearch hides their name but their PARENTS are still visible.
+        // Don't throw — let the BFS loop extract parent IDs from the page and climb from there.
+        console.log(`⚠ Person ${startFsId} is a living person (name hidden by FamilySearch). Will climb from their parents.\n`);
     } else {
         console.log('✓ Logged in and ready to climb ancestors\n');
     }
@@ -2769,9 +2764,13 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                     const nameKey = `name:${nameOnlyPerson.name.toLowerCase()}`;
                     localVisited.add(nameKey);
 
+                    // Estimate birth year from generation depth when unknown
+                    const estimatedBirthYear = nameOnlyPerson.birth_year ||
+                        (participantInfo.birthYear ? participantInfo.birthYear - (generation * 28) : null);
+
                     const syntheticPerson = {
                         name: nameOnlyPerson.name,
-                        birth_year: nameOnlyPerson.birth_year,
+                        birth_year: estimatedBirthYear,
                         birth_place: nameOnlyPerson.location || null,
                         locations: nameOnlyPerson.location ? [nameOnlyPerson.location] : [],
                         fs_id: null
@@ -2780,24 +2779,27 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
                     // Check enslaver DB for this name-only person
                     const enslaverMatch = await checkEnslaverDatabase(syntheticPerson);
                     if (enslaverMatch && enslaverMatch.confidence >= 0.50) {
-                        const isTier3 = enslaverMatch.requires_human_review && enslaverMatch.type === 'name_only_match';
-                        console.log(`   🎯 Name-only person "${nameOnlyPerson.name}" matches enslaver DB${isTier3 ? ' [Tier 3 — pending review]' : ''}`);
+                        // Run the same verification pipeline as FS-ID matches
+                        const verdict = await matchVerifier.verify(syntheticPerson, enslaverMatch, generation);
+
+                        console.log(`   🎯 Name-only person "${nameOnlyPerson.name}" matches enslaver DB`);
+                        console.log(`   Match type: ${enslaverMatch.type} (raw: ${(enslaverMatch.confidence * 100).toFixed(0)}%, adjusted: ${(verdict.confidence_adjusted * 100).toFixed(0)}%)`);
+                        console.log(`   Classification: ${verdict.classification}${verdict.requires_human_review ? ' [NEEDS REVIEW]' : ''}`);
+                        if (verdict.evidence.length > 0) {
+                            for (const e of verdict.evidence) {
+                                const prefix = e.type === 'disqualifying' ? '  ✗' : '  ✓';
+                                console.log(`   ${prefix} ${e.detail}`);
+                            }
+                        }
+
                         const matchRecord = {
                             person: syntheticPerson,
                             match: enslaverMatch,
                             generation,
                             path: [...path, nameOnlyPerson.name],
-                            classification: isTier3
-                                ? { classification: 'unverified', reason: 'Name-only match (Tier 3) — needs human verification' }
-                                : { type: 'UNVERIFIED' },
+                            classification: { classification: verdict.classification, reason: verdict.evidence.map(e => e.detail).join('; ') || 'No evidence' },
                             documentVerification: { hasDocuments: false },
-                            verdict: isTier3 ? {
-                                classification: 'unverified',
-                                confidence_adjusted: enslaverMatch.confidence,
-                                requires_human_review: true,
-                                review_reason: 'Name-only match (Tier 3) — needs human verification',
-                                evidence: [{ type: 'info', detail: 'Tier 3 name-only match — requires human verification' }]
-                            } : null
+                            verdict
                         };
                         localMatches.push(matchRecord);
                         // Persist to DB
