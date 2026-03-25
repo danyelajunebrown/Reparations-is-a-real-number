@@ -2489,7 +2489,7 @@ async function saveMatch(sessionId, modernPerson, match) {
             ) VALUES (
                 ${sessionId},
                 ${modernPerson.name},
-                ${modernPerson.fs_id},
+                ${modernPerson.fs_id || 'NAME-ONLY'},
                 ${match.match.canonical_name || match.match.full_name},
                 ${match.person.fs_id},
                 ${match.person.birth_year},
@@ -2518,7 +2518,7 @@ async function saveMatch(sessionId, modernPerson, match) {
                         generation_distance, lineage_path, lineage_path_fs_ids,
                         match_type, match_confidence, classification, classification_reason
                     ) VALUES (
-                        ${sessionId}, ${modernPerson.name}, ${modernPerson.fs_id},
+                        ${sessionId}, ${modernPerson.name}, ${modernPerson.fs_id || 'NAME-ONLY'},
                         ${match.match.canonical_name || match.match.full_name},
                         ${match.person.fs_id}, ${match.person.birth_year},
                         ${match.generation}, ${match.path}, ${[]},
