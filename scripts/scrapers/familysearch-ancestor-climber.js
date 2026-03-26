@@ -556,12 +556,15 @@ async function ensureLoggedIn(startFsId) {
     // Check if the starting person actually exists
     const startPageText = await page.evaluate(() => document.body.innerText);
     const pageTitle = await page.title();
-    if (startPageText.includes('Person Not Found')) {
-        throw new Error(`Starting person ${startFsId} not found on FamilySearch. Verify the FamilySearch ID is correct.`);
-    } else if (pageTitle.includes('[Unknown Name]') || pageTitle.includes('UNKNOWN')) {
+    // Check for living person FIRST — FS shows both "UNKNOWN" and "Person Not Found"
+    // in the body text for living people, so the order matters
+    if (pageTitle.includes('[Unknown Name]') || pageTitle.includes('UNKNOWN') ||
+        (startPageText.includes('UNKNOWN') && startPageText.includes('Unknown sex'))) {
         // Living person — FamilySearch hides their name but their PARENTS are still visible.
         // Don't throw — let the BFS loop extract parent IDs from the page and climb from there.
         console.log(`⚠ Person ${startFsId} is a living person (name hidden by FamilySearch). Will climb from their parents.\n`);
+    } else if (startPageText.includes('Person Not Found') && !startPageText.includes('UNKNOWN')) {
+        throw new Error(`Starting person ${startFsId} not found on FamilySearch. Verify the FamilySearch ID is correct.`);
     } else {
         console.log('✓ Logged in and ready to climb ancestors\n');
     }
