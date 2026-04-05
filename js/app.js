@@ -1092,6 +1092,7 @@
             if (panelId === 'quality') loadDataQuality();
             if (panelId === 'progress') startProgressRefresh();
             if (panelId === 'ancestor') { loadAncestorSessions(); loadPendingVerification(); }
+            if (panelId === 'blockchain') loadBlockchainPanel();
         }
 
         function closePanel(panelId) {
@@ -1706,6 +1707,133 @@
             } catch (error) {
                 console.error('View record error:', error);
                 return null;
+            }
+        }
+
+        // ============================================
+        // BLOCKCHAIN PANEL HANDLERS
+        // ============================================
+
+        async function loadBlockchainPanel() {
+            // Try to connect if not already
+            if (!connectedAccount) {
+                document.getElementById('bcNotConnected').style.display = 'block';
+                document.getElementById('bcConnected').style.display = 'none';
+                return;
+            }
+            showBlockchainConnected();
+        }
+
+        function showBlockchainConnected() {
+            document.getElementById('bcNotConnected').style.display = 'none';
+            document.getElementById('bcConnected').style.display = 'block';
+            document.getElementById('bcWalletAddr').textContent =
+                connectedAccount.slice(0, 8) + '...' + connectedAccount.slice(-6);
+
+            // Load contract status
+            loadContractStatus();
+        }
+
+        async function loadContractStatus() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/blockchain/status`);
+                const data = await res.json();
+                if (data.success && data.deployed) {
+                    const c = data.contract;
+                    document.getElementById('bcContractStatus').innerHTML =
+                        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">` +
+                        `<div>Records: <b>${c.totalRecords}</b></div>` +
+                        `<div>Status: <b style="color:#10b981;">${c.paused ? 'Paused' : 'Active'}</b></div>` +
+                        `<div style="grid-column:1/3;font-size:11px;font-family:monospace;color:#718096;">` +
+                        `USDC: ${c.usdcAddress.slice(0,8)}...${c.usdcAddress.slice(-4)}</div>` +
+                        `</div>`;
+                }
+            } catch (e) {
+                document.getElementById('bcContractStatus').textContent = 'Could not load status';
+            }
+        }
+
+        // Override connectWallet to also update panel state
+        const _origConnectWallet = connectWallet;
+        connectWallet = async function() {
+            await _origConnectWallet();
+            if (connectedAccount) {
+                showBlockchainConnected();
+            }
+        };
+
+        async function handleSubmitDAA() {
+            const ancestorName = document.getElementById('bcAncestorName').value.trim();
+            const fsId = document.getElementById('bcFamilySearchId').value.trim();
+            const notes = document.getElementById('bcNotes').value.trim();
+
+            if (!ancestorName) {
+                showToast('Enter slaveholder ancestor name', 'error');
+                return;
+            }
+            if (!connectedAccount) {
+                showToast('Connect wallet first', 'error');
+                return;
+            }
+
+            const result = await submitDAAOnChain(ancestorName, fsId, 0, notes);
+            if (result) {
+                document.getElementById('bcAncestorName').value = '';
+                document.getElementById('bcFamilySearchId').value = '';
+                document.getElementById('bcNotes').value = '';
+                loadContractStatus();
+            }
+        }
+
+        async function handleDepositUSDC() {
+            const recordId = parseInt(document.getElementById('bcRecordId').value);
+            const amount = document.getElementById('bcDepositAmount').value;
+
+            if (!recordId || !amount || parseFloat(amount) <= 0) {
+                showToast('Enter record # and amount', 'error');
+                return;
+            }
+
+            await depositUSDC(recordId, amount);
+        }
+
+        async function handleDepositETH() {
+            const recordId = parseInt(document.getElementById('bcRecordId').value);
+            const amount = document.getElementById('bcDepositAmount').value;
+
+            if (!recordId || !amount || parseFloat(amount) <= 0) {
+                showToast('Enter record # and ETH amount', 'error');
+                return;
+            }
+
+            await depositETH(recordId, amount);
+        }
+
+        async function handleViewRecord() {
+            const recordId = parseInt(document.getElementById('bcViewRecordId').value);
+            if (!recordId) {
+                showToast('Enter a record #', 'error');
+                return;
+            }
+
+            const display = document.getElementById('bcRecordDisplay');
+            display.style.display = 'block';
+            display.innerHTML = '<span style="color:#9aa5b1;">Loading...</span>';
+
+            const record = await viewOnChainRecord(recordId);
+            if (record) {
+                display.innerHTML =
+                    `<div style="margin-bottom:6px;"><b>${record.ancestorName}</b></div>` +
+                    `<div>FS ID: ${record.familySearchId || 'N/A'}</div>` +
+                    `<div>Total Owed: <b>$${parseFloat(record.totalOwed).toLocaleString()}</b></div>` +
+                    `<div>Deposited: $${parseFloat(record.totalDeposited).toLocaleString()}</div>` +
+                    `<div>Paid Out: $${parseFloat(record.totalPaid).toLocaleString()}</div>` +
+                    `<div>Remaining: <b style="color:${parseFloat(record.remainingDebt) > 0 ? '#f56565' : '#10b981'};">` +
+                    `$${parseFloat(record.remainingDebt).toLocaleString()}</b></div>` +
+                    `<div>Verified: ${record.verified ? 'Yes' : 'Pending'}</div>` +
+                    `<div style="font-size:11px;color:#718096;margin-top:6px;">Submitter: ${record.submitter.slice(0,8)}...${record.submitter.slice(-4)}</div>`;
+            } else {
+                display.innerHTML = '<span style="color:#f56565;">Record not found</span>';
             }
         }
 

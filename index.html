@@ -156,6 +156,10 @@
             <span class="nav-icon">🌳</span>
             <span class="nav-label">Climb</span>
         </div>
+        <div class="nav-item" onclick="openPanel('blockchain')">
+            <span class="nav-icon">&#9830;</span>
+            <span class="nav-label">Pay</span>
+        </div>
         <div class="nav-item" onclick="openPanel('quality')" id="qualityNavItem">
             <span class="nav-icon">🧹</span>
             <span class="nav-label">Clean Data</span>
@@ -404,6 +408,100 @@
     </div>
 
     <!-- Extraction Progress Panel -->
+    <!-- Blockchain / Pay Panel -->
+    <div class="feature-panel" id="blockchainPanel">
+        <div class="panel-header">
+            <h2>Blockchain Escrow</h2>
+            <button class="panel-close" onclick="closePanel('blockchain')">&times;</button>
+        </div>
+        <div style="padding: 20px; color: #e2e8f0;">
+
+            <!-- Connection Status -->
+            <div id="bcNotConnected" style="text-align: center; padding: 40px 20px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">&#9830;</div>
+                <h3 style="margin-bottom: 10px;">ReparationsEscrow</h3>
+                <p style="color: #9aa5b1; margin-bottom: 8px;">Base Mainnet</p>
+                <p style="color: #9aa5b1; font-size: 11px; margin-bottom: 24px; font-family: monospace;">
+                    0x914846ceA07e57d848d9d60C8238865D83d9ab1E
+                </p>
+                <button onclick="connectWallet()" style="background: #3b82f6; color: white; border: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 16px;">
+                    Connect MetaMask
+                </button>
+                <p style="color: #718096; font-size: 12px;">Connect your wallet to view records and make payments</p>
+            </div>
+
+            <!-- Connected State -->
+            <div id="bcConnected" style="display: none;">
+                <!-- Wallet Info -->
+                <div style="background: #1a202c; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="color: #9aa5b1; font-size: 12px;">Connected Wallet</div>
+                            <div id="bcWalletAddr" style="font-family: monospace; font-size: 14px;"></div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="color: #9aa5b1; font-size: 12px;">Network</div>
+                            <div style="color: #3b82f6;">Base</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contract Status -->
+                <div style="background: #1a202c; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">Contract Status</h4>
+                    <div id="bcContractStatus" style="color: #9aa5b1;">Loading...</div>
+                </div>
+
+                <!-- Submit DAA Record -->
+                <div style="background: #1a202c; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">Submit DAA Record</h4>
+                    <input type="text" id="bcAncestorName" placeholder="Slaveholder ancestor name" style="width: 100%; padding: 10px; margin-bottom: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                    <input type="text" id="bcFamilySearchId" placeholder="FamilySearch ID (e.g. P4RF-PFQ)" style="width: 100%; padding: 10px; margin-bottom: 8px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                    <input type="text" id="bcNotes" placeholder="Notes (optional)" style="width: 100%; padding: 10px; margin-bottom: 12px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                    <button onclick="handleSubmitDAA()" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                        Record on Blockchain
+                    </button>
+                </div>
+
+                <!-- Deposit Payment -->
+                <div style="background: #1a202c; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">Make Payment</h4>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="number" id="bcRecordId" placeholder="Record #" style="width: 30%; padding: 10px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                        <input type="number" id="bcDepositAmount" placeholder="Amount (USDC)" step="0.01" style="width: 70%; padding: 10px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="handleDepositUSDC()" style="flex: 1; background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                            Pay USDC
+                        </button>
+                        <button onclick="handleDepositETH()" style="flex: 1; background: #6366f1; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 14px; cursor: pointer;">
+                            Pay ETH
+                        </button>
+                    </div>
+                </div>
+
+                <!-- View Record -->
+                <div style="background: #1a202c; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <h4 style="margin: 0 0 12px 0; color: #e2e8f0;">View On-Chain Record</h4>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="number" id="bcViewRecordId" placeholder="Record #" style="flex: 1; padding: 10px; background: #2d3748; border: 1px solid #4a5568; border-radius: 4px; color: #e2e8f0; box-sizing: border-box;">
+                        <button onclick="handleViewRecord()" style="background: #4a5568; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">
+                            View
+                        </button>
+                    </div>
+                    <div id="bcRecordDisplay" style="margin-top: 12px; display: none; background: #2d3748; border-radius: 4px; padding: 12px; font-size: 13px;"></div>
+                </div>
+
+                <!-- Explorer Link -->
+                <div style="text-align: center; padding: 10px;">
+                    <a href="https://basescan.org/address/0x914846ceA07e57d848d9d60C8238865D83d9ab1E" target="_blank" style="color: #3b82f6; font-size: 13px;">
+                        View Contract on BaseScan
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="feature-panel" id="progressPanel">
         <div class="panel-header">
             <h2>Extraction Progress</h2>
