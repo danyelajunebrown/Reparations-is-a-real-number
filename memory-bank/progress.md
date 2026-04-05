@@ -1,8 +1,8 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Ancestor Climber Debugging & Pi Optimization
-**Last Updated:** March 11, 2026
+**Current Phase:** Methodology Integrity Overhaul + May Premiere Preparation
+**Last Updated:** April 4, 2026
 
 ---
 
@@ -146,7 +146,132 @@ Compensation TO owners PROVES debt owed TO descendants:
 ---
 
 ### Phase 9: Data Source Expansion (Dec 10, 2025) ✅
-### Phase 22: Ancestor Climber Debugging & Scale Testing (Mar 11, 2026) ✅ NEW
+
+### Phase 27: Methodology Overhaul + Blockchain + Data Promotion (Mar 31 – Apr 5, 2026) 🔄 IN PROGRESS
+**Goal:** Audit all financial calculations for integrity, deploy blockchain escrow, promote 400K slaveholders, build premiere intake system
+
+**Completed:**
+- ✅ Comprehensive codebase audit: 24 GitHub issues filed (#2-#25)
+- ✅ **All 17 code issues resolved (#2-#18):** canonical formula (Craemer 2015), no fabricated data, no misattributed research, legal language disclaimed, blockchain claims updated, philosophical language fixed
+- ✅ Deep research: Craemer, Darity/Mullen, Brattle Group, ICHEIC, South African TRC, Japanese internment, CARICOM, Ager/Boustan/Eriksson, Farmer-Paellmann
+- ✅ Corporate calculator data updated with verified primary sources (CA DOI, JPMorgan Philadelphia 2024, Kornweibel, Southern Mutual UGA)
+- ✅ 7 corporate disclosure PDFs downloaded + registered in person_documents
+- ✅ Southern Mutual Insurance extraction: 37 enslaved persons, 27 enslavers in canonical_persons, OCR pipeline functional
+- ✅ **ReparationsEscrow deployed to Base mainnet:** `0x914846ceA07e57d848d9d60C8238865D83d9ab1E`
+  - 12/12 tests passing, USDC configured, revisable DAA amounts, 7-day timelock withdrawals
+  - Owner: `0xD20a3CF9101948bE150C1ca3fa9a9bA60b3cfB3f` (MetaMask)
+  - API route wired (`/api/blockchain/*`), document generators updated with live contract address
+- ✅ Google Form intake structure designed + `scripts/validate-intake-form.js`
+- ✅ Piper diagnosed: living person ID insufficient without tree sharing — need grandparent IDs
+- ✅ **Eli Neal climb launched:** Fagan line running (Gen 7+, 12 matches), Schwehr auto-queued
+
+**Running (leave overnight Apr 5):**
+- [ ] Slaveholder promotion: Louisiana DONE (15,840), Kentucky ~70% (24K+), 13 states queued. ~272K total.
+- [ ] Eli Fagan climb: Gen 7, 12 matches, 75 ancestors queued
+- [ ] Eli Schwehr climb: auto-starts after Fagan
+
+**Remaining for Premiere (May 8-9):**
+- [ ] Frontend: MetaMask → view DAA → deposit USDC flow (js/app.js contract interaction)
+- [ ] Google Form: copy-paste structure into actual Google Form
+- [ ] Mac Mini: push all code changes, restart PM2
+- [ ] Piper: get grandparent FS IDs from participant, run climbs
+- [ ] Post-promotion verification: re-evaluate existing climb matches against new ~400K enslavers
+- [ ] Transfer contract ownership to fresh wallet (security — deployer key exposed in chat)
+- [ ] Research issues #19-#25 remain open (Darity/Mullen, wealth tracing, tiered payments, legal framework, ICHEIC, Brattle, revisable blockchain DAAs)
+
+**Key Findings:**
+- The Ager/Boustan/Eriksson 2.5x "wealth multiplier" does not exist in the cited paper
+- DAAGenerator, DAADocumentGenerator, and generate-daa-pdf.js produce numbers differing by 37x
+- Compound interest + inflation multiplier + wealth multiplier = triple-counting
+- No attorney has reviewed the legal language in generated documents
+- Corporate calculators use placeholder data to produce specific dollar amounts
+- Brattle Group ($100-131T) is the macro ceiling — useful as sanity check
+- Darity & Mullen model is superior but population-level — adaptation needed for individual DAAs
+- Consider direct consultation with Darity/Mullen
+
+---
+
+### Phase 26: Name-Only Climbing Fixes (Mar 24-26, 2026) ✅
+**Goal:** Fix name-only climbing for participants without FamilySearch IDs
+
+**Completed:**
+- ✅ Ryan Mills climb: first successful name-only climb, Gen 6+, 5 enslaver matches, deep Irish lineage
+- ✅ Commit a86c51b: page recovery, session tracking, garbage detection overhaul
+- ✅ Fix NOT NULL constraint on modern_person_fs_id for name-only sessions
+- ✅ Fix session creation for name-only climbs
+- ✅ Fix living person detection: check UNKNOWN before Person Not Found
+- ✅ Match quality overhaul for name-only climbs
+
+**Remaining:** CensusHousehold parser bug, circular result detection
+
+---
+
+### Phase 25: Enslaver Matching Gap + Mac Mini Deploy (Mar 20-23, 2026) ✅
+**Goal:** Fix the 58% enslaver matching gap and deploy to Mac Mini
+
+**Completed:**
+- ✅ Backfilled 2,464 FS IDs from notes → person_external_ids
+- ✅ Promoted 2,276 CivilWarDC slaveholders to canonical_persons
+- ✅ Migration 035: Tier 2b matching (name + state when birth year NULL, confidence 0.60-0.70)
+- ✅ 72,201 enslavers now matchable
+- ✅ Adrian Brown climb COMPLETED (P4RF-PFQ): 3,922 ancestors, 9 matches
+- ✅ Mac Mini deployed: git pulled e728c71, PM2 reconfigured, Chrome relaunched with port 9222
+- ✅ Full stack verified: Pi kiosk → Mac Mini Express → FS climber → Neon DB
+- ✅ Data Source Integration Contract (DATA_SOURCE_INTEGRATION_CONTRACT.md)
+
+---
+
+### Phase 24: Match Quality Overhaul — Race-Aware Verification (Mar 19, 2026) ✅ NEW
+**Goal:** Eliminate false-positive slaveholder matches by adding race awareness, temporal validation, and common-name detection
+
+**Completed:**
+- ✅ Migration 034: verification columns on ancestor_climb_matches (verification_status, verification_evidence JSONB, confidence_adjusted, requires_human_review, review_reason)
+- ✅ MatchVerifier service (`src/services/match-verification.js`): 7 disqualification checks + corroboration checks + priority-based verdict assembly
+- ✅ Classification taxonomy: confirmed_slaveholder, enslaved_ancestor, free_poc, free_poc_slaveholder, temporal_impossible, common_name_suspect, ambiguous_needs_review, unverified
+- ✅ SlaveVoyages API tightened: removed first-initial matching, threshold 0.55→0.65, temporal validation, exact whole-word surname
+- ✅ Climber: race/occupation extraction from FS pages, MatchVerifier wired into match flow, registerRaceEvidence() learning loop
+- ✅ Kiosk UI: 7 new classification badge CSS classes on tree nodes, cards view, lineage overlay
+- ✅ API routes: kiosk.js + ancestor-climb.js return new verification columns
+- ✅ Re-evaluation script (`scripts/re-evaluate-matches.js`): 131 matches → 76 temporal_impossible, 10 common_name_suspect, 45 unverified
+- ✅ Integration tests: 6/6 pass (Amos Brown, John Smith, Paul Paynter, Angelica Chesley, Robert Wilson, Charles Brown)
+- ✅ Commit e728c71 pushed to main
+
+**Pending:** Mac Mini deploy + fresh test climb with live FS browser
+
+---
+
+### Phase 23: Distributed Ancestor Climber — Pi Kiosk → Mac Mini (Mar 11–16, 2026) ✅
+**Goal:** Move Chrome/Puppeteer workload off Raspberry Pi to Mac Mini; Pi becomes touchscreen kiosk only
+
+**Architecture:**
+- **Raspberry Pi** → Kiosk UI (touchscreen input, status display)
+- **Mac Mini (studio)** → Express server (0.0.0.0:3000), Chrome, climber processes
+- **Neon PostgreSQL** → Session/match persistence (shared by all machines)
+- **Machines connected via SSH over LAN**
+
+**Completed Features:**
+- ✅ Express binds `0.0.0.0` for LAN access from Pi and other devices
+- ✅ Kiosk API (`src/api/routes/kiosk.js`): start-climb, climb-status endpoints
+- ✅ Process orphaning: `nohup` + `spawn(detached:true)` + `proc.unref()` survives PM2 restarts
+- ✅ macOS Chrome launch via `open -a "Google Chrome"` (SSH/PM2 can't access window server)
+- ✅ Concurrent climbs: each climb gets own Chrome tab via `browser.newPage()`
+- ✅ Confidence filtering: matches < 65% excluded (common name false positives)
+- ✅ Virtual on-screen keyboard for touchscreen Pi input
+- ✅ Kiosk auto-reset after 90s inactivity
+- ✅ Mac Mini setup scripts (`scripts/mac-mini-setup/install.sh`, `install-services.sh`, `run-genealogy-suite.sh`)
+- ✅ LaunchAgent plist for auto-start on Mac Mini login
+
+**Files Added/Modified:**
+- `src/api/routes/kiosk.js` — NEW: kiosk-specific endpoints
+- `kiosk.html`, `js/kiosk.js`, `styles/kiosk.css` — NEW: touchscreen kiosk UI
+- `src/api/routes/ancestor-climb.js` — process detachment fixes
+- `scripts/scrapers/familysearch-ancestor-climber.js` — concurrent tabs, macOS launch, confidence filtering
+- `src/server.js` — 0.0.0.0 binding, kiosk route mount
+- `scripts/mac-mini-setup/*` — NEW: Mac Mini provisioning scripts
+
+---
+
+### Phase 22: Ancestor Climber Debugging & Scale Testing (Mar 11, 2026) ✅
 **Goal:** Fix broken ancestor climb, verify working at scale on Mac, plan Pi optimization
 
 **Root Causes Found & Fixed:**
@@ -162,15 +287,6 @@ Compensation TO owners PROVES debt owed TO descendants:
 - Reaching 1860s-era ancestors (slavery period) by generation 4
 - API endpoint (POST /api/ancestor-climb/start) spawns background process correctly
 - Sessions trackable via GET /api/ancestor-climb/sessions and /session/:id
-
-**TODO — Pi Optimization (Pending):**
-- [ ] Use Chromium instead of Chrome (lighter on Pi)
-- [ ] Reduce wait times further for Pi hardware constraints
-- [ ] Consider headless mode option for kiosk deployments
-- [ ] Pre-cache FamilySearch cookies to skip login
-- [ ] Batch parent extraction from portrait view (all ancestors visible at once)
-- [ ] Add progress indicator to kiosk UI for slow climbs
-- [ ] Explore FamilySearch API if developer app eventually approved
 
 **Files Modified:**
 - `scripts/scrapers/familysearch-ancestor-climber.js` — launchBrowser(), ensureLoggedIn(), BFS loop, extractPersonFromPage()
@@ -919,28 +1035,39 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 
 ---
 
-### Q1 2026 🔮 (Updated Feb 28, 2026)
+### Q2 2026 🔮 (Updated Apr 4, 2026)
 
-#### January 2026
-**Focus:** Legal Framework Integration & WikiTree Processing
-- [x] Triangle Trade Legal Framework complete
-- [ ] Run wikitree-descendant-scraper on all queued profiles
-- [ ] Connect CompensationTracker to live UCL LBS data
-- [ ] Build enslaved credit calculations for confirmed descendants
-- [ ] Execute Alabama 1860 Slave Schedule extraction
-- [ ] Implement blockchain smart contract integration
+#### April 2026 — Methodology Integrity Overhaul
+**Focus:** Fix all critical/high/medium issues before premiere
+- [ ] Issue #2: Establish ONE canonical formula with sourced constants
+- [ ] Issue #3: Stop fabricating "Unnamed enslaved person(s)"
+- [ ] Issue #4: Remove misattributed Ager 2.5x multiplier
+- [ ] Issue #5: Fix triple-counting (compound interest + inflation + wealth multiplier)
+- [ ] Issue #6: Legal review of document language
+- [ ] Issue #7: Gate corporate calculators behind "research in progress" flag
+- [ ] Issue #8: Remove TODO markers from generated documents
+- [ ] Issues #9-14: Fix inconsistent rates, calibrate scores, source conversions, remove unsourced constructs
+- [ ] Issues #15-18: Fix header, stale percentage, language, dead code
+- [ ] Re-run Piper's climb (LTVZ-D9S) with confirmed FS session
+- [ ] Fix climber to fail loudly when living person yields 0 parents
+- [ ] Build Google Form and deploy intake validation pipeline
 
-#### February-March 2026
-**Focus:** Ancestor Climber rollout + Cross-Reference & Payment System
-- [x] In-person ancestor climber operational (UI + API + script integration)
-- [x] Ancestor climber debugged & verified working at scale on Mac (Mar 11, 2026)
-- [ ] Optimize ancestor climber for Raspberry Pi (Chromium, headless, reduced waits)
-- [ ] Background queue + headless worker profiles for concurrency
-- [ ] Reviewer UI for unverified matches → document-backed decisions
-- [ ] Match enslaved descendants ↔ enslaver descendants
-- [ ] Build participant KYC/identity verification
-- [ ] Create payment distribution UI
-- [ ] Add more compensation programs (French, Spanish, etc.)
+#### May 2026 — Premiere
+- **May 8-9:** Film premiere with participant intake
+- [ ] Google Form live and accepting submissions
+- [ ] Validation script processing responses
+- [ ] Ancestor climbs queued from validated grandparent FS IDs
+- [ ] DAA generation with defensible methodology (or transparent "research in progress" framing)
+- [ ] MetaMask collection (if blockchain architecture is ready; if not, be transparent)
+
+#### Research Agenda (Ongoing)
+- [ ] Issue #19: Operationalize Darity & Mullen for individual DAAs — consider direct consultation
+- [ ] Issue #20: Methodology for tracing antebellum wealth to present-day holdings
+- [ ] Issue #21: Tiered payment structure
+- [ ] Issue #22: Legal framework for DAA enforceability
+- [ ] Issue #23: Adapt ICHEIC methodology for trans-Atlantic slavery
+- [ ] Issue #24: Harvest Brattle Group forensic economics data
+- [ ] Issue #25: Blockchain architecture for revisable DAAs
 
 ---
 
@@ -948,12 +1075,12 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `wikitree-batch-search.js` | Background WikiTree profile search | Ready |
-| `wikitree-descendant-scraper.js` | Descendant extraction from WikiTree | Ready |
+| `familysearch-ancestor-climber.js` | BFS ancestor climbing from FS IDs | Active (Mac Mini) |
+| `validate-intake-form.js` | Google Form CSV validation | NEW |
 | `extract-preindexed-data.js` | FamilySearch pre-indexed extraction | Active |
 | `extract-census-ocr.js` | 1860 Slave Schedule OCR extraction | Active |
-| `reextract-civilwardc-families.js` | Family relationship extraction | Ready |
-| `run-census-scraper-resilient.sh` | Long-running scraper wrapper | Active |
+| `re-evaluate-matches.js` | Match verification re-evaluation | Ready |
+| `generate-comprehensive-daa.js` | DAA generation from climb data | Needs overhaul (Issue #2) |
 
 ---
 
@@ -995,16 +1122,31 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 
 ## Next Milestone
 
-**Target Date:** December 15, 2025
+**Target Date:** May 8, 2026
 
-**Goal:** Process British Colonial Data
+**Goal:** Premiere-Ready System with Defensible Methodology
 
 **Deliverables:**
-- [ ] Migration 009 run on production database
-- [ ] UCL LBS scraper processing compensation claims
-- [ ] CompensationTracker integrated with live data
-- [ ] Louisiana parish records processing started
-- [ ] 250,000+ total database records
+- [ ] ONE canonical calculation formula with every constant sourced
+- [ ] No fabricated data in any generated document
+- [ ] No misattributed research citations
+- [ ] Generated documents reviewed for legal language appropriateness
+- [ ] Google Form live and accepting participant intake
+- [ ] Validation pipeline processing and queuing climbs
+- [ ] Transparent "research in progress" framing where methodology is still developing
+- [ ] 1,800,000+ total database records
+
+---
+
+### April 4, 2026 - Methodology Integrity
+**Key Insights:**
+1. **Every constant needs a citation** — if the research doesn't exist, we don't use the number
+2. **The genealogical pipeline is solid** — the climber + match verification is the project's strength; lean on it
+3. **The financial calculation code is not ready** — three formulas producing 37x divergence is not acceptable
+4. **Build iteratively** — we will not get the methodology right on the first try
+5. **The Ager/Boustan/Eriksson finding** is about social capital ↔ financial capital conversion, not a numerical multiplier
+6. **Living descendants inherit an unpaid debt** — they are not being debited retroactively for crimes they weren't party to. The architecture must consistently reflect this.
+7. **Brattle Group $100-131T** is the macro ceiling — individual DAA methodology should not exceed this when extrapolated
 
 ---
 

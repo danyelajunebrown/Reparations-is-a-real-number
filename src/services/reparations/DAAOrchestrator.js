@@ -28,7 +28,7 @@ class DAAOrchestrator {
      * @param {Object} acknowledgerInfo - Acknowledger details
      * @returns {Object} Complete DAA record and document path
      */
-    async generateComprehensiveDAA(familySearchId, acknowledgerInfo) {
+    async generateComprehensiveDAA(familySearchId, acknowledgerInfo, sessionId = null) {
         console.log('═══════════════════════════════════════════════════════════════');
         console.log('   COMPREHENSIVE DAA GENERATION');
         console.log('═══════════════════════════════════════════════════════════════');
@@ -37,7 +37,7 @@ class DAAOrchestrator {
 
         // Step 1: Ensure ancestor climb is complete
         console.log('Step 1: Checking ancestor climb status...');
-        const climbSession = await this.ensureClimbComplete(familySearchId, acknowledgerInfo.name);
+        const climbSession = await this.ensureClimbComplete(familySearchId, acknowledgerInfo.name, sessionId);
         console.log(`   ✓ Climb session: ${climbSession.id}`);
         console.log(`   ✓ Matches found: ${climbSession.matches_found}`);
         console.log();
@@ -46,9 +46,41 @@ class DAAOrchestrator {
         console.log('Step 2: Retrieving documented slaveholders...');
         const slaveholders = await this.getDocumentedSlaveholders(climbSession.id);
         console.log(`   ✓ Found ${slaveholders.length} documented slaveholder(s)`);
-        
+
         if (slaveholders.length === 0) {
-            throw new Error('No documented slaveholders found. Ensure primary sources are linked.');
+            console.log('   ℹ No documented slaveholders with linked enslaved individuals found.');
+            // Fall back to climb matches that passed verification (not temporal_impossible/common_name_suspect)
+            const climbMatches = await this.db.query(`
+                SELECT slaveholder_name, slaveholder_fs_id, generation_distance, lineage_path,
+                       match_type, match_confidence, confidence_adjusted, classification
+                FROM ancestor_climb_matches
+                WHERE session_id = $1
+                AND classification NOT IN ('temporal_impossible', 'common_name_suspect')
+                ORDER BY generation_distance
+            `, [climbSession.id]);
+
+            if (climbMatches.rows.length > 0) {
+                console.log(`   ℹ Using ${climbMatches.rows.length} verified climb match(es) as basis for DAA`);
+                for (const m of climbMatches.rows) {
+                    slaveholders.push({
+                        match_id: null,
+                        slaveholder_id: null,
+                        slaveholder_name: m.slaveholder_name,
+                        slaveholder_fs_id: m.slaveholder_fs_id,
+                        slaveholder_birth_year: null,
+                        generation_distance: m.generation_distance,
+                        lineage_path: m.lineage_path,
+                        match_type: m.match_type,
+                        match_confidence: m.confidence_adjusted || m.match_confidence,
+                        primary_state: null,
+                        enslaved_count: 0,
+                        document_count: 0,
+                        _from_climb_match: true
+                    });
+                }
+            } else {
+                console.log('   ℹ No verified matches found. DAA will document the search itself.');
+            }
         }
         
         for (const sh of slaveholders) {
@@ -124,15 +156,27 @@ class DAAOrchestrator {
      * Ensure ancestor climb is complete for the given person
      * Checks for existing session or runs new climb
      */
-    async ensureClimbComplete(familySearchId, personName) {
-        // Check for existing completed session
+    async ensureClimbComplete(familySearchId, personName, sessionId = null) {
+        // Direct session ID lookup (for name-only climbs)
+        if (sessionId) {
+            const directSession = await this.db.query(`
+                SELECT * FROM ancestor_climb_sessions
+                WHERE id = $1 AND status = 'completed'
+            `, [sessionId]);
+            if (directSession.rows.length > 0) {
+                console.log(`   ℹ Using session ${sessionId}`);
+                return directSession.rows[0];
+            }
+        }
+
+        // Check for existing completed session by FS ID or by name for NAME-ONLY
         const existingSession = await this.db.query(`
             SELECT * FROM ancestor_climb_sessions
-            WHERE modern_person_fs_id = $1
+            WHERE (modern_person_fs_id = $1 OR ($1 = 'NAME-ONLY' AND modern_person_name = $2))
             AND status = 'completed'
-            ORDER BY completed_at DESC
+            ORDER BY started_at DESC
             LIMIT 1
-        `, [familySearchId]);
+        `, [familySearchId, personName]);
 
         if (existingSession.rows.length > 0) {
             console.log('   ℹ Using existing climb session');
@@ -232,7 +276,7 @@ class DAAOrchestrator {
                         generation_distance: ancestor.generation_distance,
                         lineage_path: ancestor.lineage_path,
                         match_type: 'existing_id',
-                        match_confidence: 100,
+                        match_confidence: 1.0, // 0-1 scale (was incorrectly 100)
                         primary_state: dbMatch.primary_state,
                         primary_county: dbMatch.primary_county,
                         notes: dbMatch.notes,
@@ -397,6 +441,28 @@ class DAAOrchestrator {
         const slaveholderData = [];
 
         for (const slaveholder of slaveholders) {
+            // For climb-match slaveholders without DB IDs:
+            // Document the slaveholder connection WITHOUT fabricating enslaved persons.
+            // We have evidence of the slaveholder match but no individually documented
+            // enslaved persons linked to this slaveholder yet. The debt calculation
+            // for this slaveholder is pending further research.
+            if (slaveholder._from_climb_match || !slaveholder.slaveholder_id) {
+                const matchSource = slaveholder.match_type === 'slavevoyages_enslaver'
+                    ? 'Trans-Atlantic Slave Trade Database (SlaveVoyages.org)'
+                    : 'Historical enslaver records';
+                slaveholderData.push({
+                    slaveholder,
+                    enslavedPersons: [], // No fabricated persons — empty until real data exists
+                    enslaved_persons_pending: true, // Flag for document generators
+                    primarySources: [{
+                        document_type: slaveholder.match_type,
+                        collection_name: matchSource,
+                        source_note: `Matched via ${slaveholder.match_type} at ${Math.round((slaveholder.match_confidence || 0) * 100)}% confidence. Lineage: ${Array.isArray(slaveholder.lineage_path) ? slaveholder.lineage_path.join(' → ') : 'unknown'}. Enslaved persons not yet individually documented — debt calculation pending further research.`
+                    }]
+                });
+                continue;
+            }
+
             // Get enslaved persons from enslaved_individuals table
             const enslavedResult = await this.db.query(`
                 SELECT 
@@ -418,21 +484,31 @@ class DAAOrchestrator {
                 ORDER BY ei.full_name ASC
             `, [slaveholder.slaveholder_id]);
 
-            // Calculate years enslaved
+            // Calculate years enslaved from documented dates only
             const enslavedPersons = enslavedResult.rows.map(person => {
-                // Calculate from birth to freedom/death, defaulting to 30 years if unknown
-                let yearsEnslaved = 30;
+                let yearsEnslaved = null;
+                let yearsEstimated = false;
+
                 if (person.birth_year && person.freedom_year) {
                     yearsEnslaved = person.freedom_year - person.birth_year;
                 } else if (person.birth_year && person.death_year) {
                     yearsEnslaved = person.death_year - person.birth_year;
+                } else {
+                    // No documented dates — mark as unknown rather than fabricating
+                    yearsEnslaved = null;
+                    yearsEstimated = true;
                 }
-                
+
+                if (yearsEnslaved !== null) {
+                    yearsEnslaved = Math.max(1, yearsEnslaved);
+                }
+
                 return {
                     ...person,
-                    years_enslaved: Math.max(1, yearsEnslaved), // At least 1 year
-                    start_year: person.birth_year || 1800,
-                    end_year: person.freedom_year || person.death_year || 1865
+                    years_enslaved: yearsEnslaved,
+                    years_estimated: yearsEstimated,
+                    start_year: person.birth_year || null,
+                    end_year: person.freedom_year || person.death_year || null
                 };
             });
 
@@ -553,8 +629,8 @@ class DAAOrchestrator {
         // For now, we'll create individual DAA records per slaveholder
         // Future enhancement: Multi-slaveholder DAA support
         
-        const mainSlaveholder = slaveholderData[0]; // Primary/first slaveholder
-        
+        const mainSlaveholder = slaveholderData[0] || null; // Primary/first slaveholder
+
         // Prepare all enslaved persons across all slaveholders
         const allEnslavedPersons = [];
         for (const data of slaveholderData) {
@@ -568,26 +644,30 @@ class DAAOrchestrator {
             }
         }
 
-        // Get primary source for main slaveholder
-        const primarySource = mainSlaveholder.primarySources[0] || {};
+        // Get primary source for main slaveholder (may be null for zero-slaveholder DAAs)
+        const primarySource = mainSlaveholder?.primarySources?.[0] || {};
+
+        // For zero-slaveholder DAAs, use climb match data as context
+        const slaveholderName = mainSlaveholder?.slaveholder?.slaveholder_name ||
+            `Unlinked matches from climb ${climbSession.id.substring(0, 8)}`;
 
         // Generate DAA
         const daaResult = await this.daaGenerator.generateDAA({
             acknowledgerName: acknowledgerInfo.name,
             acknowledgerEmail: acknowledgerInfo.email,
             acknowledgerAddress: acknowledgerInfo.address,
-            slaveholderName: mainSlaveholder.slaveholder.slaveholder_name,
-            slaveholderCanonicalId: mainSlaveholder.slaveholder.slaveholder_id,
-            slaveholderFamilySearchId: mainSlaveholder.slaveholder.slaveholder_fs_id,
-            primarySourceArk: primarySource.ark,
-            primarySourceArchive: primarySource.collection_name,
-            primarySourceReference: `Film ${primarySource.film_number}, Image ${primarySource.image_number}`,
-            primarySourceDate: null, // Would need to extract from document
-            primarySourceType: primarySource.document_type,
-            generationFromSlaveholder: mainSlaveholder.slaveholder.generation_distance,
+            slaveholderName,
+            slaveholderCanonicalId: mainSlaveholder?.slaveholder?.slaveholder_id || null,
+            slaveholderFamilySearchId: mainSlaveholder?.slaveholder?.slaveholder_fs_id || null,
+            primarySourceArk: primarySource.ark || null,
+            primarySourceArchive: primarySource.collection_name || null,
+            primarySourceReference: primarySource.film_number ? `Film ${primarySource.film_number}, Image ${primarySource.image_number}` : null,
+            primarySourceDate: null,
+            primarySourceType: primarySource.document_type || null,
+            generationFromSlaveholder: mainSlaveholder?.slaveholder?.generation_distance || null,
             annualIncome: acknowledgerInfo.annualIncome,
             enslavedPersons: allEnslavedPersons,
-            notes: `Comprehensive DAA generated from ancestor climb session ${climbSession.id}. Includes ${slaveholderData.length} slaveholder(s) and ${allEnslavedPersons.length} documented enslaved person(s).`
+            notes: `Comprehensive DAA generated from ancestor climb session ${climbSession.id}. ${slaveholderData.length} documented slaveholder(s), ${allEnslavedPersons.length} documented enslaved person(s). Climb visited ${climbSession.ancestors_visited} ancestors with ${climbSession.matches_found} matches.`
         });
 
         // Store slaveholder breakdown in notes for now

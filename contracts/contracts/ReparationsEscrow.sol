@@ -408,6 +408,55 @@ contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
         return record.totalPaid >= record.totalReparationsOwed;
     }
     
+    /**
+     * @dev Update the total reparations owed for a record.
+     * Required because DAA amounts change as methodology matures,
+     * new enslaved persons are documented, and new descendants are found.
+     * Only callable by verifiers (not the submitter) to maintain integrity.
+     * Emits event with old and new amounts for audit trail.
+     */
+    event ReparationsAmountUpdated(uint256 indexed recordId, uint256 oldAmount, uint256 newAmount, string reason);
+
+    function updateReparationsOwed(
+        uint256 _recordId,
+        uint256 _newAmount,
+        string memory _reason
+    ) external onlyVerifier {
+        require(ancestryRecords[_recordId].timestamp > 0, "Record does not exist");
+        require(_newAmount > 0, "Amount must be positive");
+
+        uint256 oldAmount = ancestryRecords[_recordId].totalReparationsOwed;
+        ancestryRecords[_recordId].totalReparationsOwed = _newAmount;
+
+        emit ReparationsAmountUpdated(_recordId, oldAmount, _newAmount, _reason);
+    }
+
+    /**
+     * @dev Get the full record details (convenience view)
+     */
+    function getRecord(uint256 _recordId) external view returns (
+        string memory ancestorName,
+        string memory familySearchId,
+        uint256 totalReparationsOwed,
+        uint256 totalDeposited,
+        uint256 totalPaid,
+        uint256 historicalPaymentsReceived,
+        address submitter,
+        bool verified
+    ) {
+        AncestryRecord memory r = ancestryRecords[_recordId];
+        return (
+            r.ancestorName,
+            r.familySearchId,
+            r.totalReparationsOwed,
+            r.totalDeposited,
+            r.totalPaid,
+            r.historicalPaymentsReceived,
+            r.submitter,
+            r.verified
+        );
+    }
+
     // Admin functions
     function addVerifier(address _verifier) external onlyOwner {
         verifiers[_verifier] = true;

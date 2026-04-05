@@ -34,13 +34,16 @@ class DAADocumentGenerator {
             fs.mkdirSync(this.outputDir, { recursive: true });
         }
         
-        // TODO [JAN 2026]: Base calculation from template - verify with economic research
-        // Current placeholder uses simplified formula from database
-        this.BASE_DAILY_WAGE = 120; // $120/day from template
-        this.WORKING_DAYS_PER_YEAR = 300;
-        this.INFLATION_MULTIPLIER = 30; // 1860→2025
-        this.COMPOUND_INTEREST_RATE = 0.04; // 4% annual
-        this.DELAYED_JUSTICE_MULTIPLIER = 3.2; // 2% × 160 years
+        // Calculation constants — MUST match DAAGenerator.js (single source of truth)
+        // See DAAGenerator.js for full citations.
+        // This class should NOT independently recalculate debt — it should format
+        // the numbers already computed by DAAGenerator. These constants are here
+        // only for display/methodology description in the DOCX.
+        //
+        // Source: Craemer, Thomas. Social Science Quarterly 96.2 (2015): 639-655
+        this.BASE_DAILY_WAGE = 0.80;       // $0.80/day (Craemer Table 1, p. 644)
+        this.WORKING_DAYS_PER_YEAR = 300;  // Craemer p. 643
+        this.COMPOUND_INTEREST_RATE = 0.03; // 3% conservative floor (Craemer p. 645)
     }
 
     /**
@@ -397,7 +400,7 @@ class DAADocumentGenerator {
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(c) The death of Obligor, at which time any remaining obligation shall transfer to Obligor\'s estate.',
+                text: '(c) The death of Obligor.',
                 spacing: { after: 200 }
             })
         ];
@@ -410,17 +413,17 @@ class DAADocumentGenerator {
         return [
             this.createPageBreak(),
             new Paragraph({
-                text: 'ARTICLE III: ESCROW AND DISBURSEMENT',
+                text: 'ARTICLE III: BLOCKCHAIN ESCROW',
                 heading: HeadingLevel.HEADING_1,
                 spacing: { before: 400, after: 200 }
             }),
             new Paragraph({
-                text: 'Section 3.1 — Blockchain Escrow',
+                text: 'Section 3.1 — Smart Contract Escrow',
                 heading: HeadingLevel.HEADING_2,
                 spacing: { before: 200, after: 100 }
             }),
             new Paragraph({
-                text: 'All payments shall be deposited into a blockchain-anchored escrow account with transparent and auditable transaction history.',
+                text: 'All payments are recorded on the ReparationsEscrow smart contract deployed on the Base blockchain (Ethereum Layer 2), at contract address 0x914846ceA07e57d848d9d60C8238865D83d9ab1E. The contract accepts USDC stablecoin deposits, provides transparent auditable transaction history, and supports revisable debt amounts as methodology matures. Contract verification: https://basescan.org/address/0x914846ceA07e57d848d9d60C8238865D83d9ab1E',
                 spacing: { after: 200 }
             })
         ];
@@ -433,29 +436,29 @@ class DAADocumentGenerator {
         return [
             this.createPageBreak(),
             new Paragraph({
-                text: 'ARTICLE IV: LEGAL EFFECT AND WAIVERS',
+                text: 'ARTICLE IV: ACKNOWLEDGMENTS',
                 heading: HeadingLevel.HEADING_1,
                 spacing: { before: 400, after: 200 }
             }),
             new Paragraph({
-                text: 'Section 4.1 — Voluntary Waiver of Defenses',
+                text: 'Section 4.1 — Voluntary Acknowledgments',
                 heading: HeadingLevel.HEADING_2,
                 spacing: { before: 200, after: 100 }
             }),
             new Paragraph({
-                text: 'Obligor voluntarily waives the following defenses:',
+                text: 'Obligor voluntarily acknowledges the following:',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(a) Statute of Limitations: This is a current, voluntary assumption of obligation;',
+                text: '(a) Genealogical Connection: Obligor affirms direct connection to documented slaveholders through verified genealogical research;',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(b) Standing: Obligor affirms direct connection through documented genealogical inheritance;',
+                text: '(b) Wealth Transmission: Obligor acknowledges that intergenerational wealth, social capital, and network advantages have been transmitted through the documented lineage;',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(c) Attenuation: Obligor acknowledges the documented chain of wealth transmission.',
+                text: '(c) Inherited Debt: Obligor acknowledges that the unpaid debts arising from enslaved labor have been inherited, not created, by this generation.',
                 spacing: { after: 200 }
             })
         ];
@@ -589,7 +592,7 @@ class DAADocumentGenerator {
                         spacing: { after: 100 }
                     }),
                     new Paragraph({
-                        text: 'TODO [JAN 2026]: Extract and include full document text transcription here',
+                        text: '[Full document transcription pending — primary source on file]',
                         italics: true,
                         spacing: { after: 200 }
                     })
@@ -677,7 +680,7 @@ class DAADocumentGenerator {
                 spacing: { after: 200 }
             }),
             new Paragraph({
-                text: 'TODO [JAN 2026]: Current system uses database formula. Verify $58,620 base with economic research.',
+                text: 'Note: Calculation methodology is under active development. All constants are subject to revision as research matures. See methodology notes for current citations and limitations.',
                 italics: true,
                 spacing: { after: 200 }
             }),
@@ -797,7 +800,7 @@ class DAADocumentGenerator {
                 spacing: { after: 200 }
             }),
             new Paragraph({
-                text: 'TODO [JAN 2026]: Enhance birth year estimation using FamilySearch data and historical context.',
+                text: 'Note: Where birth years are unknown, records are marked accordingly. Estimation from FamilySearch historical records is in development.',
                 italics: true,
                 spacing: { after: 100 }
             })
@@ -845,45 +848,68 @@ class DAADocumentGenerator {
                     })
                 );
                 
-                // TODO [JAN 2026]: Multi-generation calculation
-                const years = person.years_enslaved || 30;
-                const baseDebt = years * 58620; // Using template's $58,620 per year
-                const withInterest = baseDebt * 596.63; // Simplified 4% compound
-                const withPenalty = withInterest * 3.2; // Delayed justice
-                
-                sections.push(
-                    new Paragraph({
-                        text: `Years Enslaved: ${years}`,
-                        spacing: { after: 50 }
-                    }),
-                    new Paragraph({
-                        text: `Base Debt: $${baseDebt.toLocaleString()}`,
-                        spacing: { after: 50 }
-                    }),
-                    new Paragraph({
-                        text: `With Compound Interest (4%, ~163 years): $${withInterest.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-                        spacing: { after: 50 }
-                    }),
-                    new Paragraph({
-                        text: `With Delayed Justice Penalty (3.2x): $${withPenalty.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-                        spacing: { after: 100 }
-                    }),
-                    new Paragraph({
-                        text: `TOTAL DEBT FOR ${person.enslaved_name.toUpperCase()}: $${withPenalty.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-                        bold: true,
-                        spacing: { after: 100 }
-                    })
-                );
+                // Use documented years — do NOT fabricate defaults
+                const years = person.years_enslaved;
+                const startYear = person.start_year;
+
+                if (years != null && startYear != null) {
+                    // Calculate using canonical formula (Craemer 2015)
+                    const baseWageTheft = this.BASE_DAILY_WAGE * this.WORKING_DAYS_PER_YEAR * years;
+                    const yearsToPresent = new Date().getFullYear() - (startYear + years);
+                    const presentValue = baseWageTheft * Math.pow(1 + this.COMPOUND_INTEREST_RATE, yearsToPresent);
+
+                    sections.push(
+                        new Paragraph({
+                            text: `Years Enslaved: ${years} (documented)`,
+                            spacing: { after: 50 }
+                        }),
+                        new Paragraph({
+                            text: `Base Wage Theft: $${this.BASE_DAILY_WAGE}/day × ${this.WORKING_DAYS_PER_YEAR} days × ${years} years = $${baseWageTheft.toLocaleString()}`,
+                            spacing: { after: 50 }
+                        }),
+                        new Paragraph({
+                            text: `Compound Interest (3%, ${yearsToPresent} years to present): $${presentValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+                            spacing: { after: 50 }
+                        }),
+                        new Paragraph({
+                            text: `Source: Craemer (2015), Social Science Quarterly 96.2, pp. 639-655`,
+                            italics: true,
+                            spacing: { after: 100 }
+                        }),
+                        new Paragraph({
+                            text: `CALCULATED DEBT FOR ${person.enslaved_name.toUpperCase()}: $${presentValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+                            bold: true,
+                            spacing: { after: 100 }
+                        })
+                    );
+                } else {
+                    sections.push(
+                        new Paragraph({
+                            text: `Years Enslaved: Unknown — birth year and/or freedom year not documented`,
+                            spacing: { after: 50 }
+                        }),
+                        new Paragraph({
+                            text: `Debt calculation pending — documented dates required`,
+                            italics: true,
+                            spacing: { after: 100 }
+                        }),
+                        new Paragraph({
+                            text: `STATUS FOR ${person.enslaved_name.toUpperCase()}: PENDING FURTHER RESEARCH`,
+                            bold: true,
+                            spacing: { after: 100 }
+                        })
+                    );
+                }
             }
         }
-        
+
         sections.push(
             new Paragraph({
                 text: '═'.repeat(70),
                 spacing: { before: 200, after: 200 }
             }),
             new Paragraph({
-                text: 'TODO [JAN 2026]: Add multi-generation ownership calculations (e.g., Hopewell → Biscoe chains).',
+                text: 'Note: Multi-generation ownership chain calculations (e.g., transfers between slaveholders) are in development and will be incorporated as research progresses.',
                 italics: true,
                 spacing: { after: 100 }
             })
@@ -923,19 +949,29 @@ class DAADocumentGenerator {
         ];
         
         let grandTotal = 0;
-        
+
         for (const data of slaveholderData) {
             for (const person of data.enslavedPersons) {
-                const years = person.years_enslaved || 30;
-                const debt = years * 58620 * 596.63 * 3.2; // Simplified calculation
-                grandTotal += debt;
-                
+                const years = person.years_enslaved;
+                const startYear = person.start_year;
+                let debtStr = 'Pending';
+                let debt = 0;
+
+                if (years != null && startYear != null) {
+                    // Canonical formula (Craemer 2015)
+                    const baseWageTheft = this.BASE_DAILY_WAGE * this.WORKING_DAYS_PER_YEAR * years;
+                    const yearsToPresent = new Date().getFullYear() - (startYear + years);
+                    debt = baseWageTheft * Math.pow(1 + this.COMPOUND_INTEREST_RATE, yearsToPresent);
+                    grandTotal += debt;
+                    debtStr = `$${debt.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+                }
+
                 tableRows.push(
                     new TableRow({
                         children: [
                             new TableCell({ children: [new Paragraph(person.enslaved_name)] }),
                             new TableCell({ children: [new Paragraph(data.slaveholder.slaveholder_name)] }),
-                            new TableCell({ children: [new Paragraph(`$${debt.toLocaleString('en-US', { maximumFractionDigits: 0 })}`)] })
+                            new TableCell({ children: [new Paragraph(debtStr)] })
                         ]
                     })
                 );

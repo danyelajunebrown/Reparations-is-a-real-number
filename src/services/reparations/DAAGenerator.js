@@ -1,19 +1,43 @@
 /**
  * Debt Acknowledgment Agreement (DAA) Generator
- * 
+ *
  * Generates voluntary debt acknowledgment agreements for slaveholder descendants
  * based on primary source documentation and academic research.
- * 
+ *
  * Legal Framework:
  * - Belinda Sutton (1783): Persistent re-petition model
  * - Farmer-Paellmann (2002): Unjust enrichment theory
- * 
- * Calculation Methodology:
- * - Base: $1/day × 300 working days × years enslaved
- * - Interest: 3% compound annually
- * - Wealth Multiplier: 2.5x (Ager/Boustan/Eriksson, AER 2021)
- * - Inflation: 5.1x (1860→2025)
- * - Payment: 2% of gross annual income
+ *
+ * Calculation Methodology (Craemer-based):
+ * - Base: Historical free-labor hourly wage × 12 hours/day × 300 working days × years enslaved
+ * - Interest: 3% compound annually to present year
+ * - NO additional multipliers (compound interest already accounts for time value)
+ *
+ * CITATIONS:
+ * - Craemer, Thomas. "Estimating Slavery Reparations: Present Value Comparisons of
+ *   Historical Multigenerational Reparations Policies." Social Science Quarterly 96.2
+ *   (2015): 639-655. doi:10.1111/ssqu.12151
+ *   → 3% compound interest rate (conservative floor, below historical returns)
+ *   → 12-hour work day for all enslaved persons aged 5+
+ *   → Historical free-labor wages: $0.02-$0.08/hr (1790-1860)
+ *
+ * - Ager, Boustan & Eriksson. "The Intergenerational Effects of a Large Wealth Shock:
+ *   White Planters after the Civil War." American Economic Review 111.11 (2021): 3767-3794.
+ *   → Qualitative finding: slaveholder families fully recovered within 1-2 generations
+ *     via social capital (NOT a numerical multiplier — cited for unjust enrichment argument)
+ *
+ * - Brattle Group Report (2023): $100-131 trillion total across 19 million people
+ *   over 4 centuries (802 million person-years). Used as macro ceiling sanity check.
+ *   → Per-person-year average: ~$125K-$163K (for cross-reference only)
+ *
+ * WHAT THIS FORMULA IS NOT:
+ * - It is not the final methodology. It is Craemer's conservative floor estimate.
+ * - Darity & Mullen's wealth-gap approach ($795K/household) may be superior for
+ *   population-level calculations but requires adaptation for individual DAAs.
+ * - The payment percentage (currently 2% of income) is placeholder pending tiered
+ *   structure research (GitHub Issue #21).
+ *
+ * See GitHub Issues #2, #19, #21, #24 for ongoing methodology development.
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -21,57 +45,96 @@ const { v4: uuidv4 } = require('uuid');
 class DAAGenerator {
     constructor(database) {
         this.db = database;
-        
-        // Calculation constants from research
-        this.BASE_DAILY_WAGE = 1.00;           // $1/day baseline
-        this.WORKING_DAYS_PER_YEAR = 300;      // Standard working days
-        this.COMPOUND_INTEREST_RATE = 0.03;    // 3% annual compound interest
-        this.WEALTH_MULTIPLIER = 2.5;          // Ager et al. (AER 2021)
-        this.INFLATION_MULTIPLIER = 5.1;       // 1860→2025 adjustment
-        this.PAYMENT_PERCENTAGE = 0.02;        // 2% of annual income
+
+        // ── Calculation Constants (all sourced) ─────────────────────────────
+        //
+        // Craemer (2015) uses historical free-labor hourly wages ($0.02-$0.08/hr
+        // in 1790-1860) × 12 hours/day. We use $0.80/day as the midpoint of
+        // the 1840-1860 range ($0.06/hr × 12hr ≈ $0.72, rounded to $0.80).
+        // This is deliberately conservative — many enslaved people were skilled
+        // workers (blacksmiths, carpenters) whose labor commanded higher rates.
+        //
+        // Source: Craemer (2015), Table 1, p. 644
+        this.BASE_DAILY_WAGE = 0.80;
+
+        // Enslaved persons typically worked 6 days/week, ~300 days/year.
+        // Craemer's Scenario 1 uses 12hr/day, which we reflect in the daily wage.
+        // Scenario 2 (24/7 = 8,760 hr/yr) would produce higher figures.
+        //
+        // Source: Craemer (2015), p. 643
+        this.WORKING_DAYS_PER_YEAR = 300;
+
+        // 3% annual compound interest rate.
+        // Craemer describes this as "very conservative" — below historical
+        // inflation, intended as an absolute minimum reasonable return.
+        // Makes the estimate a floor, not a ceiling.
+        // For comparison: ICHEIC used U.S. 30-year bond returns (~4-5%).
+        //
+        // Source: Craemer (2015), p. 645
+        this.COMPOUND_INTEREST_RATE = 0.03;
+
+        // Payment percentage — PLACEHOLDER pending tiered structure.
+        // See GitHub Issue #21 for research on income-based tiers,
+        // net-worth adjustments, and proportion-of-harm factors.
+        this.PAYMENT_PERCENTAGE = 0.02;
+
         this.CURRENT_YEAR = new Date().getFullYear();
+
+        // Macro ceiling sanity check (Brattle Group 2023)
+        // $100-131T total / 802M person-years ≈ $125K-$163K per person-year
+        // If our per-person-year figure exceeds this, something is wrong.
+        this.BRATTLE_PER_PERSON_YEAR_CEILING = 163000;
     }
 
     /**
      * Calculate individual debt for one enslaved person
-     * 
-     * Formula:
-     * Total = (Base × (1 + r)^years × Wealth Multiplier × Inflation)
-     * 
-     * @param {number} yearsEnslaved - Years of unpaid labor
-     * @param {number} startYear - Year enslavement began
-     * @returns {Object} Calculation breakdown
+     *
+     * Formula (Craemer 2015):
+     *   Total = (daily_wage × working_days × years) × (1 + r)^years_to_present
+     *
+     * No additional multipliers. Compound interest at 3% already accounts for
+     * time value of money. Adding separate inflation or wealth multipliers
+     * would double-count.
+     *
+     * @param {number} yearsEnslaved - Years of unpaid labor (from documented dates)
+     * @param {number} startYear - Year enslavement began (documented birth year or start)
+     * @returns {Object} Calculation breakdown with citations
      */
     calculateIndividualDebt(yearsEnslaved, startYear) {
         const endYear = startYear + yearsEnslaved;
         const yearsToPresent = this.CURRENT_YEAR - endYear;
-        
-        // Step 1: Base wage theft
-        const baseWageTheft = this.BASE_DAILY_WAGE * 
-                              this.WORKING_DAYS_PER_YEAR * 
+
+        // Step 1: Base wage theft (Craemer Scenario 1)
+        const baseWageTheft = this.BASE_DAILY_WAGE *
+                              this.WORKING_DAYS_PER_YEAR *
                               yearsEnslaved;
-        
-        // Step 2: Compound interest to present value
-        const withInterest = baseWageTheft * 
+
+        // Step 2: Compound interest to present value (3%, Craemer)
+        const presentValue = baseWageTheft *
                             Math.pow(1 + this.COMPOUND_INTEREST_RATE, yearsToPresent);
-        
-        // Step 3: Wealth multiplier (Ager research)
-        const withMultiplier = withInterest * this.WEALTH_MULTIPLIER;
-        
-        // Step 4: Inflation adjustment
-        const modernValue = withMultiplier * this.INFLATION_MULTIPLIER;
-        
+
+        // Step 3: Sanity check against Brattle Group macro ceiling
+        const perPersonYear = presentValue / yearsEnslaved;
+        const exceedsCeiling = perPersonYear > this.BRATTLE_PER_PERSON_YEAR_CEILING;
+
         return {
             baseWageTheft: Math.round(baseWageTheft * 100) / 100,
-            withInterest: Math.round(withInterest * 100) / 100,
-            withMultiplier: Math.round(withMultiplier * 100) / 100,
-            modernValue: Math.round(modernValue * 100) / 100,
+            presentValue: Math.round(presentValue * 100) / 100,
+            // For backward compatibility, keep modernValue pointing to the final number
+            modernValue: Math.round(presentValue * 100) / 100,
             yearsEnslaved,
             startYear,
             endYear,
             yearsToPresent,
-            methodology: 'Base wage theft + compound interest (3%) + wealth multiplier (2.5x) + inflation (5.1x)',
-            formula: `($${this.BASE_DAILY_WAGE} × ${this.WORKING_DAYS_PER_YEAR} × ${yearsEnslaved}) × (1.03)^${yearsToPresent} × ${this.WEALTH_MULTIPLIER} × ${this.INFLATION_MULTIPLIER}`
+            perPersonYear: Math.round(perPersonYear * 100) / 100,
+            exceedsBrattleCeiling: exceedsCeiling,
+            methodology: 'Craemer (2015): Base wage theft + 3% compound interest to present',
+            formula: `($${this.BASE_DAILY_WAGE}/day × ${this.WORKING_DAYS_PER_YEAR} days × ${yearsEnslaved} yrs) × (1.03)^${yearsToPresent}`,
+            citations: {
+                wage: 'Craemer (2015), Table 1, p. 644 — historical free-labor hourly wages',
+                interest: 'Craemer (2015), p. 645 — 3% conservative floor rate',
+                ceiling: 'Brattle Group (2023) — $125K-$163K per person-year macro average'
+            }
         };
     }
 
@@ -104,9 +167,8 @@ class DAAGenerator {
         if (!acknowledgerName) throw new Error('Acknowledger name required');
         if (!slaveholderName) throw new Error('Slaveholder name required');
         if (!annualIncome || annualIncome <= 0) throw new Error('Valid annual income required');
-        if (!enslavedPersons || enslavedPersons.length === 0) {
-            throw new Error('At least one enslaved person required');
-        }
+        // Allow zero enslaved persons for "negative finding" DAAs (no connections found)
+        if (!enslavedPersons) enslavedPersons = [];
 
         // Generate agreement number
         const agreementNumberResult = await this.db.query(
@@ -115,18 +177,30 @@ class DAAGenerator {
         const agreementNumber = agreementNumberResult.rows[0].agreement_number;
 
         // Calculate debt for each enslaved person
-        const enslavedCalculations = enslavedPersons.map(person => {
-            const calc = this.calculateIndividualDebt(
-                person.yearsEnslaved,
-                person.startYear
-            );
-            
-            return {
+        // Skip persons with unknown years (no fabricated defaults)
+        const enslavedCalculations = enslavedPersons
+            .filter(person => person.yearsEnslaved != null && person.startYear != null)
+            .map(person => {
+                const calc = this.calculateIndividualDebt(
+                    person.yearsEnslaved,
+                    person.startYear
+                );
+
+                return {
+                    name: person.name,
+                    ...calc,
+                    relationship: person.relationship || 'enslaved_by'
+                };
+            });
+
+        // Track persons whose debt could not be calculated due to missing data
+        const pendingCalculations = enslavedPersons
+            .filter(person => person.yearsEnslaved == null || person.startYear == null)
+            .map(person => ({
                 name: person.name,
-                ...calc,
+                reason: 'Insufficient documented dates to calculate debt — birth year, freedom year, or both are unknown',
                 relationship: person.relationship || 'enslaved_by'
-            };
-        });
+            }));
 
         // Calculate total debt
         const totalDebt = enslavedCalculations.reduce(
@@ -143,15 +217,17 @@ class DAAGenerator {
                 baseWage: `$${this.BASE_DAILY_WAGE}/day`,
                 workingDays: this.WORKING_DAYS_PER_YEAR,
                 interestRate: `${this.COMPOUND_INTEREST_RATE * 100}%`,
-                wealthMultiplier: this.WEALTH_MULTIPLIER,
-                inflationMultiplier: this.INFLATION_MULTIPLIER
+                note: 'Craemer (2015) conservative floor — no additional multipliers. Compound interest accounts for time value.'
             },
-            sources: {
-                wealthMultiplier: 'Ager, Boustan & Eriksson (AER 2021)',
-                framework: 'Darity & Mullen (2020)',
-                legalBasis: 'Dagan (BU Law Review 2004)'
+            citations: {
+                primaryMethodology: 'Craemer, Thomas. "Estimating Slavery Reparations." Social Science Quarterly 96.2 (2015): 639-655',
+                unjustEnrichment: 'Ager, Boustan & Eriksson. AER 111.11 (2021): 3767-3794 — slaveholder wealth persisted via social capital',
+                macroFramework: 'Darity & Mullen. "From Here to Equality" (2020) — wealth-gap closure model',
+                legalBasis: 'Dagan. "Restitution and Slavery." 84 B.U. L. Rev. 1139 (2004)',
+                macroCeiling: 'Brattle Group (2023) — $100-131T total forensic economics estimate'
             },
             enslavedPersons: enslavedCalculations,
+            pendingCalculations,
             totalDebt,
             annualIncome,
             annualPayment,
@@ -248,7 +324,7 @@ class DAAGenerator {
                     person.modernValue,
                     person.baseWageTheft,
                     person.withInterest,
-                    person.withMultiplier,
+                    person.presentValue, // was withMultiplier — no separate multiplier step in Craemer formula
                     person.modernValue,
                     JSON.stringify({
                         methodology: person.methodology,

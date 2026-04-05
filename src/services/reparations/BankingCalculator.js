@@ -315,31 +315,73 @@ class BankingCalculator {
      * Calculate debt for all Farmer-Paellmann banking defendants
      */
     calculateFarmerPaellmannBanks() {
+        // ═══════════════════════════════════════════════════════════════
+        // DATA SOURCES — Banking sector primary disclosures
+        //
+        // JPMorgan: Philadelphia CTO Disclosure (2024/2025), signed June 2, 2025
+        //   URL: https://www.phila.gov/media/20250908142331/cto-slavery-era-disclosure-jp-morgan-2024.pdf
+        //   Original: NBC News, Jan 21, 2005 (Chicago ordinance disclosure)
+        //   Academic: Sharon Ann Murphy, Banking on Slavery (2022)
+        //
+        // BBH: Beckert, Empire of Cotton (2015), p.223; Louisiana court records
+        //   Karabell, Inside Money (2021); NY Historical Society archives
+        //
+        // Lehman: 1860 Census (Montgomery Co., AL); Encyclopedia of Alabama;
+        //   Sarah Churchwell, NYRB (June 11, 2019)
+        //
+        // FleetBoston/Providence Bank: SCAC ¶¶ 125-128 (no primary disclosure found)
+        // ═══════════════════════════════════════════════════════════════
         const defendants = [
             {
                 companyName: 'Bank of America (FleetBoston successor)',
                 historicalName: 'Providence Bank',
                 scacReference: '¶¶ 125-128',
-                // Estimate based on Providence's role as major port
-                slaveTraderLoans: [{ principal_amount: 500000, instrument_year: 1800 }],
-                customsDuties: [{ duties_collected: 100000, instrument_year: 1800 }]
+                // No primary disclosure retrieved — SCAC allegations only
+                // Providence Bank's role as slave-trade financier documented in litigation
+                // but specific loan amounts are from SCAC filing, not independently verified
+                slaveTraderLoans: [{ principal_amount: null, instrument_year: 1800 }],
+                customsDuties: [{ duties_collected: null, instrument_year: 1800 }],
+                dataQuality: 'SCAC_ALLEGATIONS_ONLY',
+                citation: 'Farmer-Paellmann SCAC ¶¶ 125-128; no independent disclosure located'
             },
             {
                 companyName: 'JPMorgan Chase & Co.',
-                historicalName: 'Two predecessor banks (consortium)',
+                historicalName: 'Citizens Bank of Louisiana & Canal Bank (predecessors)',
                 scacReference: '¶¶ 181-182',
+                // Philadelphia 2024 disclosure (updated from 2005 Chicago filing):
+                // ~21,055 enslaved as mortgage collateral (LA banks + Lexington KY branch)
+                // ~1,300 enslaved owned through loan defaults
+                // Research by History Associates Inc. of Rockville (3,500 hours, 300 predecessors)
+                enslavedAsCollateral: 21055, // Philadelphia 2024 (up from 13,000 in 2005)
+                enslavedOwned: 1300,         // Philadelphia 2024 (up from 1,250 in 2005)
+                enslavedKentucky: 55,        // Lexington Branch, 2nd Bank of Kentucky
+                activePeriod: { start: 1831, end: 1865 },
+                // Murphy (2022): Citizens Bank held mortgages on ~9% of enslaved workers
+                // in Louisiana's most productive sugar parishes in the 1840s
+                sugarParishMarketShare: 0.09,
+                dataQuality: 'PRIMARY_SOURCE',
+                citation: 'Philadelphia CTO Disclosure (2024); NBC News Jan 21, 2005; Murphy, Banking on Slavery (2022)',
                 consortiumData: {
-                    estimatedCapital: 2000000,
-                    estimatedEnslaved: 10000,
-                    activeYears: { start: 1850, end: 1865 }
+                    estimatedCapital: null, // Original $2M placeholder removed
+                    estimatedEnslaved: 21055,
+                    activeYears: { start: 1831, end: 1865 }
                 }
             },
             {
                 companyName: 'Barclays (Lehman successor)',
                 historicalName: 'Henry Lehman & Brothers',
                 scacReference: '¶¶ 168-171',
-                cottonFactoring: [{ advance_amount: 2000000, instrument_year: 1855 }],
-                directSlaveholding: [{ enslaved_count: 50, record_year: 1855 }]
+                // 1860 Census, Montgomery County AL: Mayer Lehman owned 7 enslaved people
+                // (3 males, 4 females, ages 5-50)
+                // Cotton factoring was primary business — loan amounts not independently documented
+                // 1859: sheriff sold enslaved woman Beckey (~20) and child Gus (~2) to satisfy
+                //   debt "in favor of Lehman Brothers" (Troy, AL newspaper)
+                // Confederate financing: free credit, accepted Confederate Treasury notes
+                directSlaveholding: [{ enslaved_count: 7, record_year: 1860 }],
+                cottonFactoring: [{ advance_amount: null, instrument_year: 1855 }], // Amount unknown
+                dataQuality: 'DOCUMENTED',
+                citation: '1860 Census (Montgomery Co.); Enc. of Alabama; Churchwell, NYRB (June 2019)',
+                chicagoDisclosure: '2003 — first Chicago company to formally admit slavery ties (pre-bankruptcy 2008)'
             }
         ];
 

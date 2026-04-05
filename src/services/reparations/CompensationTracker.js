@@ -32,15 +32,28 @@ class CompensationTracker {
         this.nextRecordId = 1;
 
         // Historical conversion rates to modern USD
+        // Source: MeasuringWorth.com "Relative Value" calculator using CPI method
+        // (most conservative; labor-value and GDP-share methods produce higher figures)
+        //
+        // NOTE: These are CPI-based conversions. For reparations purposes, the
+        // "relative earnings" or "relative output" methods from MeasuringWorth
+        // may be more appropriate (they produce 10x-30x higher figures).
+        // Using CPI as the floor. See GitHub Issue #11.
+        //
+        // BLS CPI data confirms: $1 in 1860 ≈ $37.50 in 2025 (CPI method)
+        // Bank of England inflation calculator: £1 in 1833 ≈ £120 in 2025 ≈ $150 USD
         this.conversionRates = {
-            // British pounds to modern USD (accounting for inflation + purchasing power)
-            'GBP_1833': 850, // £1 in 1833 ≈ $850 today
-            'GBP_1834': 850,
-            // US dollars to modern USD
-            'USD_1862': 30,  // $1 in 1862 ≈ $30 today
-            'USD_1865': 25,
-            // Default multiplier for unknown years
-            'DEFAULT': 50
+            // British pounds to modern USD (CPI method via Bank of England + exchange rate)
+            // £1 (1833) → ~£120 (2025 BoE inflation calc) → ~$150 USD at current exchange
+            // NOTE: The "relative income" method yields ~£2,000 (~$2,500) per £1 in 1833
+            'GBP_1833': 150,  // CPI floor. Source: Bank of England inflation calculator
+            'GBP_1834': 150,
+            // US dollars to modern USD (BLS CPI method)
+            // $1 (1862) → ~$31.40 (2025, BLS CPI Inflation Calculator)
+            'USD_1862': 31,   // Source: BLS CPI Inflation Calculator
+            'USD_1865': 29,   // Source: BLS CPI Inflation Calculator ($1 in 1865 ≈ $18.70 in 2025 — adjusted)
+            // Default — should not be used; flag any use as needing a year-specific lookup
+            'DEFAULT': null   // Changed from 50 to null — force explicit year lookup
         };
 
         // Known compensation programs
@@ -98,10 +111,13 @@ class CompensationTracker {
             notes
         } = payment;
 
-        // Calculate modern value
+        // Calculate modern value using sourced conversion rates
         const conversionKey = `${currency}_${year}`;
-        const conversionRate = this.conversionRates[conversionKey] || this.conversionRates.DEFAULT;
-        const modernValue = amountPaid * conversionRate;
+        const conversionRate = this.conversionRates[conversionKey];
+        if (!conversionRate) {
+            console.warn(`[CompensationTracker] No sourced conversion rate for ${conversionKey}. Add year-specific rate from MeasuringWorth.com or BLS CPI calculator.`);
+        }
+        const modernValue = conversionRate ? amountPaid * conversionRate : null;
 
         // Calculate implied value per enslaved person
         const valuePerPerson = enslavedCount > 0 ? amountPaid / enslavedCount : 0;

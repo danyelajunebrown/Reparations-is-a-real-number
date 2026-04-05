@@ -64,3 +64,6 @@ eng.traineddata
 # Test PDFs at root
 *.pdf
 !docs/**/*.pdf
+contracts/artifacts/
+contracts/cache/
+storage/temp-ocr/

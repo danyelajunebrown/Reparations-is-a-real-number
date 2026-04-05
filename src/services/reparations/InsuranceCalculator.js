@@ -215,13 +215,30 @@ class InsuranceCalculator {
      * @returns {Array} Calculations for each defendant
      */
     calculateFarmerPaellmannInsurers() {
+        // ═══════════════════════════════════════════════════════════════
+        // DATA SOURCES — All figures from primary source disclosures
+        //
+        // Insurance: CA Dept of Insurance, Slavery Era Insurance Registry
+        //   Report to the CA Legislature (May 2002), SB 2199
+        //   URL: https://www.insurance.ca.gov/01-consumers/150-other-prog/10-seir/upload/Slavery-Report.pdf
+        //
+        // Lloyd's: Lloyd's own acknowledgment + White & Seth, "Underwriting
+        //   Souls" / The Conversation (2020) — 41% marine market share,
+        //   75-90% dominant share; Lloyd's 1771 Founders research page
+        // ═══════════════════════════════════════════════════════════════
         const defendants = [
             {
                 companyName: 'CVS Health (Aetna successor)',
                 historicalName: 'Aetna predecessor-in-interest',
                 scacReference: '¶¶ 136-143',
                 policyType: 'life',
-                estimatedEnslaved: 10000,  // Placeholder - needs research
+                // CA DOI Report pp. 5-6: 7 policies, 16 enslaved names (minimum — ledger book submitted later)
+                // Caveat: Large amount of records destroyed in 1994 per Aetna's own disclosure
+                documentedPolicies: 7,
+                documentedEnslavedNames: 16,
+                estimatedEnslaved: null, // Actual count unknown — 7 policies covered "multiple lives"
+                dataQuality: 'PRIMARY_SOURCE',
+                citation: 'CA DOI Slavery Era Insurance Registry Report (May 2002), pp. 5-6',
                 activeYears: { start: 1853, end: 1865 }
             },
             {
@@ -229,15 +246,31 @@ class InsuranceCalculator {
                 historicalName: 'Nautilus Insurance',
                 scacReference: '¶¶ 155-162',
                 policyType: 'life',
-                estimatedEnslaved: 5000,   // Placeholder - needs research
-                activeYears: { start: 1845, end: 1865 }
+                // CA DOI Report pp. 7-8: 339 of first 1,000 policies on enslaved lives
+                // 484 enslaved names, 233 slaveholder names submitted
+                // Policies usually <$500, term of 1 year. 3 death claims totaling $1,050
+                documentedPolicies: 339,
+                documentedEnslavedNames: 484,
+                documentedSlaveholderNames: 233,
+                estimatedEnslaved: 484, // Directly documented
+                dataQuality: 'PRIMARY_SOURCE',
+                citation: 'CA DOI Slavery Era Insurance Registry Report (May 2002), pp. 7-8',
+                activeYears: { start: 1845, end: 1848 } // Trustees voted to end sales in 1848
             },
             {
                 companyName: "Lloyd's of London",
                 historicalName: "Lloyd's of London",
                 scacReference: '¶¶ 173-174',
                 policyType: 'marine',
-                estimatedEnslaved: 500000, // Trans-Atlantic trade scale
+                // Lloyd's own acknowledgment: insured ships transporting est. 3.2M enslaved persons
+                // White & Seth: 41% of marine insurance market in 1790s; Lloyd's dominant share 75-90%
+                // 9 founding members had slavery ties; 11 subscribers received 1834 compensation
+                enslavedTransported: 3200000, // Lloyd's own figure
+                marineMarketShare: 0.41, // White & Seth, 1790s
+                dominantMarketShare: { low: 0.75, high: 0.90 }, // Lloyd's share within marine
+                estimatedEnslaved: null, // Not directly applicable — Lloyd's insured the ships, not individual lives
+                dataQuality: 'DOCUMENTED',
+                citation: 'Lloyd\'s acknowledgment (Insurance Times); White & Seth via The Conversation (2020); Lloyd\'s 1771 Founders',
                 activeYears: { start: 1688, end: 1807 }
             },
             {
@@ -245,15 +278,54 @@ class InsuranceCalculator {
                 historicalName: 'Southern Mutual Insurance',
                 scacReference: '¶¶ 218-219',
                 policyType: 'life',
-                estimatedEnslaved: 3000,   // Placeholder - Louisiana focus
-                activeYears: { start: 1848, end: 1865 }
+                // PRIMARY SOURCE: UGA Digital Humanities, "Southern Mutual Slave Insurance, 1851-1855"
+                // URL: https://digihum.libs.uga.edu/items/show/42
+                // Source: UGA Library, African American Experience in Athens collection
+                //
+                // Founded 1847 (not 1857 as UGA metadata erroneously states) in Griffin, GA
+                // by Rev. John U. Parsons. Relocated to Athens 1848.
+                // Five insurance lines: Fire, Marine, Storage, Life, Servant.
+                // Servant (slave) policies DISCONTINUED 1855.
+                //
+                // Policy register subset: policy numbers ~590 through ~1779+
+                // 27 pages of register digitized (pages 1-13 + pages 14-27)
+                // ~30+ individually named enslaved persons visible in subset
+                // Aggregate insured value ~$23,154 across visible entries
+                // Largest single policy: Mrs. Wm. Pope Jr., policy #827,
+                //   16 servants, $6,350 — portfolio-scale slaveholding
+                //
+                // Named enslaved individuals documented: Maria, Rachel, Lucy, Bill,
+                //   Peter (2x), William, Elijah, Henry, Clark, Jeff, Alexander,
+                //   Andrew, Luke, Lamar, Anthony, Mary, Patsy, Sophia, Priscilla,
+                //   Eliza, Vetus, Louisa, Ned, Stoney, Root, Robert
+                //
+                // NOTE: This is a SUBSET of the full register. Policy numbers
+                // range into 1700s suggesting hundreds more policies existed.
+                // Full claims records (payouts on death/injury) not yet located.
+                //
+                // PDFs stored: storage/corporate-disclosures/insurance/southern-mutual-*.pdf
+                documentedPoliciesInSubset: 30, // Visible in digitized pages
+                documentedEnslavedNames: 26,    // Individually named in visible entries
+                policyNumberRange: { low: 590, high: 1779 },
+                estimatedTotalPolicies: null,    // Full register not digitized
+                estimatedEnslaved: null,         // Cannot extrapolate from subset
+                largestPolicy: { policyNumber: 827, enslaver: 'Mrs. Wm. Pope Jr.', enslavedCount: 16, amount: 6350 },
+                dataQuality: 'PRIMARY_SOURCE',
+                citation: 'UGA Digital Humanities, "Southern Mutual Slave Insurance, 1851-1855," African American Experience in Athens, https://digihum.libs.uga.edu/items/show/42. UGA Library.',
+                activeYears: { start: 1847, end: 1855 } // Servant policies discontinued 1855
             },
             {
                 companyName: 'American International Group (AIG)',
-                historicalName: 'AIG predecessors',
+                historicalName: 'AIG predecessors (US Life Insurance Co. of NY)',
                 scacReference: '¶¶ 221-223',
                 policyType: 'life',
-                estimatedEnslaved: 2000,   // Placeholder - needs research
+                // CA DOI Report: 1 confirmed policy ($550 on "Charles") via magazine article
+                // Additional names from US Life bound registries — count undisclosed
+                // Physical access required: CDI Public Viewing Room, LA or Oakland; UCSB Wyles Mss 97
+                documentedPolicies: 1,
+                estimatedEnslaved: null, // Bound registry count not publicly available
+                dataQuality: 'PARTIAL',
+                citation: 'CA DOI Slavery Era Insurance Registry Report (May 2002); bound registries require physical access',
                 activeYears: { start: 1850, end: 1865 }
             }
         ];

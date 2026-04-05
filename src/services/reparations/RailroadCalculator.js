@@ -186,49 +186,79 @@ class RailroadCalculator {
      * Historical estimates based on Southern railroad construction records
      */
     calculateFarmerPaellmannRailroads() {
+        // ═══════════════════════════════════════════════════════════════
+        // DATA SOURCE: Theodore Kornweibel Jr.
+        //   "Railroads in the African American Experience" (JHU Press, 2010)
+        //   Research archived at CA State Railroad Museum & SDSU
+        //
+        //   USA Today investigation (Feb 21, 2002):
+        //   https://usatoday30.usatoday.com/money/general/2002/02/21/slave-railroads.htm
+        //
+        //   Key finding: 76% of 118 Southern railroads used enslaved labor
+        //   (85 of 113 in Confederate states)
+        //   Predecessor line counts per Kornweibel's identification
+        //
+        // NOTE: estimatedMiles and estimatedEnslaved are STILL PLACEHOLDERS.
+        // Kornweibel documents the predecessor line counts and the practice,
+        // but per-company enslaved labor totals require archival research
+        // (VMHC Richmond, individual railroad record collections).
+        // ═══════════════════════════════════════════════════════════════
         const defendants = [
             {
                 companyName: 'CSX Corporation',
                 historicalName: 'Numerous predecessor railroad lines',
                 scacReference: '¶¶ 129-133',
-                // CSX predecessors: Seaboard, Atlantic Coast Line, Louisville & Nashville, etc.
-                estimatedMiles: 5000,
-                estimatedEnslaved: 15000,
-                predecessorCount: 12,
+                // Kornweibel: 36 predecessor lines identified as using enslaved labor
+                // CSX confirms "a handful" — Norfolk Southern confirms "80% or more" of its 39
+                // R,F&P Railroad (CSX): single 2-month volume from 1850 has 47 slave lease agreements
+                predecessorCount: 36, // Kornweibel count
+                estimatedMiles: null, // Placeholder removed — requires archival research
+                estimatedEnslaved: null, // Placeholder removed — requires archival research
                 activeYears: { start: 1830, end: 1865 },
+                dataQuality: 'DOCUMENTED_PARTIAL',
+                citation: 'Kornweibel (2010); USA Today (Feb 21, 2002)',
                 allegation: 'constructed or run, at least in part, by slave labor'
             },
             {
                 companyName: 'Norfolk Southern Corporation',
                 historicalName: 'Numerous predecessor railroad lines',
                 scacReference: '¶¶ 163-165',
-                // Norfolk Southern predecessors: Norfolk & Western, Southern Railway
-                estimatedMiles: 4000,
-                estimatedEnslaved: 12000,
-                predecessorCount: 10,
-                activeYears: { start: 1835, end: 1865 },
-                allegation: 'constructed or run by slave labor; derived benefits of unpaid slave labor; provided financial support to slave owners and slave traders'
+                // Kornweibel: 39 predecessor lines identified
+                // Norfolk Southern confirms ownership of "80% or more" of the 39
+                // Earliest predecessor: SC Canal & Rail Road Co. (chartered Dec 19, 1827)
+                //   — leased enslaved African Americans
+                predecessorCount: 39, // Kornweibel count
+                estimatedMiles: null,
+                estimatedEnslaved: null,
+                activeYears: { start: 1827, end: 1865 },
+                dataQuality: 'DOCUMENTED_PARTIAL',
+                citation: 'Kornweibel (2010); Norfolk Southern partial confirmation',
+                allegation: 'constructed or run by slave labor; derived benefits of unpaid slave labor'
             },
             {
                 companyName: 'Union Pacific Corporation',
                 historicalName: 'Numerous predecessor railroad lines',
                 scacReference: '¶¶ 177-179',
-                // Union Pacific had less Southern exposure but still used slave labor
-                estimatedMiles: 2000,
-                estimatedEnslaved: 5000,
-                predecessorCount: 6,
+                // Kornweibel: 12 predecessor lines identified
+                predecessorCount: 12,
+                estimatedMiles: null,
+                estimatedEnslaved: null,
                 activeYears: { start: 1840, end: 1865 },
+                dataQuality: 'DOCUMENTED_PARTIAL',
+                citation: 'Kornweibel (2010)',
                 allegation: 'constructed or run in part by slave labor'
             },
             {
                 companyName: 'Canadian National Railway',
                 historicalName: 'Seven predecessor railroad lines',
                 scacReference: '¶¶ 213-215',
-                // CN had US predecessor lines built with slave labor
-                estimatedMiles: 1500,
-                estimatedEnslaved: 4000,
+                // Kornweibel: 7 predecessor lines identified
                 predecessorCount: 7,
+                estimatedMiles: null,
+                estimatedEnslaved: null,
                 activeYears: { start: 1840, end: 1865 },
+                dataQuality: 'DOCUMENTED_PARTIAL',
+                citation: 'Kornweibel (2010)',
                 allegation: 'constructed and/or run in part by slave labor'
             }
         ];

@@ -1,11 +1,22 @@
 /**
  * Reparations Calculator Module
- * 
- * This module provides comprehensive calculation methods for determining
- * reparations owed based on historical slavery data and economic factors.
- * 
- * @author Reparations Platform Team
- * @version 1.0.0
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * RESEARCH IN PROGRESS — NOT THE CANONICAL FORMULA
+ *
+ * This calculator uses unsourced constants ($120/day, $15K dignity value,
+ * 4% interest, 40% profit share). The canonical formula is in
+ * DAAGenerator.js using Craemer (2015).
+ *
+ * This module is still instantiated by ReparationsSystem and exposed via
+ * /api/reparations/calculate. All responses from that endpoint include
+ * a _research_status warning. See GitHub Issues #9, #12, #17, #18.
+ *
+ * Function names use "damages" and "penalty" language which is
+ * inconsistent with the project's inherited-debt philosophy. These
+ * should be renamed to "debt" and "interest" terminology when this
+ * module is overhauled.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 class ReparationsCalculator {

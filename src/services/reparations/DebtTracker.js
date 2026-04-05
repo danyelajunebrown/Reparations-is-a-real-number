@@ -57,7 +57,7 @@ addSlaveownerDebt(ancestorName, slaveCount, source, year, documentDetails = null
     this.ancestorDebts.get(ancestorName).push(debtRecord);
     this.debtRecords.push(debtRecord);
 
-    console.log(`Added debt record: ${ancestorName} owes $${calculatedDebt.toLocaleString()} for ${slaveCount} slaves (${source}, ${year})`);
+    console.log(`Added debt record: ${ancestorName} — inherited debt of $${calculatedDebt.toLocaleString()} for ${slaveCount} enslaved persons (${source}, ${year})`);
 
     return debtId;
 }
@@ -386,7 +386,7 @@ addCorporateDebt(entityName, debtType, calculation, source = {}) {
     this.corporateDebts.get(entityName).push(record);
     this.corporateRecords.push(record);
 
-    console.log(`[DebtTracker] Corporate debt added: ${entityName} owes $${(calculation.modernValue || 0).toLocaleString()} (${debtType})`);
+    console.log(`[DebtTracker] Corporate debt added: ${entityName} — inherited debt of $${(calculation.modernValue || 0).toLocaleString()} (${debtType})`);
 
     return debtId;
 }

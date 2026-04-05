@@ -1,39 +1,285 @@
 # Active Context: Current Development State
 
-**Last Updated:** March 11, 2026 (Session 20)
-**Current Phase:** Ancestor Climber Debugging & Pi Optimization
+**Last Updated:** April 5, 2026 (Session 27 — end of day)
+**Current Phase:** Premiere Preparation — blockchain live, promotion running, first participant climbing
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
-## Session 20 Accomplishments (Mar 11, 2026) ✅ NEW
+## Session 27: Methodology Overhaul + Blockchain + Data Promotion (Mar 31 – Apr 5, 2026) 🔄 IN PROGRESS
 
-### 1) Ancestor Climber Fixed & Verified Working at Scale on Mac ✅
-**Root causes found and fixed:**
-- `launchBrowser()` was killing ALL Chrome instances (including logged-in sessions) via `pkill -9`. Fixed to reuse existing Chrome with remote debugging on port 9222, only kill climber-specific temp profile instances.
-- FamilySearch SPA not rendering before extraction. Added `waitForFunction` checks for page title pattern before extracting person data.
-- FamilySearch redirecting `/tree/person/details/{ID}` to `/tree/pedigree/portrait/{ID}`. Added redirect detection and re-navigation, plus fallback portrait view parsing (Method 4 & 5 in extractPersonFromPage).
-- Session expiration mid-climb. Added re-login detection and 3-minute manual login window in BFS loop.
-- Reduced excessive wait times (was 5-12 seconds per ancestor, now 2-3 seconds adaptive).
+### Codebase Integrity Audit — 24 GitHub Issues Filed
+Comprehensive audit of all financial calculation code revealed systemic problems: unsourced constants, contradictory formulas, fabricated data, and misattributed research. Every hardcoded multiplier, interest rate, and base value in the reparations calculation pipeline was examined.
 
-**Test results (Mac):**
-- Successfully climbed 20+ ancestors through 4+ generations
-- Both parents found consistently for most ancestors
-- Reaching 1860s-era ancestors (slavery period) by generation 4
-- API endpoint (POST /api/ancestor-climb/start) spawns background process correctly
-- Sessions trackable via GET /api/ancestor-climb/sessions and /session/:id
+**CRITICAL Issues (#2-#8):**
+1. **Three contradictory formulas** produce 37x divergence in a single document ($1/day vs $120/day vs $58,620/person-year across DAAGenerator, DAADocumentGenerator, and generate-daa-pdf.js)
+2. **Fabricated "Unnamed enslaved person(s)"** with made-up 30yr/1800 data generates real dollar debts in participant documents
+3. **Ager/Boustan/Eriksson 2.5x "wealth multiplier"** does not exist in the cited paper — misattributed
+4. **Triple-counting:** compound interest + inflation multiplier + wealth multiplier applied cumulatively
+5. **Generated documents use binding legal language** ("Obligor," "waives defenses") with no attorney review
+6. **Corporate calculators** use acknowledged placeholder data to produce specific dollar amounts via API
+7. **TODO markers** appear in participant-facing legal documents
 
-### 2) TODO: Pi Optimization (Pending)
-- Ancestor climb was built for kiosk mode on Raspberry Pi
-- Pi was too slow - need to optimize:
-  - Use Chromium instead of Chrome (lighter)
-  - Reduce wait times further for Pi hardware
-  - Consider headless mode option
-  - Pre-cache FamilySearch cookies
-  - Batch parent extraction from portrait view (all ancestors visible at once)
-  - Add progress indicator to kiosk UI for slow climbs
-  - Consider FamilySearch API approach if developer app gets approved
+**HIGH Issues (#9-#14):** Five different interest rates (3-7%) none sourced, uncalibrated confidence scores, guessed currency conversions, unsourced "Delayed Justice Multiplier" 3.2x and "Human Dignity Value" $15K/$50K, unsourced "enablement multipliers" 1.5x-3x, blockchain escrow described as functional but doesn't exist
+
+**MEDIUM Issues (#15-#18):** "UNITED STATES OF AMERICA" header, stale 79.5% hardcoded, "damages"/"penalty" language vs inherited-debt philosophy, dead code in Calculator.js
+
+**RESEARCH-NEEDED Issues (#19-#25):** Operationalize Darity & Mullen, wealth tracing methodology, tiered payment structure, legal framework, ICHEIC adaptation, Brattle Group data harvest, revisable blockchain DAAs
+
+### Research Sources Identified
+- **Craemer (2015):** hours × wage × 3% compound. No additional multipliers. $14T total.
+- **Darity & Mullen (2020):** Wealth-gap closure. $795K/household × 10M = $7.95T. Population-level — needs adaptation for individual DAAs. **Consider direct consultation.**
+- **Brattle Group (2023):** $100-131T comprehensive forensic economics. Useful as macro ceiling and per-category decomposition.
+- **Ager/Boustan/Eriksson (AER 2021):** Slaveholder families fully recovered via social capital in 1-2 generations. NO numerical multiplier — qualitative finding about wealth persistence through social capital ↔ financial capital conversion.
+- **ICHEIC (Holocaust insurance):** Face value at historical exchange rates → present value via government bond returns. Most applicable asset-tracing model for known asset values.
+- **Swiss Volcker Commission:** 10x multiplier was negotiated proxy, not forensic tracing. 650 accountants, 254 banks, CHF 300M audit cost.
+- **MeasuringWorth.com:** Four conversion methods producing $13.5K to $3.4M per person-year.
+- **Fleischman & Tyson (2004):** Plantation accounting records documenting how accounting facilitated slavery.
+
+### Premiere Intake Form (May 8-9, 2026)
+Built Google Form structure and validation script for participant intake at film premiere.
+
+**Data standard:** All 4 grandparent FamilySearch IDs required. Priority is absolute certainty in analysis, not maximum participation. Participants must do their own genealogy before they can participate.
+
+**Required fields:** Self (name, DOB, birthplace, email, address, FS ID), Parents ×2 (name, birth year, birthplace, FS ID, living status), Grandparents ×4 (same), Financial disclosure (income, net worth, real estate equity, inheritance received/expected, tax filing status, dependents), Consent (4 checkboxes + certification)
+
+**Validation script:** `scripts/validate-intake-form.js` — processes Google Form CSV export, validates FS IDs (no-vowel regex), cross-checks generational plausibility, detects duplicate IDs, verifies FS IDs exist via HTTP, optional tree linkage verification via Puppeteer
+
+**FS ID regex:** `^[BCDFGHJKLMNPQRSTVWXYZ0-9]{4}-[BCDFGHJKLMNPQRSTVWXYZ0-9]{2,4}$` (no vowels A E I O U)
+
+### Piper's Failed Climb (LTVZ-D9S)
+- Session beea32c1 started Mar 26, ran for 5 seconds, visited 1 person, 0 ancestors
+- Climber hit living person page, failed to extract parent IDs (all 5 methods returned nothing), BFS queue emptied, marked "completed" with 0 work done
+- Root cause: Either Chrome wasn't logged into FS, or logged-in account didn't have tree sharing access to Piper's family
+- **Needs:** Re-run with confirmed FS login + tree sharing. Also fix climber to FAIL LOUDLY when living person page yields 0 parents.
+
+### Blockchain Escrow Deployed to Base Mainnet (Apr 5)
+- **Contract:** `0x914846ceA07e57d848d9d60C8238865D83d9ab1E`
+- **Explorer:** https://basescan.org/address/0x914846ceA07e57d848d9d60C8238865D83d9ab1E
+- **Tx Hash:** `0x81b2b63542cdf605709fa640d1fd1f6c41ea596bce7608f5725452f3f7c6f326`
+- **Network:** Base Mainnet (chain 8453)
+- **Owner:** `0xD20a3CF9101948bE150C1ca3fa9a9bA60b3cfB3f` (MetaMask)
+- **USDC:** `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (Circle native on Base)
+- **Features:** ancestry record submission, USDC/ETH deposits, descendant management, verification, revisable DAA amounts (updateReparationsOwed), historical payment tracking, 7-day timelock withdrawals
+- **Tests:** 12/12 passing (deployment, records, verification, revisable amounts, deposits, debt tracking, views)
+- **Deployment artifacts:** `deployments/base-deployment.json`, `deployments/ReparationsEscrow-abi.json`
+- **SECURITY:** Deployer private key was exposed in chat — transfer ownership to fresh wallet after premiere
+- **TODO:** Wire frontend (js/app.js) and Express server to contract; connect DAA generation to on-chain recording
+
+### Eli Neal — First Premiere Participant Climb (Apr 5) — RUNNING
+- **Participant:** Eli Neal (provided name + family tree screenshot with all FS IDs)
+- **Lineage reconstructed from tree screenshot** — no intake form needed for testing
+- **Climb 1:** Gwendolyn Louise Fagan (`LX39-1MY`, 1923-2007) — RUNNING, Gen 7+, 12 matches, 75 ancestors queued
+  - Fagan/Lasater/Richard/Bennett lines — deep Georgia, Civil War era
+  - Henry Fagan (b.1842), Dewitt Clinton Bennett (b.1840), Elizabeth Hull (b.1847) — key ancestors
+  - Hull surname matches Southern Mutual Insurance enslavers (Asbury Hull, Fred H. Hull)
+- **Climb 2:** Edward Joseph Schwehr (`GQ5M-G1L`, 1916-1992) — AUTO-QUEUED, starts when climb 1 finishes
+- **Known ancestors from screenshot:** 14 documented (8 Civil War era)
+- **Paternal grandparents:** `KV29-9MN` and `MBLJ-P9B` — these are Gwendolyn's parents (William Cecil Fagan + Mary Catherine Richard), already being traversed by climb 1
+- **Session ID:** 174eb3fb-dc82-4da6-adcd-7f4081239043
+
+### Piper — Awaiting Grandparent IDs
+- Individual ID `LTVZ-D9S` is insufficient — living person page yields no parent data without tree sharing
+- **Need:** 4 grandparent FamilySearch IDs from Piper (deceased grandparents with public tree data)
+- Previous session beea32c1 ran 5 seconds, 0 ancestors — confirmed as expected behavior for inaccessible living person
+
+### All-States Slaveholder Promotion (Apr 5) — RUNNING
+- `scripts/promote-slaveholders.js --all` launched, processing 15 states
+- 272K unique slaveholders (after dedup) being promoted from unconfirmed_persons to canonical_persons
+- Dry run validated: ~94% pass rate, ~4% garbage filtered, ~2% already existed
+- Will triple the matchable enslaver population from ~123K to ~395K
+- Script: promote-slaveholders.js (chunks of 500, idempotent, safe to re-run)
+
+### Insurance Ledger Extraction Complete (Apr 5)
+- Southern Mutual Insurance Co. (1847-1855, Athens GA): 37 enslaved persons, 27 enslavers in DB
+- 7 corporate disclosure PDFs registered in person_documents
+- OCR working via Google Vision (17 pages processed, 6 additional policies found beyond manual transcription)
+- Enslavers cross-referenced against canonical_persons (3 matched existing entries: Deborah Ellis, John Smith, James Thomas)
+
+### Corporate Calculator Data Updated (Apr 5)
+- InsuranceCalculator: all 5 Farmer-Paellmann defendants updated with verified primary source data
+- BankingCalculator: JPMorgan updated to Philadelphia 2024 disclosure (21,055 collateral / 1,300 owned)
+- RailroadCalculator: Kornweibel predecessor counts (CSX 36, Norfolk Southern 39, Union Pacific 12, CN 7)
+- All calculation endpoints gated behind RESEARCH_IN_PROGRESS flag
+- Enablement multipliers replaced with market-share framing in data blocks
+
+### All 17 Code Issues Resolved (Apr 5)
+- **Issues #2-#8 (CRITICAL):** Canonical formula (Craemer 2015), fabricated persons removed, Ager multiplier removed, triple-counting fixed, legal language disclaimed, placeholder corporate data gated, TODOs removed from docs
+- **Issues #9-#14 (HIGH):** Interest rates standardized, confidence scores documented as tiers, currency conversions sourced (BLS/BoE), delayed justice/dignity unsourced constructs gated, enablement multipliers replaced with market-share data, blockchain escrow claims removed
+- **Issues #15-#18 (MEDIUM):** USA header → project name, stale % already fixed, inherited-debt language, dead code documented
+- **Corporate calculators updated** with verified primary source data (CA DOI, JP Morgan Philadelphia 2024, Kornweibel railroads)
+- **4 primary source PDFs** stored in `storage/corporate-disclosures/`
+- **7 research-needed issues remain open** (#19-#25) — these are the forward-looking methodology work
+
+### Key User Direction
+- Every constant needs an academic citation with page number
+- If we don't have the citation, we don't use the number
+- Build iteratively — will not get methodology right on first try
+- Be transparent about what we don't know yet
+- The genealogical pipeline (climber + match verification) IS solid — lean on this
+- The financial calculation code is NOT ready for participants — must be transparent about developmental state
+- "If anywhere in this project there is fluff designed to gratify our own sense of the codebase's functioning we need to route that shit out like white blood cells to an infection"
+- Personal debt vs reparations debt: philosophically these are separate ledgers
+- Living descendants inherit an unpaid debt — they are not being debited retroactively for crimes they weren't party to
+
+---
+
+## Session 26: Name-Only Climbing Fixes (Mar 24-26, 2026) ✅
+
+### Ryan Mills Climb — First Successful Name-Only Climb
+- Commit a86c51b — page recovery, session tracking, garbage detection overhaul
+- Reached Gen 6+ (vs Gen 4 crash previous day), 5 enslaver matches, deep Irish lineage traced
+- Fixes: NOT NULL on modern_person_fs_id, session creation for name-only, living person detection (check UNKNOWN before Person Not Found), match quality overhaul for name-only climbs
+
+### Piper's Climb Attempted (LTVZ-D9S) — Failed silently (see Session 27 notes above)
+
+---
+
+## Session 25: Enslaver Matching Gap Fix + Mac Mini Deploy (Mar 20-23, 2026) ✅
+
+### Enslaver Matching Gap Resolved
+- Root cause: 58% of enslavers had no person_external_ids linkage
+- Backfilled 2,464 FS IDs from notes → person_external_ids
+- Promoted 2,276 CivilWarDC slaveholders to canonical_persons
+- Added Tier 2b matching (name + state when birth year NULL, confidence 0.60-0.70)
+- 72,201 enslavers now matchable
+
+### Adrian Brown Climb Completed (P4RF-PFQ)
+- 3,922 ancestors, 9 matches (5 temporal_impossible, 4 unverified)
+- Strongest: Angelica Chesley (b.1783, external_id_match 0.95)
+- All stale sessions cleaned Mar 23
+
+### Mac Mini Deployed
+- Git pulled e728c71, npm install, PM2 reconfigured
+- Chrome relaunched with remote debugging on port 9222
+- Full stack verified: Pi kiosk → Mac Mini Express → FS climber → Neon DB
+
+---
+
+## Session 24: 1860 Slave Schedule Audit & Gap Fill (Mar 20, 2026) ✅
+
+### Definitive Audit Completed
+Discovered that previous status reports were wrong — `extraction_progress` table and log files gave misleading completion data. The actual source of truth is `familysearch_locations.scraped_at`.
+
+**Real status: 79.5% complete (4,381/5,513 locations scraped)**
+
+Key findings:
+- 977 of 6,490 entries are catalog hierarchy nodes (no waypoint_id) — not scrapeable
+- Jan 31 "finish" run logged "ALL STATES COMPLETE" despite `ERR_INTERNET_DISCONNECTED` silently skipping states
+- Pre-indexed data stored as `extraction_method = 'pre_indexed'`, not `'census_ocr_extraction'` — caused undercounting
+- 1,660,291 pre-indexed + 20,380 OCR persons actually in DB
+
+**Big gaps remaining (1,132 locations):**
+1. Virginia: 285 remaining (4.7% done)
+2. Mississippi: 162 remaining (34.9% done)
+3. Louisiana: 155 remaining (43.8% done)
+4. Kentucky: 101 remaining (72.0% done)
+5. Missouri: 101 remaining (82.2% done)
+6. Georgia: 93 remaining (84.9% done)
+7. Tennessee: 88 remaining (91.1% done)
+8. Arkansas: 72 remaining (85.8% done)
+
+**Currently running:** Starting big gap states (VA → MS → LA)
+
+### Today's Priority Order
+1. ~~Audit 1860 slave schedule~~ ✅
+2. Resume extraction on gap states (VA, MS, LA first)
+3. Commit & stabilize uncommitted work
+4. Mac Mini deployment (migrations 032-034, 15 commits behind)
+5. Multi-source parent discovery testing
+
+---
+
+## Session 23 Accomplishments (Mar 19, 2026) ✅
+
+### Match Quality Overhaul: Race-Aware Verification Pipeline ✅
+**Problem:** System had zero race awareness. Amos Cilvester Brown (Black, b.1860 Louisiana, dragman) matched to white slaveholder records at 0.70 confidence. Francois Larche (free Black man who bought and manumitted his mother) classified as slaveholder. 70+ common-name matches like "John Smith" (b.1523) at Gen 13+ — centuries before American slavery. All 131 matches defaulted to classification='debt'.
+
+**Solution implemented:**
+- **Migration 034:** Added verification_status, verification_evidence (JSONB), confidence_adjusted, requires_human_review, review_reason columns to ancestor_climb_matches
+- **MatchVerifier service** (`src/services/match-verification.js`): Post-match verification with 7 disqualification checks (temporal, enslaved_individuals, free_persons, census race, canonical person_type, common name at depth, race indicators) + corroboration checks (prior verification, census White)
+- **Classification taxonomy:** confirmed_slaveholder, enslaved_ancestor, free_poc, free_poc_slaveholder, temporal_impossible, common_name_suspect, ambiguous_needs_review, unverified
+- **SlaveVoyages tightened:** Removed first-initial matching (too many false positives), raised threshold 0.55→0.65, added temporal validation, exact whole-word surname matching
+- **Climber wired:** Race/occupation extraction from FS page text, MatchVerifier in match flow, registerRaceEvidence() learning loop feeds free_persons table
+- **Kiosk badges:** 7 new CSS classification badge classes, classificationLabel() helper, badges on tree nodes + cards + lineage overlay
+- **API routes updated:** kiosk.js and ancestor-climb.js return new verification columns
+
+**Re-evaluation results:**
+- 131 existing matches re-evaluated → 101 reclassified, 0 errors
+- 76 temporal_impossible (born too late or predates slave trade)
+- 10 common_name_suspect (high-frequency surnames at deep generations)
+- 45 unverified (legitimate candidates needing corroboration)
+- Abigail session: 84 of 96 matches reclassified (cleaned up the slop)
+
+**Integration tests:** 6/6 pass (Amos Brown, John Smith, Paul Paynter, Angelica Chesley, Robert Wilson, Charles Brown w/ race indicator)
+
+**Commit:** e728c71 pushed to main
+
+**Pending:**
+- Mac Mini deploy (192.168.0.196 offline) — git pull + launchctl restart
+- Fresh test climb with live FamilySearch browser session
+
+---
+
+## Session 21+ Accomplishments (Mar 11–16, 2026) ✅
+
+### 1) Distributed Architecture: Pi Kiosk → Mac Mini ✅
+**Problem solved:** Raspberry Pi too slow to run Chrome/Puppeteer. Solution: Pi is input-only kiosk, Mac Mini (studio) runs Chrome and the climber script. Connected via SSH over LAN.
+
+**Architecture:**
+```
+Raspberry Pi (kiosk.html) → LAN → Mac Mini (Express 0.0.0.0:3000)
+                                      ↓
+                              POST /api/kiosk/start-climb
+                                      ↓
+                              nohup node familysearch-ancestor-climber.js (orphaned)
+                                      ↓
+                              Chrome (localhost:9222, GUI session)
+                                      ↓
+                              BFS climb → PostgreSQL (Neon)
+                                      ↓
+                              GET /api/kiosk/climb-status/:id (polling)
+                                      ↓
+                              Kiosk UI updates in real-time
+```
+
+**Key changes made:**
+- Express binds `0.0.0.0` for LAN access from Pi (`src/server.js`)
+- Kiosk route (`src/api/routes/kiosk.js`) spawns climber via `nohup` shell wrapper, fully orphaned from PM2
+- `open -a "Google Chrome"` on macOS to launch through GUI session (SSH/PM2 can't access window server)
+- Concurrent climbs: each climb gets its own Chrome tab, no more `pkill` of other climbs
+- Confidence filtering: matches < 65% excluded (too many false positives on common names)
+- Process detachment: `nohup + spawn(detached:true) + proc.unref()` survives PM2 restarts
+- Virtual on-screen keyboard on kiosk for touchscreen input
+- Kiosk auto-reset after 90s inactivity
+
+### 2) Abigail Brown Climb Still Running ⚡
+- P4RF-PFQ: 3,360+ ancestors visited, 48 matches, status=in_progress (do not interrupt)
+
+### 3) Multi-Source Parent Discovery (In Progress — Session 22)
+**Problem:** Mira Schor (657W-K77T) climb failed — 1 ancestor visited, 0 parents found. Tree page had no parent links. Climber only works when FamilySearch collaborative tree has parents pre-linked.
+
+**Solution in development:** Enhanced `discoverParents()` pipeline with multi-source fallback:
+1. FamilySearch tree parent links (existing)
+2. Participant-provided parent names → tree search
+3. FamilySearch Research Hints on person page
+4. FamilySearch record search (census, birth, marriage) → extract parents
+5. WikiTree cross-reference
+6. FindAGrave family connections (best-effort)
+7. IPUMS census API (batch enrichment)
+8. SlaveVoyages API (international enslaver DB enrichment, free REST API)
+9. UCL Legacies of British Slavery (British/Caribbean slave owners)
+
+**Kiosk intake expanding:** FS ID becomes optional. Participant provides name + birth year + location + parent names.
+
+**Key findings:**
+- FamilySearch collaborative tree is shared — ANY logged-in user can navigate ANY person's ancestors
+- Ancestry.com API retired ~2015 — dead end, don't invest
+- SlaveVoyages.org has free REST API (no auth) with 36K+ voyages
+- UCL LBS has 46K British slave compensation claims
+- CAPTCHA: Image-based, redirect to challenge page, operator solves manually
+- Plan file: `.claude/plans/luminous-questing-nebula.md`
 
 ---
 

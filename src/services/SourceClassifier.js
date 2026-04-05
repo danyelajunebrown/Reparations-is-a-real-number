@@ -6,6 +6,20 @@
  * 2. Whether records should go directly to confirmed tables
  * 3. Recommended extraction method
  * 4. Expected data types (enslaved persons, slaveholders, etc.)
+ *
+ * NOTE ON CONFIDENCE SCORES (GitHub Issue #10):
+ * The "confidence" values below (0.30–0.98) are SOURCE RELIABILITY TIERS,
+ * not calibrated probabilities. They rank sources by institutional authority:
+ *   - 0.90+ = Government archives, primary court records
+ *   - 0.80-0.89 = University special collections, historical societies
+ *   - 0.60-0.79 = Genealogy databases (FamilySearch, Ancestry, Rootsweb)
+ *   - 0.40-0.59 = Encyclopedias, secondary compilations
+ *   - 0.30-0.39 = Blogs, unverified sources
+ *
+ * These have NOT been validated against known-correct matches.
+ * They should be treated as ordinal rankings, not as "95% of government
+ * archive matches are correct." Calibration against actual match outcomes
+ * is needed before these can be presented as true confidence scores.
  */
 
 class SourceClassifier {

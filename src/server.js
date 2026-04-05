@@ -156,6 +156,10 @@ app.use('/api/corporate-debts', require('./api/routes/corporate-debts'));
 // UK 1833 loan, Haiti inverse debt, Farmer-Paellmann analysis, all jurisdictions
 app.use('/api/legal', require('./api/routes/legal-precedents'));
 
+// Blockchain API (ReparationsEscrow on Base Mainnet) - Added Apr 5, 2026
+// Contract: 0x914846ceA07e57d848d9d60C8238865D83d9ab1E
+app.use('/api/blockchain', require('./api/routes/blockchain'));
+
 // Distributed scraper API (browser-based multi-device scraping)
 const { router: scraperRouter, initializeRouter: initScraper } = require('./api/routes/distributed-scraper');
 initScraper(db);
@@ -1226,7 +1230,13 @@ app.post('/api/reparations/calculate', async (req, res) => {
             success: true,
             calculation,
             parameters: { enslavedCount, yearsEnslaved, includeCompound },
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            _research_status: {
+                research_in_progress: true,
+                data_quality: 'UNVERIFIED — Calculator.js uses unsourced constants ($120/day, $15K dignity value, 4% interest, 40% profit share)',
+                note: 'The canonical formula is in DAAGenerator.js using Craemer (2015). This endpoint uses a separate, unsourced calculator. See GitHub Issues #9, #12, #18.',
+                warning: 'Do not present these figures to participants as computed debts.'
+            }
         });
     } catch (error) {
         logger.error('Reparations calculation error', { error: error.message });

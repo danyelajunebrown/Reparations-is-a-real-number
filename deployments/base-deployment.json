@@ -1,0 +1,10 @@
+{
+  "network": "base",
+  "chainId": 8453,
+  "contractAddress": "0x914846ceA07e57d848d9d60C8238865D83d9ab1E",
+  "usdcAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "deployer": "0xD20a3CF9101948bE150C1ca3fa9a9bA60b3cfB3f",
+  "deployedAt": "2026-04-05T07:10:00Z",
+  "transactionHash": "0x81b2b63542cdf605709fa640d1fd1f6c41ea596bce7608f5725452f3f7c6f326",
+  "explorerUrl": "https://basescan.org/address/0x914846ceA07e57d848d9d60C8238865D83d9ab1E"
+}

@@ -13,6 +13,7 @@
         function cdnFailed(name) { console.warn(name + ' CDN failed to load - some features may be limited'); }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js" onload="cdnLoaded('web3')" onerror="cdnFailed('web3')"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js" onload="cdnLoaded('ethers')" onerror="cdnFailed('ethers')"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js" onload="cdnLoaded('papa')" onerror="cdnFailed('papa')"></script>
     <script src="https://d3js.org/d3.v7.min.js" onload="cdnLoaded('d3')" onerror="cdnFailed('d3')"></script>
 

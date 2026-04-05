@@ -6,6 +6,24 @@
  *
  * Legal Reference: In re African-American Slave Descendants Litigation,
  * 304 F. Supp. 2d 1027 (N.D. Ill. 2004)
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * RESEARCH IN PROGRESS — CALCULATION ENDPOINTS GATED
+ *
+ * The sector calculators (Insurance, Banking, Railroad) use:
+ *   - Placeholder enslaved person counts (marked "needs research")
+ *   - Unsourced interest rates (6%, 6.5%, 7% — none cited)
+ *   - Unsourced "enablement multipliers" (1.5x-3x)
+ *   - Unsourced "human dignity multiplier" (2x)
+ *   - Fabricated loan amounts and capital figures
+ *
+ * Until these are replaced with cited, verified data:
+ *   - All calculation endpoints return a RESEARCH_IN_PROGRESS flag
+ *   - Dollar figures are labeled as UNVERIFIED ESTIMATES
+ *   - Database query endpoints (entity info, succession, slaveholding) work normally
+ *
+ * See GitHub Issues: #7, #9, #12, #13
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 const express = require('express');
@@ -20,6 +38,35 @@ const {
 
 // Initialize database connection
 const sql = neon(process.env.DATABASE_URL);
+
+// ── Research-in-progress guard ──────────────────────────────────────────
+// All calculation endpoints wrap their results with this metadata.
+const RESEARCH_STATUS = {
+    research_in_progress: true,
+    data_quality: 'UNVERIFIED — contains placeholder data marked "needs research"',
+    known_issues: [
+        'Enslaved person counts are placeholders, not from primary sources (GitHub #7)',
+        'Interest rates (6-7%) are unsourced — should use 3% per Craemer (2015) or sector-specific cited rates (GitHub #9)',
+        'Enablement multipliers (1.5x-3x) are editorial, not sourced from research (GitHub #13)',
+        'Human dignity multiplier (2x) and delayed justice multiplier (3.2x) are unsourced (GitHub #12)',
+        'Loan amounts and capital figures are fabricated placeholders (GitHub #7)'
+    ],
+    research_needed: [
+        'California Slavery Era Insurance Registry (SB 2199) — real policy counts per company',
+        'JP Morgan 2005 disclosure — 13,000 enslaved as collateral, 1,250+ seized',
+        'New York Life disclosure — 339 policies from first 1,000 issued',
+        'Sector-specific historical return data for defensible interest rates',
+        'Edward Baptist "The Half Has Never Been Told" for indirect/direct profit ratios'
+    ],
+    warning: 'These figures use acknowledged placeholder data and unsourced multipliers. Do not present to participants as computed debts.'
+};
+
+function wrapWithResearchStatus(result) {
+    return {
+        ...result,
+        _research_status: RESEARCH_STATUS
+    };
+}
 
 // Initialize reparations system (singleton)
 let reparationsSystem = null;
@@ -106,10 +153,10 @@ router.get('/farmer-paellmann/calculate', async (req, res) => {
         const system = getReparationsSystem();
         const result = system.calculateAllFarmerPaellmannDebt();
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             ...result
-        });
+        }));
     } catch (error) {
         console.error('Error calculating Farmer-Paellmann debt:', error);
         res.status(500).json({
@@ -252,7 +299,7 @@ router.get('/entity/:entityId/debt', async (req, res) => {
                 };
         }
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             entity: {
                 id: e.entity_id,
@@ -262,7 +309,7 @@ router.get('/entity/:entityId/debt', async (req, res) => {
                 scacReference: e.scac_paragraph_reference
             },
             calculation
-        });
+        }));
     } catch (error) {
         console.error('Error calculating entity debt:', error);
         res.status(500).json({
@@ -317,11 +364,11 @@ router.get('/leaderboard', async (req, res) => {
         // Get leaderboard (corporate only)
         const leaderboard = system.debtTracker.getAllCorporateDebtors().slice(0, limit);
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             count: leaderboard.length,
             leaderboard
-        });
+        }));
     } catch (error) {
         console.error('Error fetching leaderboard:', error);
         res.status(500).json({
@@ -346,11 +393,11 @@ router.get('/leaderboard/combined', async (req, res) => {
         // Get combined leaderboard
         const leaderboard = system.debtTracker.getCombinedLeaderboard(limit);
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             count: leaderboard.length,
             leaderboard
-        });
+        }));
     } catch (error) {
         console.error('Error fetching combined leaderboard:', error);
         res.status(500).json({
@@ -372,12 +419,12 @@ router.get('/summary', async (req, res) => {
         const farmerPaellmann = system.calculateAllFarmerPaellmannDebt();
         const combinedState = system.getCombinedSystemState();
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             farmerPaellmann: farmerPaellmann.summary,
             bySector: farmerPaellmann.bySector,
             systemState: combinedState
-        });
+        }));
     } catch (error) {
         console.error('Error fetching summary:', error);
         res.status(500).json({
@@ -400,11 +447,11 @@ router.get('/sector/insurance', async (req, res) => {
         const calc = new InsuranceCalculator();
         const result = calc.getTotalInsuranceDebt();
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             sector: 'insurance',
             ...result
-        });
+        }));
     } catch (error) {
         console.error('Error calculating insurance debt:', error);
         res.status(500).json({
@@ -423,11 +470,11 @@ router.get('/sector/banking', async (req, res) => {
         const calc = new BankingCalculator();
         const result = calc.getTotalBankingDebt();
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             sector: 'banking',
             ...result
-        });
+        }));
     } catch (error) {
         console.error('Error calculating banking debt:', error);
         res.status(500).json({
@@ -446,11 +493,11 @@ router.get('/sector/railroads', async (req, res) => {
         const calc = new RailroadCalculator();
         const result = calc.getTotalRailroadDebt();
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             sector: 'railroads',
             ...result
-        });
+        }));
     } catch (error) {
         console.error('Error calculating railroad debt:', error);
         res.status(500).json({
@@ -485,14 +532,14 @@ router.get('/brown-brothers-harriman', async (req, res) => {
             WHERE entity_name = 'Brown Brothers & Co.'
         `;
 
-        res.json({
+        res.json(wrapWithResearchStatus({
             success: true,
             entity: entity[0],
             slaveholding: slaveholding[0],
             calculation: result,
             documentation: result.documentation,
             scacReference: '¶¶ 145-152'
-        });
+        }));
     } catch (error) {
         console.error('Error fetching BBH data:', error);
         res.status(500).json({

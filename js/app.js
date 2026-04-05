@@ -1428,22 +1428,284 @@
         }
 
         // ============================================
-        // WALLET
+        // WALLET & BLOCKCHAIN (ReparationsEscrow on Base)
         // ============================================
+
+        // Contract config — loaded from server
+        let blockchainConfig = null;
+        let escrowContract = null;
+        let connectedAccount = null;
+        let ethersProvider = null;
+        let ethersSigner = null;
+
+        async function loadBlockchainConfig() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/blockchain/config`);
+                const data = await res.json();
+                if (data.success) {
+                    blockchainConfig = data;
+                    return true;
+                }
+            } catch (e) {
+                console.log('Blockchain config not available:', e.message);
+            }
+            return false;
+        }
+
         async function connectWallet() {
             if (typeof window.ethereum === 'undefined') {
-                showToast('Please install MetaMask', 'error');
+                showToast('Please install MetaMask to connect', 'error');
+                window.open('https://metamask.io/download/', '_blank');
                 return;
             }
 
             try {
+                // Load contract config if not loaded
+                if (!blockchainConfig) {
+                    const loaded = await loadBlockchainConfig();
+                    if (!loaded) {
+                        showToast('Blockchain service unavailable', 'error');
+                        return;
+                    }
+                }
+
+                // Request account access
                 const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                connectedAccount = accounts[0];
+
+                // Switch to Base network if not already on it
+                const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+                if (chainId !== '0x2105') { // Base mainnet chain ID
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: '0x2105' }]
+                        });
+                    } catch (switchError) {
+                        // Chain not added — add it
+                        if (switchError.code === 4902) {
+                            await window.ethereum.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [blockchainConfig.networkParams]
+                            });
+                        } else {
+                            throw switchError;
+                        }
+                    }
+                }
+
+                // Initialize ethers
+                ethersProvider = new ethers.BrowserProvider(window.ethereum);
+                ethersSigner = await ethersProvider.getSigner();
+                escrowContract = new ethers.Contract(
+                    blockchainConfig.contractAddress,
+                    blockchainConfig.abi,
+                    ethersSigner
+                );
+
+                // Update UI
                 const btn = document.getElementById('walletBtn');
-                btn.textContent = accounts[0].slice(0, 6) + '...' + accounts[0].slice(-4);
+                btn.textContent = connectedAccount.slice(0, 6) + '...' + connectedAccount.slice(-4);
                 btn.classList.add('connected');
-                showToast('Wallet connected', 'success');
+                showToast('Wallet connected on Base', 'success');
+
+                // Listen for account/chain changes
+                window.ethereum.on('accountsChanged', (accts) => {
+                    if (accts.length === 0) {
+                        connectedAccount = null;
+                        document.getElementById('walletBtn').textContent = 'Connect Wallet';
+                        document.getElementById('walletBtn').classList.remove('connected');
+                    } else {
+                        connectedAccount = accts[0];
+                        document.getElementById('walletBtn').textContent = connectedAccount.slice(0, 6) + '...' + connectedAccount.slice(-4);
+                    }
+                });
+
             } catch (error) {
-                showToast('Failed to connect wallet', 'error');
+                console.error('Wallet connection error:', error);
+                showToast('Failed to connect: ' + (error.message || 'unknown error'), 'error');
+            }
+        }
+
+        /**
+         * Submit a DAA record to the blockchain
+         * Called after DAA generation — records the acknowledgment on-chain
+         */
+        async function submitDAAOnChain(ancestorName, familySearchId, totalDebt, notes) {
+            if (!escrowContract || !connectedAccount) {
+                showToast('Connect wallet first', 'error');
+                return null;
+            }
+
+            try {
+                showToast('Submitting DAA to blockchain...', 'info');
+
+                const docHash = ethers.keccak256(ethers.toUtf8Bytes(
+                    familySearchId + '-' + ancestorName + '-' + Date.now()
+                ));
+
+                // Total debt in USDC (6 decimals)
+                const amount = ethers.parseUnits(String(totalDebt || '0'), 6);
+
+                const tx = await escrowContract.submitAncestryRecord(
+                    ancestorName,
+                    familySearchId || '',
+                    docHash,
+                    amount,
+                    notes || 'DAA submitted via Reparations ∈ ℝ'
+                );
+
+                showToast('Transaction pending...', 'info');
+                const receipt = await tx.wait();
+
+                // Extract record ID from event
+                let recordId = null;
+                for (const log of receipt.logs) {
+                    try {
+                        const parsed = escrowContract.interface.parseLog(log);
+                        if (parsed && parsed.name === 'AncestryRecordSubmitted') {
+                            recordId = Number(parsed.args[0]);
+                            break;
+                        }
+                    } catch (e) { /* not our event */ }
+                }
+
+                showToast(`DAA recorded on-chain! Record #${recordId}`, 'success');
+                return {
+                    recordId,
+                    transactionHash: receipt.hash,
+                    explorerUrl: `https://basescan.org/tx/${receipt.hash}`
+                };
+            } catch (error) {
+                console.error('Blockchain submit error:', error);
+                showToast('Blockchain error: ' + (error.reason || error.message || 'transaction failed'), 'error');
+                return null;
+            }
+        }
+
+        /**
+         * Deposit USDC payment toward a DAA record
+         * Participant approves USDC spend, then deposits to escrow contract
+         */
+        async function depositUSDC(recordId, amountUSDC) {
+            if (!escrowContract || !connectedAccount) {
+                showToast('Connect wallet first', 'error');
+                return null;
+            }
+
+            try {
+                const usdcAddress = blockchainConfig.usdcAddress;
+                const amount = ethers.parseUnits(String(amountUSDC), 6); // USDC has 6 decimals
+
+                // USDC contract for approval
+                const usdcAbi = [
+                    'function approve(address spender, uint256 amount) returns (bool)',
+                    'function allowance(address owner, address spender) view returns (uint256)',
+                    'function balanceOf(address account) view returns (uint256)'
+                ];
+                const usdcContract = new ethers.Contract(usdcAddress, usdcAbi, ethersSigner);
+
+                // Check USDC balance
+                const balance = await usdcContract.balanceOf(connectedAccount);
+                if (balance < amount) {
+                    const balanceFormatted = ethers.formatUnits(balance, 6);
+                    showToast(`Insufficient USDC. Balance: $${balanceFormatted}`, 'error');
+                    return null;
+                }
+
+                // Check existing allowance
+                const allowance = await usdcContract.allowance(connectedAccount, blockchainConfig.contractAddress);
+                if (allowance < amount) {
+                    showToast('Approving USDC spend...', 'info');
+                    const approveTx = await usdcContract.approve(blockchainConfig.contractAddress, amount);
+                    await approveTx.wait();
+                    showToast('USDC approved', 'success');
+                }
+
+                // Deposit to escrow
+                showToast('Depositing payment...', 'info');
+                const depositTx = await escrowContract.depositReparations(
+                    recordId,
+                    usdcAddress,
+                    amount
+                );
+                const receipt = await depositTx.wait();
+
+                showToast(`$${amountUSDC} USDC deposited! Tx: ${receipt.hash.slice(0, 10)}...`, 'success');
+                return {
+                    transactionHash: receipt.hash,
+                    explorerUrl: `https://basescan.org/tx/${receipt.hash}`
+                };
+            } catch (error) {
+                console.error('Deposit error:', error);
+                showToast('Deposit failed: ' + (error.reason || error.message), 'error');
+                return null;
+            }
+        }
+
+        /**
+         * Deposit ETH payment (alternative to USDC)
+         */
+        async function depositETH(recordId, amountETH) {
+            if (!escrowContract || !connectedAccount) {
+                showToast('Connect wallet first', 'error');
+                return null;
+            }
+
+            try {
+                showToast('Depositing ETH payment...', 'info');
+                const amount = ethers.parseEther(String(amountETH));
+
+                const tx = await escrowContract.depositReparations(
+                    recordId,
+                    ethers.ZeroAddress, // address(0) = ETH
+                    0, // amount param unused for ETH
+                    { value: amount }
+                );
+                const receipt = await tx.wait();
+
+                showToast(`${amountETH} ETH deposited!`, 'success');
+                return {
+                    transactionHash: receipt.hash,
+                    explorerUrl: `https://basescan.org/tx/${receipt.hash}`
+                };
+            } catch (error) {
+                console.error('ETH deposit error:', error);
+                showToast('Deposit failed: ' + (error.reason || error.message), 'error');
+                return null;
+            }
+        }
+
+        /**
+         * View on-chain record status
+         */
+        async function viewOnChainRecord(recordId) {
+            if (!escrowContract) {
+                if (!blockchainConfig) await loadBlockchainConfig();
+                if (blockchainConfig) {
+                    const provider = new ethers.JsonRpcProvider(blockchainConfig.rpcUrl);
+                    escrowContract = new ethers.Contract(blockchainConfig.contractAddress, blockchainConfig.abi, provider);
+                }
+            }
+            if (!escrowContract) return null;
+
+            try {
+                const record = await escrowContract.getRecord(recordId);
+                const remaining = await escrowContract.getRemainingDebt(recordId);
+
+                return {
+                    ancestorName: record.ancestorName,
+                    familySearchId: record.familySearchId,
+                    totalOwed: ethers.formatUnits(record.totalReparationsOwed, 6),
+                    totalDeposited: ethers.formatUnits(record.totalDeposited, 6),
+                    totalPaid: ethers.formatUnits(record.totalPaid, 6),
+                    remainingDebt: ethers.formatUnits(remaining, 6),
+                    verified: record.verified,
+                    submitter: record.submitter
+                };
+            } catch (error) {
+                console.error('View record error:', error);
+                return null;
             }
         }
 
