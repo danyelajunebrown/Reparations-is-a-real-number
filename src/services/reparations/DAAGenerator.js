@@ -80,10 +80,35 @@ class DAAGenerator {
 
         this.CURRENT_YEAR = new Date().getFullYear();
 
-        // Macro ceiling sanity check (Brattle Group 2023)
-        // $100-131T total / 802M person-years ≈ $125K-$163K per person-year
+        // ── Brattle Group Constants (2023) ─────────────────────────────
+        // Source: Bazelon, Vargas, Janakiraman & Olson. "Quantification
+        //   of Reparations for Transatlantic Chattel Slavery." Prepared
+        //   for UWI / ASIL Second Symposium on Reparations Under
+        //   International Law. June 8, 2023. Table 15, p. 43.
+        //
+        // Per-category damage figures (2020 US$, 2.5% interest):
+        //   Forgone Earnings:         $54,930B
+        //   Loss of Liberty:          $10,986B
+        //   Personal Injury:           $6,042B
+        //   Gender-Based Violence:    $11,793B
+        //   Mental Pain and Anguish:  $24,047B
+        //   TOTAL:                   $107,799B
+        //
+        // Population: 19,902,008 enslaved persons
+        // Person-years: 801,580,220
+        // US-specific total: $30,134B (Table 16)
+        //
+        // Per-person-year figures:
+        this.BRATTLE_FORGONE_EARNINGS_PER_YEAR = 68539;    // $54,930B / 801.58M
+        this.BRATTLE_LOSS_OF_LIBERTY_PER_YEAR = 13705;     // $10,986B / 801.58M
+        this.BRATTLE_PERSONAL_INJURY_PER_YEAR = 7537;      // $6,042B / 801.58M
+        this.BRATTLE_GENDER_VIOLENCE_PER_YEAR = 50000;     // Table 13: $50K/yr for adult women
+        this.BRATTLE_MENTAL_ANGUISH_PER_YEAR = 30000;      // Table 12: UNCC max award $30K/yr
+        this.BRATTLE_TOTAL_PER_PERSON_YEAR = 134467;       // $107,799B / 801.58M
+
+        // Macro ceiling sanity check (actual Brattle figure, not estimate)
         // If our per-person-year figure exceeds this, something is wrong.
-        this.BRATTLE_PER_PERSON_YEAR_CEILING = 163000;
+        this.BRATTLE_PER_PERSON_YEAR_CEILING = this.BRATTLE_TOTAL_PER_PERSON_YEAR; // $134,467
     }
 
     /**

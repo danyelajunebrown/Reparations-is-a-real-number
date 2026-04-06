@@ -25,7 +25,38 @@ function isValidFsId(id) {
 // Start a climb and try to return the created session id quickly by polling the DB
 router.post('/start-climb', async (req, res) => {
   try {
-    const { fsId, name, fatherName, motherName, birthYear, birthLocation, familyTree } = req.body || {};
+    const { fsId, name, fatherName, motherName, birthYear, birthLocation, familyTree, participantId } = req.body || {};
+
+    // ── Participant Linkage ──────────────────────────────────────
+    // If participantId is provided, look up existing participant.
+    // Otherwise, create one from the provided data.
+    let participant = null;
+    if (participantId) {
+      const existing = await db.query('SELECT * FROM participants WHERE id = $1', [participantId]);
+      if (existing.rows && existing.rows.length > 0) {
+        participant = existing.rows[0];
+      }
+    }
+    if (!participant && name && name.trim().length >= 3) {
+      // Check if participant already exists by name
+      const byName = await db.query(
+        'SELECT * FROM participants WHERE LOWER(full_name) = LOWER($1) LIMIT 1',
+        [name.trim()]
+      );
+      if (byName.rows && byName.rows.length > 0) {
+        participant = byName.rows[0];
+      } else {
+        // Create new participant
+        const created = await db.query(
+          `INSERT INTO participants (full_name, self_fs_id, intake_source)
+           VALUES ($1, $2, 'kiosk') RETURNING *`,
+          [name.trim(), fsId || null]
+        );
+        if (created.rows && created.rows.length > 0) {
+          participant = created.rows[0];
+        }
+      }
+    }
 
     // If familyTree is provided, extract top-level fields from it for backward compat
     let effectiveName = name;
@@ -143,10 +174,23 @@ router.post('/start-climb', async (req, res) => {
     }
 
     if (foundSession) {
+      // Link session to participant if we have one
+      if (participant) {
+        try {
+          await db.query(
+            `INSERT INTO participant_climb_sessions (participant_id, session_id, relationship_to_climbed_person)
+             VALUES ($1, $2, 'self')
+             ON CONFLICT DO NOTHING`,
+            [participant.id, foundSession.id]
+          );
+        } catch (e) { /* ignore if table doesn't exist yet on this deploy */ }
+      }
+
       return res.status(202).json({
         success: true,
         message: 'Ancestor climb started',
         sessionId: foundSession.id,
+        participantId: participant ? participant.id : null,
         status: foundSession.status,
         logPath
       });
