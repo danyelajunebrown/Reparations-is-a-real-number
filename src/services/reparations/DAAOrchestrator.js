@@ -463,15 +463,25 @@ class DAAOrchestrator {
                 continue;
             }
 
-            // Get enslaved persons from enslaved_individuals table
+            // Get enslaved persons from ALL sources:
+            //   1. enslaved_individuals (confirmed, 18K records)
+            //   2. family_relationships (1.9M edges, now linked to canonical IDs)
+            //   3. unconfirmed_persons with JSONB enslaved_by links (52K)
+            //
+            // This ensures the DAA sees every documented enslaved person
+            // across slave schedules, Natchez probate, Book of Negroes,
+            // Santos census, insurance registers, and all other imports.
+
+            // Source 1: enslaved_individuals (original, confirmed)
             const enslavedResult = await this.db.query(`
-                SELECT 
+                SELECT
                     ei.enslaved_id,
                     ei.full_name as enslaved_name,
                     ei.birth_year,
                     ei.death_year,
                     ei.freedom_year,
                     ei.gender,
+                    'enslaved_individuals' as data_source,
                     pd.s3_url,
                     pd.source_url as document_source_url,
                     pd.document_type,
@@ -483,6 +493,73 @@ class DAAOrchestrator {
                 WHERE CAST(ei.enslaved_by_individual_id AS text) = CAST($1 AS text)
                 ORDER BY ei.full_name ASC
             `, [slaveholder.slaveholder_id]);
+
+            // Source 2: family_relationships (linked edges — slave schedules, census)
+            const relResult = await this.db.query(`
+                SELECT DISTINCT ON (fr.person2_name)
+                    fr.person2_lead_id as enslaved_id,
+                    fr.person2_name as enslaved_name,
+                    NULL as birth_year,
+                    NULL as death_year,
+                    NULL as freedom_year,
+                    NULL as gender,
+                    'family_relationships' as data_source,
+                    fr.source_url as document_source_url,
+                    NULL as s3_url,
+                    NULL as document_type,
+                    NULL as collection_name,
+                    NULL as film_number,
+                    NULL as image_number
+                FROM family_relationships fr
+                WHERE fr.person1_lead_id = $1
+                AND fr.relationship_type = 'enslaved_by'
+                AND fr.person2_name NOT LIKE 'Unknown%'
+                ORDER BY fr.person2_name
+                LIMIT 100
+            `, [slaveholder.slaveholder_id]);
+
+            // Source 3: unconfirmed_persons with JSONB enslaved_by matching this enslaver
+            const uncResult = await this.db.query(`
+                SELECT DISTINCT ON (up.full_name)
+                    up.lead_id as enslaved_id,
+                    up.full_name as enslaved_name,
+                    NULL as birth_year,
+                    NULL as death_year,
+                    NULL as freedom_year,
+                    up.gender,
+                    up.extraction_method as data_source,
+                    up.source_url as document_source_url,
+                    NULL as s3_url,
+                    NULL as document_type,
+                    NULL as collection_name,
+                    NULL as film_number,
+                    NULL as image_number
+                FROM unconfirmed_persons up
+                WHERE up.person_type = 'enslaved'
+                AND up.relationships->>'enslaved_by' IS NOT NULL
+                AND EXISTS (
+                    SELECT 1 FROM canonical_persons cp
+                    WHERE cp.id = $1
+                    AND LOWER(up.relationships->>'enslaved_by') = LOWER(cp.canonical_name)
+                )
+                ORDER BY up.full_name
+                LIMIT 100
+            `, [slaveholder.slaveholder_id]);
+
+            // Merge all sources, deduplicate by name
+            const allEnslaved = [...enslavedResult.rows];
+            const seenNames = new Set(allEnslaved.map(e => (e.enslaved_name || '').toLowerCase()));
+
+            for (const row of [...relResult.rows, ...uncResult.rows]) {
+                const nameKey = (row.enslaved_name || '').toLowerCase();
+                if (nameKey && !seenNames.has(nameKey)) {
+                    seenNames.add(nameKey);
+                    allEnslaved.push(row);
+                }
+            }
+
+            // Replace the single-source result with the merged result
+            enslavedResult.rows = allEnslaved;
 
             // Calculate years enslaved from documented dates only
             const enslavedPersons = enslavedResult.rows.map(person => {
