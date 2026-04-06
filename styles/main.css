@@ -22,7 +22,7 @@
            FULL SCREEN HERO SECTION
            ============================================ */
         .hero-container {
-            min-height: calc(100vh - 70px);
+            min-height: calc(100vh - 60px);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -311,28 +311,33 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 70px;
+            height: 60px;
             background: rgba(10, 14, 39, 0.98);
-            border-top: 2px solid rgba(100, 200, 255, 0.3);
+            border-top: 1px solid rgba(100, 200, 255, 0.2);
             display: flex;
             justify-content: space-around;
             align-items: center;
-            padding: 0 20px;
+            padding: 0 10px;
             z-index: 1000;
             backdrop-filter: blur(10px);
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .nav-item {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
-            padding: 8px 20px;
+            gap: 2px;
+            padding: 6px 12px;
             cursor: pointer;
             transition: all 0.3s;
-            border-radius: 10px;
+            border-radius: 6px;
             text-decoration: none;
             color: #9aa5b1;
+            white-space: nowrap;
+            flex-shrink: 0;
+            font-size: 0.85em;
         }
 
         .nav-item:hover, .nav-item.active {
@@ -341,7 +346,10 @@
         }
 
         .nav-icon {
-            font-size: 1.5em;
+            font-size: 1.1em;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            opacity: 0.7;
         }
 
         .nav-label {

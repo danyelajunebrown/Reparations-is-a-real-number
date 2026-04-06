@@ -176,6 +176,33 @@ class DAAGenerator {
         );
         const agreementNumber = agreementNumberResult.rows[0].agreement_number;
 
+        // ── Confidence Propagation ────────────────────────────────────
+        // The genealogical chain from the participant to the slaveholder
+        // has uncertainty at each generation. We model this as:
+        //
+        //   chain_confidence = per_link_confidence ^ generation_distance
+        //
+        // Where per_link_confidence = 0.92 (conservative estimate that
+        // each parent-child link in FamilySearch is ~92% reliable).
+        //
+        // This means:
+        //   Gen 1:  0.92^1  = 92% confident
+        //   Gen 4:  0.92^4  = 72% confident
+        //   Gen 6:  0.92^6  = 61% confident
+        //   Gen 8:  0.92^8  = 51% confident
+        //   Gen 10: 0.92^10 = 43% confident
+        //
+        // The debt is weighted by this confidence — a Gen 4 match
+        // contributes 72% of its full value, a Gen 10 match only 43%.
+        // This prevents deep, uncertain matches from dominating the DAA.
+        //
+        // The match_confidence from the climber is also factored in:
+        //   effective_confidence = chain_confidence × match_confidence
+        //
+        // If no generation data is provided, confidence defaults to 1.0
+        // (no penalty — this is the case for non-climb matches).
+        const PER_LINK_CONFIDENCE = 0.92;
+
         // Calculate debt for each enslaved person
         // Skip persons with unknown years (no fabricated defaults)
         const enslavedCalculations = enslavedPersons
@@ -186,9 +213,28 @@ class DAAGenerator {
                     person.startYear
                 );
 
+                // Apply confidence propagation if generation data is available
+                const generationDistance = person.generationDistance || generationFromSlaveholder || null;
+                const matchConfidence = person.matchConfidence || 1.0;
+                const chainConfidence = generationDistance
+                    ? Math.pow(PER_LINK_CONFIDENCE, generationDistance)
+                    : 1.0;
+                const effectiveConfidence = chainConfidence * matchConfidence;
+
+                // Weight the debt by effective confidence
+                const weightedValue = Math.round(calc.modernValue * effectiveConfidence * 100) / 100;
+
                 return {
                     name: person.name,
                     ...calc,
+                    // Confidence data
+                    generationDistance,
+                    chainConfidence: Math.round(chainConfidence * 1000) / 1000,
+                    matchConfidence: Math.round(matchConfidence * 1000) / 1000,
+                    effectiveConfidence: Math.round(effectiveConfidence * 1000) / 1000,
+                    // Weighted value
+                    weightedValue,
+                    unweightedValue: calc.modernValue,
                     relationship: person.relationship || 'enslaved_by'
                 };
             });
@@ -202,9 +248,14 @@ class DAAGenerator {
                 relationship: person.relationship || 'enslaved_by'
             }));
 
-        // Calculate total debt
+        // Calculate total debt using WEIGHTED values
+        // The unweighted total is shown for transparency
         const totalDebt = enslavedCalculations.reduce(
-            (sum, calc) => sum + calc.modernValue,
+            (sum, calc) => sum + calc.weightedValue,
+            0
+        );
+        const totalDebtUnweighted = enslavedCalculations.reduce(
+            (sum, calc) => sum + calc.unweightedValue,
             0
         );
 
@@ -225,6 +276,15 @@ class DAAGenerator {
                 macroFramework: 'Darity & Mullen. "From Here to Equality" (2020) — wealth-gap closure model',
                 legalBasis: 'Dagan. "Restitution and Slavery." 84 B.U. L. Rev. 1139 (2004)',
                 macroCeiling: 'Brattle Group (2023) — $100-131T total forensic economics estimate'
+            },
+            confidencePropagation: {
+                perLinkConfidence: PER_LINK_CONFIDENCE,
+                note: 'Each generational link assumed 92% reliable. Chain confidence = 0.92^generations. Debt weighted by effective_confidence (chain × match).',
+                totalDebtWeighted: totalDebt,
+                totalDebtUnweighted: totalDebtUnweighted,
+                confidenceDiscount: totalDebtUnweighted > 0
+                    ? Math.round((1 - totalDebt / totalDebtUnweighted) * 100) + '%'
+                    : '0%'
             },
             enslavedPersons: enslavedCalculations,
             pendingCalculations,
