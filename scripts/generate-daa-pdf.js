@@ -177,10 +177,7 @@ async function main() {
 <div class="page-break"></div>
 <div class="header">${headerText}</div>
 <h2>PART I: LEGAL FRAMEWORK</h2>
-<div class="note" style="border: 2px solid #333; padding: 12px; margin-bottom: 20px; font-size: 9pt;">
-<b>NOTICE:</b> This document is produced by the Reparations ∈ ℝ research project. It is not a government document, court order, or attorney-reviewed legal instrument. The genealogical findings herein are based on automated research verified against primary sources. The financial methodology is under active development. This document represents a voluntary acknowledgment of inherited debt, not a court-imposed obligation. Participants are encouraged to seek independent legal counsel before taking action based on this document.
-</div>
-<p>This Debt Acknowledgment Agreement ("Agreement" or "DAA") is entered into as of ${today}, by the undersigned Obligor, acting voluntarily and with full understanding of the moral significance hereof.</p>
+<p>This Debt Acknowledgment Agreement ("Agreement" or "DAA") is entered into as of ${today}, by the undersigned Obligor, acting voluntarily and with full knowledge of the moral and legal implications hereof.</p>
 
 <h3>PARTIES</h3>
 <p><b>OBLIGOR:</b> ${name}, a natural person and ${verifiedMatches.length > 0 ? 'documented descendant of persons identified in historical slaveholder databases' : 'participant in genealogical research'}, acknowledging inherited debt arising from the forced labor of enslaved persons.</p>
@@ -192,7 +189,7 @@ async function main() {
 ${recitals.map(r => `  <li>${r}</li>`).join('\n')}
 </ol>
 
-<p><b>NOW, THEREFORE,</b> in consideration of the moral obligation arising from the foregoing facts, and with the intent to voluntarily acknowledge an inherited debt, the Obligor states as follows:</p>
+<p><b>NOW, THEREFORE,</b> in consideration of the moral obligation arising from the foregoing facts, and with the intent to create a legally binding acknowledgment of inherited debt, the Obligor agrees as follows:</p>
 
 <!-- ARTICLE I -->
 <div class="page-break"></div>
@@ -239,7 +236,7 @@ ${verifiedMatches.length > 0 ? `
 <ol class="sub">
   <li>The enactment of federal reparations legislation (including but not limited to HR 40 or equivalent);</li>
   <li>Thirty (30) years from the date of execution; or</li>
-  <li>The death of Obligor.</li>
+  <li>The death of Obligor, at which time any remaining obligation shall transfer to Obligor's estate.</li>
 </ol>
 
 <h2>ARTICLE III: PAYMENT MECHANISM</h2>
@@ -266,18 +263,19 @@ ${verifiedMatches.length > 0 ? `
 <!-- ARTICLE IV -->
 <div class="page-break"></div>
 <div class="header">${headerText}</div>
-<h2>ARTICLE IV: ACKNOWLEDGMENTS</h2>
+<h2>ARTICLE IV: LEGAL EFFECT AND WAIVERS</h2>
 
-<h3>Section 4.1 — Voluntary Acknowledgments</h3>
-<p>Obligor voluntarily acknowledges the following:</p>
+<h3>Section 4.1 — Waiver of Defenses</h3>
+<p>Obligor voluntarily waives the following defenses:</p>
 <ol class="sub">
-  <li><b>Genealogical Connection:</b> Obligor affirms direct connection to documented slaveholders through verified genealogical research;</li>
-  <li><b>Wealth Transmission:</b> Obligor acknowledges that intergenerational wealth, social capital, and network advantages have been transmitted through the documented lineage;</li>
-  <li><b>Inherited Debt:</b> Obligor acknowledges that the unpaid debts arising from enslaved labor have been inherited, not created, by this generation.</li>
+  <li><b>Statute of Limitations:</b> This is a current, voluntary assumption of an inherited obligation;</li>
+  <li><b>Standing:</b> Obligor affirms direct connection through documented genealogical inheritance;</li>
+  <li><b>Attenuation:</b> Obligor acknowledges the documented chain of wealth transmission;</li>
+  <li><b>Laches:</b> This acknowledgment is made at the earliest date of Obligor's informed awareness.</li>
 </ol>
 
 <h3>Section 4.2 — Class Formation</h3>
-<p>Obligor joins the class of documented descendants of slaveholders who have voluntarily acknowledged their inherited debt obligation, for purposes of aggregating acknowledgments and advocating for legislative action.</p>
+<p>Obligor joins the class of documented descendants of slaveholders who have acknowledged their inherited debt obligation, for purposes of aggregating acknowledgments into political and legislative pressure.</p>
 
 <h3>Section 4.3 — Corporate Consumer Fraud Reservation</h3>
 <p>Obligor reserves the right to participate in future consumer fraud claims against corporations that profited from the labor of the enslaved persons named herein, pursuant to <i>In Re African-American Slave Descendants Litigation</i>, 471 F.3d 754 (7th Cir. 2006).</p>

@@ -400,7 +400,7 @@ class DAADocumentGenerator {
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(c) The death of Obligor.',
+                text: '(c) The death of Obligor, at which time any remaining obligation shall transfer to Obligor\'s estate.',
                 spacing: { after: 200 }
             })
         ];
@@ -436,29 +436,33 @@ class DAADocumentGenerator {
         return [
             this.createPageBreak(),
             new Paragraph({
-                text: 'ARTICLE IV: ACKNOWLEDGMENTS',
+                text: 'ARTICLE IV: LEGAL EFFECT AND WAIVERS',
                 heading: HeadingLevel.HEADING_1,
                 spacing: { before: 400, after: 200 }
             }),
             new Paragraph({
-                text: 'Section 4.1 — Voluntary Acknowledgments',
+                text: 'Section 4.1 — Waiver of Defenses',
                 heading: HeadingLevel.HEADING_2,
                 spacing: { before: 200, after: 100 }
             }),
             new Paragraph({
-                text: 'Obligor voluntarily acknowledges the following:',
+                text: 'Obligor voluntarily waives the following defenses:',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(a) Genealogical Connection: Obligor affirms direct connection to documented slaveholders through verified genealogical research;',
+                text: '(a) Statute of Limitations: This is a current, voluntary assumption of an inherited obligation;',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(b) Wealth Transmission: Obligor acknowledges that intergenerational wealth, social capital, and network advantages have been transmitted through the documented lineage;',
+                text: '(b) Standing: Obligor affirms direct connection through documented genealogical inheritance;',
                 spacing: { after: 50 }
             }),
             new Paragraph({
-                text: '(c) Inherited Debt: Obligor acknowledges that the unpaid debts arising from enslaved labor have been inherited, not created, by this generation.',
+                text: '(c) Attenuation: Obligor acknowledges the documented chain of wealth transmission;',
+                spacing: { after: 50 }
+            }),
+            new Paragraph({
+                text: '(d) Laches: This acknowledgment is made at the earliest date of Obligor\'s informed awareness.',
                 spacing: { after: 200 }
             })
         ];
