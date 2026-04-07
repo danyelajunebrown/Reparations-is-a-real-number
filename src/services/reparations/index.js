@@ -45,6 +45,11 @@ const RailroadCalculator = require('./RailroadCalculator');
 // Legal precedent service (Added Jan 5, 2026)
 const LegalPrecedentService = require('./LegalPrecedentService');
 
+// New methodology calculators (Added Apr 6, 2026)
+const WealthGapCalculator = require('./WealthGapCalculator');
+const ICHEICCalculator = require('./ICHEICCalculator');
+const TieredPaymentCalculator = require('./TieredPaymentCalculator');
+
 /**
  * Unified Reparations System
  * Combines all three trackers into a single coherent system
@@ -424,6 +429,11 @@ module.exports = {
 
     // Legal precedent service (Added Jan 5, 2026)
     LegalPrecedentService,
+
+    // Methodology calculators (Added Apr 6, 2026)
+    WealthGapCalculator,      // Darity & Mullen share-of-gap model
+    ICHEICCalculator,         // Multi-jurisdiction historical asset valuation
+    TieredPaymentCalculator,  // Progressive payment tiers (PLACEHOLDER thresholds)
 
     // Factory function to create initialized system with database
     createReparationsSystem: async (db) => {

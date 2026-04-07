@@ -182,6 +182,7 @@ async function main() {
 <h3>PARTIES</h3>
 <p><b>OBLIGOR:</b> ${name}, a natural person and ${verifiedMatches.length > 0 ? 'documented descendant of persons identified in historical slaveholder databases' : 'participant in genealogical research'}, acknowledging inherited debt arising from the forced labor of enslaved persons.</p>
 <p><b>BENEFICIARY CLASS:</b> The documented descendants of enslaved persons held by the identified slaveholders, and their heirs and assigns, collectively and severally.</p>
+<p><b>FISCAL AGENT:</b> Dance Wheel Productions, Inc. dba Dance Place, a 501(c)(3) nonprofit organization, serving as the designated fiscal agent for the collection, custody, and eventual disbursement of payments made under this Agreement, until such time as a dedicated reparations fund or federal program is established.</p>
 
 <h3>RECITALS</h3>
 <p><b>WHEREAS:</b></p>
