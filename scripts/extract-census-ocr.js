@@ -186,22 +186,52 @@ function initDatabase() {
  * Initialize Puppeteer browser
  */
 async function initBrowser() {
-    const userDataDir = path.join(process.cwd(), '.chrome-profile');
+    const userDataDir = process.env.CHROME_PROFILE || path.join(process.cwd(), '.chrome-profile');
+    const remotePort = process.env.CHROME_REMOTE_PORT || null;
 
     console.log('🚀 Launching Chrome...');
-    browser = await puppeteer.launch({
-        headless: !INTERACTIVE,
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        userDataDir: userDataDir,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--window-size=1920,1200',
-            '--disable-infobars'
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-        defaultViewport: null
-    });
+
+    if (remotePort) {
+        // Connect to existing Chrome instance (e.g., ancestor climber's Chrome on port 9222)
+        console.log(`   Connecting to existing Chrome on port ${remotePort}...`);
+        try {
+            browser = await puppeteer.connect({
+                browserURL: `http://127.0.0.1:${remotePort}`,
+                defaultViewport: null
+            });
+            console.log('   ✅ Connected to existing Chrome');
+        } catch (e) {
+            console.log(`   ⚠️ Could not connect to port ${remotePort}: ${e.message}`);
+            console.log('   Falling back to launching new Chrome...');
+            browser = await puppeteer.launch({
+                headless: !INTERACTIVE,
+                executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                userDataDir: userDataDir,
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--window-size=1920,1200',
+                    '--disable-infobars'
+                ],
+                ignoreDefaultArgs: ['--enable-automation'],
+                defaultViewport: null
+            });
+        }
+    } else {
+        browser = await puppeteer.launch({
+            headless: !INTERACTIVE,
+            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            userDataDir: userDataDir,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--window-size=1920,1200',
+                '--disable-infobars'
+            ],
+            ignoreDefaultArgs: ['--enable-automation'],
+            defaultViewport: null
+        });
+    }
 
     page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1200 });
@@ -222,14 +252,15 @@ async function initBrowser() {
 }
 
 /**
- * Reinitialize page if detached frame error occurs
+ * Reinitialize page if detached frame error occurs.
+ * If the browser itself is dead (Connection closed), relaunch the entire browser.
  */
 async function ensurePageValid() {
     try {
         // Test if page is still valid by running a simple evaluate
         await page.evaluate(() => document.title);
     } catch (e) {
-        // Page is detached or stale — create a new one
+        // Page is detached or stale — try to create a new one
         console.log('🔄 Reinitializing detached page...');
         try {
             page = await browser.newPage();
@@ -241,7 +272,15 @@ async function ensurePageValid() {
             await new Promise(r => setTimeout(r, 2000));
             console.log('✅ Page reinitialized');
         } catch (e2) {
-            console.log('⚠️ Could not reinitialize page:', e2.message);
+            // Browser itself is dead — full relaunch
+            console.log('⚠️ Browser connection lost, relaunching Chrome...');
+            try {
+                await browser.close().catch(() => {});
+            } catch (_) {}
+            await new Promise(r => setTimeout(r, 3000));
+            page = await initBrowser();
+            await ensureLoggedIn();
+            console.log('✅ Browser relaunched and logged in');
         }
     }
 }
@@ -1266,7 +1305,7 @@ async function main() {
     let query = `
         SELECT * FROM familysearch_locations
         WHERE waypoint_id IS NOT NULL
-        AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+        AND scraped_at IS NULL
     `;
 
     const params = [];
@@ -1303,7 +1342,7 @@ async function main() {
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state
                 AND county != state
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                AND scraped_at IS NULL
                 AND collection_id = ${collectionFilter}
                 AND state = ANY(${statesFilter})
                 AND county = ${countyFilter}
@@ -1317,7 +1356,7 @@ async function main() {
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state
                 AND county != state
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                AND scraped_at IS NULL
                 AND collection_id = ${collectionFilter}
                 AND state = ANY(${statesFilter})
                 ORDER BY collection_id, state, county, district
@@ -1330,7 +1369,7 @@ async function main() {
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state
                 AND county != state
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                AND scraped_at IS NULL
                 AND collection_id = ${collectionFilter}
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
@@ -1342,7 +1381,7 @@ async function main() {
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state
                 AND county != state
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                AND scraped_at IS NULL
                 AND state = ANY(${statesFilter})
                 AND county = ${countyFilter}
                 ORDER BY collection_id, state, county, district
@@ -1355,7 +1394,7 @@ async function main() {
                 AND waypoint_id NOT LIKE '%collection%'
                 AND district != state
                 AND county != state
-                AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                AND scraped_at IS NULL
                 AND state = ANY(${statesFilter})
                 ORDER BY collection_id, state, county, district
                 LIMIT ${limitArg}
@@ -1372,7 +1411,7 @@ async function main() {
                     WHERE waypoint_id IS NOT NULL
                     AND waypoint_id NOT LIKE '%collection%'
                     AND district != state
-                    AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                    AND scraped_at IS NULL
                     AND collection_id = ${collectionFilter}
                     ORDER BY collection_id, state, county, district
                     LIMIT ${limitArg}
@@ -1384,7 +1423,7 @@ async function main() {
                     WHERE waypoint_id IS NOT NULL
                     AND waypoint_id NOT LIKE '%collection%'
                     AND district != state
-                    AND (scraped_at IS NULL OR scraped_at < NOW() - INTERVAL '7 days')
+                    AND scraped_at IS NULL
                     ORDER BY collection_id, state, county, district
                     LIMIT ${limitArg}
                 `;
@@ -1404,26 +1443,40 @@ async function main() {
     }
 
     // Initialize progress tracking
-    await initProgress(yearFilter || 'mixed', collectionFilter || 'all', locations.length);
+    await initProgress(yearFilter || 1860, collectionFilter || 'all', locations.length);
 
     // Process each location
+    let consecutiveErrors = 0;
     for (const location of locations) {
         try {
             // Ensure page is valid before processing (handle detached frame errors)
             await ensurePageValid();
-            
+
             // Update progress with current location
             await updateProgress(location.state, location.county, location.district);
 
             await processLocation(location, dryRun);
+            consecutiveErrors = 0; // Reset on success
         } catch (error) {
             console.log(`   ❌ Error: ${error.message}`);
             stats.errors++;
-            
-            // Try to recover from detached frame error
-            if (error.message.includes('detached Frame')) {
-                console.log('   🔄 Attempting to recover from detached frame...');
+            consecutiveErrors++;
+
+            // Try to recover from detached frame or connection errors
+            if (error.message.includes('detached Frame') || error.message.includes('Connection closed') || error.message.includes('Target closed')) {
+                console.log('   🔄 Attempting browser recovery...');
                 await ensurePageValid();
+            }
+
+            // If 5+ consecutive errors, the browser is likely toast — hard relaunch
+            if (consecutiveErrors >= 5) {
+                console.log(`   ⚠️ ${consecutiveErrors} consecutive errors — hard browser relaunch...`);
+                try { await browser.close().catch(() => {}); } catch (_) {}
+                await new Promise(r => setTimeout(r, 5000));
+                page = await initBrowser();
+                await ensureLoggedIn();
+                consecutiveErrors = 0;
+                console.log('   ✅ Hard relaunch complete');
             }
         }
 

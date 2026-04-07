@@ -1,6 +1,6 @@
 # Active Context: Current Development State
 
-**Last Updated:** April 5, 2026 (Session 27 — end of day)
+**Last Updated:** April 6, 2026 (Session 27 — research complete, scraper running, all foundation done)
 **Current Phase:** Premiere Preparation — blockchain live, promotion running, first participant climbing
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
@@ -53,6 +53,29 @@ Built Google Form structure and validation script for participant intake at film
 - Climber hit living person page, failed to extract parent IDs (all 5 methods returned nothing), BFS queue emptied, marked "completed" with 0 work done
 - Root cause: Either Chrome wasn't logged into FS, or logged-in account didn't have tree sharing access to Piper's family
 - **Needs:** Re-run with confirmed FS login + tree sharing. Also fix climber to FAIL LOUDLY when living person page yields 0 parents.
+
+### Data Foundation Fixes (Apr 6)
+- **Dedup complete:** 46,552 duplicate enslavers deleted, 9,642 groups merged. Daniel Clark 360→6. Enslavers: 402,139 (clean).
+- **Person_type normalized:** 403K rows (slaveholder/owner → enslaver) in unconfirmed_persons
+- **Participant model created:** Migration 036. Eli Neal linked to 2 climb sessions + 4 family members. Adrian Brown linked to 1 session.
+- **SlaveVoyages owners promoted:** 36,026 ship owners/captains → canonical_persons
+- **Santos enslavers promoted:** 3,661 → canonical_persons
+- **Book of Negroes enslavers scraped:** 724 from LAC detail pages → canonical_persons, 638 enslaved records updated with enslaver linkage
+- **Voyage evidence built:** 71 SlaveVoyages matches enriched with ship names, ports, dates, enslaved counts
+- **All climb matches rescanned:** Eli 548→225 legitimate, Adrian 16→14, others cleaned
+
+### Data Problems — RESOLVED Apr 6
+1. ~~1.6M enslaved invisible to DAA~~ → **FIXED**: DAAOrchestrator now queries enslaved_individuals + family_relationships + unconfirmed_persons JSONB
+2. ~~Two linkage systems not synced~~ → **FIXED**: 99.3% of enslaver edges linked to canonical IDs, 34K JSONB links synced to family_relationships
+3. ~~Dedup needed~~ → **FIXED**: 46,552 duplicates deleted, enslavers: 402,139 (clean)
+4. ~~Person_type inconsistent~~ → **FIXED**: 403K rows normalized to 'enslaver'
+
+### Remaining Data Problems
+1. **Freedmen's Bureau not imported** — 480K names with former enslaver linkages, requires FamilySearch scraper (Chrome busy with slave schedules)
+2. **12% FamilySearch ID coverage** — only 54K of 402K enslavers have FS IDs, limiting Tier 1 matching
+3. ~~No confidence propagation~~ → **FIXED**: DAAGenerator weights debt by 0.92^generation * match_confidence. Gen 4=72%, Gen 8=51%, Gen 10=43%.
+4. **Spelling variant duplicates** — dedup caught exact matches but not Asbury/Asberry, Wm/William variants. NameResolver (Soundex/Metaphone) could help.
+5. ~~Front page wonky (Issue #1)~~ → **FIXED**: Emojis removed, nav overflow fixed, layout cleaned up.
 
 ### Blockchain Escrow Deployed to Base Mainnet (Apr 5)
 - **Contract:** `0x914846ceA07e57d848d9d60C8238865D83d9ab1E`

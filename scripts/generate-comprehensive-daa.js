@@ -38,38 +38,33 @@ function parseArgs() {
 
 // Validate required parameters
 function validateParams(params) {
-    const required = ['fs-id', 'name', 'income'];
+    // Allow --session-id as alternative to --fs-id for name-only climbs
+    const hasIdentifier = params['fs-id'] || params['session-id'];
+    const required = ['name', 'income'];
     const missing = required.filter(key => !params[key]);
+
+    if (!hasIdentifier) missing.unshift('fs-id or session-id');
 
     if (missing.length > 0) {
         console.error('Error: Missing required parameters:', missing.join(', '));
         console.error();
         console.error('Usage:');
         console.error('  node scripts/generate-comprehensive-daa.js \\');
-        console.error('    --fs-id <FamilySearch_ID> \\');
+        console.error('    --fs-id <FamilySearch_ID>  OR  --session-id <UUID> \\');
         console.error('    --name "<Full Name>" \\');
         console.error('    --email <email@example.com> \\');
-        console.error('    --income <annual_income> \\');
-        console.error('    [--address-line1 "<address>"] \\');
-        console.error('    [--address-city "<city>"] \\');
-        console.error('    [--address-state "<state>"] \\');
-        console.error('    [--address-zip "<zip>"]');
-        console.error();
-        console.error('Example:');
-        console.error('  node scripts/generate-comprehensive-daa.js \\');
-        console.error('    --fs-id G21N-4JF \\');
-        console.error('    --name "Nancy Brown" \\');
-        console.error('    --email "nancy@example.com" \\');
-        console.error('    --income 65000');
+        console.error('    --income <annual_income>');
         process.exit(1);
     }
 
-    // Validate FamilySearch ID format
-    const fsIdPattern = /^[A-Z0-9]{4,7}-[A-Z0-9]{2,4}$/;
-    if (!fsIdPattern.test(params['fs-id'])) {
-        console.error(`Error: Invalid FamilySearch ID format: ${params['fs-id']}`);
-        console.error('Expected format: XXXX-XXX (e.g., G21N-4JF)');
-        process.exit(1);
+    // Validate FamilySearch ID format (skip if using session-id)
+    if (params['fs-id']) {
+        const fsIdPattern = /^[A-Z0-9]{4,7}-[A-Z0-9]{2,4}$/;
+        if (!fsIdPattern.test(params['fs-id'])) {
+            console.error(`Error: Invalid FamilySearch ID format: ${params['fs-id']}`);
+            console.error('Expected format: XXXX-XXX (e.g., G21N-4JF)');
+            process.exit(1);
+        }
     }
 
     // Validate income is a positive number
@@ -92,7 +87,8 @@ async function main() {
     const params = parseArgs();
     validateParams(params);
 
-    const familySearchId = params['fs-id'];
+    const familySearchId = params['fs-id'] || 'NAME-ONLY';
+    const sessionId = params['session-id'] || null;
     const acknowledgerName = params['name'];
     const acknowledgerEmail = params['email'] || null;
     const annualIncome = parseInt(params['income']);
@@ -145,7 +141,8 @@ async function main() {
         // Generate comprehensive DAA
         const result = await orchestrator.generateComprehensiveDAA(
             familySearchId,
-            acknowledgerInfo
+            acknowledgerInfo,
+            sessionId
         );
 
         console.log('═══════════════════════════════════════════════════════════════');
