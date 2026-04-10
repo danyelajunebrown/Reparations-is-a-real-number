@@ -1,13 +1,62 @@
 # Active Context: Current Development State
 
-**Last Updated:** April 6, 2026 (Session 27 — end of day 3, all calculators built, research complete)
+**Last Updated:** April 9, 2026 (Session 28 — Freedmen's Bank scraping + resilience improvements)
 **Current Phase:** Premiere Preparation — blockchain live, promotion running, first participant climbing
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
-## Session 27: Methodology Overhaul + Blockchain + Data Promotion (Mar 31 – Apr 5, 2026) 🔄 IN PROGRESS
+## Session 28: Freedmen's Bank Records Scraping (Apr 7-9, 2026) 🔄 IN PROGRESS
+
+### Goal
+Add formerly enslaved persons with owner/master information to the database from the Freedmen's Bank Records (FamilySearch Collection 1417695). These records contain depositor names, occupations, complexions, birthplaces, and critically — **former master/mistress names and plantation names** — linking freedpersons directly to their enslavers.
+
+### Two Scrapers
+1. **`scripts/scrape-freedmens-bank-indexed.js`** — For branches with FamilySearch Image Index (pre-transcribed volunteer data). ~41 records/page, 0.95 confidence. Parses structured text from the index panel.
+2. **`scripts/scrape-freedmens-bank-ocr.js`** — For branches without pre-indexed data. Screenshots pages, runs Google Vision OCR, parses handwritten register format. Extracts former master/mistress names.
+
+### Branches Configured
+| Branch | Type | Rolls | Total Images | Status |
+|--------|------|-------|-------------|--------|
+| Charleston, SC | Indexed | Roll 22 | 421 | Not started |
+| Richmond, VA | Indexed | Roll 26 (221) + Roll 27 (841) | 1,062 | **Frozen on page 1** |
+| Wilmington, NC | Indexed | Roll 18 | 254 | Not started |
+| Raleigh, NC | Indexed | Roll 18 | 2 | Not started |
+| Atlanta, GA | OCR | Roll 6 | 612 | Not started |
+| Washington, D.C. | OCR | Roll 4 | 841 | Not started |
+
+### Diagnosis (Apr 7-9)
+- **Richmond scraper was frozen on page 1** — user reported it as paused in Chrome Puppeteer window
+- Three scraper processes were running but unresponsive (PIDs 65059, 63081, 62764)
+- Debug dumps revealed: **FamilySearch index URLs redirect to "Get Involved" page** — `SERVER_DATA.appName = 'get-involved'`, empty body text (0 bytes)
+- **Apr 9:** FamilySearch experiencing **site-wide outage** — 500 Internal Server Error on search/collection pages, 403 on image viewer ARK URLs, homepage shows error banner
+- Root cause is FS outage, not a code bug — but code also needed resilience improvements
+
+### Improvements Made to Scraper (Apr 9)
+1. **`checkPageHealth()`** — Detects redirects to wrong FS app, 500/403 errors, empty SPA bodies
+2. **`navigateWithRetry()`** — 3 retries with exponential backoff (5s, 10s, 15s)
+3. **Consecutive empty page safety valve** — Stops after 10 consecutive empty/failed pages with clear resume instructions (`--start N`)
+4. **Debug dump on every failure** — Saves body text + full DOM HTML to `debug/freedmens-bank/` for post-mortem analysis
+5. **`ensureIndexOpen()`** — Clicks "Index" tab/button if FS lazy-loads the index panel
+
+### Next Steps (when FamilySearch comes back online)
+1. Verify current index URLs still work (may need URL format update)
+2. Test single page: `node scripts/scrape-freedmens-bank-indexed.js --branch "Richmond, Virginia" --start 0 --limit 2`
+3. If URLs changed, navigate manually in browser to discover new format, update BRANCHES config
+4. Run full Richmond scrape: `--branch "Richmond, Virginia" --start 5` (was at page 5 before freeze)
+5. Run remaining indexed branches (Charleston, Wilmington, Raleigh)
+6. Run OCR branches (Atlanta, Washington DC)
+
+### Resume Command (when FS is back)
+```bash
+# Richmond was at page 5 before the freeze
+node scripts/scrape-freedmens-bank-indexed.js --branch "Richmond, Virginia" --start 5
+```
+
+---
+
+## Session 27: Methodology Overhaul + Blockchain + Data Promotion (Mar 31 – Apr 5, 2026) ✅ COMPLETE
 
 ### Codebase Integrity Audit — 24 GitHub Issues Filed
 Comprehensive audit of all financial calculation code revealed systemic problems: unsourced constants, contradictory formulas, fabricated data, and misattributed research. Every hardcoded multiplier, interest rate, and base value in the reparations calculation pipeline was examined.
