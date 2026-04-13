@@ -1,8 +1,88 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Methodology Integrity Overhaul + May Premiere Preparation
-**Last Updated:** April 4, 2026
+**Current Phase:** Frontend Reintegration for May Premiere
+**Last Updated:** April 11, 2026
+
+---
+
+## Session 29 — Frontend Reintegration (April 11, 2026) ✅ SCAFFOLD COMPLETE
+
+After months of backend work (scrapers, identity system, match verification,
+reparations calculators, blockchain deployment, 1860 slave schedule extraction),
+the Dec 2025 frontend was severely out of sync. This session rebuilt it from
+scratch as a React + Vite application at `frontend/`.
+
+### Framework Choice
+- React 18 + Vite 6 (user approved — "Using a framework is genius, take your time to do it right")
+- Terminal aesthetic: black background, white monospace, no decoration
+- GitHub Pages hosting (static build) → Render API backend → Neon DB
+- TypeScript not adopted yet (deferred to reduce scope; JS with JSDoc types as needed)
+
+### Seven Phases — ALL COMPLETE
+| Phase | Status | Key Output |
+|-------|--------|-----------|
+| 1. Scaffold + terminal aesthetic + search | ✅ | Vite project, global.css, API client with strict verified filter, App shell, SearchBar, SearchPage, StatsRibbon |
+| 2. Person modal + reparations calculators | ✅ | PersonProfile component, ReparationsBreakdown with 6 methodology views (wealth gap, ICHEIC, tiered, insurance, banking, railroad), each with citations |
+| 3. Lineage graph visualization | ✅ | D3 SVG zoomable graph. Zoom out = all participant lineages side by side. Verified-only matches. |
+| 4. Document viewer + corporate debts + legal framework | ✅ | PDF/image viewer with OCR, Farmer-Paellmann defendants, Triangle Trade jurisdictions |
+| 5. Blockchain payment panel | ✅ | useBlockchain hook, MetaMask auto-switch to Base 8453, submit DAA, USDC approve+deposit, ETH deposit |
+| 6. Kiosk update + admin | ✅ | styles/kiosk.css rewritten terminal; 4 admin routes (Home, Review, DataQuality, Participants) |
+| 7. Cleanup + dependency-safe removals | ✅ | Deleted contribute-v2.html, debt-river.js/css; fixed broken refs in index.html/app.js/server.js |
+
+### Files Created (37 in frontend/)
+```
+frontend/
+  package.json, vite.config.js, .env.example, .gitignore, index.html
+  src/
+    main.jsx, App.jsx
+    api/client.js, api/format.js
+    hooks/useApi.js, hooks/useBlockchain.js
+    styles/global.css
+    pages/ — 9 page files
+    components/
+      Layout/StatsRibbon.jsx
+      Search/SearchBar.jsx
+      PersonModal/PersonProfile.jsx
+      Reparations/ReparationsBreakdown.jsx
+      LineageGraph/LineageGraph.jsx
+      DocumentViewer/DocumentViewer.jsx + DocumentList.jsx
+      CorporateDebts/CorporateDebts.jsx + CorporateEntity.jsx
+      LegalFramework/LegalFramework.jsx + LegalTopic.jsx
+      BlockchainPanel/BlockchainPanel.jsx
+      Admin/AdminHome.jsx + ReviewQueue.jsx + DataQuality.jsx + ParticipantManagement.jsx
+```
+
+### Files Removed
+- `contribute-v2.html` (git rm)
+- `js/debt-river-animation.js` (git rm)
+- `styles/debt-river.css` (git rm)
+
+### Files Modified
+- `index.html` — removed 3 debt-river references
+- `js/app.js` — removed 2 dead `window.debtRiver.onSearch()` branches
+- `src/server.js` — removed contribute-v2 route + dead `/api/process-individual-metadata` stub
+- `styles/kiosk.css` — full rewrite to terminal aesthetic with 7-class taxonomy badges
+- `memory-bank/activeContext.md` — Session 29 documented
+- `memory-bank/progress.md` — this entry
+
+### Dependency Analysis (Pre-Cleanup)
+Three parallel sub-agent sweeps traced every reference before removal:
+- `enslaved_people` table → production (34 files), NOT removed
+- Beyond Kin → active scraper with 2,461 records, NOT removed
+- Legacy redirect endpoints → callers exist (Orchestrator.js, reprocess script), NOT removed
+- `/api/chat` → kept alive for old index.html fallback
+- `dashboard.html`, `review.html` → kept dormant (not linked from React app, server routes still work)
+
+### Pending Before Premiere
+1. `cd frontend && npm install && npm run build` — no build has been run yet
+2. Live API shape verification — components handle common variants but untested
+3. Admin auth gate — `/admin/*` currently open, must wrap before May 8
+4. Connection pool fix in `contribute.js` (per-request Pool bug from FRONTEND-ENHANCEMENT-PLAN.md)
+5. Stats caching (5-min TTL server-side) on `/api/contribute/stats`
+6. `/api/participants` endpoint (currently falls back to grouping ancestor-climb sessions)
+7. Legal framework detail view structure (currently renders raw JSON)
+8. GitHub Pages deploy (`npm run deploy` configured)
 
 ---
 
