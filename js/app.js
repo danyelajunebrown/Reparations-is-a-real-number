@@ -309,11 +309,6 @@
                 return;
             }
 
-            // Trigger debt river animation search effect
-            if (window.debtRiver) {
-                window.debtRiver.onSearch(query);
-            }
-
             const resultsList = document.getElementById('resultsList');
             resultsList.innerHTML = '<div style="text-align: center; padding: 30px;"><div class="spinner" style="margin: 0 auto;"></div></div>';
             document.getElementById('searchResultsPanel').classList.add('active');
@@ -402,11 +397,6 @@
 
         function closeSearchResults() {
             document.getElementById('searchResultsPanel').classList.remove('active');
-            
-            // Reset debt river animation
-            if (window.debtRiver) {
-                window.debtRiver.onSearch('');
-            }
         }
 
         function viewResult(resultIndex) {
