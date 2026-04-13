@@ -503,17 +503,42 @@ router.get('/stats', async (req, res) => {
             });
         }
 
-        // Cache miss - query database
+        // Cache miss - query database.
+        // Apr 13, 2026: stats query now counts BOTH unconfirmed_persons AND
+        // canonical_persons + enslaved_individuals. Previously it only counted
+        // unconfirmed_persons, which under-reported slaveholders by ~99% after
+        // the Apr 5 promotion moved 123K+ enslavers into canonical_persons.
+        // See activeContext.md for full context.
         const stats = await pool.query(`
+            WITH up AS (
+                SELECT
+                    COUNT(*) AS total_records,
+                    COUNT(DISTINCT source_url) AS unique_sources,
+                    COUNT(*) FILTER (WHERE person_type IN ('owner', 'slaveholder', 'confirmed_owner')) AS unconfirmed_slaveholders,
+                    COUNT(*) FILTER (WHERE person_type IN ('enslaved', 'confirmed_enslaved')) AS unconfirmed_enslaved,
+                    COUNT(*) FILTER (WHERE source_url LIKE '%msa.maryland.gov%') AS msa_records,
+                    COUNT(*) FILTER (WHERE source_url LIKE '%familysearch%') AS familysearch_records,
+                    COUNT(*) FILTER (WHERE source_url LIKE '%civilwardc%') AS civilwardc_records
+                FROM unconfirmed_persons
+            ),
+            cp AS (
+                SELECT
+                    COUNT(*) FILTER (WHERE person_type IN ('enslaver', 'slaveholder', 'owner', 'free_poc_slaveholder')) AS canonical_slaveholders,
+                    COUNT(*) FILTER (WHERE person_type IN ('enslaved', 'enslaved_ancestor', 'freedperson')) AS canonical_enslaved
+                FROM canonical_persons
+            ),
+            ei AS (
+                SELECT COUNT(*) AS confirmed_enslaved FROM enslaved_individuals
+            )
             SELECT
-                COUNT(*) as total_records,
-                COUNT(DISTINCT source_url) as unique_sources,
-                COUNT(CASE WHEN person_type IN ('owner', 'slaveholder', 'confirmed_owner') THEN 1 END) as slaveholders,
-                COUNT(CASE WHEN person_type IN ('enslaved', 'confirmed_enslaved') THEN 1 END) as enslaved,
-                COUNT(CASE WHEN source_url LIKE '%msa.maryland.gov%' THEN 1 END) as msa_records,
-                COUNT(CASE WHEN source_url LIKE '%familysearch%' THEN 1 END) as familysearch_records,
-                COUNT(CASE WHEN source_url LIKE '%civilwardc%' THEN 1 END) as civilwardc_records
-            FROM unconfirmed_persons
+                (up.total_records + cp.canonical_slaveholders + cp.canonical_enslaved + ei.confirmed_enslaved) AS total_records,
+                up.unique_sources,
+                (up.unconfirmed_slaveholders + cp.canonical_slaveholders) AS slaveholders,
+                (up.unconfirmed_enslaved + cp.canonical_enslaved + ei.confirmed_enslaved) AS enslaved,
+                up.msa_records,
+                up.familysearch_records,
+                up.civilwardc_records
+            FROM up, cp, ei
         `);
 
         // Update cache
@@ -544,11 +569,10 @@ router.get('/browse', async (req, res) => {
     try {
         const { limit = 100, offset = 0, type, source, minConfidence = 0 } = req.query;
 
-        const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        // Use shared connection pool. Previously this endpoint instantiated a
+        // new Pool per request and ended it, which exhausted Neon connections
+        // under load (FRONTEND-ENHANCEMENT-PLAN.md flagged this). Fixed Apr 13.
+        const pool = sharedPool;
 
         // Build dynamic query
         // Exclude needs_review and rejected records (ML misclassification cleanup)
@@ -630,7 +654,7 @@ router.get('/browse', async (req, res) => {
         const countResult = await pool.query(countQuery, countParams);
         const total = parseInt(countResult.rows[0].count);
 
-        await pool.end();
+        // Note: don't end the shared pool — it's reused across requests.
 
         // Extract archive URL from context_text
         const extractArchiveUrl = (contextText) => {
@@ -672,10 +696,7 @@ router.get('/browse', async (req, res) => {
 router.get('/review-queue', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const result = await pool.query(`
             SELECT
@@ -691,9 +712,6 @@ router.get('/review-queue', async (req, res) => {
             WHERE queue_status = 'pending_review'
             ORDER BY priority DESC, created_at ASC
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             count: result.rows.length,
@@ -1238,9 +1256,6 @@ router.get('/person/:id', async (req, res) => {
                 }
             }
         }
-
-        await pool.end();
-
         res.json({
             success: true,
             person: {
@@ -1299,10 +1314,7 @@ const path = require('path');
 router.get('/canonical-audit', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get all canonical_persons
         const allRecords = await pool.query(`
@@ -1359,9 +1371,6 @@ router.get('/canonical-audit', async (req, res) => {
                 validOwners.push(r);
             }
         }
-
-        await pool.end();
-
         res.json({
             success: true,
             summary: {
@@ -1388,10 +1397,7 @@ router.get('/canonical-audit', async (req, res) => {
 router.delete('/canonical-audit/cleanup', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Delete garbage patterns from canonical_persons
         const result = await pool.query(`
@@ -1420,9 +1426,6 @@ router.delete('/canonical-audit/cleanup', async (req, res) => {
                 notes ILIKE '%ISBN%'
             RETURNING id, canonical_name as full_name
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             message: `Deleted ${result.rowCount} garbage records from canonical_persons`,
@@ -1443,10 +1446,7 @@ router.delete('/canonical-audit/cleanup', async (req, res) => {
 router.get('/data-quality', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get issue counts
         const issues = await pool.query(`
@@ -1501,9 +1501,6 @@ router.get('/data-quality', async (req, res) => {
             SELECT 'delete_placeholders', COUNT(*), 'Delete "Unknown Enslaved Person" placeholders'
             FROM unconfirmed_persons WHERE full_name LIKE 'Unknown Enslaved Person%'
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             summary: {
@@ -1530,10 +1527,7 @@ router.post('/data-quality/fix', async (req, res) => {
         const { fixType } = req.body;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         let result;
         let message;
@@ -1580,12 +1574,8 @@ router.post('/data-quality/fix', async (req, res) => {
                 break;
 
             default:
-                await pool.end();
                 return res.status(400).json({ success: false, error: 'Unknown fix type' });
         }
-
-        await pool.end();
-
         res.json({
             success: true,
             message,
@@ -1607,17 +1597,11 @@ router.delete('/data-quality/record/:id', async (req, res) => {
         const { id } = req.params;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const result = await pool.query(`
             DELETE FROM unconfirmed_persons WHERE lead_id = $1 RETURNING full_name
         `, [id]);
-
-        await pool.end();
-
         if (result.rowCount === 0) {
             return res.status(404).json({ success: false, error: 'Record not found' });
         }
@@ -1643,10 +1627,7 @@ router.put('/data-quality/record/:id', async (req, res) => {
         const { full_name, person_type, confidence_score } = req.body;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const result = await pool.query(`
             UPDATE unconfirmed_persons
@@ -1657,9 +1638,6 @@ router.put('/data-quality/record/:id', async (req, res) => {
             WHERE lead_id = $1
             RETURNING *
         `, [id, full_name, person_type, confidence_score]);
-
-        await pool.end();
-
         if (result.rowCount === 0) {
             return res.status(404).json({ success: false, error: 'Record not found' });
         }
@@ -1696,10 +1674,7 @@ router.put('/data-quality/record/:id', async (req, res) => {
 router.get('/data-quality-metrics', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get counts by status
         const statusCounts = await pool.query(`
@@ -1781,9 +1756,6 @@ router.get('/data-quality-metrics', async (req, res) => {
             GROUP BY DATE(updated_at)
             ORDER BY date DESC
         `);
-
-        await pool.end();
-
         // Calculate metrics
         const stats = garbageStats.rows[0];
         const totalRecords = parseInt(stats.total_records);
@@ -1854,10 +1826,7 @@ router.get('/data-quality-metrics', async (req, res) => {
 router.get('/ocr-issues', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get summary by issue type and state
         const summary = await pool.query(`
@@ -1929,9 +1898,6 @@ router.get('/ocr-issues', async (req, res) => {
             FROM unconfirmed_persons
             WHERE data_quality_flags->>'ocr_issue' IS NOT NULL
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             totals: totals.rows[0],
@@ -1961,10 +1927,7 @@ router.post('/ocr-issues/mark-for-rescrape', async (req, res) => {
         const { issueType, state, county } = req.body;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         let query = `
             UPDATE unconfirmed_persons
@@ -1984,8 +1947,6 @@ router.post('/ocr-issues/mark-for-rescrape', async (req, res) => {
         query += ' RETURNING lead_id';
 
         const result = await pool.query(query);
-        await pool.end();
-
         res.json({
             success: true,
             markedCount: result.rowCount,
@@ -2022,10 +1983,7 @@ router.get('/training-stats', async (req, res) => {
         }
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const counts = await pool.query(`
             SELECT
@@ -2034,9 +1992,6 @@ router.get('/training-stats', async (req, res) => {
                 (SELECT COUNT(*) FROM unconfirmed_persons) as unconfirmed_count,
                 (SELECT COUNT(*) FROM name_match_queue WHERE queue_status = 'pending') as pending_review
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             training: {
@@ -2068,10 +2023,7 @@ router.get('/training-stats', async (req, res) => {
 router.get('/system-status', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const status = await pool.query(`
             SELECT
@@ -2084,9 +2036,6 @@ router.get('/system-status', async (req, res) => {
                 (SELECT COUNT(*) FROM name_match_queue WHERE queue_status = 'pending') as pending_review,
                 (SELECT COUNT(*) FROM confirming_documents) as document_count
         `);
-
-        await pool.end();
-
         const patternsFile = path.join(__dirname, '../../../data/learned-patterns.json');
         let trainingStats = { knownNames: 0, patterns: 0 };
         if (fs.existsSync(patternsFile)) {
@@ -2194,10 +2143,7 @@ router.get('/training/documents', async (req, res) => {
         }
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         const ravenelDocs = await pool.query(`
             SELECT DISTINCT
@@ -2211,9 +2157,6 @@ router.get('/training/documents', async (req, res) => {
             ORDER BY avg_confidence ASC
             LIMIT 20
         `);
-
-        await pool.end();
-
         res.json({
             success: true,
             processedDocuments: examples.map(e => ({
@@ -3724,10 +3667,7 @@ router.post('/review-queue/:id/approve', async (req, res) => {
         const { full_name, gender, notes } = req.body;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get the review item
         const itemResult = await pool.query(
@@ -3736,7 +3676,6 @@ router.post('/review-queue/:id/approve', async (req, res) => {
         );
 
         if (itemResult.rows.length === 0) {
-            await pool.end();
             return res.status(404).json({ success: false, error: 'Item not found' });
         }
 
@@ -3772,9 +3711,6 @@ router.post('/review-queue/:id/approve', async (req, res) => {
                 resolution_type = 'human_approved'
             WHERE id = $1
         `, [id]);
-
-        await pool.end();
-
         res.json({
             success: true,
             message: 'Enslaved individual created',
@@ -3797,10 +3733,7 @@ router.post('/review-queue/:id/reject', async (req, res) => {
         const { reason } = req.body;
 
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         await pool.query(`
             UPDATE name_match_queue
@@ -3810,9 +3743,6 @@ router.post('/review-queue/:id/reject', async (req, res) => {
                 resolution_notes = $2
             WHERE id = $1
         `, [id, reason || 'Rejected by reviewer']);
-
-        await pool.end();
-
         res.json({
             success: true,
             message: 'Item rejected'
@@ -3831,10 +3761,7 @@ router.post('/review-queue/:id/reject', async (req, res) => {
 router.post('/review-queue/approve-all', async (req, res) => {
     try {
         const { Pool } = require('pg');
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
-        });
+        const pool = sharedPool;
 
         // Get all pending items
         const items = await pool.query(`
@@ -3865,9 +3792,6 @@ router.post('/review-queue/approve-all', async (req, res) => {
 
             approved++;
         }
-
-        await pool.end();
-
         res.json({
             success: true,
             message: `Approved ${approved} items`,

@@ -61,7 +61,7 @@ app.use(cors({
     return callback(null, true); // Allow all for now during development
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Token'],
   credentials: true
 }));
 
@@ -82,12 +82,9 @@ app.use(express.static(path.join(__dirname, '..')));
 app.use('/styles', express.static(path.join(__dirname, '..', 'styles')));
 app.use('/js', express.static(path.join(__dirname, '..', 'js')));
 
-// Serve the new conversational contribute page
-app.get('/contribute-v2.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'contribute-v2.html'));
-});
-
-// Note: Old contribute variants and bibliography.html moved to _archive/
+// contribute-v2.html was removed Apr 11, 2026 as part of the frontend rebuild.
+// The conversational contribution workflow is no longer part of the premiere scope.
+// /api/contribute/* endpoints remain (search, person lookup, stats).
 
 // Serve the main index.html from project root
 app.get('/', (req, res) => {
@@ -126,6 +123,26 @@ app.set('documentProcessor', documentProcessor);
 // =============================================================================
 // Mount Routes
 // =============================================================================
+
+// Admin auth (Apr 11, 2026) — gate specific admin-only endpoints.
+// Must be registered BEFORE the routers that own those paths. Set ADMIN_TOKEN
+// in production; dev mode (NODE_ENV !== 'production') leaves endpoints OPEN.
+const { requireAdmin, adminVerify } = require('./middleware/admin-auth');
+
+// Verify endpoint for React admin UI token check
+app.get('/api/admin/verify', requireAdmin, adminVerify);
+
+// Gate ancestor-climb admin endpoint (must precede router mount)
+app.use('/api/ancestor-climb/pending-verification', requireAdmin);
+
+// Gate contribute admin paths (must precede contribute router mount below)
+const ADMIN_CONTRIBUTE_PATHS = [
+  '/api/contribute/review-queue',
+  '/api/contribute/data-quality',
+  '/api/contribute/data-quality-metrics',
+  '/api/contribute/training',
+];
+app.use(ADMIN_CONTRIBUTE_PATHS, requireAdmin);
 
 app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
@@ -316,18 +333,6 @@ app.post('/api/beyond-kin/:id/needs-document', async (req, res) => {
       [id]
     );
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Process individual metadata endpoint
-app.post('/api/process-individual-metadata', async (req, res) => {
-  try {
-    const { documentId, metadata } = req.body;
-    // Store metadata - simplified version
-    logger.info('Processing metadata', { documentId, metadata });
-    res.json({ success: true, message: 'Metadata processed' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
