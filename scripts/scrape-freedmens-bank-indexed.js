@@ -1,363 +1,365 @@
 #!/usr/bin/env node
 /**
- * Freedmen's Bank — Indexed Branch Scraper
+ * Freedmen's Bank Index Scraper - Full column extraction version
  *
- * For branches that have FamilySearch Image Index tables (pre-transcribed),
- * scrapes the structured HTML data directly — no OCR needed.
+ * Table columns (confirmed via DOM dump 2026-04-11):
+ * [0] More  [1] ATTACH  [2] Name  [3+] variable: Mother's Name, Mother's Sex,
+ *     Spouse's Name, Event Place, Account Number — cells omitted when empty,
+ *     so we classify by content rather than by fixed index.
  *
- * ~41 records per page × hundreds of pages per branch = thousands of records
- * in minutes, at 0.95 confidence (indexed data, not OCR).
- *
- * Creates BOTH freedperson entries AND enslaver entries when family data
- * includes information about former masters.
- *
- * Usage:
- *   node scripts/scrape-freedmens-bank-indexed.js --branch "Charleston, South Carolina"
- *   node scripts/scrape-freedmens-bank-indexed.js --branch "Charleston, South Carolina" --start 10 --limit 100
- *   node scripts/scrape-freedmens-bank-indexed.js --dry-run
+ * Navigation: uses spawnSync + osascript to avoid shell single-quote escaping issues.
  */
-
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const puppeteer = require('puppeteer-core');
 const { neon } = require('@neondatabase/serverless');
+const fs = require('fs');
+const path = require('path');
 
-const DRY_RUN = process.argv.includes('--dry-run');
-const branchIdx = process.argv.indexOf('--branch');
-const BRANCH = branchIdx !== -1 ? process.argv[branchIdx + 1] : 'Charleston, South Carolina';
-const startIdx = process.argv.indexOf('--start');
-const START_PAGE = startIdx !== -1 ? parseInt(process.argv[startIdx + 1]) : 0;
-const limitIdx = process.argv.indexOf('--limit');
-const PAGE_LIMIT = limitIdx !== -1 ? parseInt(process.argv[limitIdx + 1]) : 999;
+const args = process.argv;
+const branchIdx = args.indexOf('--branch');
+const startIdx = args.indexOf('--start');
 
-// Branch → roll URLs (using waypoint-based index pages)
-// Each entry is a roll's index URL that we navigate page by page
+const BRANCH = branchIdx !== -1 ? args[branchIdx + 1] : 'Richmond, Virginia';
+const START_PAGE = startIdx !== -1 ? parseInt(args[startIdx + 1]) || 0 : 0;
+const DRY_RUN = args.includes('--dry-run');
+
+// Only branches with verified-working ark+wc URLs (confirmed Image Index tab with data).
+// To add a new branch: open FS collection 1417695 in Chrome, drill down to an image in the
+// target branch's Image Index, confirm the Image Index tab shows populated rows, then copy
+// the browser URL here. Keep total = the ledger's total image count (shown bottom of viewer).
 const BRANCHES = {
-    'Charleston, South Carolina': {
-        rolls: [
-            { wc: '3MDR-T3D%3A1551795003%2C1551795001%26cc%3D1417695', ark: '3:1:S3HY-XCQC-ZD', roll: 22, totalImages: 421, label: 'Roll 22, 1869-1871, accounts 3833-6626' }
-        ]
-    },
-    'Richmond, Virginia': {
-        rolls: [
-            { indexUrl: 'https://www.familysearch.org/en/search/image/index?owc=3MDR-K6F%3A1551793903%2C1551805363%3Fcc%3D1417695&cc=1417695', roll: 26, totalImages: 221, label: 'Roll 26, 1867-1870, accounts 232-1582' },
-            { indexUrl: 'https://www.familysearch.org/en/search/image/index?owc=3MDR-K6X%3A1551793903%2C1551793901%3Fcc%3D1417695&cc=1417695', roll: 27, totalImages: 841, label: 'Roll 27, 1870-1874, accounts 1591-7691' }
-        ]
-    },
-    'Wilmington, North Carolina': {
-        rolls: [
-            { indexUrl: 'https://www.familysearch.org/en/search/image/index?owc=3MDR-BZW%3A1551805235%2C1551805233%3Fcc%3D1417695&cc=1417695', roll: 18, totalImages: 254, label: 'Roll 18, 1869-1873, accounts 1208-5400' }
-        ]
-    },
-    'Raleigh, North Carolina': {
-        rolls: [
-            { indexUrl: 'https://www.familysearch.org/en/search/image/index?owc=3MDR-BZT%3A1551805235%2C1551805072%3Fcc%3D1417695&cc=1417695', roll: 18, totalImages: 2, label: 'Roll 18, 1868, accounts 9-15' }
-        ]
-    }
+    // Verified 2026-04-14: first page with structured data is image 8 (i=7).
+    // Pages 1-7 are ledger cover/header blanks with an empty Image Index tab.
+    'Charleston, South Carolina': { total: 421, url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-XCQD-6X?wc=3MDR-T3D%3A1551795003%2C1551795001%26cc%3D1417695&cc=1417695&lang=en&i=7' }
 };
 
-let sql, browser;
+const sql = neon(process.env.DATABASE_URL);
+const DB_URL = BRANCHES[BRANCH] && BRANCHES[BRANCH].url;
 
-const stats = { pages: 0, records: 0, stored: 0, errors: 0, skipped: 0, retries: 0, startTime: Date.now() };
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 5000; // 5 seconds between retries
-const MAX_CONSECUTIVE_EMPTY = 10; // Abort if 10 pages in a row have zero records
-
-/**
- * Check if FamilySearch page loaded properly (not redirected, not errored, not empty).
- * Returns { ok: boolean, reason: string }
- */
+// ─── Health check ────────────────────────────────────────────────────────────
 async function checkPageHealth(page) {
     const url = page.url();
-    const title = await page.title().catch(() => '');
-    const bodyLen = await page.evaluate(() => (document.body.innerText || '').length).catch(() => 0);
-
-    // Redirect to wrong app (get-involved, home, etc.)
-    if (/getinvolved|\/en\/home/i.test(url)) {
-        return { ok: false, reason: `Redirected to wrong page: ${url}` };
-    }
-    // 500 / Internal Server Error
-    if (/Internal Server Error|500/i.test(title)) {
-        return { ok: false, reason: 'FamilySearch returned 500 Internal Server Error' };
-    }
-    // 403 / Forbidden
-    if (/403|Forbidden/i.test(title)) {
-        return { ok: false, reason: 'FamilySearch returned 403 Forbidden' };
-    }
-    // Completely empty body (SPA didn't render)
-    if (bodyLen < 50) {
-        return { ok: false, reason: `Page body too short (${bodyLen} chars) — SPA may not have rendered` };
-    }
-    return { ok: true, reason: '' };
+    if (url.includes('getinvolved') || url.includes('identity')) return false;
+    const bodyText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+    if (!bodyText || bodyText.length < 100) return false;
+    return true;
 }
 
-/**
- * Navigate with retry logic. Returns true if page loaded OK, false if all retries failed.
- */
-async function navigateWithRetry(page, url, pageNum) {
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            // Give the SPA a moment to render
-            await new Promise(r => setTimeout(r, 2000 + (attempt - 1) * 1000));
-            await ensureIndexOpen(page);
-            await new Promise(r => setTimeout(r, 500));
-
-            const health = await checkPageHealth(page);
-            if (health.ok) return true;
-
-            console.log(`\n  ⚠️  Page ${pageNum} attempt ${attempt}/${MAX_RETRIES}: ${health.reason}`);
-            if (attempt < MAX_RETRIES) {
-                stats.retries++;
-                const delay = RETRY_DELAY_MS * attempt;
-                console.log(`     Retrying in ${delay / 1000}s...`);
-                await new Promise(r => setTimeout(r, delay));
-            }
-        } catch (e) {
-            console.log(`\n  ⚠️  Page ${pageNum} attempt ${attempt}/${MAX_RETRIES}: ${e.message}`);
-            if (attempt < MAX_RETRIES) {
-                stats.retries++;
-                await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
-            }
-        }
-    }
-    return false;
+// ─── Build an image-viewer URL for a specific page (1-indexed) ──────────────
+// FS uses zero-indexed `i=` query param for image number (image 8 = i=7).
+function buildImageUrl(baseUrl, pageNum) {
+    // Strip any existing &i= or ?i= then append &i=<pageNum-1>
+    const stripped = baseUrl.replace(/([?&])i=\d+/g, '$1').replace(/[?&]$/, '').replace(/&&+/g, '&');
+    const sep = stripped.includes('?') ? '&' : '?';
+    return `${stripped}${sep}i=${pageNum - 1}`;
 }
 
-async function ensureIndexOpen(page) {
-    // Try to ensure the Image Index panel is rendered/visible.
-    // FamilySearch UI occasionally lazy-loads the index; poke common toggles.
-    try {
-        // Heuristic: if there is a button/tab with text containing 'Index', click it.
-        await page.evaluate(() => {
-            const clickIf = (el) => el && (el.click?.() || el.dispatchEvent?.(new MouseEvent('click', { bubbles: true })));
-            const candidates = Array.from(document.querySelectorAll('button, [role="tab"], a'))
-                .filter(el => /index/i.test(el.textContent || ''));
-            if (candidates.length) clickIf(candidates[0]);
-        });
-        await page.waitForTimeout(1000);
-    } catch (_) {}
-}
+// ─── Navigate the puppeteer-controlled page to a specific image ─────────────
+// FamilySearch's image viewer is an SPA — page.goto() with only the `i=` query
+// param changing does NOT re-render the table, and React's synthetic event
+// system ignores `dispatchEvent` on the image-number input. The reliable path:
+//   • First call (not yet on the branch viewer) → full page.goto() with `&i=`
+//   • Subsequent calls → click the "Next Image" button FS provides in-viewer
+// The main loop advances sequentially, so one click per iteration is enough.
+async function navigateToPage(page, baseUrl, pageNum) {
+    // Each image in a roll has its OWN ark ID, so we can't detect "still on the
+    // right viewer" by ark. The `wc=` waypoint parameter is constant across all
+    // images in the same roll, so use that instead.
+    const wcMatch = baseUrl.match(/wc=([^&]+)/);
+    const wc = wcMatch && wcMatch[1];
+    const curUrl = page.url();
+    const onBranchViewer = wc && curUrl.includes(`wc=${wc}`) && /\/ark:\/61903\/3:1:/.test(curUrl);
 
-async function dumpDebug(page, i, note = '') {
-    try {
-        const html = await page.content();
-        const text = await page.evaluate(() => document.body.innerText || '');
-        const fs = require('fs');
-        const path = require('path');
-        const dir = path.resolve(__dirname, '../debug/freedmens-bank');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, `indexed-page-${i}-body.txt`), text, 'utf8');
-        fs.writeFileSync(path.join(dir, `indexed-page-${i}-dom.html`), html, 'utf8');
-        if (note) fs.writeFileSync(path.join(dir, `indexed-page-${i}-note.txt`), note, 'utf8');
-    } catch (_) {}
-}
-
-async function scrapePage(page, pageNum) {
-    // Best-effort to make sure the index is visible
-    await ensureIndexOpen(page);
-
-    // Extract entries from the Image Index panel - be robust to UI text changes
-    const text = await page.evaluate(() => document.body.innerText || '');
-
-    // Newer FS UI may use 'Attach' (title case) or different separators; split loosely
-    let entries = text.split(/More\s+Attach|More\s+ATTACH|ATTACH\s*$/im).slice(1);
-    if (!entries.length) {
-        // Fallback: split on just 'Attach' occurrences while avoiding excessive splits
-        const rough = text.split(/\nAttach\n/gi);
-        if (rough.length > 1) entries = rough.slice(1);
-    }
-    if (!entries.length) {
-        // As a last resort, dump debug for analysis and return empty to continue
-        await dumpDebug(page, pageNum, 'No index entries detected with current split patterns.');
-    }
-
-    const records = [];
-    for (const entry of entries) {
-        const lines = entry.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        if (lines.length < 2) continue;
-
-        const name = lines[0];
-        if (!name || name.length < 2 || name === 'Name' || name.includes('Column') || name === 'ATTACH') continue;
-
-        const record = { name };
-        for (const line of lines.slice(1)) {
-            if (/^\d+ years$/.test(line)) record.age = line;
-            else if (/^\d{4}$/.test(line)) record.birthYear = parseInt(line);
-            else if (/^\d+ \w+ \d{4}$/.test(line)) record.eventDate = line;
-            else if (/^\d{3,5}$/.test(line)) record.accountNumber = line;
-            else if (/Male|Female/.test(line)) { /* skip sex fields */ }
-            else if (/,.*,.*United States/.test(line)) record.eventPlace = line;
-            else if (/St\.|Street|Ally|Hospital|Village|Ave|Road/i.test(line) && !record.residence) record.residence = line;
-            else if (/S\.C\.|N\.C\.|Va\.|Ga\.|Ala\.|Miss\.|Tenn\.|Ky\.|La\.|Md\.|Pa\.|Fla\.|Ark\.|Mo\./i.test(line) && !record.birthplace) record.birthplace = line;
-            else if (/Painter|Nurse|Steward|Carpenter|Soldier|Cook|Laborer|Washer|Servant|Farmer|Plasterer|Porter|Drayman|Driver|Waiter|Barber|Blacksmith|Mason|Seamstress|Laundress/i.test(line)) record.occupation = line;
-            else if (/^(Brown|Black|Yellow|Light|Dark|Copper|Mulatto|Bright|Ginger)/i.test(line)) record.complexion = line;
-            else if (/Dead/.test(line)) record.status = 'Dead';
-        }
-
-        records.push(record);
-    }
-
-    // If nothing parsed, dump a debug snapshot for this page once
-    if (!records.length) {
-        await dumpDebug(page, pageNum, 'Parsed 0 records after splitting entries.');
-    }
-
-    return records;
-}
-
-async function storeRecords(records) {
-    if (DRY_RUN) {
-        records.forEach(r => console.log(`  [DRY] ${r.name} | ${r.occupation || '?'} | ${r.complexion || '?'} | acct ${r.accountNumber || '?'}`));
-        stats.stored += records.length;
+    if (!onBranchViewer) {
+        const url = buildImageUrl(baseUrl, pageNum);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        try { await page.waitForSelector('tr[data-testid]', { timeout: 15000 }); } catch (_) {}
         return;
     }
 
-    for (const r of records) {
-        try {
-            const ctx = [
-                `Freedman's Bank depositor, ${BRANCH}`,
-                r.occupation ? `Occupation: ${r.occupation}` : null,
-                r.complexion ? `Complexion: ${r.complexion}` : null,
-                r.birthplace ? `Born: ${r.birthplace}` : null,
-                r.residence ? `Residence: ${r.residence}` : null,
-                r.accountNumber ? `Account #${r.accountNumber}` : null,
-                r.eventDate ? `Date: ${r.eventDate}` : null
-            ].filter(Boolean).join('. ');
+    // Click FS's "Next Image" button.
+    const clicked = await page.evaluate(() => {
+        const btn = document.querySelector('button[aria-label="Next Image"]');
+        if (!btn || btn.disabled) return false;
+        btn.click();
+        return true;
+    }).catch(() => false);
 
-            await sql`
-                INSERT INTO unconfirmed_persons (
-                    full_name, person_type, locations,
-                    source_url, source_page_title, extraction_method,
-                    context_text, confidence_score, source_type,
-                    relationships
-                ) VALUES (
-                    ${r.name},
-                    'freedperson',
-                    ${[BRANCH]},
-                    ${'https://www.familysearch.org/en/search/collection/1417695'},
-                    ${"Freedman's Bank Records — " + BRANCH},
-                    ${'freedmens_bank_index'},
-                    ${ctx},
-                    ${0.95},
-                    ${'bank_record'},
-                    ${JSON.stringify({
-                        age: r.age || null,
-                        birth_year: r.birthYear || null,
-                        birthplace: r.birthplace || null,
-                        residence: r.residence || null,
-                        occupation: r.occupation || null,
-                        complexion: r.complexion || null,
-                        account_number: r.accountNumber || null,
-                        event_date: r.eventDate || null,
-                        status: r.status || null,
-                        branch: BRANCH,
-                        citation: "Freedman's Bank Records, 1865-1874. FamilySearch Collection 1417695."
-                    })}
-                )
-            `;
-            stats.stored++;
-        } catch (e) {
-            stats.errors++;
-        }
+    if (!clicked) {
+        // Button missing or disabled (end of roll, or viewer not loaded) —
+        // fall back to a full goto of the target image.
+        const url = buildImageUrl(baseUrl, pageNum);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        try { await page.waitForSelector('tr[data-testid]', { timeout: 15000 }); } catch (_) {}
+        return;
     }
+
+    // Fixed wait for FS's React viewer to load the new image's Image Index.
+    // Empirically 4s is enough for indexed data to populate. Stability polling
+    // exited too early (React's row-unmount phase looks like a "change").
+    await new Promise(r => setTimeout(r, 4000));
 }
 
+// ─── Ensure the Image Index tab is active (in case Information is default) ──
+async function ensureImageIndexTab(page) {
+    try {
+        await page.evaluate(() => {
+            const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+            const idx = tabs.find(t => /image\s*index/i.test(t.innerText || ''));
+            if (idx && idx.getAttribute('aria-selected') !== 'true') idx.click();
+        });
+        await new Promise(r => setTimeout(r, 400));
+    } catch (_) {}
+}
+
+// ─── Extraction: <th scope="row"> anchor + content classification ───────────
+// Per-row column positions vary — the React table skips empty columns for some
+// rows. But every row has one stable anchor: a <th scope="row"> containing the
+// person's name. We use that for full_name, then scan the other cells by
+// content to classify account_number / event_place / gender / other names.
+async function extractRecords(page) {
+    return await page.evaluate(() => {
+        const NAME_REJECT_PATTERNS = [
+            /^transferred\s+from/i,
+            /^A\/C\s*No\./i,
+            /^account\s*#?\d+/i,
+            /^\d+$/,
+            /^(more|attach|name|dead|closed|male|female)$/i
+        ];
+        // Source-text notes ("His brother Wm Morgan came with him", "Husband of
+        // Sarah, both deceased") look name-like but are prose. Reject strings
+        // that are too long, too wordy, or contain sentence-y words.
+        const NOTE_WORD_RE = /\b(with|came|was|were|his|her|their|both|from|wife|husband|brother|sister|son|daughter|dead|deceased|formerly|belonged|owned|free|slave|old|years|lived)\b/i;
+        const looksLikeNote = (s) =>
+            s.length > 40 ||
+            s.split(/\s+/).length > 5 ||
+            NOTE_WORD_RE.test(s);
+        const isNameLike = (s) => {
+            if (!s || s.length < 2) return false;
+            if (NAME_REJECT_PATTERNS.some(rx => rx.test(s))) return false;
+            return true;
+        };
+        const isPersonName = (s) => isNameLike(s) && !looksLikeNote(s);
+        const cellText = (el) => (el && el.innerText || '').replace(/\s+/g, ' ').trim();
+
+        const table = document.querySelector('table[role="table"]') || document.querySelector('table');
+        if (!table) return [];
+
+        const results = [];
+        const rows = Array.from(table.querySelectorAll('tr[data-testid]'));
+
+        for (const row of rows) {
+            // Name is always at children[2] — positions 0 and 1 are the More/ATTACH
+            // action buttons, and position 2 is the Name column (sometimes rendered
+            // as <th scope="row">, sometimes as <td> after React hydration).
+            const children = row.children;
+            if (children.length < 3) continue;
+            const nameCell = children[2];
+            const full_name = cellText(nameCell);
+            if (!isNameLike(full_name)) continue;
+
+            const rawArk = row.getAttribute('data-testid') || '';
+            const arkMatch = rawArk.match(/\/ark:\/61903\/1:1:([A-Z0-9-]+)/);
+            const record_ark = arkMatch
+                ? `https://www.familysearch.org/ark:/61903/1:1:${arkMatch[1]}`
+                : null;
+
+            const record = {
+                full_name,
+                account_number: null,
+                event_place: null,
+                gender: null,
+                family_members: [],
+                record_ark
+            };
+
+            // Scan every OTHER cell (td + th) in the row and classify by content.
+            // Skip the name cell and the More/ATTACH button tds.
+            const BUTTON_TEXT = new Set(['More', 'ATTACH', 'Attach']);
+            for (const cell of row.children) {
+                if (cell === nameCell) continue;
+                const v = cellText(cell);
+                if (!v) continue;
+                if (BUTTON_TEXT.has(v)) continue;
+
+                if (/^\d{3,6}$/.test(v)) {
+                    if (!record.account_number) record.account_number = v;
+                } else if (/,.*,.*United States/i.test(v) || /,.*,.*[A-Z][a-z]+$/.test(v)) {
+                    if (!record.event_place) record.event_place = v;
+                } else if (v === 'Male' || v === 'Female') {
+                    // These are Father's Sex / Mother's Sex — not this person's gender.
+                    // Skip rather than misattribute.
+                    continue;
+                } else if (isPersonName(v) && v !== full_name) {
+                    // Some other person referenced in this row — capture as family_member
+                    // without attempting rel classification (column positions are unreliable).
+                    // isPersonName excludes source-text prose notes.
+                    record.family_members.push({ rel: 'family_member', name: v });
+                }
+                // Anything else (source-text notes, "Dead", etc.) is ignored.
+            }
+
+            results.push(record);
+        }
+
+        return results;
+    });
+}
+
+// ─── Store to Neon ────────────────────────────────────────────────────────────
+async function storeRecords(records) {
+    let inserted = 0;
+    for (const r of records) {
+        if (!r.full_name || r.full_name.length < 2) continue;
+
+        const locationArr = [BRANCH];
+        if (r.event_place) locationArr.push(r.event_place);
+
+        // family_members is now [{rel, name}] from the column-header extractor.
+        const rels = r.family_members.map(fm => ({ type: fm.rel || 'family_member', name: fm.name }));
+
+        const context = [
+            `Freedman's Bank depositor, ${BRANCH}`,
+            r.account_number ? `account #${r.account_number}` : null
+        ].filter(Boolean).join(', ');
+
+        if (DRY_RUN) {
+            console.log('DRY RUN:', JSON.stringify({
+                full_name: r.full_name,
+                account_number: r.account_number,
+                event_place: r.event_place,
+                gender: r.gender,
+                family_members: r.family_members
+            }));
+            continue;
+        }
+
+        let attempts = 0;
+        while (attempts < 5) {
+            try {
+                // locations is text[] — pass JS array directly (neon serializes it)
+                // relationships is jsonb — cast the JSON string explicitly
+                // source_url uses record_ark if available, else the collection URL
+                const sourceUrl = r.record_ark || DB_URL;
+                await sql`
+                    INSERT INTO unconfirmed_persons (
+                        full_name, person_type, gender, locations,
+                        source_url, extraction_method, context_text,
+                        relationships, source_type
+                    ) VALUES (
+                        ${r.full_name},
+                        'freedperson',
+                        ${r.gender},
+                        ${locationArr},
+                        ${sourceUrl},
+                        'freedmens_bank_index',
+                        ${context},
+                        ${JSON.stringify(rels)}::jsonb,
+                        'secondary'
+                    ) ON CONFLICT DO NOTHING
+                `;
+                inserted++;
+                break;
+            } catch (err) {
+                attempts++;
+                if (attempts >= 5) {
+                    console.error(`DB insert failed for "${r.full_name}": ${err.message}`);
+                } else {
+                    console.error(`DB error attempt ${attempts}: ${err.message} — retrying in 10s`);
+                    await new Promise(res => setTimeout(res, 10000));
+                }
+            }
+        }
+    }
+    return inserted;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`  FREEDMEN'S BANK — INDEXED BRANCH SCRAPER`);
-    console.log(`  Branch: ${BRANCH}`);
-    console.log(`  Mode: ${DRY_RUN ? 'DRY RUN' : 'LIVE'}`);
-    console.log(`${'='.repeat(60)}\n`);
-
-    sql = neon(process.env.DATABASE_URL);
-    browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
-
-    const branchConfig = BRANCHES[BRANCH];
-    if (!branchConfig) {
-        console.log('Unknown branch. Available: ' + Object.keys(BRANCHES).join(', '));
+    const config = BRANCHES[BRANCH];
+    if (!config) {
+        console.error(`Branch "${BRANCH}" not found!\nAvailable: ${Object.keys(BRANCHES).join(', ')}`);
         process.exit(1);
     }
 
-    for (const roll of branchConfig.rolls) {
-        console.log(`\n── ${roll.label} (${roll.totalImages} images) ──\n`);
+    const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
 
-        const page = await browser.newPage();
-        const endPage = Math.min(START_PAGE + PAGE_LIMIT, roll.totalImages);
+    console.log(`\n── SCRAPING ${BRANCH} (Start: ${START_PAGE}, Total: ${config.total}) ──\n`);
+    if (DRY_RUN) console.log('>>> DRY RUN MODE — no DB writes <<<\n');
 
-        let consecutiveEmpty = 0;
-
-        for (let i = START_PAGE; i < endPage; i++) {
-            // Build URL: use ARK-based or index-based depending on what we have
-            let url;
-            if (roll.ark && roll.wc) {
-                url = `https://www.familysearch.org/ark:/61903/${roll.ark}?wc=${roll.wc}&cc=1417695&i=${i}`;
-            } else if (roll.indexUrl) {
-                url = roll.indexUrl + (roll.indexUrl.includes('?') ? '&' : '?') + 'i=' + i;
-            } else {
-                continue;
-            }
-
-            try {
-                const loaded = await navigateWithRetry(page, url, i);
-                if (!loaded) {
-                    stats.skipped++;
-                    consecutiveEmpty++;
-                    await dumpDebug(page, i, `Skipped: page failed health check after ${MAX_RETRIES} retries`);
-                    console.log(`\n  ❌ Page ${i} skipped after ${MAX_RETRIES} retries — possible FS outage`);
-
-                    if (consecutiveEmpty >= MAX_CONSECUTIVE_EMPTY) {
-                        console.log(`\n  🛑 ${MAX_CONSECUTIVE_EMPTY} consecutive empty/failed pages — FamilySearch may be down.`);
-                        console.log(`     Stopping. Resume later with --start ${i}`);
-                        break;
-                    }
-                    continue;
-                }
-
-                const records = await scrapePage(page, i);
-                stats.records += records.length;
-                stats.pages++;
-
-                if (records.length > 0) {
-                    consecutiveEmpty = 0; // Reset on success
-                } else {
-                    consecutiveEmpty++;
-                }
-
-                await storeRecords(records);
-
-                process.stdout.write(`\r  Page ${i+1}/${endPage} — ${stats.records} records, ${stats.stored} stored, ${stats.skipped} skipped`);
-
-                if (consecutiveEmpty >= MAX_CONSECUTIVE_EMPTY) {
-                    console.log(`\n  🛑 ${MAX_CONSECUTIVE_EMPTY} consecutive empty pages — may need URL format update.`);
-                    console.log(`     Stopping. Check debug/freedmens-bank/ for page dumps. Resume with --start ${i + 1}`);
-                    break;
-                }
-            } catch (e) {
-                stats.errors++;
-                consecutiveEmpty++;
-                await dumpDebug(page, i, `Error on page ${i}: ${e?.message || e}`);
-            }
-
-            // Rate limit — be polite
-            await new Promise(r => setTimeout(r, 500));
-        }
-
-        await page.close();
+    // Use an existing FS tab if available (preserves login session), otherwise
+    // open a new one. We own navigation via page.goto() from here on.
+    const allPages = await browser.pages();
+    let page = allPages.find(p => /familysearch\.org/.test(p.url()));
+    if (!page) {
+        console.log('  → No FS tab found; opening a new one.');
+        page = await browser.newPage();
+    } else {
+        console.log(`  → Reusing existing tab: ${page.url().substring(0, 90)}`);
     }
 
-    const elapsed = ((Date.now() - stats.startTime) / 1000 / 60).toFixed(1);
-    console.log(`\n\n${'='.repeat(60)}`);
-    console.log(`  COMPLETE — ${BRANCH}`);
-    console.log(`${'='.repeat(60)}`);
-    console.log(`  Pages: ${stats.pages}`);
-    console.log(`  Records: ${stats.records}`);
-    console.log(`  Stored: ${stats.stored}`);
-    console.log(`  Skipped: ${stats.skipped}`);
-    console.log(`  Retries: ${stats.retries}`);
-    console.log(`  Errors: ${stats.errors}`);
-    console.log(`  Elapsed: ${elapsed} min`);
-    console.log('');
+    // Explicit initial goto to START_PAGE so --start aligns regardless of the
+    // tab's prior state. Subsequent iterations advance via "Next Image" click.
+    const firstUrl = buildImageUrl(config.url, START_PAGE + 1);
+    console.log(`  → Initial goto: image ${START_PAGE + 1}`);
+    await page.goto(firstUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    try { await page.waitForSelector('tr[data-testid]', { timeout: 15000 }); } catch (_) {}
+    await new Promise(r => setTimeout(r, 2000));
+
+    let consecutiveEmpty = 0;
+    let totalInserted = 0;
+
+    for (let i = START_PAGE; i < config.total; i++) {
+        const pageNum = i + 1;
+        // First iteration: we already landed here via the initial goto above,
+        // so just extract. Subsequent iterations click Next Image.
+        const isFirst = (i === START_PAGE);
+
+        try {
+            if (!isFirst) await navigateToPage(page, config.url, pageNum);
+        } catch (err) {
+            console.error(`Navigation failed on page ${pageNum}: ${err.message}`);
+            consecutiveEmpty++;
+            if (consecutiveEmpty >= 10) {
+                console.error('10 consecutive navigation failures. Aborting.');
+                process.exit(1);
+            }
+            continue;
+        }
+
+        if (!(await checkPageHealth(page))) {
+            consecutiveEmpty++;
+            console.error(`Page ${pageNum} health check failed (url=${page.url().substring(0,60)}). Consecutive: ${consecutiveEmpty}`);
+            if (consecutiveEmpty >= 10) {
+                console.error('10 consecutive failures. Aborting.');
+                process.exit(1);
+            }
+            continue;
+        }
+
+        await ensureImageIndexTab(page);
+        const records = await extractRecords(page);
+        const inserted = await storeRecords(records);
+        totalInserted += inserted;
+
+        if (records.length > 0) consecutiveEmpty = 0;
+        else consecutiveEmpty++;
+
+        console.log(`Page ${pageNum}/${config.total} — extracted ${records.length}, inserted ${inserted} (total: ${totalInserted})`);
+
+        if (records.length === 0) {
+            const debugDir = path.resolve(__dirname, '../debug/freedmens-bank');
+            if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+            const bodyHtml = await page.evaluate(() => document.body.innerHTML).catch(() => '');
+            fs.writeFileSync(path.join(debugDir, `page-${pageNum}-empty.html`), bodyHtml);
+            console.warn(`  → Debug dump saved to debug/freedmens-bank/page-${pageNum}-empty.html`);
+        }
+    }
+
+    console.log(`\n✅ Done. Total inserted: ${totalInserted}`);
 }
 
-main().catch(err => { console.error('Fatal:', err.message); process.exit(1); });
+main().catch(err => {
+    console.error('Fatal:', err.message);
+    process.exit(1);
+});
