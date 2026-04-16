@@ -103,11 +103,12 @@ const BRANCHES = {
         endPage: 764
     },
 
-    // Verified 2026-04-15: Baltimore — data on images 11–825.
+    // Verified 2026-04-16: Baltimore — data starts at image 10. Starting from 1
+    // and letting the scraper skip 9 empty cover pages naturally.
     'Baltimore, Maryland': {
-        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6737-LHB?wc=3MDR-VZS%3A1551795403%2C1551795401%26cc%3D1417695&cc=1417695&lang=en&i=10',
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6737-LHB?wc=3MDR-VZS%3A1551795403%2C1551795401%26cc%3D1417695&cc=1417695&lang=en&i=0',
         location: 'Baltimore, Maryland',
-        startPage: 11,
+        startPage: 1,
         endPage: 825
     }
 };
@@ -472,10 +473,12 @@ async function main() {
         console.log(`  → Reusing existing tab: ${page.url().substring(0, 90)}`);
     }
 
-    // Explicit initial goto to the start image so navigation aligns regardless
-    // of the tab's prior state. Subsequent iterations advance via "Next Image".
+    // Navigate to the branch's base URL. Go to about:blank first to force a
+    // clean SPA load (FS ignores i= param changes on same-origin navigation).
+    console.log(`  → Initial goto: ${config.location} image ${startIdx0 + 1}`);
+    await page.goto('about:blank', { waitUntil: 'load', timeout: 10000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 500));
     const firstUrl = buildImageUrl(config.url, startIdx0 + 1);
-    console.log(`  → Initial goto: image ${startIdx0 + 1}`);
     await page.goto(firstUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     try { await page.waitForSelector('tr[data-testid]', { timeout: 15000 }); } catch (_) {}
     await new Promise(r => setTimeout(r, 2000));
