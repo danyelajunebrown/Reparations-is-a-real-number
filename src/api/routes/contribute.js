@@ -3804,6 +3804,82 @@ router.post('/review-queue/approve-all', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════════════
+// FREEDMEN'S BANK DEPOSITOR ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════
+
+router.get('/depositors/branches', async (req, res) => {
+    try {
+        const pool = sharedPool;
+        const result = await pool.query(`
+            SELECT locations[1] AS branch, COUNT(*)::int AS depositor_count
+            FROM unconfirmed_persons
+            WHERE extraction_method IN ('freedmens_bank_index', 'freedmens_bank_ocr', 'freedmens_bank_scrape')
+            AND person_type = 'freedperson'
+            GROUP BY locations[1]
+            ORDER BY depositor_count DESC
+        `);
+        res.json({ branches: result.rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/depositors/search', async (req, res) => {
+    try {
+        const { q, branch, limit = 50, offset = 0 } = req.query;
+        const pool = sharedPool;
+        const params = [];
+        const conditions = [
+            "extraction_method IN ('freedmens_bank_index', 'freedmens_bank_ocr', 'freedmens_bank_scrape')"
+        ];
+
+        if (q && q.length >= 2) {
+            const words = q.split(/\s+/).filter(w => w.length >= 2);
+            words.forEach(w => {
+                params.push(`%${w}%`);
+                conditions.push(`full_name ILIKE $${params.length}`);
+            });
+        }
+
+        if (branch) {
+            params.push(branch);
+            conditions.push(`$${params.length} = ANY(locations)`);
+        }
+
+        params.push(parseInt(limit));
+        params.push(parseInt(offset));
+
+        const result = await pool.query(`
+            SELECT lead_id, full_name, locations, context_text,
+                   relationships, source_url, extraction_method
+            FROM unconfirmed_persons
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY full_name
+            LIMIT $${params.length - 1} OFFSET $${params.length}
+        `, params);
+
+        const countResult = await pool.query(`
+            SELECT COUNT(*)::int AS total
+            FROM unconfirmed_persons
+            WHERE ${conditions.slice(0, -0).join(' AND ')}
+        `, params.slice(0, -2));
+
+        res.json({
+            depositors: result.rows.map(r => ({
+                ...r,
+                family_members: Array.isArray(r.relationships) ? r.relationships : [],
+                branch: r.locations?.[0] || null
+            })),
+            total: countResult.rows[0]?.total || result.rows.length,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = {
     router,
     initializeService

@@ -12,6 +12,7 @@ const CorporatePage = lazy(() => import('./pages/CorporatePage.jsx'));
 const LegalPage = lazy(() => import('./pages/LegalPage.jsx'));
 const BlockchainPage = lazy(() => import('./pages/BlockchainPage.jsx'));
 const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
+const DepositorsPage = lazy(() => import('./pages/DepositorsPage.jsx'));
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
         <nav className="app-nav">
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/search">Search</NavLink>
+          <NavLink to="/depositors">Depositors</NavLink>
           <NavLink to="/lineage">Lineages</NavLink>
           <NavLink to="/documents">Documents</NavLink>
           <NavLink to="/corporate">Corporate Debts</NavLink>
@@ -42,6 +44,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/depositors" element={<DepositorsPage />} />
             <Route path="/person/:source/:id" element={<PersonPage />} />
             <Route path="/lineage" element={<LineagePage />} />
             <Route path="/lineage/:sessionId" element={<LineagePage />} />

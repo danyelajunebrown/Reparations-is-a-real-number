@@ -52,6 +52,9 @@ class MatchVerifier {
         const enslaved = await this.checkIsEnslaved(ancestor);
         if (enslaved) disqualifications.push(enslaved);
 
+        const freedmensBank = await this.checkFreedmensBank(ancestor);
+        if (freedmensBank) disqualifications.push(freedmensBank.evidence);
+
         const freeBlack = await this.checkIsFreeBlack(ancestor);
         if (freeBlack) {
             if (freeBlack.is_slaveholder) {
@@ -234,6 +237,45 @@ class MatchVerifier {
             }
         } catch (err) {
             // Table may not exist
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if ancestor appears as a Freedmen's Bank depositor.
+     * A match here is strong disqualifying evidence — depositors were
+     * formerly enslaved people, not slaveholders.
+     */
+    async checkFreedmensBank(ancestor) {
+        if (!ancestor.name) return null;
+
+        try {
+            const rows = await this.sql`
+                SELECT lead_id, full_name, locations, context_text, relationships
+                FROM unconfirmed_persons
+                WHERE extraction_method IN ('freedmens_bank_index', 'freedmens_bank_ocr', 'freedmens_bank_scrape')
+                AND LOWER(full_name) = LOWER(${ancestor.name})
+                ${ancestor.birth_year ? this.sql`AND (birth_year IS NULL OR ABS(birth_year - ${ancestor.birth_year}) <= 10)` : this.sql``}
+                LIMIT 5
+            `;
+
+            if (rows.length > 0) {
+                const row = rows[0];
+                const branch = row.locations?.[0] || 'unknown branch';
+                return {
+                    evidence: {
+                        type: 'disqualifying',
+                        source: 'freedmens_bank',
+                        detail: `Found as Freedmen's Bank depositor at ${branch} (${row.context_text || ''})`.substring(0, 300),
+                        weight: -0.40,
+                        freedperson: true
+                    },
+                    depositor: row
+                };
+            }
+        } catch (err) {
+            // Non-fatal
         }
 
         return null;
@@ -509,6 +551,14 @@ class MatchVerifier {
         if (enslavedDisq) {
             classification = 'enslaved_ancestor';
             return this._verdict(classification, adjustedConfidence, allEvidence, false, null);
+        }
+
+        // 2b. Found as Freedmen's Bank depositor (formerly enslaved)
+        const freedpersonDisq = disqualifications.find(d => d.freedperson);
+        if (freedpersonDisq) {
+            classification = 'enslaved_ancestor';
+            return this._verdict(classification, adjustedConfidence, allEvidence, false,
+                'Identified as Freedmen\'s Bank depositor — formerly enslaved person');
         }
 
         // 3. Free POC slaveholder

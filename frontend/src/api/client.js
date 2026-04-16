@@ -104,6 +104,17 @@ export const api = {
     return request(`/api/contribute/browse?${params}`);
   },
 
+  // Freedmen's Bank depositors
+  getDepositorBranches: () => request('/api/contribute/depositors/branches'),
+  searchDepositors: ({ q, branch, limit = 50, offset = 0 } = {}, signal) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (branch) params.set('branch', branch);
+    params.set('limit', limit);
+    params.set('offset', offset);
+    return request(`/api/contribute/depositors/search?${params}`, { signal });
+  },
+
   // Ancestor climb sessions (for lineage graph + participant profiles)
   listClimbSessions: () => request('/api/ancestor-climb/sessions'),
   getClimbSession: (id) => request(`/api/ancestor-climb/session/${id}`),

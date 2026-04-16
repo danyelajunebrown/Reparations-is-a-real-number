@@ -75,6 +75,40 @@ const BRANCHES = {
         url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-XCR9-CGX?wc=3MDR-BZW%3A1551805235%2C1551805233%26cc%3D1417695&lang=en&i=0&cc=1417695',
         location: 'Wilmington, North Carolina',
         rollLabel: 'Roll 18'
+    },
+
+    // Verified 2026-04-15: DC Roll 4 — data on images 12–839.
+    'Washington, D.C. — Roll 4': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-X4XW-P9?wc=3MDR-RM9%3A1551794703%2C1551800972%26cc%3D1417695&cc=1417695&lang=en&i=11',
+        location: 'Washington, D.C.',
+        rollLabel: 'Roll 4',
+        startPage: 12,
+        endPage: 839
+    },
+
+    // Verified 2026-04-15: DC Roll 5 — data on images 9–488.
+    'Washington, D.C. — Roll 5': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-DYF3-BGP?wc=3MDR-2NG%3A1551794703%2C1551794701%26cc%3D1417695&cc=1417695&lang=en&i=8',
+        location: 'Washington, D.C.',
+        rollLabel: 'Roll 5',
+        startPage: 9,
+        endPage: 488
+    },
+
+    // Verified 2026-04-15: NYC — data on images 9–764.
+    'New York, New York': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6QC3-XDG?wc=3MDR-N3X%3A1551794903%2C1551794901%26cc%3D1417695&lang=en&i=8&cc=1417695',
+        location: 'New York, New York',
+        startPage: 9,
+        endPage: 764
+    },
+
+    // Verified 2026-04-15: Baltimore — data on images 11–825.
+    'Baltimore, Maryland': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6737-LHB?wc=3MDR-VZS%3A1551795403%2C1551795401%26cc%3D1417695&cc=1417695&lang=en&i=10',
+        location: 'Baltimore, Maryland',
+        startPage: 11,
+        endPage: 825
     }
 };
 
@@ -410,9 +444,21 @@ async function main() {
         process.exit(1);
     }
 
+    // Resolve scrape bounds. CLI --start overrides config.startPage if given.
+    // config.endPage (1-indexed, inclusive) bounds the upper limit; falls back
+    // to config.total - 1 to preserve backward compat with older entries.
+    const cliStartProvided = process.argv.indexOf('--start') !== -1;
+    const startIdx0 = cliStartProvided
+        ? START_PAGE
+        : (config.startPage !== undefined ? config.startPage - 1 : 0);
+    const endIdx0Inclusive = config.endPage !== undefined
+        ? config.endPage - 1
+        : (config.total - 1);
+    const loopEnd = endIdx0Inclusive + 1; // loop uses < upper bound
+
     const browser = await puppeteer.connect({ browserURL: 'http://localhost:9222', defaultViewport: null });
 
-    console.log(`\n── SCRAPING ${BRANCH} (Start: ${START_PAGE}, Total: ${config.total}) ──\n`);
+    console.log(`\n── SCRAPING ${BRANCH} (images ${startIdx0 + 1}–${endIdx0Inclusive + 1}) ──\n`);
     if (DRY_RUN) console.log('>>> DRY RUN MODE — no DB writes <<<\n');
 
     // Use an existing FS tab if available (preserves login session), otherwise
@@ -426,10 +472,10 @@ async function main() {
         console.log(`  → Reusing existing tab: ${page.url().substring(0, 90)}`);
     }
 
-    // Explicit initial goto to START_PAGE so --start aligns regardless of the
-    // tab's prior state. Subsequent iterations advance via "Next Image" click.
-    const firstUrl = buildImageUrl(config.url, START_PAGE + 1);
-    console.log(`  → Initial goto: image ${START_PAGE + 1}`);
+    // Explicit initial goto to the start image so navigation aligns regardless
+    // of the tab's prior state. Subsequent iterations advance via "Next Image".
+    const firstUrl = buildImageUrl(config.url, startIdx0 + 1);
+    console.log(`  → Initial goto: image ${startIdx0 + 1}`);
     await page.goto(firstUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     try { await page.waitForSelector('tr[data-testid]', { timeout: 15000 }); } catch (_) {}
     await new Promise(r => setTimeout(r, 2000));
@@ -439,11 +485,11 @@ async function main() {
     let prevRowSignature = null; // fingerprint of the previous page's records, used to detect end-of-roll
     let duplicateStreak = 0;
 
-    for (let i = START_PAGE; i < config.total; i++) {
+    for (let i = startIdx0; i < loopEnd; i++) {
         const pageNum = i + 1;
         // First iteration: we already landed here via the initial goto above,
         // so just extract. Subsequent iterations click Next Image.
-        const isFirst = (i === START_PAGE);
+        const isFirst = (i === startIdx0);
 
         try {
             if (!isFirst) await navigateToPage(page, config.url, pageNum);
@@ -478,7 +524,7 @@ async function main() {
         const signature = records.map(r => `${r.full_name}|${r.account_number}|${r.record_ark}`).join('||');
         if (!isFirst && signature && signature === prevRowSignature) {
             duplicateStreak++;
-            console.log(`Page ${pageNum}/${config.total} — duplicate of previous page, skipping insert (streak: ${duplicateStreak})`);
+            console.log(`Page ${pageNum}/${endIdx0Inclusive + 1} — duplicate of previous page, skipping insert (streak: ${duplicateStreak})`);
             if (duplicateStreak >= 2) {
                 console.log(`  → End of roll reached (2 consecutive duplicate pages). Stopping.`);
                 break;
@@ -494,7 +540,7 @@ async function main() {
         if (records.length > 0) consecutiveEmpty = 0;
         else consecutiveEmpty++;
 
-        console.log(`Page ${pageNum}/${config.total} — extracted ${records.length}, inserted ${inserted} (total: ${totalInserted})`);
+        console.log(`Page ${pageNum}/${endIdx0Inclusive + 1} — extracted ${records.length}, inserted ${inserted} (total: ${totalInserted})`);
 
         if (records.length === 0) {
             const debugDir = path.resolve(__dirname, '../debug/freedmens-bank');
