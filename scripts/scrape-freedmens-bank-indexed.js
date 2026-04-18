@@ -36,13 +36,31 @@ const DRY_RUN = args.includes('--dry-run');
 //   rollLabel  — optional identifier like "Roll 26" that goes into context_text only,
 //                so roll provenance is preserved without polluting locations.
 const BRANCHES = {
-    // Verified 2026-04-14: first page with structured data is image 8 (i=7).
-    // Pages 1-7 are ledger cover/header blanks with an empty Image Index tab.
+    // Charleston has 3 rolls. Roll 22 already scraped (15,854 rows on 2026-04-15).
+    // Roll 21: Dec 19, 1865 – Dec 2, 1869, accounts 1-319, 2151-3824. Data starts image 10.
+    'Charleston, South Carolina — Roll 21': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-XCQC-QG?wc=3MDR-T38%3A1551795003%2C1551804076%26cc%3D1417695&cc=1417695&lang=en&i=9',
+        location: 'Charleston, South Carolina',
+        rollLabel: 'Roll 21',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Roll 22: already scraped (15,854 rows). Keeping entry for reference / re-runs.
     'Charleston, South Carolina': {
         total: 421,
         url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-XCQD-6X?wc=3MDR-T3D%3A1551795003%2C1551795001%26cc%3D1417695&cc=1417695&lang=en&i=7',
         location: 'Charleston, South Carolina',
         rollLabel: 'Roll 22'
+    },
+
+    // Roll 23: Feb 25, 1871 – July 2, 1874, accounts 6627-11103. Data starts image 10.
+    'Charleston, South Carolina — Roll 23': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-67L3-QMP?wc=3MDR-PTG%3A1551795003%2C1551810233%26cc%3D1417695&cc=1417695&lang=en&i=9',
+        location: 'Charleston, South Carolina',
+        rollLabel: 'Roll 23',
+        startPage: 1,
+        endPage: 500
     },
 
     // Verified 2026-04-15: Roll 26 (1867-1870, accounts 232-1582). Data on i=0.
@@ -101,6 +119,202 @@ const BRANCHES = {
         location: 'New York, New York',
         startPage: 9,
         endPage: 764
+    },
+
+    // Verified 2026-04-16: Beaufort — data starts image 8.
+    'Beaufort, South Carolina': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-6SN3-8SS?wc=3MDR-L2S%3A1551794803%2C1551794801%26cc%3D1417695&cc=1417695&lang=en&i=7',
+        location: 'Beaufort, South Carolina',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Huntsville AL — data starts image 2.
+    'Huntsville, Alabama': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6R7Q-LLC?wc=3MDR-K6J%3A1551795533%2C1551795531%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'Huntsville, Alabama',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Savannah GA, Roll 8 — data starts image 13.
+    'Savannah, Georgia — Roll 8': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3SW-NW8G-C?wc=3MDR-BZ4%3A1551794203%2C1551794201%26cc%3D1417695&cc=1417695&lang=en&i=12',
+        location: 'Savannah, Georgia',
+        rollLabel: 'Roll 8',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Augusta GA — data starts image 10.
+    'Augusta, Georgia': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3SW-NWZC?wc=3MDR-YWG%3A1551808627%2C1551808625%26cc%3D1417695&lang=en&i=9&cc=1417695',
+        location: 'Augusta, Georgia',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Atlanta GA — data starts image 10.
+    'Atlanta, Georgia': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-6723-5NQ?wc=3MDR-GPX%3A1551795103%2C1551795101%26cc%3D1417695&lang=en&i=9&cc=1417695',
+        location: 'Atlanta, Georgia',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Vicksburg MS — data starts image 10.
+    'Vicksburg, Mississippi': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-D4L4-G33?wc=3MDR-DPD%3A1551805039%2C1551805037%26cc%3D1417695&lang=en&i=9&cc=1417695',
+        location: 'Vicksburg, Mississippi',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Tallahassee FL — data starts image 2.
+    'Tallahassee, Florida': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-DYFQ-35C?wc=3MDR-2N5%3A1551819164%2C1551819162%26cc%3D1417695&lang=en&i=1&cc=1417695',
+        location: 'Tallahassee, Florida',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: St. Louis MO — data starts image 10.
+    'St. Louis, Missouri': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6QC3-XK2?wc=3MDR-N3D%3A1551836529%2C1551836527%26cc%3D1417695&lang=en&i=9&cc=1417695',
+        location: 'St. Louis, Missouri',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Shreveport LA — data starts image 2.
+    'Shreveport, Louisiana': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-63Y9-7PF?wc=3MDR-6T5%3A1551797114%2C1551797112%26cc%3D1417695&lang=en&i=1&cc=1417695',
+        location: 'Shreveport, Louisiana',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Savannah GA, Roll 10 — data starts image 12.
+    'Savannah, Georgia — Roll 10': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-67ZW-8D1?wc=3MDR-GPD%3A1551794203%2C1551803507%26cc%3D1417695&lang=en&i=11&cc=1417695',
+        location: 'Savannah, Georgia',
+        rollLabel: 'Roll 10',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Savannah GA, Roll 9 — data starts image 9.
+    'Savannah, Georgia — Roll 9': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3SW-NHJH?wc=3MDR-168%3A1551794203%2C1551794301%26cc%3D1417695&lang=en&i=8&cc=1417695',
+        location: 'Savannah, Georgia',
+        rollLabel: 'Roll 9',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Philadelphia PA — data starts image 11.
+    'Philadelphia, Pennsylvania': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-6SN3-ZBY?wc=3MDR-L2Q%3A1551816897%2C1551816895%26cc%3D1417695&lang=en&i=10&cc=1417695',
+        location: 'Philadelphia, Pennsylvania',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Norfolk VA — data starts image 2.
+    'Norfolk, Virginia': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-67Q3-899?wc=3MDR-K6D%3A1551795911%2C1551795909%26cc%3D1417695&lang=en&i=1&cc=1417695',
+        location: 'Norfolk, Virginia',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: New Orleans LA — data starts image 2.
+    'New Orleans, Louisiana': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-63Y9-H8K?wc=3MDR-6TG%3A1551795303%2C1551795301%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'New Orleans, Louisiana',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: New Bern NC — data starts image 2.
+    'New Bern, North Carolina': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3SW-NW84?wc=3MDR-BZS%3A1551794103%2C1551794101%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'New Bern, North Carolina',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Natchez MS — data starts image 2.
+    'Natchez, Mississippi': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-D4L4-L8W?wc=3MDR-DPX%3A1551800175%2C1551800173%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'Natchez, Mississippi',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Nashville TN — data starts image 7.
+    'Nashville, Tennessee': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6313-VQ1?wc=3MDR-FMQ%3A1551794503%2C1551794501%26cc%3D1417695&cc=1417695&lang=en&i=6',
+        location: 'Nashville, Tennessee',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Mobile AL — data starts image 10.
+    'Mobile, Alabama': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6QX9-7NL?wc=3MDR-JWG%3A1551804587%2C1551804585%26cc%3D1417695&cc=1417695&lang=en&i=9',
+        location: 'Mobile, Alabama',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Memphis TN — data starts image 11.
+    'Memphis, Tennessee': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-6313-DNP?wc=3MDR-FMS%3A1551794403%2C1551794401%26cc%3D1417695&cc=1417695&lang=en&i=10',
+        location: 'Memphis, Tennessee',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Lynchburg VA — data starts image 2.
+    'Lynchburg, Virginia': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-67Q3-4RV?wc=3MDR-VZQ%3A1551794581%2C1551794579%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'Lynchburg, Virginia',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Louisville KY — data starts image 3.
+    'Louisville, Kentucky': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-67B3-LT?wc=3MDR-PT5%3A1551801495%2C1551801493%26cc%3D1417695&cc=1417695&lang=en&i=2',
+        location: 'Louisville, Kentucky',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Little Rock AR — data starts image 11.
+    'Little Rock, Arkansas': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-DZ4S-SQT?wc=3MDR-K6L%3A1551794603%2C1551794601%26cc%3D1417695&cc=1417695&lang=en&i=10',
+        location: 'Little Rock, Arkansas',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Lexington KY — data starts image 2.
+    'Lexington, Kentucky': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HY-67BL-F?wc=3MDR-PTT%3A1551795203%2C1551795201%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'Lexington, Kentucky',
+        startPage: 1,
+        endPage: 400
+    },
+
+    // Verified 2026-04-16: Columbus MS, Roll 14 — data starts image 2.
+    'Columbus, Mississippi': {
+        url: 'https://www.familysearch.org/ark:/61903/3:1:S3HT-D4L4-LZM?wc=3MDR-DPN%3A1551795448%2C1551795446%26cc%3D1417695&cc=1417695&lang=en&i=1',
+        location: 'Columbus, Mississippi',
+        rollLabel: 'Roll 14',
+        startPage: 1,
+        endPage: 400
     },
 
     // Verified 2026-04-16: Baltimore — data starts at image 10. Starting from 1
