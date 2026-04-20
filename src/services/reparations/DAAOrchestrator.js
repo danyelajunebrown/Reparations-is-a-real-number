@@ -17,6 +17,20 @@ const TieredPaymentCalculator = require('./TieredPaymentCalculator');
 const WealthGapCalculator = require('./WealthGapCalculator');
 const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
 
+/**
+ * Thrown by _enforceProbateGate when the slaveholders identified for a
+ * DAA don't have the probate / deed / administration records required
+ * to compute per-descendant inheritance shares. The DAA is NOT generated;
+ * the error message lists which ancestors need records ingested.
+ */
+class DAAProbateGateError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'DAAProbateGateError';
+        this.code = 'DAA_PROBATE_GATE';
+    }
+}
+
 class DAAOrchestrator {
     constructor(database, daaGenerator, documentGenerator) {
         this.db = database;
@@ -93,6 +107,28 @@ class DAAOrchestrator {
             console.log(`      • ${sh.slaveholder_name} (Gen ${sh.generation_distance})`);
         }
         console.log();
+
+        // ── HARD GATE: refuse to generate a DAA without probate records ─────
+        //
+        // Policy decision 2026-04-20 (see
+        // memory/project_debt_distribution_architecture.md):
+        //
+        //   No DAA is generated unless the enslaver lineage has documented
+        //   probate / deed / administration records in `land_transfer_events`
+        //   (migration 038) that support per-descendant inheritance-share
+        //   computation. The alternative — generating a DAA with a "share
+        //   pending" methodology note — was explicitly rejected by the user
+        //   as releasing an incomplete legal instrument.
+        //
+        //   A DAA that assigns 100% of ancestral debt to a single descendant
+        //   is mathematically wrong; one that assigns share = "TBD" is
+        //   ethically indefensible. So we block generation until the
+        //   primary sources required for real share math are in the DB.
+        //
+        // When a user's probate records arrive (user's 5 DC ancestors,
+        // Apr 18, 2026 request), they get ingested into land_transfer_events
+        // and this gate releases automatically.
+        await this._enforceProbateGate(slaveholders);
 
         // Step 3: Aggregate enslaved persons for each slaveholder
         console.log('Step 3: Aggregating enslaved persons with primary sources...');
@@ -177,6 +213,72 @@ class DAAOrchestrator {
             debtCalculation,
             climbSession
         };
+    }
+
+    /**
+     * Probate gate — throws `DAAProbateGateError` if the slaveholders
+     * identified for this lineage don't have land_transfer_events rows that
+     * support inheritance-share computation. Called from
+     * generateComprehensiveDAA before any debt math, before any DB record,
+     * before any DOCX generation.
+     *
+     * Policy: a DAA computed without probate-backed share math assigns 100%
+     * of ancestral debt to one descendant out of potentially hundreds. That
+     * number is mathematically wrong and legally indefensible. Rather than
+     * release a DAA with a "share pending" methodology note, we block the
+     * document entirely. When probate records arrive and get ingested, the
+     * gate releases for that lineage.
+     *
+     * @param {Array} slaveholders — resolved slaveholders from
+     *     getDocumentedSlaveholders(). Each should have slaveholder_id
+     *     pointing at canonical_persons.id.
+     */
+    async _enforceProbateGate(slaveholders) {
+        const enslaverIds = slaveholders
+            .map(s => s.slaveholder_id)
+            .filter(id => id != null);
+
+        if (enslaverIds.length === 0) {
+            throw new DAAProbateGateError(
+                'Cannot generate DAA: no slaveholders resolved to canonical_persons. ' +
+                'Complete ancestor-climb match verification before DAA generation.'
+            );
+        }
+
+        // Count land_transfer_events rows implicating each enslaver in scope.
+        // Probate/deed/administration records get ingested here; if an
+        // enslaver has no rows, we don't have the primary-source backing
+        // required for an inheritance-share computation.
+        const q = await this.db.query(`
+            SELECT
+                cp.id AS enslaver_id,
+                cp.canonical_name,
+                COUNT(lte.transfer_id)::int AS transfer_event_count
+            FROM canonical_persons cp
+            LEFT JOIN land_transfer_events lte
+                ON lte.implicates_enslaver = TRUE
+                AND lte.enslaver_person_id = cp.id
+            WHERE cp.id = ANY($1)
+            GROUP BY cp.id, cp.canonical_name
+        `, [enslaverIds]);
+
+        const missing = q.rows.filter(r => r.transfer_event_count === 0);
+        if (missing.length > 0) {
+            const lines = missing.map(m => `  • ${m.canonical_name} (id=${m.enslaver_id}): no land_transfer_events`);
+            throw new DAAProbateGateError(
+                'DAA generation blocked: inheritance-share computation requires ' +
+                'probate, Recorder of Deeds, and administration-bond records ' +
+                'ingested into `land_transfer_events` (migration 038). The ' +
+                'following slaveholder ancestors have no such records in the ' +
+                'DB:\n' + lines.join('\n') +
+                '\n\nRequest the applicable jurisdictions\' probate and deed ' +
+                'records for these ancestors, ingest via the wealth-tracing ' +
+                'pipeline, then re-run DAA generation. Policy reference: ' +
+                'memory/project_debt_distribution_architecture.md.'
+            );
+        }
+
+        console.log(`   ✓ Probate gate passed: ${q.rows.length} slaveholders have land_transfer_events coverage`);
     }
 
     /**
@@ -1051,3 +1153,4 @@ class DAAOrchestrator {
 }
 
 module.exports = DAAOrchestrator;
+module.exports.DAAProbateGateError = DAAProbateGateError;
