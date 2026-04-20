@@ -167,6 +167,37 @@ class S3Service {
   }
 
   /**
+   * Upload a buffer or stream to S3
+   * @param {string} key - S3 object key
+   * @param {Buffer|ReadableStream} body - File content
+   * @param {string} contentType - MIME type (e.g. 'image/jpeg')
+   * @param {Object} metadata - Optional metadata key-value pairs
+   * @returns {Promise<{key: string, url: string}>}
+   */
+  async upload(key, body, contentType = 'application/octet-stream', metadata = {}) {
+    if (!this.isEnabled()) {
+      throw new Error('S3 is not enabled');
+    }
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      Metadata: metadata
+    });
+
+    try {
+      await this.client.send(command);
+      const url = this.getPublicUrl(key);
+      return { key, url };
+    } catch (error) {
+      logger.error('S3 upload failed', { key, bucket: this.bucket, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
    * Construct the public URL for an S3 object (for reference, not for access)
    * Note: This URL only works if the bucket/object is public
    * @param {string} key - S3 object key
