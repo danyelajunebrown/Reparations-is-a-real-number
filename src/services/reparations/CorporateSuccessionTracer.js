@@ -119,6 +119,57 @@ class CorporateSuccessionTracer {
     }
 
     /**
+     * Reverse lookup: given a modern company name, employer, or stock ticker,
+     * find matching KNOWN_CHAINS keys. Used by intake form validation and
+     * TieredPaymentCalculator to auto-detect corporate connection type.
+     *
+     * @param {string} input - Company name, ticker, or partial match
+     * @returns {Array} Matching chain keys with confidence
+     */
+    reverseLookup(input) {
+        if (!input) return [];
+        const normalized = input.toLowerCase().trim();
+        const matches = [];
+
+        for (const [key, chain] of Object.entries(this.KNOWN_CHAINS)) {
+            let confidence = 0;
+            let reason = '';
+
+            // Exact ticker match
+            if (chain.ticker && normalized === chain.ticker.toLowerCase()) {
+                confidence = 1.0;
+                reason = `Ticker match: ${chain.ticker}`;
+            }
+            // Modern name containment
+            else if (chain.modern.toLowerCase().includes(normalized) || normalized.includes(chain.modern.toLowerCase())) {
+                confidence = 0.95;
+                reason = `Modern entity match: ${chain.modern}`;
+            }
+            // Key match (e.g., "jpmorgan" in user input)
+            else if (normalized.includes(key) || key.includes(normalized.replace(/ /g, '_'))) {
+                confidence = 0.9;
+                reason = `Key match: ${key}`;
+            }
+            // Predecessor name match
+            else {
+                for (const pred of chain.predecessors) {
+                    if (pred.name.toLowerCase().includes(normalized) || normalized.includes(pred.name.toLowerCase())) {
+                        confidence = 0.8;
+                        reason = `Predecessor match: ${pred.name} (${pred.year})`;
+                        break;
+                    }
+                }
+            }
+
+            if (confidence > 0) {
+                matches.push({ key, chain, confidence, reason });
+            }
+        }
+
+        return matches.sort((a, b) => b.confidence - a.confidence);
+    }
+
+    /**
      * List all documented succession chains.
      */
     listAllChains() {

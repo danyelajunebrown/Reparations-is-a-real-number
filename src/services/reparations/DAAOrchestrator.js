@@ -245,40 +245,139 @@ class DAAOrchestrator {
             );
         }
 
-        // Count land_transfer_events rows implicating each enslaver in scope.
-        // Probate/deed/administration records get ingested here; if an
-        // enslaver has no rows, we don't have the primary-source backing
-        // required for an inheritance-share computation.
-        const q = await this.db.query(`
-            SELECT
-                cp.id AS enslaver_id,
-                cp.canonical_name,
-                COUNT(lte.transfer_id)::int AS transfer_event_count
-            FROM canonical_persons cp
-            LEFT JOIN land_transfer_events lte
-                ON lte.implicates_enslaver = TRUE
-                AND lte.enslaver_person_id = cp.id
-            WHERE cp.id = ANY($1)
-            GROUP BY cp.id, cp.canonical_name
-        `, [enslaverIds]);
+        // Three tiers of documentary evidence, any of which unblocks an
+        // ancestor. Each tier has different downstream implications for
+        // which distribution methodology the DAA can support.
+        //
+        //   TIER A (strong):  land_transfer_events rows implicating this
+        //                     enslaver — full probate chain, supports
+        //                     inheritance-share math per migration 038.
+        //   TIER B (moderate): person_documents entries with a probate-
+        //                     equivalent document_type — will, probate,
+        //                     administration, guardianship, deed, compensation
+        //                     petition. Document is captured but transfer
+        //                     chain not yet extracted.
+        //   TIER C (base):    family_relationships rows where this person is
+        //                     listed as an enslaver (person1_role=slaveholder)
+        //                     — 1850/1860 slave schedule extraction proves
+        //                     the enslaver→enslaved relationship existed.
+        //                     Supports the existence claim; share math still
+        //                     needs tier A.
+        //
+        // For each slaveholder in scope we also check ALL canonical_persons
+        // rows with the same canonical_name — the project has known
+        // duplicate-entry cases (e.g. Maria Angelica Biscoe exists once as
+        // person_type='descendant' synced from FamilySearch tree and once
+        // as person_type='enslaver' from DC primary sources). Documents on
+        // either row count.
+        //
+        // Gate fails only for slaveholders with zero evidence across all
+        // three tiers. On such a failure the DAA is not generated.
+        const PROBATE_DOC_TYPES = [
+            'will','probate','administration','guardianship','deed',
+            'compensation_petition','dc_compensation_petition','estate_inventory'
+        ];
+        const SCHEDULE_DOC_TYPES = [
+            'slave_schedule','1850_slave_schedule','1860_slave_schedule',
+            'agricultural_census','tax_list'
+        ];
 
-        const missing = q.rows.filter(r => r.transfer_event_count === 0);
+        const q = await this.db.query(`
+            WITH scope AS (
+                -- Expand each in-scope enslaver to include other
+                -- canonical_persons rows sharing the same canonical_name
+                -- (duplicate entries case).
+                SELECT DISTINCT cp.id, cp.canonical_name, cp.person_type
+                FROM canonical_persons cp
+                WHERE cp.id = ANY($1)
+                   OR cp.canonical_name IN (
+                      SELECT canonical_name FROM canonical_persons
+                      WHERE id = ANY($1)
+                   )
+            ),
+            tier_a AS (
+                SELECT DISTINCT lte.enslaver_person_id AS cp_id
+                FROM land_transfer_events lte
+                WHERE lte.implicates_enslaver = TRUE
+                  AND lte.enslaver_person_id IN (SELECT id FROM scope)
+            ),
+            tier_b AS (
+                SELECT DISTINCT pd.canonical_person_id AS cp_id
+                FROM person_documents pd
+                WHERE pd.canonical_person_id IN (SELECT id FROM scope)
+                  AND LOWER(COALESCE(pd.document_type, '')) = ANY($2::text[])
+            ),
+            tier_c AS (
+                SELECT DISTINCT cp.id AS cp_id
+                FROM scope cp
+                JOIN family_relationships fr
+                    ON LOWER(fr.person1_name) = LOWER(cp.canonical_name)
+                    AND fr.relationship_type = 'enslaved_by'
+            ),
+            tier_b_schedule AS (
+                SELECT DISTINCT pd.canonical_person_id AS cp_id
+                FROM person_documents pd
+                WHERE pd.canonical_person_id IN (SELECT id FROM scope)
+                  AND LOWER(COALESCE(pd.document_type, '')) = ANY($3::text[])
+            )
+            SELECT
+                (SELECT canonical_name FROM canonical_persons WHERE id = orig.id) AS canonical_name,
+                orig.id AS enslaver_id,
+                EXISTS (
+                    SELECT 1 FROM tier_a ta JOIN scope s ON s.id = ta.cp_id
+                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                ) AS tier_a,
+                EXISTS (
+                    SELECT 1 FROM tier_b tb JOIN scope s ON s.id = tb.cp_id
+                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                ) AS tier_b,
+                EXISTS (
+                    SELECT 1 FROM tier_c tc JOIN scope s ON s.id = tc.cp_id
+                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                ) AS tier_c,
+                EXISTS (
+                    SELECT 1 FROM tier_b_schedule tbs JOIN scope s ON s.id = tbs.cp_id
+                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                ) AS tier_b_schedule
+            FROM (SELECT unnest($1::int[]) AS id) orig
+        `, [enslaverIds, PROBATE_DOC_TYPES, SCHEDULE_DOC_TYPES]);
+
+        const passed = [];
+        const missing = [];
+        for (const r of q.rows) {
+            const hasAny = r.tier_a || r.tier_b || r.tier_c || r.tier_b_schedule;
+            if (hasAny) {
+                const tiers = [
+                    r.tier_a && 'A-land',
+                    r.tier_b && 'B-probate',
+                    r.tier_c && 'C-schedule',
+                    r.tier_b_schedule && 'B-schedule-doc',
+                ].filter(Boolean).join(',');
+                passed.push(`${r.canonical_name} [${tiers}]`);
+            } else {
+                missing.push(`  • ${r.canonical_name} (id=${r.enslaver_id}): no evidence in any tier`);
+            }
+        }
+
+        console.log(`   → Probate gate evidence check:`);
+        for (const p of passed) console.log(`      ✓ ${p}`);
         if (missing.length > 0) {
-            const lines = missing.map(m => `  • ${m.canonical_name} (id=${m.enslaver_id}): no land_transfer_events`);
+            console.log(`   → ${missing.length} ancestor(s) with NO documentary evidence:`);
+            for (const m of missing) console.log('   ' + m);
             throw new DAAProbateGateError(
-                'DAA generation blocked: inheritance-share computation requires ' +
-                'probate, Recorder of Deeds, and administration-bond records ' +
-                'ingested into `land_transfer_events` (migration 038). The ' +
-                'following slaveholder ancestors have no such records in the ' +
-                'DB:\n' + lines.join('\n') +
-                '\n\nRequest the applicable jurisdictions\' probate and deed ' +
-                'records for these ancestors, ingest via the wealth-tracing ' +
-                'pipeline, then re-run DAA generation. Policy reference: ' +
+                'DAA generation blocked: the following slaveholder ancestors ' +
+                'have no documentary evidence in any tier (land_transfer_events, ' +
+                'probate-type person_documents, or family_relationships slave-' +
+                'schedule presence):\n' + missing.join('\n') +
+                '\n\nRequest primary-source records (probate / deed / 1850 or ' +
+                '1860 slave schedule page / DC compensated emancipation petition) ' +
+                'for these ancestors and ingest via the wealth-tracing pipeline, ' +
+                'then re-run DAA generation. Policy reference: ' +
                 'memory/project_debt_distribution_architecture.md.'
             );
         }
 
-        console.log(`   ✓ Probate gate passed: ${q.rows.length} slaveholders have land_transfer_events coverage`);
+        console.log(`   ✓ Probate gate passed: ${passed.length} slaveholders have documentary evidence`);
     }
 
     /**

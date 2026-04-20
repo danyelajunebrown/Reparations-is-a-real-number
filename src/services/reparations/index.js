@@ -49,6 +49,7 @@ const LegalPrecedentService = require('./LegalPrecedentService');
 const WealthGapCalculator = require('./WealthGapCalculator');
 const ICHEICCalculator = require('./ICHEICCalculator');
 const TieredPaymentCalculator = require('./TieredPaymentCalculator');
+const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
 
 /**
  * Unified Reparations System
@@ -434,6 +435,7 @@ module.exports = {
     WealthGapCalculator,      // Darity & Mullen share-of-gap model
     ICHEICCalculator,         // Multi-jurisdiction historical asset valuation
     TieredPaymentCalculator,  // Progressive payment tiers (PLACEHOLDER thresholds)
+    CorporateSuccessionTracer, // Farmer-Paellmann defendant chains + reverse lookup
 
     // Factory function to create initialized system with database
     createReparationsSystem: async (db) => {
