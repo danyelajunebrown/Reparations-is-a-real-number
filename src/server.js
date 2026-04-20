@@ -152,6 +152,11 @@ app.use('/api/errors', errorsRouter);
 app.use('/api/bibliography', bibliographyRouter);
 app.use('/api/ancestor-climb', ancestorClimbRouter);
 app.use('/api/kiosk', kioskRouter);
+app.use('/api/review', requireAdmin, require('./api/routes/review'));
+
+// Static review UI + pretty URL
+app.use('/public', express.static(path.join(__dirname, '..', 'public')));
+app.get('/review', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'review.html')));
 
 // Make database pool available to routes (for bibliography manager)
 app.set('pool', db);

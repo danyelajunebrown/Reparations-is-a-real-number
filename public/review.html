@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Review Queue — Reparations ∈ ℝ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root { --bg:#0b0f14; --card:#141a22; --border:#1f2937; --text:#d1d5db; --accent:#4ade80; --danger:#ef4444; --muted:#6b7280; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: ui-monospace, 'SF Mono', monospace; font-size:14px; }
+  header { padding:1rem 1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:1.1rem; font-weight:600; letter-spacing:.05em; }
+  main { display:grid; grid-template-columns: 280px 1fr; height: calc(100vh - 60px); }
+  aside { border-right:1px solid var(--border); overflow-y:auto; padding:1rem 0; }
+  aside h2 { padding:0 1rem; font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+  .queue-btn { display:block; width:100%; padding:.75rem 1rem; background:transparent; border:none; color:var(--text); text-align:left; cursor:pointer; font-family:inherit; font-size:13px; border-left:3px solid transparent; }
+  .queue-btn:hover { background:var(--card); }
+  .queue-btn.active { background:var(--card); border-left-color:var(--accent); }
+  .queue-btn .count { float:right; background:var(--border); padding:.1rem .5rem; border-radius:.25rem; font-size:11px; }
+  section#content { padding:1.5rem; overflow-y:auto; }
+  .item { background:var(--card); border:1px solid var(--border); border-radius:.5rem; padding:1rem; margin-bottom:1rem; }
+  .item h3 { margin:0 0 .3rem 0; font-size:1rem; color:#f0fdf4; }
+  .item .sub { color:var(--muted); font-size:12px; margin-bottom:.5rem; }
+  .item .detail { white-space:pre-wrap; font-size:13px; background:#0b0f14; padding:.75rem; border-radius:.25rem; margin:.5rem 0; max-height:200px; overflow-y:auto; }
+  .item .evidence a { color:#60a5fa; text-decoration:none; font-size:12px; margin-right:.75rem; display:inline-block; margin-bottom:.25rem; }
+  .item .evidence a:hover { text-decoration:underline; }
+  .candidates { margin:.5rem 0; }
+  .candidate-pill { display:inline-block; padding:.25rem .75rem; margin:.25rem .25rem .25rem 0; background:var(--border); border:1px solid #374151; border-radius:1rem; font-size:11px; cursor:pointer; }
+  .candidate-pill.selected { background:var(--accent); color:#0b0f14; border-color:var(--accent); font-weight:600; }
+  .actions { margin-top:.75rem; display:flex; gap:.5rem; flex-wrap:wrap; }
+  button.action { padding:.5rem 1rem; border:1px solid var(--border); background:var(--bg); color:var(--text); border-radius:.25rem; cursor:pointer; font-family:inherit; font-size:12px; }
+  button.action.approve { background:#14532d; border-color:#166534; color:#d1fae5; }
+  button.action.reject { background:#7f1d1d; border-color:#991b1b; color:#fee2e2; }
+  button.action.skip { color:var(--muted); }
+  button.action:hover { filter:brightness(1.2); }
+  input.edit { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:.4rem .75rem; border-radius:.25rem; font-family:inherit; font-size:13px; width:100%; margin-bottom:.5rem; }
+  #auth-modal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:100; }
+  #auth-modal .box { background:var(--card); padding:2rem; border-radius:.5rem; border:1px solid var(--border); min-width:360px; }
+  #auth-modal h2 { margin-top:0; }
+  .toast { position:fixed; bottom:1rem; right:1rem; padding:.75rem 1.25rem; background:var(--accent); color:var(--bg); border-radius:.25rem; font-weight:600; opacity:0; transform:translateY(10px); transition:all .2s; z-index:200; }
+  .toast.show { opacity:1; transform:translateY(0); }
+  .toast.error { background:var(--danger); color:white; }
+  .empty { padding:3rem; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div id="auth-modal">
+  <div class="box">
+    <h2>Admin token required</h2>
+    <p style="color:var(--muted); font-size:12px;">Enter your ADMIN_TOKEN to access the review queues.</p>
+    <input id="auth-input" class="edit" type="password" placeholder="X-Admin-Token">
+    <button class="action approve" onclick="submitAuth()">Unlock</button>
+  </div>
+</div>
+
+<header>
+  <h1>▸ REVIEW QUEUE</h1>
+  <div style="font-size:12px; color:var(--muted);" id="reviewer-info">(no token)</div>
+</header>
+
+<main>
+  <aside>
+    <h2>Queues</h2>
+    <div id="queue-list">loading…</div>
+  </aside>
+  <section id="content">
+    <div class="empty">← pick a queue</div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let TOKEN = localStorage.getItem('adminToken');
+let currentQueue = null;
+let currentItems = [];
+
+function submitAuth() {
+  const v = document.getElementById('auth-input').value.trim();
+  if (!v) return;
+  TOKEN = v;
+  localStorage.setItem('adminToken', v);
+  document.getElementById('auth-modal').style.display = 'none';
+  document.getElementById('reviewer-info').textContent = '🔑 authenticated';
+  loadQueues();
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api/review' + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Token': TOKEN,
+      'X-Reviewer': 'admin',
+      ...(opts.headers || {}),
+    },
+  });
+  if (r.status === 401) {
+    localStorage.removeItem('adminToken');
+    document.getElementById('auth-modal').style.display = 'flex';
+    throw new Error('Auth failed');
+  }
+  return r.json();
+}
+
+function toast(msg, error = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (error ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+async function loadQueues() {
+  try {
+    const r = await api('/queues');
+    const el = document.getElementById('queue-list');
+    el.innerHTML = r.queues.map(q => `
+      <button class="queue-btn" data-name="${q.name}" onclick="selectQueue('${q.name}')">
+        ${q.title}
+        <span class="count">${q.count}</span>
+      </button>
+    `).join('');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function selectQueue(name) {
+  currentQueue = name;
+  document.querySelectorAll('.queue-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="empty">loading…</div>';
+  try {
+    const r = await api(`/queue/${name}?limit=30`);
+    currentItems = r.items;
+    if (!r.items.length) { c.innerHTML = '<div class="empty">No items to review in this queue.</div>'; return; }
+    c.innerHTML = r.items.map(renderItem).join('');
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderItem(item) {
+  const id = `item-${item.id}`;
+  const evs = (item.evidence_urls || []).map(u => `<a href="${u}" target="_blank">${u.split('/').pop() || u}</a>`).join('');
+  const cands = (item.candidate_canonicals || []).map(c =>
+    `<span class="candidate-pill" onclick="selectCandidate('${id}', ${c.id})" data-cp="${c.id}">cp=${c.id}${c.canonical_name ? ' "'+c.canonical_name+'"' : ''}${c.primary_state ? ' ['+c.primary_state+']' : ''}</span>`
+  ).join('');
+
+  const depositors = (item.depositor_names || []).slice(0, 5).map(n => `<span style="color:var(--muted); font-size:11px; margin-right:.5rem;">◈ ${n}</span>`).join('');
+
+  return `<div class="item" id="${id}" data-kind="${item.kind}" data-id="${item.id}">
+    <h3>${escapeHtml(item.title)}</h3>
+    <div class="sub">${escapeHtml(item.subtitle || '')}</div>
+    ${item.detail ? `<div class="detail">${escapeHtml(item.detail)}</div>` : ''}
+    ${depositors ? `<div class="evidence">${depositors}</div>` : ''}
+    ${evs ? `<div class="evidence">${evs}</div>` : ''}
+    ${cands ? `<div class="candidates">Candidate canonicals (click to select): ${cands}</div>` : ''}
+    ${renderActions(item)}
+  </div>`;
+}
+
+function renderActions(item) {
+  switch (item.kind) {
+    case 'enslaver_candidate':
+      return `<input class="edit" placeholder="(optional) edit name before creating new canonical" id="edit-${item.id}">
+        <div class="actions">
+          <button class="action approve" onclick="approveEnslaverCandidate('${item.id}')">✓ Approve</button>
+          <button class="action reject" onclick="rejectEnslaverCandidate('${item.id}')">✗ Reject</button>
+          <button class="action skip" onclick="skip('${item.id}')">skip</button>
+        </div>`;
+    case 'unresolved_petition':
+      return `<input class="edit" placeholder="(optional) edit claimant name to create new canonical" id="edit-${item.id}">
+        <div class="actions">
+          <button class="action approve" onclick="approvePetition('${item.id}')">✓ Link to selected</button>
+          <button class="action skip" onclick="skip('${item.id}')">skip</button>
+        </div>`;
+    case 'climb_match':
+      return `<div class="actions">
+          <button class="action approve" onclick="approveClimbMatch('${item.id}', 'confirmed_slaveholder')">✓ Confirmed slaveholder</button>
+          <button class="action approve" onclick="approveClimbMatch('${item.id}', 'enslaved_ancestor')">✓ Enslaved ancestor</button>
+          <button class="action reject" onclick="rejectClimbMatch('${item.id}')">✗ Reject</button>
+          <button class="action skip" onclick="skip('${item.id}')">skip</button>
+        </div>`;
+    case 'ambiguous_unconfirmed':
+      return `<input class="edit" placeholder="(optional) edit name" id="edit-${item.id}">
+        <div class="actions">
+          <button class="action approve" onclick="approveAmbiguous('${item.id}', 'enslaved')">✓ Enslaved person</button>
+          <button class="action approve" onclick="approveAmbiguous('${item.id}', 'enslaver')">✓ Enslaver</button>
+          <button class="action approve" onclick="approveAmbiguous('${item.id}', 'freedperson')">✓ Freedperson</button>
+          <button class="action reject" onclick="rejectAmbiguous('${item.id}')">✗ Not a person</button>
+          <button class="action skip" onclick="skip('${item.id}')">skip</button>
+        </div>`;
+    case 'duplicate_cluster':
+      return `<div class="actions"><button class="action skip" onclick="skip('${item.id}')">dismiss (use merge script for now)</button></div>`;
+    default: return '';
+  }
+}
+
+function selectCandidate(itemId, cpId) {
+  const scope = document.getElementById(itemId);
+  scope.querySelectorAll('.candidate-pill').forEach(p => p.classList.toggle('selected', p.dataset.cp == cpId));
+}
+
+function getSelectedCp(id) {
+  const scope = document.getElementById(`item-${id}`);
+  const sel = scope.querySelector('.candidate-pill.selected');
+  return sel ? parseInt(sel.dataset.cp) : null;
+}
+
+function getEdit(id) { return document.getElementById(`edit-${id}`)?.value?.trim() || null; }
+
+async function approveEnslaverCandidate(id) {
+  try {
+    const r = await api(`/enslaver_candidates/${id}/approve`, { method: 'POST', body: JSON.stringify({ winner_canonical_id: getSelectedCp(id), edit_name: getEdit(id) }) });
+    toast(`✓ Approved → cp=${r.canonical_id}, ${r.edges_added} edges added`);
+    removeItem(id);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function rejectEnslaverCandidate(id) {
+  const reason = prompt('Reject reason?', 'ocr_noise'); if (!reason) return;
+  try { await api(`/enslaver_candidates/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); toast('✗ rejected'); removeItem(id); } catch (e) { toast(e.message, true); }
+}
+
+async function approvePetition(id) {
+  try {
+    const r = await api(`/unresolved_petitions/${id}/approve`, { method: 'POST', body: JSON.stringify({ winner_canonical_id: getSelectedCp(id), edit_claimant: getEdit(id) }) });
+    toast(`✓ linked to cp=${r.canonical_id}`); removeItem(id);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function approveClimbMatch(id, classification) {
+  try { await api(`/pending_climb_matches/${id}/approve`, { method: 'POST', body: JSON.stringify({ classification }) }); toast(`✓ ${classification}`); removeItem(id); } catch (e) { toast(e.message, true); }
+}
+async function rejectClimbMatch(id) {
+  const reason = prompt('Reason?', 'false positive'); if (!reason) return;
+  try { await api(`/pending_climb_matches/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); toast('✗ rejected'); removeItem(id); } catch (e) { toast(e.message, true); }
+}
+
+async function approveAmbiguous(id, target_type) {
+  try { await api(`/ambiguous_unconfirmed/${id}/approve`, { method: 'POST', body: JSON.stringify({ target_type, edit_name: getEdit(id) }) }); toast(`✓ ${target_type}`); removeItem(id); } catch (e) { toast(e.message, true); }
+}
+async function rejectAmbiguous(id) {
+  try { await api(`/ambiguous_unconfirmed/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: 'not_a_person' }) }); toast('✗ not-a-person'); removeItem(id); } catch (e) { toast(e.message, true); }
+}
+function skip(id) { removeItem(id); }
+
+function removeItem(id) {
+  const el = document.getElementById(`item-${id}`);
+  if (el) { el.style.opacity = '.3'; el.style.pointerEvents = 'none'; setTimeout(() => el.remove(), 300); }
+}
+
+function escapeHtml(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Bootstrap
+if (TOKEN) {
+  document.getElementById('auth-modal').style.display = 'none';
+  document.getElementById('reviewer-info').textContent = '🔑 authenticated';
+  loadQueues();
+}
+</script>
+</body>
+</html>
