@@ -436,14 +436,20 @@ function extractFieldsFromZone(zoneWords, debug = false) {
         // Find next label (y strictly greater)
         const next = sorted.slice(i + 1).find(p => p.y > lo.y + 2);
 
-        // Catchment: midpoint-between-labels, plus a small overlap buffer so
-        // handwritten values whose bounding boxes straddle a row boundary
-        // still get captured. Handwriting frequently extends 10-20px above
-        // its baseline (capital M's, tall letters), which would otherwise
-        // spill into the previous label's catchment.
-        const Y_BUFFER = 12;
-        const yTop    = prev ? (prev.y + lo.y) / 2 - Y_BUFFER : zoneTop;
-        const yBottom = next ? (lo.y + next.y) / 2 + Y_BUFFER : zoneBottom;
+        // Catchment: strict midpoint bisection between neighboring labels
+        // PLUS a nearest-label tiebreak for words near the boundary so no
+        // word gets assigned to two labels.
+        //
+        // Prior version used Y_BUFFER=12 on BOTH sides of each midpoint,
+        // producing a 24-px overlap zone where words appeared in two
+        // adjacent labels' catchments — observed in Charleston Roll 21
+        // acct-100 where "Mrs Cyane Howe" ended up in both `children`
+        // (her daughters listed above) and `last_master` (the actual
+        // enslaver name one line below). That's the same handwriting
+        // blob clearly below "children" and clearly adjacent to
+        // "last_master", but the buffer put it inside both windows.
+        const yTop    = prev ? (prev.y + lo.y) / 2 : zoneTop;
+        const yBottom = next ? (lo.y + next.y) / 2 : zoneBottom;
         const xLeft   = lo.xR + 2;
         const xRight  = zoneRight;
 
@@ -451,7 +457,16 @@ function extractFieldsFromZone(zoneWords, debug = false) {
             if (labelWordSet.has(w)) return false;
             const wy = (w.y + w.yB) / 2;
             const wxMid = (w.x + w.xR) / 2;
-            return wy >= yTop && wy <= yBottom && wxMid >= xLeft && wxMid <= xRight;
+            if (wxMid < xLeft || wxMid > xRight) return false;
+            // Nearest-label assignment: the word's midpoint must be at least
+            // as close to THIS label's y as to any other label's y. This
+            // replaces the symmetrical-buffer approach — words near a
+            // boundary go to exactly one label.
+            const dThis = Math.abs(wy - lo.y);
+            const dPrev = prev ? Math.abs(wy - prev.y) : Infinity;
+            const dNext = next ? Math.abs(wy - next.y) : Infinity;
+            if (dPrev < dThis || dNext < dThis) return false;
+            return wy >= yTop && wy <= yBottom;
         });
 
         // Sort catchment words in reading order
