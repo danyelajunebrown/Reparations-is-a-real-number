@@ -99,6 +99,13 @@ function parseTei(xml, pid) {
         .filter(d => /^1862/.test(d) && d !== '1862-04-16')
         .sort();
     if (laterDates.length) filedDate = laterDates[0];  // earliest NON-act date in body
+    // Normalize partial dates to full ISO so Postgres DATE column accepts them.
+    // Some TEI encoders used year-only ("1862") or year-month ("1862-05");
+    // default to Jan 1 / day 1 of the known period.
+    if (filedDate) {
+        if (/^\d{4}$/.test(filedDate)) filedDate = `${filedDate}-01-01`;
+        else if (/^\d{4}-\d{2}$/.test(filedDate)) filedDate = `${filedDate}-01`;
+    }
     const filedYear = filedDate ? parseInt(filedDate.slice(0, 4)) : null;
 
     // Image refs
