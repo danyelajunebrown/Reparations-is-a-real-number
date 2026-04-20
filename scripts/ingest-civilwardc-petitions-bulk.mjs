@@ -91,13 +91,32 @@ function parsePetitionHtml(html, pid) {
         }
     }
 
-    // Filing date: parse "May 26, 1862" → 1862-05-26
+    // Filing date: tolerate multiple formats that appear in civilwardc HTML:
+    //   "May 26, 1862"   — canonical
+    //   "May 6,1862"     — no space after comma (cww.00049)
+    //   "1862-05-8"      — ISO-like with 1-digit day (cww.00100, 00264)
+    //   missing entirely — fall back to title "Petition of X, DD Month YYYY"
     let filedDate = null, filedYear = null;
-    const dm = dateText.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
     const MONTHS = { January:1, February:2, March:3, April:4, May:5, June:6, July:7, August:8, September:9, October:10, November:11, December:12 };
+    // Allow optional space after comma:  \s*  (was \s+)
+    const dm = dateText.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s*(\d{4})/);
     if (dm && MONTHS[dm[1]]) {
         filedYear = +dm[3];
         filedDate = `${dm[3]}-${String(MONTHS[dm[1]]).padStart(2, '0')}-${String(+dm[2]).padStart(2, '0')}`;
+    } else {
+        // ISO-like "1862-05-8" / "1862-5-8"
+        const iso = dateText.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (iso) {
+            filedYear = +iso[1];
+            filedDate = `${iso[1]}-${String(+iso[2]).padStart(2, '0')}-${String(+iso[3]).padStart(2, '0')}`;
+        } else if (titleText) {
+            // Title fallback: "Petition of NAME, DD Month YYYY"
+            const tm = titleText.match(/(\d{1,2})\s+([A-Z][a-z]+)\s+(\d{4})/);
+            if (tm && MONTHS[tm[2]]) {
+                filedYear = +tm[3];
+                filedDate = `${tm[3]}-${String(MONTHS[tm[2]]).padStart(2, '0')}-${String(+tm[1]).padStart(2, '0')}`;
+            }
+        }
     }
 
     // Image URLs: all 1200px JPGs referenced on the page
@@ -108,8 +127,10 @@ function parsePetitionHtml(html, pid) {
         const absolute = href.startsWith('http')
             ? href
             : `https://civilwardc.org/${href.replace(/^(\.\.\/)+/, '')}`;
-        // Keep only images that match this pid (filters out any gallery links to other petitions)
-        if (absolute.includes(`/${pid}.`)) imageUrls.add(absolute);
+        // Keep only images that (a) match this pid and (b) actually end in
+        // .jpg — the site has a few broken hrefs where the extension is
+        // missing (e.g. cww.00278.004), which 404 on fetch.
+        if (absolute.includes(`/${pid}.`) && /\.jpg$/i.test(absolute)) imageUrls.add(absolute);
     });
 
     // All persName entries (candidate set for downstream enslaved-person NLP)

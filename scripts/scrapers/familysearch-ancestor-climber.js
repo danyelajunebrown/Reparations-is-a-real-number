@@ -63,7 +63,11 @@ const matchVerifier = new MatchVerifier(sql);
 const INTERACTIVE = process.env.FAMILYSEARCH_INTERACTIVE === 'true';
 const MAX_GENERATIONS = 50; // Increased - we use birth year cutoff instead
 const MAX_NAME_ONLY_GENERATIONS = 12; // Hard cap for name-only BFS (no FS tree to validate)
-const HISTORICAL_CUTOFF_YEAR = 1450; // Start of transatlantic slave trade
+// Stop walking once ancestors are older than the colonial-era transatlantic
+// trade to the English colonies (~1619 Jamestown). Prior value (1450) produced
+// ~330 garbage name_only_match rows per deep climb from medieval ancestor
+// chains that had nothing to do with US slavery — see LX39-1MY session.
+const HISTORICAL_CUTOFF_YEAR = 1600; // Colonial transatlantic trade onset
 const MIN_ANCESTOR_BIRTH_YEAR = 1600; // Don't create identity records for estimated births before this
 const PERSON_PAGE_URL = 'https://www.familysearch.org/en/tree/person/details/';
 const SAVE_PROGRESS_EVERY = 10; // Save to DB every N ancestors
