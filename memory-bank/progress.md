@@ -1,8 +1,60 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Frontend Reintegration for May Premiere
-**Last Updated:** April 11, 2026
+**Current Phase:** Freedmen's Bank enslaver extraction running overnight + wealth tracing pivot
+**Last Updated:** April 18/19, 2026
+
+---
+
+## Session 31 — Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (April 18-19, 2026) 🟡 IN PROGRESS
+
+Kernel panic on 8GB laptop triggered a full review of memory pressure, which
+unblocked the Freedmen's Bank enslaver-field extractor rewrite. Separately,
+user rejected the project's long-standing aggregate-statistics framing for
+wealth tracing and directed a pivot to specific-asset land-primary tracing.
+Security inventory surfaced a committed production DB password.
+
+### Completed
+- ✅ **Memory-safe runner** (`scripts/run-all-freedmens.sh`) — Node heap cap, Chrome restart between branches, swap abort
+- ✅ **Audit duplicate-detection fix** (`scripts/audit-freedmens-quality.js`) — 1,225 false-positive "duplicates" → 20 real (0.033% issue rate)
+- ✅ **Enslaver field extraction rewrite** (`scripts/extract-freedmens-fields.js`) — Google Vision bounding-box parser, catchment-area value extraction, handles both Charleston-R21 numbered single-record form AND Baltimore/Huntsville unnumbered multi-record form
+- ✅ **Parser verified across 31 branches** via random-sample sweep — 29 success, 2 graceful-zero (Mobile faded, Philadelphia organizational)
+- ✅ **Full-collection runner started** (`scripts/run-freedmens-field-extraction.sh`) — overnight run Apr 18-19, 28 branches, 300 depositor cap per branch with 30-min timeout
+- ✅ **Wealth tracing framework doc** (`memory-bank/wealth-tracing-framework.md`) — academic-quality methodology, 3-claim thesis, two-pillar approach, working bibliography
+- ✅ **Land-tracing schema migration** (`migrations/038-land-tracing-and-flagrant-assets.sql`) — 4 new tables: land_transfer_events, modern_parcel_links, top_landholder_flags, flagrant_heirloom_assets + enslaver_material_footprint view
+- ✅ **Safari scareware fix** — push notifications from homphitiomiring.com diagnosed + removed
+
+### Live data extracted (Session 31)
+- Charleston Roll 21 branch 1: 50 depositors with full-field extraction, 32 with enslaver (master/mistress), 26 with enslaved-name (old title), 0 garbage
+
+### Open / pending
+- [ ] **URGENT:** Rotate leaked Render DB password `<REDACTED-render-pg-decommissioned-2026-04-25>` (committed in 5 files on public repo) — tracked as task #17
+- [ ] Re-run Charleston Roll 23 (crashed on FS rate-limit mid-branch; no DB corruption)
+- [ ] Run migration 038 on Neon
+- [ ] Ingest user's 5 DC ancestor probate/deed/administration/guardianship records when they arrive
+- [ ] Seed top_landholder_flags with 1860 Agricultural Census top-1% per state
+- [ ] Parser accuracy refinement: cross-label value bleed ("Charleston." showing up in both old_title and slave_residence on Charleston R21) — acceptable for MVP
+- [ ] Orphaned "Comet" login item (30-second fix)
+
+---
+
+## Session 30 — Wealth Fingerprint & Calculator Wiring (April 15/16, 2026) ✅
+
+Fixed the dead-data problem: intake form collected 7 financial fields but only
+annual_income was used (flat 2%). Now all fields feed real calculators.
+
+### Completed
+- ✅ **Migration 037** — 15 new `participants` columns: corporate_connections, trust/estate, family business, inherited land, exec history, pre-1865 continuity, wealth flag
+- ✅ **validate-intake-form.js** — COLUMN_MAP expanded +11 fields, auto-computes wealth_flag_elevated + corporate_connection_type
+- ✅ **DAAOrchestrator** — calculateTotalDebt() wired to TieredPaymentCalculator + WealthGapCalculator + CorporateSuccessionTracer. Dual methodology (Craemer vs D&M), uses higher as obligation floor. Backward-compatible (still accepts bare number).
+- ✅ **CorporateSuccessionTracer** — reverseLookup() added. "Citizens Bank" → jpmorgan (0.8 confidence).
+- ✅ **index.js** — CorporateSuccessionTracer exported
+- ✅ Integration test: $250K/$3M/$800K/50 enslaved/direct corp → tiered $15,240/yr (was $5K flat), wealth-gap $1.6M obligation
+
+### Remaining
+- [ ] Paste Section 3b (corporate/trust/land questions) into actual Google Form
+- [ ] Run migration 037 on Neon
+- [ ] Push code to Mac Mini
 
 ---
 
@@ -74,15 +126,44 @@ Three parallel sub-agent sweeps traced every reference before removal:
 - `/api/chat` → kept alive for old index.html fallback
 - `dashboard.html`, `review.html` → kept dormant (not linked from React app, server routes still work)
 
-### Pending Before Premiere
-1. `cd frontend && npm install && npm run build` — no build has been run yet
-2. Live API shape verification — components handle common variants but untested
-3. Admin auth gate — `/admin/*` currently open, must wrap before May 8
-4. Connection pool fix in `contribute.js` (per-request Pool bug from FRONTEND-ENHANCEMENT-PLAN.md)
-5. Stats caching (5-min TTL server-side) on `/api/contribute/stats`
-6. `/api/participants` endpoint (currently falls back to grouping ancestor-climb sessions)
-7. Legal framework detail view structure (currently renders raw JSON)
-8. GitHub Pages deploy (`npm run deploy` configured)
+### Pending Before Premiere (as of Apr 11)
+1. ✅ `cd frontend && npm install && npm run build` — done Apr 13, 777 modules, 0 errors
+2. ✅ Live API shape verification — done Apr 13 via static cross-check + live Render sweep Apr 13/14
+3. ✅ Admin auth gate — committed Apr 13, deployed Apr 13/14, ADMIN_TOKEN set on Render, verified 401 on wrong token
+4. ✅ Connection pool fix — 17 endpoints in contribute.js switched to sharedPool, 19 pool.end() calls removed
+5. ✅ Stats caching — already existed, no change needed
+6. 🟡 `/api/participants` endpoint — still not implemented, ParticipantManagement.jsx falls back to grouping ancestor-climb sessions (flagged for Apr 14 as Eli Neal visibility bug)
+7. ✅ Legal framework detail view structure — LegalTopic.jsx rewritten with topic-specific structured rendering per real API shape
+8. ✅ GitHub Pages deploy — `gh-pages-react` branch published Apr 13, GitHub Pages source switched Apr 13/14, site live
+
+---
+
+## Session 29 Close — Apr 13/14, 2026 ✅ DEPLOYED, SITE LIVE
+
+### Final push sequence
+1. Applied migration 031 to Neon (7 jurisdictions, 4 doctrines, 4 mechanisms, UK 1833, Haiti, Farmer-Paellmann seed data)
+2. Applied defendants_by_sector view (migration 021 missing piece)
+3. Set ADMIN_TOKEN on Render (user accidentally pasted in chat → advised rotation → rotated)
+4. Pushed 3 commits to origin/main → Render auto-deployed
+5. Switched GitHub Pages source to gh-pages-react branch
+6. Verified live: site loads, aesthetic correct, stats accurate
+
+### Commits pushed this session
+- `40afc1759` feat(frontend): React+Vite rebuild for May 2026 premiere (47 files)
+- `81c69d349` fix(server): admin auth gate, connection pool fix, stats query fix (4 files)
+- `ae9b6a414` docs(memory-bank): Session 29 — frontend reintegration (2 files)
+
+### Stats after deploy
+- Frontend: https://danyelajunebrown.github.io/Reparations-is-a-real-number/ ✅
+- Backend: https://reparations-platform.onrender.com ✅
+- All /api/legal/* endpoints returning 200 with rich structured data
+- Corporate debts by-sector working (5 insurers, 4 railroads, 4 tobacco, 2 banks, 1 cotton, 1 factor)
+- Admin auth gate working (401 on wrong token, not 503)
+- Stats slaveholder count: 55 → **399,578** (canonical_persons promotion now counted)
+- Total records: 1.97M → 2.46M
+
+### 🔴 Known issue for tomorrow (Apr 14)
+**Eli Neal not appearing in UI** despite completed climb. Most likely the participant model gap: climbs indexed by grandparent FS IDs, not participant name. Need /api/participants endpoint + participant-grouped lineage view. Full investigation hypotheses in activeContext.md.
 
 ---
 
@@ -241,7 +322,7 @@ Compensation TO owners PROVES debt owed TO descendants:
   - 12/12 tests passing, USDC configured, revisable DAA amounts, 7-day timelock withdrawals
   - Owner: `0xD20a3CF9101948bE150C1ca3fa9a9bA60b3cfB3f` (MetaMask)
   - API route wired (`/api/blockchain/*`), document generators updated with live contract address
-- ✅ Google Form intake structure designed + `scripts/validate-intake-form.js`
+- ✅ Google Form intake structure designed + `scripts/validate-intake-form.js` + wealth fingerprint (Section 3b) + calculator wiring
 - ✅ Piper diagnosed: living person ID insufficient without tree sharing — need grandparent IDs
 - ✅ **Eli Neal climb launched:** Fagan line running (Gen 7+, 12 matches), Schwehr auto-queued
 
@@ -252,7 +333,7 @@ Compensation TO owners PROVES debt owed TO descendants:
 
 **Remaining for Premiere (May 8-9):**
 - [ ] Frontend: MetaMask → view DAA → deposit USDC flow (js/app.js contract interaction)
-- [ ] Google Form: copy-paste structure into actual Google Form
+- [ ] Google Form: paste Section 3b (wealth fingerprint) into actual Google Form + run migration 037 on Neon
 - [ ] Mac Mini: push all code changes, restart PM2
 - [ ] Piper: get grandparent FS IDs from participant, run climbs
 - [ ] Post-promotion verification: re-evaluate existing climb matches against new ~400K enslavers
@@ -1130,7 +1211,8 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 - [ ] Issues #15-18: Fix header, stale percentage, language, dead code
 - [ ] Re-run Piper's climb (LTVZ-D9S) with confirmed FS session
 - [ ] Fix climber to fail loudly when living person yields 0 parents
-- [ ] Build Google Form and deploy intake validation pipeline
+- [x] Build intake validation pipeline (validate-intake-form.js + wealth fingerprint + calculator wiring)
+- [ ] Paste final form into Google Forms + run migration 037 on Neon
 
 #### May 2026 — Premiere
 - **May 8-9:** Film premiere with participant intake
@@ -1156,7 +1238,7 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 | Script | Purpose | Status |
 |--------|---------|--------|
 | `familysearch-ancestor-climber.js` | BFS ancestor climbing from FS IDs | Active (Mac Mini) |
-| `validate-intake-form.js` | Google Form CSV validation | NEW |
+| `validate-intake-form.js` | Google Form CSV validation + wealth flag | Updated Apr 16 |
 | `extract-preindexed-data.js` | FamilySearch pre-indexed extraction | Active |
 | `extract-census-ocr.js` | 1860 Slave Schedule OCR extraction | Active |
 | `re-evaluate-matches.js` | Match verification re-evaluation | Ready |
@@ -1211,8 +1293,8 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 - [ ] No fabricated data in any generated document
 - [ ] No misattributed research citations
 - [ ] Generated documents reviewed for legal language appropriateness
-- [ ] Google Form live and accepting participant intake
-- [ ] Validation pipeline processing and queuing climbs
+- [ ] Google Form live and accepting participant intake (Section 3b needs pasting)
+- [x] Validation pipeline processing and queuing climbs (+ wealth fingerprint + calculator wiring)
 - [ ] Transparent "research in progress" framing where methodology is still developing
 - [ ] 1,800,000+ total database records
 

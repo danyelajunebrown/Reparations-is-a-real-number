@@ -1,9 +1,87 @@
 # Active Context: Current Development State
 
-**Last Updated:** April 13, 2026 (Session 29 cont. — build pass, admin auth, API shape fixes, live verification + IPFS + deploy in progress)
-**Current Phase:** Frontend Reintegration — full rebuild for May premiere. Data cleaning happening in a parallel chat.
+**Last Updated:** April 18/19, 2026 overnight (Session 31 — Freedmen's Bank enslaver extraction parser + wealth tracing pivot + security finding)
+**Current Phase:** Freedmen's Bank enslaver extraction running overnight; wealth tracing pivot in framework-doc stage; urgent credential rotation pending.
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
+
+---
+
+## Session 31: Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (Apr 18-19, 2026) 🟡 IN PROGRESS
+
+### Triggering events
+- Kernel panic on 8GB M1 MacBook Air during Freedmen's Bank scrape work. Root cause: swap thrash from concurrent Puppeteer + Chrome + VS Code + Claude Code.
+- User pushback on long-standing implicit "wealth tracing is infeasible" framing in the project's calculator defaults — directive to pivot to specific-asset, land-primary tracing.
+- Safari "Apple Security System" scareware popup surfaced as a recurring system-level concern.
+
+### Delivered tonight (Apr 18 evening → Apr 19 early morning)
+
+**Memory-safe Freedmen's Bank runner** (`scripts/run-all-freedmens.sh`):
+- `NODE_OPTIONS=--max-old-space-size=1536` heap cap per branch
+- Clean Chrome quit + relaunch between branches (captures Chrome args at startup, reuses same user-data-dir for login persistence)
+- Swap-abort guard (default 80%) with resume instructions on exit
+- Chrome-detection regex fixed (was missing `.app/` in path pattern)
+
+**Audit script duplicate-detection bug fixed** (`scripts/audit-freedmens-quality.js`):
+- Old query grouped on `(full_name, context_text, branch)`. When `context_text` fell back to the generic "Freedman's Bank depositor, <branch>" string (no account#), 136 distinct first-name-only "John" records in NYC collapsed into one group and got reported as duplicates. False positive.
+- Split into 3a HARD duplicates (same ARK URL) and 3b SUSPICIOUS (same name + account# across different ARKs).
+- True issue rate: **0.033%** (was reported as 0.365%). Only 20 real duplicates in the 363K records.
+
+**Freedmen's Bank enslaver-field extraction — full rewrite** (`scripts/extract-freedmens-fields.js`):
+- Replaced naive flat-text regex parser with Google Vision DOCUMENT_TEXT_DETECTION bounding-box parser.
+- Label detection: strict regex with `^`/`$` anchors and `(\d+\.\s*)?` optional numeric prefix — handles BOTH Charleston Roll 21's numbered 26-field form AND Baltimore/Huntsville unnumbered short-form in the same patterns.
+- Record anchor detection: "No.NNNN" account numbers OR "Record for NAME" headers (covers all 28 branches' templates). OCR-variant tolerance for "Becord" / "lecord" / "Pecord" misreads of "Record".
+- Zone partitioning: single anchor → whole-page zone; multi-anchor → partition by (y, x) with unique keys (fixed the bug where all null-acct anchors collapsed into one null-keyed zone).
+- Value extraction via catchment area: for each label, collect words between midpoint-to-prev and midpoint-to-next label, with a ±12px buffer so handwritten values whose bounding boxes straddle row boundaries get captured.
+- UI-chrome filter: exclude words outside `{x:[40,2200], y:[120,1600]}` so FS viewer sidebar text ("Bank Records", "NAMES", etc.) doesn't pollute ledger extraction.
+- Screenshot stabilization: strip `view=index` query param from the ledger URL before `page.goto()` so FS doesn't auto-open the right-hand indexing panel. Viewport set to 2800×1700. Zoom-In clicks not needed (they made text blurry); "fit to window" default at wider viewport gives clean ledger capture.
+- Vision response caching: `--reuse-ocr` flag loads cached annotation JSON from disk, zero-cost parser iteration.
+- Random sampling mode: `--random` flag for verification sweeps.
+
+**Parser verification sweep** (`scripts/verify-freedmens-parser.sh`):
+- Ran on one random page from each of 31 branches.
+- 29 of 31 produced ≥1 record anchor. Median 8 anchors per multi-record page, 1 per single-record page.
+- Graceful failures (no false data): Mobile Alabama (faded ink, OCR couldn't read) and Philadelphia (tabular "RECORDS FOR SOCIETIES" form — organizational, not individual).
+- Ground-truth success: Charleston R21 image 107 extracted `last_master="Mrs Cyons Howe."` for Hagar Savage (OCR noise on "Cyans" → "Cyons" but human-recognizable).
+
+**Full-collection overnight runner started** (`scripts/run-freedmens-field-extraction.sh`):
+- 28 branches (Philadelphia deliberately skipped — orgs form).
+- PER_BRANCH_LIMIT=300 depositors, 30-min per-branch timeout (hand-rolled bash watchdog since macOS lacks `gtimeout`).
+- Chrome restart every branch, swap-abort at 80%, post-branch audit with threshold interrupts (>30% garbage ratio or 2 consecutive 0-extract branches — new logic applies to future restarts only).
+- LIVE DB writes enabled. Started 00:18:50 EDT Apr 19.
+- Branch 1 Charleston R21: **50 depositors extracted, 32 with enslaver fields, 26 with old_titles, 0 garbage.**
+- Branch 2 Charleston R23 crashed on rate-limit ("Execution context destroyed"); user fixed the rate limit manually; Branch 3 Richmond R26 resumed cleanly. R23 needs re-run.
+
+### Wealth tracing pivot (directional shift)
+
+After the user's critique of the aggregate-statistics framing, we established:
+- Directional memory file `project_wealth_tracing_pivot.md` capturing the pivot thesis.
+- **`memory-bank/wealth-tracing-framework.md`** — academic-quality methodology draft (abstract, problem statement, 3-claim thesis, working bibliography, two-pillar methodology, data model, source priorities, validation, limits, DC pilot, roadmap). Target: peer-reviewable, court-admissible.
+- **`migrations/038-land-tracing-and-flagrant-assets.sql`** — additive schema: `land_transfer_events` (chain of title), `modern_parcel_links` (historical → modern parcel ID), `top_landholder_flags` (1% reference tier, keyed to canonical_persons), `flagrant_heirloom_assets` (named trusts, stock certificates, art, etc.). Plus `enslaver_material_footprint` view for DAAOrchestrator consumption.
+- Thresholds: **top 1% landholder reference tier PLUS any-scale-slaveholder tier** (not top 10% per user direction).
+- Pilot case: user's 5 DC-slave-owning ancestors whose probate/deed/administration/guardianship records were requested on Apr 18. Ingestion and trace will follow once records arrive.
+
+### 🚨 Security finding
+
+- **Production Render PostgreSQL password `<REDACTED-render-pg-decommissioned-2026-04-25>` is committed in git HEAD** on public repo `github.com/danyelajunebrown/Reparations-is-a-real-number` in 5 files: `docs/deployment/DEPLOYMENT-FIX-GUIDE.md:78`, `memory-bank/activeContext.md:1867`, `run-test.sh:5`, `setup-agent.sh:8`, `test-simple.sh:5`.
+- **Google Vision API key + FamilySearch password** are only in local `.claude/settings.local.json` (not tracked). Less severe but still good-hygiene rotate.
+- Action plan (task #17): rotate in Render → update .env → remove from 5 files → `git filter-repo` to purge history → force-push → audit DB for suspicious activity. User aware; rotation timing TBD (overnight run holds DB connection).
+
+### Safari scareware
+
+- "McAfee: Critical Virus Alert" popups diagnosed as Safari web-notification scam from domain `homphitiomiring.com` (classic malvertising push-notification subscription). Not a system virus. User instructed to delete all Safari notification permissions + disable future notification prompts.
+
+### Current state (as of Apr 19 ~02:00 ET)
+
+- Overnight runner PID 11467 alive, on branch 3 of 30.
+- Charleston R23 needs re-run (crashed on rate limit; zero DB corruption, just no data written for that branch).
+- Task #17 (credential rotation) awaiting user action.
+- Land-tracing schema drafted but not applied.
+
+### Known deferred
+- Parser accuracy improvement: cross-label value bleed on Charleston R21 (slave_residence and old_title both capture "Charleston." when they shouldn't). Acceptable for MVP.
+- Baltimore DB↔FS image mapping mismatch: DB thinks acct 220 is one person, FS ledger page 11 shows a different name at acct 220. Separate data-quality issue, not parser.
+- Full-collection run will need re-run on any branches that crashed on rate limits; `run-freedmens-field-extraction.sh` is idempotent over already-extracted records (filters on `review_notes NOT LIKE '%ledger_extraction%'`).
 
 ---
 
@@ -167,14 +245,143 @@ Four routes under `/admin`:
      4. (Optional) Reactivate Render so the API is reachable from the deployed site
 
 ### Apr 13 Files Touched
-- `src/api/routes/contribute.js` — sharedPool everywhere (17 replacements, 19 pool.end removals)
+- `src/api/routes/contribute.js` — sharedPool everywhere (17 replacements, 19 pool.end removals), stats query rewritten with CTEs
+- `src/middleware/admin-auth.js` (new)
+- `src/server.js` — admin auth wiring, CORS X-Admin-Token header
 - `frontend/src/api/genealogyHash.js` (new)
-- `frontend/src/api/client.js` — added getFarmerPaellmannLegal, listLegalDoctrines, encoded jurisdiction param
+- `frontend/src/api/client.js` — added getFarmerPaellmannLegal, listLegalDoctrines, encoded jurisdiction param, admin token helpers
+- `frontend/src/hooks/useAdminAuth.js` (new)
+- `frontend/src/components/Admin/AdminAuth.jsx` (new)
 - `frontend/src/components/BlockchainPanel/BlockchainPanel.jsx` — wired computeGenealogyHash, shows committed hash on success
 - `frontend/src/components/LegalFramework/LegalTopic.jsx` — full rewrite with topic-specific structured views
-- `frontend/package.json` — deploy:gh-pages script, build now generates 404.html
+- `frontend/src/components/CorporateDebts/CorporateDebts.jsx` — involvement_category array handling + rewrite for real API shape
+- `frontend/src/components/LineageGraph/LineageGraph.jsx` — real column names (slaveholder_birth_year, matches_found)
+- `frontend/src/components/Admin/ParticipantManagement.jsx` — matches_found column
+- `frontend/package.json` — deploy:gh-pages script targets gh-pages-react branch, build generates 404.html
 - `frontend/.env.example` — documents base path scenarios
-- `memory-bank/activeContext.md` — this update
+- `migrations/apply-missing-on-neon.sql` (new) — defendants_by_sector view
+- `.env.example` — ADMIN_TOKEN section
+
+### Apr 13/14 DEPLOYMENT COMPLETE — full system green
+
+All three commits pushed to origin/main and Render auto-deployed successfully:
+- `40afc1759` feat(frontend): React+Vite rebuild for May 2026 premiere
+- `81c69d349` fix(server): admin auth gate, connection pool fix, stats query fix
+- `ae9b6a414` docs(memory-bank): Session 29 — frontend reintegration
+
+**User actions completed:**
+1. ✅ Migration 031 applied to Neon via SQL editor (7 legal relations seeded: 7 jurisdictions, 4 doctrines, 4 garnishment mechanisms, UK 1833 compensation, Haiti independence debt, Farmer-Paellmann analysis)
+2. ✅ `apply-missing-on-neon.sql` applied to Neon (defendants_by_sector view created)
+3. ✅ ADMIN_TOKEN set on Render (original value was accidentally posted in chat, user was advised to rotate immediately, user confirmed rotation — memorize: **never request or accept secret values in chat**)
+4. ✅ GitHub Pages source switched from `main` to `gh-pages-react` branch / root folder
+5. ✅ Visual confirmation from user: "yup looks decent"
+
+**Before → After endpoint sweep:**
+| Endpoint | Before | After |
+|---|---|---|
+| /api/contribute/stats slaveholders | **55** | **399,578** |
+| /api/contribute/stats total_records | 1.97M | 2.46M |
+| /api/legal/* (all 8 endpoints) | 500 | 200 with rich structured data |
+| /api/corporate-debts/farmer-paellmann/by-sector | 500 | 200 (5 insurers, 4 railroads, 4 tobacco, etc.) |
+| /api/admin/verify | 404 | 401 (gate working, token rejecting wrong values) |
+
+**Live URLs:**
+- Frontend: https://danyelajunebrown.github.io/Reparations-is-a-real-number/
+- Backend API: https://reparations-platform.onrender.com
+- DB: Neon (ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb)
+
+### 🔴 ISSUE FOR TOMORROW (Apr 14): Eli Neal not appearing in UI
+
+User reported on first look: **"not seeing eli neal who's scrape we completed"**
+
+Per memory (project_eli_neal.md), Eli Neal has 4 grandparent FS IDs with at least the Fagan climb completed (12+ matches Gen 7+). The climb sessions list returned 11 sessions from the live API but Eli Neal didn't show up in whatever view the user was checking.
+
+Investigation hypotheses for tomorrow:
+1. **Participant grouping not wired up** — Eli Neal's climbs are indexed by grandparent FS IDs (LX39-1MY, GQ5M-G1L, etc.), not by "Eli Neal". The ParticipantManagement component currently groups by modern_person_fs_id, so Eli's 4 grandparent climbs would appear as 4 separate "participants", not one named "Eli Neal". Need the participants table (migration 036) actually populated and a /api/participants endpoint wired.
+2. **Lineage graph filtering matches too aggressively** — isVerified() only accepts confirmed_slaveholder/enslaved_ancestor/free_poc/free_poc_slaveholder. If the Eli Neal climb matches are all classified as 'unverified' (pre-verification), they'd be hidden from the public lineage graph. The ancestor_climb_matches row Edward Schwehr → Jacob Ruff we spot-checked shows classification='temporal_impossible' — many other matches may be similarly filtered out. Need to check what percentage of Eli Neal's ~12 matches pass the strict filter.
+3. **Search not hitting canonical_persons properly** — if user searched "Eli Neal" directly, the /api/contribute/search endpoint hits unconfirmed_persons, enslaved_individuals, canonical_persons. But Eli Neal is a PARTICIPANT (living person), not an enslaver or enslaved person — he wouldn't be in any of those tables. There's no dedicated participant search yet.
+
+Likely the real fix is (1) + a dedicated participant view that surfaces by participant name and shows all 4 grandparent lineages together in the LineageGraph.
+
+Session pause: user said "we'll dig in tomorrow" — no more code changes tonight.
+
+## Apr 13/14 Late-Night Audit: system-wide orphaning assessment
+
+User followed up with broader concern: "how many other completed climbs and other sorts of data are lingering about in limbo due to our helter skelter migrations and integrations?" — triggered systematic audit via the live API.
+
+### The headline numbers
+
+- **11 ancestor_climb_sessions** total in DB (via `/api/ancestor-climb/sessions?limit=100`). 5 are named with FS IDs only (humanly unsearchable), 6 are named properly.
+- **582 total climb matches** across all 10 completed sessions. **5 pass the verification filter. 99.1% hide rate.**
+- Adrian Brown 16→1 (Angelica Chesley)
+- Eli Fagan LX39-1MY: **548→4** (Mary Martin, William Howard, Mary Johnson, William Collins)
+- Eli Schwehr GQ5M-G1L: 1→0 (Jacob Ruff b.1473 temporal_impossible)
+- Ryan Mills ×3: 13→0
+- Andrew Scammell 4→0
+- **1,930,933 unconfirmed_persons** rows accessible via search but refused in person modal (incoherent UX — see issue #34)
+
+### Key insight about the 548→4 ratio
+
+Not a filter bug — the filter logic is correct. Breakdown of the 548:
+- 330 `classification='temporal_impossible'` (born outside slavery era, correctly rejected)
+- 121 `classification='unverified'` (MatchVerifier couldn't determine — **needs human review, no admin UI exists**)
+- 93 `classification='common_name_suspect'` (high-frequency surname filter; includes "Hull, George" which is a legit Athens GA family per memory bank)
+- 4 `classification='enslaved_ancestor'` (pass filter)
+
+The `verification_status` column (225 auto_verified, 315 common_name_suspect, 8 temporal_impossible) is a human-review pipeline state, NOT a content classification. `auto_verified` just means "MatchVerifier made a confident call without needing human review" — which for most rows is a confident rejection, not a promotion.
+
+### The Eli Neal problem (deeper dive)
+
+Search for "Eli Neal" returns 18 fuzzy namesakes (Elizabeth Neal, Eli Oneal, Eliza Neale) — none are him. BUT:
+- Search "Fagan" → 45 enslaver records in canonical_persons
+- Search "Schwehr" → 7 descendant records in canonical_persons (Bartholomäus, Joannes Baptista, Georg, Remigius, Herman Louis...)
+- Search "Hull" → 50 results (Hull family data is present)
+
+**The data his climbs produced IS in the database.** The problem is the participant↔climb↔matches chain has no human-searchable entry point:
+1. ancestor_climb_sessions.modern_person_name = FS ID for unnamed climbs
+2. No /api/participants endpoint
+3. Canonical_persons rows have no originating_session_id
+4. ParticipantManagement groups by FS ID, not participant identity
+5. `participants` table from migration 036 — status unknown, probably empty
+
+### Missing migrations still outstanding
+
+- ✅ Migration 031 (legal framework) — applied Apr 13
+- ✅ defendants_by_sector view (from 021) — applied Apr 13
+- 🔴 **Migration 009 (british_colonies)** — not applied, /api/british-colonies returns 500
+- Unknown: migrations 010, 013, 016, 018, 020, 022, 023, 024, 025, 028, 029, 030, 032, 033, 036 (no verification done yet)
+- Known broken (from memory): migration 011 historical_reparations_petitions
+
+### Other orphaned state
+
+- Census OCR job #246 **stalled 83+ hours** since Apr 10 on Virginia/Cabell County, 0% complete, status='running' but updated_at is 4 days old. /extraction-progress auto-detects this as 'stalled'.
+- Blockchain contract on Base mainnet: totalRecords=0 (no DAAs ever submitted — genealogyHash work ready but untested with real data)
+- Stale gh-pages branch on origin (real Dec 14 2025 code history, not Pages artifact — confusing)
+- memory-bank/ is gitignored but files tracked (confusing git add workflow)
+
+### GitHub issues filed Apr 13/14 (Session 29 close)
+
+- **#26** P0 Eli Neal invisible — climbs indexed by FS ID, not participant name (critical, frontend-integration, data-orphaning)
+- **#27** P0 No admin review UI for ancestor_climb_matches — 99.1% frontend hide rate (critical, frontend-integration, data-orphaning, bug)
+- **#28** P1 Migration 009 (British colonial) not applied to Neon (high, data-orphaning, bug)
+- **#29** P1 Audit all migrations 007-036 for applied-on-Neon status (high, data-orphaning)
+- **#30** P1 Census OCR job #246 stalled since Apr 10 (high, bug)
+- **#31** P2 Search returns type=descendant / slaveholder_descendant with no frontend model (medium, frontend-integration)
+- **#32** P2 Revisit common_name_suspect filter — legit matches hidden (medium, frontend-integration)
+- **#33** P2 Repo housekeeping — stale gh-pages branch, gitignored memory-bank (medium)
+- **#34** P1 Unconfirmed_persons (1.93M) surface in search but refuse in person modal (high, frontend-integration, data-orphaning)
+
+### New labels created
+- `frontend-integration` #5319E7 — Connecting React frontend to backend data/services for May premiere
+- `data-orphaning` #EDEDED — Data exists in DB but unreachable from intended user views
+
+### Priority order for Apr 14 morning work
+
+**P0 (premiere-critical):** #26 #27 — without these, Eli Neal (and everyone with FS-ID-only climbs) has nothing to see at the premiere
+
+**P1 (data integrity):** #29 (migration audit), #34 (unconfirmed UX), #28 (British colonial), #30 (stalled OCR)
+
+**P2 (polish):** #31 #32 #33
 
 ### User Preferences Reaffirmed
 - Take time, do it right, test, verify at each step, update memory bank (explicit instruction)
@@ -298,9 +505,29 @@ Built Google Form structure and validation script for participant intake at film
 
 **Required fields:** Self (name, DOB, birthplace, email, address, FS ID), Parents ×2 (name, birth year, birthplace, FS ID, living status), Grandparents ×4 (same), Financial disclosure (income, net worth, real estate equity, inheritance received/expected, tax filing status, dependents), Consent (4 checkboxes + certification)
 
-**Validation script:** `scripts/validate-intake-form.js` — processes Google Form CSV export, validates FS IDs (no-vowel regex), cross-checks generational plausibility, detects duplicate IDs, verifies FS IDs exist via HTTP, optional tree linkage verification via Puppeteer
+**Wealth Fingerprint (Section 3b — added Apr 15/16, 2026):** Trust/estate (beneficiary status + corpus), family business (founded vs inherited + sector/founding year), inherited land (acreage tier + states + use types), Farmer-Paellmann corporate connections checklist (JPMorgan, CVS/Aetna, NY Life, BBH, CSX, Norfolk Southern, Union Pacific, Canadian National), executive/board multi-generational history, pre-1865 business continuity.
+
+**Validation script:** `scripts/validate-intake-form.js` — processes Google Form CSV export, validates FS IDs (no-vowel regex), cross-checks generational plausibility, detects duplicate IDs, verifies FS IDs exist via HTTP, auto-computes `wealth_flag_elevated` and `corporate_connection_type`, optional tree linkage verification via Puppeteer
 
 **FS ID regex:** `^[BCDFGHJKLMNPQRSTVWXYZ0-9]{4}-[BCDFGHJKLMNPQRSTVWXYZ0-9]{2,4}$` (no vowels A E I O U)
+
+### Dead-Data Problem Fixed (Apr 15/16, 2026)
+Previously, intake form collected 7 financial fields but DAAOrchestrator.calculateTotalDebt() only used `annualIncome * 0.02` (flat 2%). Net worth, real estate equity, inheritance, dependents, tax status — all dead data.
+
+**Now wired:**
+- **DAAOrchestrator** calls TieredPaymentCalculator (progressive brackets 0.5%–5% × slaveholder scale × corporate multiplier + 0.1% net worth component) + WealthGapCalculator (Darity-Mullen share-of-gap with wealth ratio + inheritance factor). Uses HIGHER of Craemer vs D&M as obligation floor.
+- **Migration 037** adds 15 new columns to `participants`: corporate_connections[], corporate_connection_type, trust_beneficiary, trust_corpus, family_business_ownership/details, inherited_land_acres/states/use, executive_board_history, pre_1865_business_continuity/details, wealth_flag_elevated, wealth_flag_reasons[]
+- **CorporateSuccessionTracer** now has `reverseLookup()` — "Citizens Bank" → jpmorgan (predecessor, 0.8 confidence)
+- **Backward compatible** — calculateTotalDebt() still accepts a bare number for existing callers
+
+**Integration test verified:**
+- $250K income, $3M net worth, $800K inheritance, 50 enslaved, direct corporate:
+  - Flat 2% was: $5,000/yr
+  - Tiered now: $15,240/yr (6.1% effective rate)
+  - Wealth-gap obligation: $1.6M
+  - Dual methodology picks Darity-Mullen (higher)
+
+**TODO:** Paste Section 3b into actual Google Form. Run migration 037 on Neon.
 
 ### Piper's Failed Climb (LTVZ-D9S)
 - Session beea32c1 started Mar 26, ran for 5 seconds, visited 1 person, 0 ancestors

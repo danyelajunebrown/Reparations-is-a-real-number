@@ -1,166 +1,171 @@
 {
-  "sites": {
-    "freepages.rootsweb.com": {
-      "type": "census",
-      "patterns": {
-        "slaveholder": "([A-Z]+),\\s+([A-Za-z]+),\\s+(\\d+)\\s+slaves",
-        "location": "page\\s+(\\d+[AB]?)",
-        "surname": "([A-Z]+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+),\\s+(\\d+)"
-      },
-      "confidence": 0.98,
-      "lastUpdated": "2025-12-02",
-      "firstSeen": "2025-12-02",
-      "successRate": 0.95,
-      "attempts": 10,
-      "successes": 9,
-      "sourceType": "primary",
-      "description": "Tom Blake's Large Slaveholders of 1860 census data"
-    },
-    "civilwardc.org": {
-      "type": "petition",
-      "patterns": {
-        "petitioner": "petition\\s+of\\s+(.+)",
-        "enslaved": "negro\\s+(?:man|woman|boy|girl)\\s+named\\s+([A-Z][a-z]+)",
-        "document": "href=[\"']([^\"']+\\.(?:pdf|jpg|png))[\"']"
-      },
-      "confidence": 0.95,
-      "lastUpdated": "2025-12-02",
-      "firstSeen": "2025-12-02",
-      "successRate": 0.92,
-      "attempts": 8,
-      "successes": 7,
-      "sourceType": "primary",
-      "description": "DC Compensated Emancipation Petitions - primary government documents"
-    },
-    "beyondkin.org": {
-      "type": "directory",
-      "patterns": {
-        "slaveholder": "class=[\"']pdb-field-name[\"'].*?([A-Z][a-z]+\\s+[A-Z][a-z]+)",
-        "enslaved": "class=[\"']enslaved-list[\"'].*?([A-Z][a-z]+)",
-        "relationship": "slaveholder.*?([A-Z][a-z]+).*?enslaved.*?([A-Z][a-z]+)"
-      },
-      "confidence": 0.7,
-      "lastUpdated": "2025-12-02",
-      "firstSeen": "2025-12-02",
-      "successRate": 0.85,
-      "attempts": 20,
-      "successes": 17,
-      "sourceType": "secondary",
-      "description": "Beyond Kin Enslaved Populations Directory - suspected owners and enslaved"
-    },
-    "wikipedia.org": {
-      "type": "encyclopedia",
-      "patterns": {
-        "owner": "([A-Z][a-z]+\\s+[A-Z][a-z]+).*?(slaveholder|owner|plantation)",
-        "enslaved": "enslaved.*?([A-Z][a-z]+)",
-        "date": "(born|died).*?(\\d{4})"
-      },
-      "confidence": 0.5,
-      "lastUpdated": "2025-12-02",
-      "firstSeen": "2025-12-02",
-      "successRate": 0.75,
-      "attempts": 15,
-      "successes": 11,
-      "sourceType": "tertiary",
-      "description": "Wikipedia articles - requires verification with primary sources"
-    },
-    "msa.maryland.gov": {
-      "type": "slave_statistics",
-      "patterns": {
-        "owner": {},
-        "enslaved": {},
-        "location": {},
-        "date": {}
-      },
-      "confidence": 0.4,
-      "sourceType": "unknown",
-      "description": "Maryland Slave Statistics with iframe PDF handling",
-      "iframeHandling": true,
-      "extractionMethod": "pdf-lib + OCR",
-      "successRate": 1,
-      "attempts": 1,
-      "successes": 1,
-      "lastUpdated": "2025-12-03T03:32:03.232Z",
-      "firstSeen": "2025-12-03T03:32:03.238Z"
+  "project": "Reparations Is A Real Number",
+  "component": "Freedmen's Bank Scraping Protocol",
+  "lastUpdated": "2026-04-15",
+  "protocol": {
+    "engine": "Puppeteer attached to Chrome (port 9222)",
+    "bypassStrategy": [
+      "Do NOT navigate via Puppeteer (page.goto/page.click) — FamilySearch blocks headless navigation",
+      "Launch Chrome via CLI with --remote-debugging-port=9222 and log in manually",
+      "Manually navigate to first branch collection image",
+      "Use spawnSync+osascript to inject page numbers via React input setter (bypasses shell quoting issues)",
+      "Extract table data via read-only page.evaluate",
+      "ensureImageIndexTab() must be called before each extraction to guard against Information tab being active"
+    ],
+    "deduplication": "ON CONFLICT DO NOTHING (unique on source_url = record_ark per depositor)",
+    "safetyValves": {
+      "consecutiveEmpty": "Abort after 10 consecutive empty pages",
+      "retryLimit": 5,
+      "debugDumps": "Failed/empty pages saved to debug/freedmens-bank/",
+      "tabGuard": "ensureImageIndexTab() clicks tab--0 before every extractRecords() call"
     }
   },
-  "generalPatterns": {
-    "ownerNames": [
-      "slaveholder",
-      "owner",
-      "estate",
-      "plantation",
-      "master",
-      "proprietor"
-    ],
-    "enslavedNames": [
-      "enslaved",
-      "slave",
-      "servant",
-      "negro",
-      "colored",
-      "bondsperson"
-    ],
-    "locationPatterns": [
-      "in\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
-      "at\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
-      "from\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)",
-      "County,\\s*([A-Z]{2})"
-    ],
-    "datePatterns": [
-      "born\\s+(\\d{4})",
-      "died\\s+(\\d{4})",
-      "date\\s+(\\d{4})",
-      "(\\d{1,2})\\s+(January|February|March|April|May|June|July|August|September|October|November|December)\\s+(\\d{4})"
-    ],
-    "relationshipPatterns": [
-      "owned\\s+by\\s+([A-Z][a-z]+)",
-      "enslaved\\s+by\\s+([A-Z][a-z]+)",
-      "servant\\s+of\\s+([A-Z][a-z]+)"
-    ]
-  },
-  "metadataSchema": {
-    "sourceType": [
-      "primary",
-      "secondary",
-      "tertiary"
-    ],
-    "dataTypes": [
-      "owners",
-      "enslaved",
-      "relationships",
-      "locations",
-      "dates",
-      "documents"
-    ],
-    "listingPage": [
-      "yes",
-      "no"
-    ],
-    "confidenceLevels": {
-      "primary": 0.9,
-      "secondary": 0.7,
-      "tertiary": 0.5,
-      "generic": 0.4
+  "tableStructure": {
+    "confirmedDate": "2026-04-11",
+    "columnMapping": {
+      "cells[0]": "More button (has button=true, sticky overlay, skip)",
+      "cells[1]": "ATTACH / Attach to Tree (skip)",
+      "cells[2]": "Name — the primary depositor name (can be EMPTY when person is referenced only by relationship)",
+      "cells[3+]": "Variable: Mother's Name, Mother's Sex, Spouse's Name, Event Place, Account Number — cells omitted when empty"
     },
-    "documentTypes": [
-      "petition",
-      "census",
-      "directory",
-      "article",
-      "memorial",
-      "archive"
-    ],
-    "priorityLevels": {
-      "high": 10,
-      "medium": 5,
-      "low": 1
+    "headerWarning": "Header shows 'Mother's Sex' twice at positions [4] and [5] — likely a display label bug. Second is Spouse's Name.",
+    "extractionStrategy": "Content-based classification — scan cells[2:] for first name-like value as full_name, then classify rest by pattern",
+    "knownQuirk": "React virtualization causes column bleeding: when Name (cells[2]) is empty, Mother's Name bleeds into cells[2]. Child rows (George, Carrie Fraser, etc.) may show as mother's name in DB. This is expected and acceptable — ARKs are unique so ON CONFLICT prevents true duplication."
+  },
+  "dataModel": {
+    "table": "unconfirmed_persons",
+    "criticalColumns": {
+      "locations": "text[] NOT jsonb — pass JS array directly to neon, do NOT JSON.stringify or cast ::jsonb",
+      "relationships": "jsonb — use JSON.stringify(arr)::jsonb",
+      "source_url": "Stores individual record ARK (https://www.familysearch.org/ark:/61903/1:1:XXXX-XXXX) for future enrichment",
+      "extraction_method": "'freedmens_bank_index'",
+      "person_type": "'freedperson'",
+      "source_type": "'secondary'"
     }
   },
-  "learningStatistics": {
-    "totalSitesLearned": 5,
-    "totalPatternsLearned": 25,
-    "averageSuccessRate": 0.8940000000000001,
-    "lastUpdate": "2025-12-03T03:32:03.238Z"
+  "formerEnslaverAccess": {
+    "status": "BLOCKED",
+    "detail": "Former enslaver, age, occupation live in the 1:1: individual record pages which require FamilySearch login. Programmatic access via Platform API (/platform/records/search) returns 404. Cross-domain fetches to sg30p0.familysearch.org are blocked by CORS. Information tab only shows catalog metadata, not record-level fields.",
+    "futureEnrichment": "When FamilySearch API OAuth credentials are obtained, use source_url (record_ark) to fetch /platform/records/personas/{id} for each depositor"
+  },
+  "branches": {
+    "Atlanta, Georgia": {
+      "totalImages": 400
+    },
+    "Augusta, Georgia": {
+      "totalImages": 400
+    },
+    "Baltimore, Maryland": {
+      "totalImages": 400
+    },
+    "Beaufort, South Carolina": {
+      "totalImages": 400,
+      "status": "running since 2026-04-11 20:23"
+    },
+    "Charleston, South Carolina": {
+      "totalImages": 421,
+      "status": "running since 2026-04-11 21:43"
+    },
+    "Columbus, Mississippi": {
+      "totalImages": 400
+    },
+    "Huntsville, Alabama": {
+      "totalImages": 400
+    },
+    "Lexington, Kentucky": {
+      "totalImages": 400
+    },
+    "Little Rock, Arkansas": {
+      "totalImages": 400
+    },
+    "Louisville, Kentucky": {
+      "totalImages": 400
+    },
+    "Lynchburg, Virginia": {
+      "totalImages": 400
+    },
+    "Memphis, Tennessee": {
+      "totalImages": 400
+    },
+    "Mobile, Alabama": {
+      "totalImages": 400
+    },
+    "Nashville, Tennessee": {
+      "totalImages": 400
+    },
+    "Natchez, Mississippi": {
+      "totalImages": 400
+    },
+    "New Bern, North Carolina": {
+      "totalImages": 400
+    },
+    "New Orleans, Louisiana": {
+      "totalImages": 400
+    },
+    "New York, New York": {
+      "totalImages": 400
+    },
+    "Norfolk, Virginia": {
+      "totalImages": 400
+    },
+    "Philadelphia, Pennsylvania": {
+      "totalImages": 400
+    },
+    "Raleigh, North Carolina": {
+      "totalImages": 2
+    },
+    "Richmond, Virginia": {
+      "totalImages": 841
+    },
+    "Savannah, Georgia": {
+      "totalImages": 400
+    },
+    "Shreveport, Louisiana": {
+      "totalImages": 400
+    },
+    "St. Louis, Missouri": {
+      "totalImages": 400
+    },
+    "Tallahassee, Florida": {
+      "totalImages": 400
+    },
+    "Vicksburg, Mississippi": {
+      "totalImages": 400
+    },
+    "Washington D. C.": {
+      "totalImages": 400
+    },
+    "Wilmington, North Carolina": {
+      "totalImages": 254
+    }
+  },
+  "procedures": {
+    "restart": "killall node; node scripts/scrape-freedmens-bank-indexed.js --branch 'NAME' --start N",
+    "dryRun": "Add --dry-run flag: no DB writes, prints extracted JSON to stdout",
+    "addBranch": "Update BRANCHES object in scripts/scrape-freedmens-bank-indexed.js",
+    "checkProgress": "tail -20 /tmp/freedmens-charleston.log",
+    "promotion": "Only run after full ingestion; via promote-trackable-to-canonical.js",
+    "garbagedRecordsHistory": "65,126 garbage records deleted 2026-04-10 — caused by old blob-based extraction storing full page innerHTML as full_name with all structured columns null"
+  },
+  "bugsFixedSession_2026_04_11": [
+    "AppleScript bridge used shell single-quotes which broke names with apostrophes → fixed with spawnSync (args passed directly, no shell)",
+    "extractRecords used cells[2] hardcoded as name → broke when Name column empty; fixed with scan-first-name-like-value approach over cells[2:]",
+    "locations column passed as JSON.stringify(arr)::jsonb → cast error; fixed by passing JS array directly (neon serializes natively to text[])",
+    "Information tab pollution: clicking Information tab left it active, scraper then extracted catalog metadata as person records → fixed with ensureImageIndexTab() called before every page extract",
+    "table tr querySelectorAll matched header row and non-data rows → fixed with tr[data-testid] selector (only data rows have ARK testIds)"
+  ],
+  "bugsFixedSession_2026_04_15": {
+    "summary": "Full rewrite of Freedmen's Bank indexed scraper after audit found 9,334 corrupted rows and oscillating pagination. Charleston re-scraped cleanly: 15,854 rows, 0.03% initial garbage, 0 errors.",
+    "architecture": {
+      "navigation": "puppeteer-native (osascript removed). Initial page.goto() to target image, then \"Next Image\" button clicks with 4s fixed wait for React viewer to render.",
+      "onBranchViewer": "detected via wc= waypoint parameter, NOT ark ID. Each image in a roll has its own ark; only wc is stable across a roll.",
+      "extraction": "children[2] is always the Name cell (sometimes <th scope=\"row\">, sometimes <td> after React hydration). Other cells classified by content (digit-only=account, geo-commas=place, Male/Female=sex-column-skip, prose=source-note-reject, name-like=family_member).",
+      "noteFilter": "looksLikeNote() rejects strings >40 chars, >5 words, or containing sentence words (with,came,his,husband,wife,etc) so source-text ledger notes don't leak into family_members.",
+      "reactTableCaveats": "FS Image Index table is React-virtualized with variable column positions per row (adult rows and child rows have different cell layouts despite same 13-child count). Positional column mapping via header row is UNRELIABLE. Use children[2] for name + content classification for everything else."
+    },
+    "branchesMapFormat": "{ total: <totalImages>, url: <full viewer URL with wc+ark+i=N> }. Verify each branch by opening its URL in Chrome and confirming Image Index tab shows populated rows before adding. Prior multi-branch map was unverified and broken (wrong wc waypoints).",
+    "chromeSetup": "Separate Chrome instance on --remote-debugging-port=9222 with --user-data-dir=/tmp/chrome-scraper. Must have at least one FS tab open and logged in. Tab state can break between runs — reload via puppeteer if table disappears.",
+    "purgedGarbage": "9,334 rows from initial audit + 5 residual post-run = 9,339 total garbage rows cleared.",
+    "nextBranches": "Richmond, Wilmington, Raleigh — user will provide verified ark viewer URLs one at a time. Old committed BRANCHES map had indexUrl-style URLs that are not compatible with the new ark-based navigation."
   }
 }
