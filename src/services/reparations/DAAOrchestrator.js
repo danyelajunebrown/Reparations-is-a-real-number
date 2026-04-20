@@ -275,72 +275,80 @@ class DAAOrchestrator {
         // three tiers. On such a failure the DAA is not generated.
         const PROBATE_DOC_TYPES = [
             'will','probate','administration','guardianship','deed',
-            'compensation_petition','dc_compensation_petition','estate_inventory'
+            'compensation_petition','dc_compensation_petition',
+            'compensated_emancipation_petition','dc_petition','petition',
+            'estate_inventory'
         ];
         const SCHEDULE_DOC_TYPES = [
             'slave_schedule','1850_slave_schedule','1860_slave_schedule',
             'agricultural_census','tax_list'
         ];
 
+        const SPOUSE_FAMILY_REL_TYPES = [
+            'spouse','spouse_of','married_to',
+            'parent','parent_of','child','child_of',
+            'father','father_of','mother','mother_of',
+        ];
+
+        // Per-origin scope: each origin canonical gets its own expanded set
+        // of related canonical ids (same-name dupes + spouses/parents/children
+        // via person_relationships_verified). Evidence on any of those counts.
         const q = await this.db.query(`
-            WITH scope AS (
-                -- Expand each in-scope enslaver to include other
-                -- canonical_persons rows sharing the same canonical_name
-                -- (duplicate entries case).
-                SELECT DISTINCT cp.id, cp.canonical_name, cp.person_type
-                FROM canonical_persons cp
-                WHERE cp.id = ANY($1)
-                   OR cp.canonical_name IN (
-                      SELECT canonical_name FROM canonical_persons
-                      WHERE id = ANY($1)
-                   )
+            WITH origins AS (
+                SELECT DISTINCT id, canonical_name
+                FROM canonical_persons
+                WHERE id = ANY($1::int[])
             ),
-            tier_a AS (
-                SELECT DISTINCT lte.enslaver_person_id AS cp_id
-                FROM land_transfer_events lte
-                WHERE lte.implicates_enslaver = TRUE
-                  AND lte.enslaver_person_id IN (SELECT id FROM scope)
-            ),
-            tier_b AS (
-                SELECT DISTINCT pd.canonical_person_id AS cp_id
-                FROM person_documents pd
-                WHERE pd.canonical_person_id IN (SELECT id FROM scope)
-                  AND LOWER(COALESCE(pd.document_type, '')) = ANY($2::text[])
-            ),
-            tier_c AS (
-                SELECT DISTINCT cp.id AS cp_id
-                FROM scope cp
-                JOIN family_relationships fr
-                    ON LOWER(fr.person1_name) = LOWER(cp.canonical_name)
-                    AND fr.relationship_type = 'enslaved_by'
-            ),
-            tier_b_schedule AS (
-                SELECT DISTINCT pd.canonical_person_id AS cp_id
-                FROM person_documents pd
-                WHERE pd.canonical_person_id IN (SELECT id FROM scope)
-                  AND LOWER(COALESCE(pd.document_type, '')) = ANY($3::text[])
+            scope_per_orig AS (
+                -- Self
+                SELECT o.id AS orig_id, o.id AS scope_id FROM origins o
+                UNION
+                -- Same-name duplicates (e.g. Maria Angelica Biscoe had 6 rows before merge)
+                SELECT o.id, cp.id
+                FROM origins o
+                JOIN canonical_persons cp ON cp.canonical_name = o.canonical_name AND cp.id != o.id
+                UNION
+                -- Spouse / parent / child via person_relationships_verified
+                SELECT o.id, prv.related_person_id
+                FROM origins o
+                JOIN person_relationships_verified prv ON prv.person_id = o.id
+                WHERE prv.relationship_type = ANY($4::text[])
+                UNION
+                SELECT o.id, prv.person_id
+                FROM origins o
+                JOIN person_relationships_verified prv ON prv.related_person_id = o.id
+                WHERE prv.relationship_type = ANY($4::text[])
             )
             SELECT
-                (SELECT canonical_name FROM canonical_persons WHERE id = orig.id) AS canonical_name,
-                orig.id AS enslaver_id,
+                o.canonical_name,
+                o.id AS enslaver_id,
                 EXISTS (
-                    SELECT 1 FROM tier_a ta JOIN scope s ON s.id = ta.cp_id
-                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                    SELECT 1 FROM scope_per_orig spo
+                    JOIN land_transfer_events lte ON lte.enslaver_person_id = spo.scope_id
+                    WHERE spo.orig_id = o.id AND lte.implicates_enslaver = TRUE
                 ) AS tier_a,
                 EXISTS (
-                    SELECT 1 FROM tier_b tb JOIN scope s ON s.id = tb.cp_id
-                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                    SELECT 1 FROM scope_per_orig spo
+                    JOIN person_documents pd ON pd.canonical_person_id = spo.scope_id
+                    WHERE spo.orig_id = o.id
+                      AND LOWER(COALESCE(pd.document_type, '')) = ANY($2::text[])
                 ) AS tier_b,
                 EXISTS (
-                    SELECT 1 FROM tier_c tc JOIN scope s ON s.id = tc.cp_id
-                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                    SELECT 1 FROM scope_per_orig spo
+                    JOIN canonical_persons cp ON cp.id = spo.scope_id
+                    JOIN family_relationships fr
+                        ON LOWER(fr.person1_name) = LOWER(cp.canonical_name)
+                       AND fr.relationship_type = 'enslaved_by'
+                    WHERE spo.orig_id = o.id
                 ) AS tier_c,
                 EXISTS (
-                    SELECT 1 FROM tier_b_schedule tbs JOIN scope s ON s.id = tbs.cp_id
-                    WHERE s.canonical_name = (SELECT canonical_name FROM canonical_persons WHERE id = orig.id)
+                    SELECT 1 FROM scope_per_orig spo
+                    JOIN person_documents pd ON pd.canonical_person_id = spo.scope_id
+                    WHERE spo.orig_id = o.id
+                      AND LOWER(COALESCE(pd.document_type, '')) = ANY($3::text[])
                 ) AS tier_b_schedule
-            FROM (SELECT unnest($1::int[]) AS id) orig
-        `, [enslaverIds, PROBATE_DOC_TYPES, SCHEDULE_DOC_TYPES]);
+            FROM origins o
+        `, [enslaverIds, PROBATE_DOC_TYPES, SCHEDULE_DOC_TYPES, SPOUSE_FAMILY_REL_TYPES]);
 
         const passed = [];
         const missing = [];
