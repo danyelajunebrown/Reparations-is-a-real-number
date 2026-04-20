@@ -13,12 +13,18 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const TieredPaymentCalculator = require('./TieredPaymentCalculator');
+const WealthGapCalculator = require('./WealthGapCalculator');
+const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
 
 class DAAOrchestrator {
     constructor(database, daaGenerator, documentGenerator) {
         this.db = database;
         this.daaGenerator = daaGenerator;
         this.documentGenerator = documentGenerator;
+        this.tieredCalc = new TieredPaymentCalculator();
+        this.wealthGapCalc = new WealthGapCalculator();
+        this.successionTracer = new CorporateSuccessionTracer(database);
     }
 
     /**
@@ -100,11 +106,30 @@ class DAAOrchestrator {
         console.log(`   ✓ Total enslaved persons documented: ${totalEnslavedCount}`);
         console.log();
 
-        // Step 4: Calculate total debt
-        console.log('Step 4: Calculating total debt...');
-        const debtCalculation = await this.calculateTotalDebt(slaveholderData, acknowledgerInfo.annualIncome);
-        console.log(`   ✓ Total debt: $${debtCalculation.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-        console.log(`   ✓ Annual payment (2%): $${debtCalculation.annualPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        // Step 4: Calculate total debt (using ALL financial data)
+        console.log('Step 4: Calculating total debt (Craemer + tiered payment + wealth gap)...');
+        const debtCalculation = await this.calculateTotalDebt(slaveholderData, {
+            annualIncome: acknowledgerInfo.annualIncome || 0,
+            netWorth: acknowledgerInfo.netWorth || 0,
+            realEstateEquity: acknowledgerInfo.realEstateEquity || 0,
+            inheritanceReceived: acknowledgerInfo.inheritanceReceived || 0,
+            inheritanceExpected: acknowledgerInfo.inheritanceExpected || 0,
+            corporateConnectionType: acknowledgerInfo.corporateConnectionType || 'none',
+            corporateConnections: acknowledgerInfo.corporateConnections || [],
+            trustCorpus: acknowledgerInfo.trustCorpus || 0,
+            trustBeneficiary: acknowledgerInfo.trustBeneficiary || 'no',
+            inheritedLandAcres: acknowledgerInfo.inheritedLandAcres || 'none',
+        });
+        console.log(`   ✓ Craemer debt: $${debtCalculation.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        console.log(`   ✓ Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        console.log(`   ✓ Recommended (higher): $${debtCalculation.recommendedDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${debtCalculation.dualMethodology.recommendedMethodology})`);
+        console.log(`   ✓ Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (was flat $${debtCalculation.flatRateComparison.flatAnnualPayment.toLocaleString()})`);
+        if (debtCalculation.wealthFlagElevated) {
+            console.log(`   ⚑ ELEVATED WEALTH: ${debtCalculation.wealthFlagReasons.join(', ')}`);
+        }
+        if (debtCalculation.corporateEvidence.length > 0) {
+            console.log(`   ⚑ Corporate connections: ${debtCalculation.corporateEvidence.map(e => e.modernEntity).join(', ')}`);
+        }
         console.log();
 
         // Step 5: Create DAA database record
@@ -137,8 +162,10 @@ class DAAOrchestrator {
         console.log('Summary:');
         console.log(`   • Slaveholders: ${slaveholderData.length}`);
         console.log(`   • Enslaved persons: ${totalEnslavedCount}`);
-        console.log(`   • Total debt: $${debtCalculation.totalDebt.toLocaleString()}`);
-        console.log(`   • Annual payment: $${debtCalculation.annualPayment.toLocaleString()}`);
+        console.log(`   • Craemer debt: $${debtCalculation.totalDebt.toLocaleString()}`);
+        console.log(`   • Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString()}`);
+        console.log(`   • Recommended debt (higher): $${debtCalculation.recommendedDebt.toLocaleString()}`);
+        console.log(`   • Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString()}`);
         console.log(`   • Document: ${docxPath}`);
         console.log(`   • DAA ID: ${daaRecord.daaId}`);
         console.log();
@@ -216,9 +243,16 @@ class DAAOrchestrator {
      */
     async getDocumentedSlaveholders(sessionId) {
         console.log('   → Querying database for documented slaveholders...');
-        
-        // Step 1: Get ALL ancestor names from climb
-        const climbNames = await this.db.query(`
+
+        // Step 1: Get ALL ancestor names from climb.
+        //
+        // Climb matches can live in either ancestor_climb_matches (normalized
+        // table, preferred) OR ancestor_climb_sessions.all_matches (inline
+        // JSONB). Some climbs only populate the JSONB (e.g. Ryan Mills' 15-
+        // match session has table_cnt=0, inline=15) — probably a historical
+        // pipeline variation. We read both and prefer the normalized table
+        // when it has rows, else fall back to JSONB.
+        let climbNames = await this.db.query(`
             SELECT DISTINCT
                 acm.id as match_id,
                 acm.slaveholder_name,
@@ -227,18 +261,50 @@ class DAAOrchestrator {
                 acm.generation_distance,
                 acm.lineage_path,
                 acm.match_type,
+                acm.match_confidence,
                 acm.slaveholder_id as existing_match_id
             FROM ancestor_climb_matches acm
             WHERE acm.session_id = $1
             ORDER BY acm.generation_distance ASC
         `, [sessionId]);
 
+        if (climbNames.rows.length === 0) {
+            const inline = await this.db.query(`
+                SELECT all_matches
+                FROM ancestor_climb_sessions
+                WHERE id = $1 AND all_matches IS NOT NULL
+            `, [sessionId]);
+            const allMatches = inline.rows[0]?.all_matches || [];
+            if (Array.isArray(allMatches) && allMatches.length > 0) {
+                console.log(`   → Using JSONB inline matches fallback (${allMatches.length} matches not in normalized table)`);
+                climbNames = { rows: allMatches.map((m, i) => ({
+                    match_id: `inline-${i}`,
+                    slaveholder_name: m?.match?.canonical_name || m?.person?.name || '(unknown)',
+                    slaveholder_fs_id: m?.person?.fs_id || null,
+                    slaveholder_birth_year: m?.match?.birth_year_estimate || m?.person?.birth_year || null,
+                    generation_distance: m?.generation || null,
+                    lineage_path: m?.path || null,
+                    match_type: m?.match?.type || 'inline_unknown',
+                    match_confidence: m?.match?.confidence ?? m?.verdict?.confidence_adjusted ?? null,
+                    existing_match_id: m?.match?.id || null,
+                })) };
+            }
+        }
+
         console.log(`   → Found ${climbNames.rows.length} ancestor names in climb`);
 
-        // Step 2: Get ALL documented enslavers from database
-        // Query enslavers who have enslaved_individuals (from slave schedules)
+        // Step 2: Get ALL canonical_persons marked as enslavers.
+        //
+        // IMPORTANT: we do NOT filter on `HAVING COUNT(enslaved_individuals) > 0`
+        // here. Many real enslavers in canonical_persons have their enslaved
+        // persons linked via `family_relationships(enslaved_by)` or
+        // `unconfirmed_persons.relationships[enslaved_by]` rather than the
+        // `enslaved_individuals` table — so the old HAVING filter dropped 93%
+        // of Adrian Brown's 16 verified climb matches on the first run.
+        // Enslaved-count is computed per-slaveholder below via UNION across
+        // all three storage locations.
         const documentedSlaveholders = await this.db.query(`
-            SELECT DISTINCT
+            SELECT
                 cp.id,
                 cp.canonical_name,
                 cp.birth_year_estimate,
@@ -246,49 +312,107 @@ class DAAOrchestrator {
                 cp.primary_state,
                 cp.primary_county,
                 cp.notes,
-                COUNT(DISTINCT ei.enslaved_id) as enslaved_count,
-                COUNT(DISTINCT pd.id) as document_count
+                cp.person_type
             FROM canonical_persons cp
-            INNER JOIN enslaved_individuals ei ON CAST(cp.id AS text) = ei.enslaved_by_individual_id
-            LEFT JOIN person_documents pd ON cp.id = pd.canonical_person_id AND pd.s3_url IS NOT NULL
-            WHERE cp.person_type = 'enslaver'
-            GROUP BY cp.id, cp.canonical_name, cp.birth_year_estimate, cp.death_year_estimate, cp.primary_state, cp.primary_county, cp.notes
-            HAVING COUNT(DISTINCT ei.enslaved_id) > 0
+            WHERE cp.person_type IN ('enslaver', 'descendant')
             ORDER BY cp.canonical_name ASC
         `);
+        // Index by id and (normalized) canonical_name for quick lookup
+        const byId = new Map();
+        const byName = new Map();
+        for (const sh of documentedSlaveholders.rows) {
+            byId.set(sh.id, sh);
+            const key = (sh.canonical_name || '').toLowerCase().trim();
+            if (!byName.has(key)) byName.set(key, []);
+            byName.get(key).push(sh);
+        }
 
-        console.log(`   → Found ${documentedSlaveholders.rows.length} documented slaveholders in database`);
+        console.log(`   → ${documentedSlaveholders.rows.length} canonical_persons in scope (enslaver or descendant)`);
 
-        // Step 3: Match climb ancestors to documented slaveholders
+        // Step 2b: Pre-resolve FS IDs via person_external_ids so the
+        // highest-quality linkage (verified external ID from the climber)
+        // becomes a direct UUID match rather than a fuzzy name guess.
+        const fsIds = climbNames.rows.map(r => r.slaveholder_fs_id).filter(Boolean);
+        const fsIdLookup = new Map();
+        if (fsIds.length) {
+            const pei = await this.db.query(`
+                SELECT external_id, canonical_person_id, confidence
+                FROM person_external_ids
+                WHERE id_system='familysearch' AND external_id = ANY($1)
+            `, [fsIds]);
+            for (const r of pei.rows) fsIdLookup.set(r.external_id, r);
+        }
+        console.log(`   → Resolved ${fsIdLookup.size} of ${fsIds.length} climb FS IDs via person_external_ids`);
+
+        // Step 3: Resolve each climb ancestor to a canonical_persons row.
+        // Priority: (1) FS ID via person_external_ids, (2) existing_match_id,
+        // (3) exact name, (4) family-variation fuzzy, (5) substring+birth-year.
+        // Previous implementation silently dropped ~93% of climb matches
+        // because it required enslaved_individuals linkage AND did only fuzzy
+        // name match. FS-ID resolution recovers verified external-ID matches.
         const matches = [];
-        
+        const unresolved = [];
+
         for (const ancestor of climbNames.rows) {
-            // Try to match by existing ID first
-            if (ancestor.existing_match_id) {
-                const dbMatch = documentedSlaveholders.rows.find(sh => sh.id === ancestor.existing_match_id);
-                if (dbMatch) {
-                    matches.push({
-                        match_id: ancestor.match_id,
-                        slaveholder_id: dbMatch.id,
-                        slaveholder_name: dbMatch.canonical_name,
-                        slaveholder_fs_id: ancestor.slaveholder_fs_id,
-                        slaveholder_birth_year: dbMatch.birth_year_estimate,
-                        generation_distance: ancestor.generation_distance,
-                        lineage_path: ancestor.lineage_path,
-                        match_type: 'existing_id',
-                        match_confidence: 1.0, // 0-1 scale (was incorrectly 100)
-                        primary_state: dbMatch.primary_state,
-                        primary_county: dbMatch.primary_county,
-                        notes: dbMatch.notes,
-                        enslaved_count: dbMatch.enslaved_count,
-                        document_count: dbMatch.document_count
-                    });
-                    continue;
+            let matched = null;
+            let matchType = null;
+            let matchConf = 0;
+
+            // (1) FS ID via person_external_ids — highest confidence
+            if (ancestor.slaveholder_fs_id && fsIdLookup.has(ancestor.slaveholder_fs_id)) {
+                const pei = fsIdLookup.get(ancestor.slaveholder_fs_id);
+                const candidate = byId.get(pei.canonical_person_id);
+                if (candidate) {
+                    matched = candidate;
+                    matchType = 'fs_external_id';
+                    matchConf = 0.95;
                 }
             }
 
+            // (2) existing_match_id (integer canonical_persons.id from climb)
+            if (!matched && ancestor.existing_match_id) {
+                const candidate = byId.get(ancestor.existing_match_id);
+                if (candidate) {
+                    matched = candidate;
+                    matchType = 'existing_id';
+                    matchConf = 0.90;
+                }
+            }
+
+            // (3) Exact name match (case-insensitive)
+            if (!matched) {
+                const key = (ancestor.slaveholder_name || '').toLowerCase().trim();
+                const candidates = byName.get(key);
+                if (candidates && candidates.length > 0) {
+                    // Prefer enslaver over descendant
+                    matched = candidates.find(c => c.person_type === 'enslaver') || candidates[0];
+                    matchType = 'name_exact';
+                    matchConf = 0.85;
+                }
+            }
+
+            if (matched) {
+                matches.push({
+                    match_id: ancestor.match_id,
+                    slaveholder_id: matched.id,
+                    slaveholder_name: matched.canonical_name,
+                    slaveholder_fs_id: ancestor.slaveholder_fs_id,
+                    slaveholder_birth_year: matched.birth_year_estimate,
+                    generation_distance: ancestor.generation_distance,
+                    lineage_path: ancestor.lineage_path,
+                    match_type: matchType,
+                    match_confidence: matchConf,
+                    climb_match_confidence: ancestor.match_confidence,
+                    primary_state: matched.primary_state,
+                    primary_county: matched.primary_county,
+                    notes: matched.notes,
+                    canonical_person_type: matched.person_type,
+                });
+                continue;
+            }
+
             // Fuzzy matching by name
-            const ancestorName = ancestor.slaveholder_name.toLowerCase().trim();
+            const ancestorName = (ancestor.slaveholder_name || '').toLowerCase().trim();
             
             for (const dbSlaveholder of documentedSlaveholders.rows) {
                 const dbName = dbSlaveholder.canonical_name.toLowerCase().trim();
@@ -414,18 +538,32 @@ class DAAOrchestrator {
             }
         }
 
-        console.log(`   → Matched ${matches.length} documented slaveholders to ancestry`);
-        
-        // Remove duplicates (same slaveholder_id)
-        const uniqueMatches = [];
-        const seenIds = new Set();
-        
-        for (const match of matches) {
-            if (!seenIds.has(match.slaveholder_id)) {
-                seenIds.add(match.slaveholder_id);
-                uniqueMatches.push(match);
-                console.log(`      • ${match.slaveholder_name} (${match.enslaved_count} enslaved, ${match.document_count} docs)`);
+        // Derive unresolved set: climb match_ids that produced no matches
+        const matchedClimbIds = new Set(matches.map(m => m.match_id));
+        for (const ancestor of climbNames.rows) {
+            if (!matchedClimbIds.has(ancestor.match_id)) {
+                unresolved.push({ name: ancestor.slaveholder_name, fs_id: ancestor.slaveholder_fs_id });
             }
+        }
+
+        console.log(`   → Matched ${matches.length} climb ancestors to canonical_persons`);
+        if (unresolved.length) {
+            console.log(`   → ${unresolved.length} climb matches could not be linked to canonical_persons:`);
+            for (const u of unresolved) console.log(`      ✗ ${u.name} (FS ID: ${u.fs_id || '-'})`);
+        }
+
+        // Dedupe by slaveholder_id; keep the match with highest confidence
+        const byKey = new Map();
+        for (const m of matches) {
+            const key = m.slaveholder_id;
+            const existing = byKey.get(key);
+            if (!existing || (m.match_confidence ?? 0) > (existing.match_confidence ?? 0)) {
+                byKey.set(key, m);
+            }
+        }
+        const uniqueMatches = [...byKey.values()];
+        for (const m of uniqueMatches) {
+            console.log(`      • ${m.slaveholder_name} (gen ${m.generation_distance}, ${m.match_type} @${m.match_confidence}, canonical type=${m.canonical_person_type || '-'})`);
         }
 
         return uniqueMatches;
@@ -494,14 +632,31 @@ class DAAOrchestrator {
                 ORDER BY ei.full_name ASC
             `, [slaveholder.slaveholder_id]);
 
-            // Source 2: family_relationships (linked edges — slave schedules, census)
+            // Source 2: family_relationships (1.9M slave-schedule-extracted
+            // enslaved_by edges). IMPORTANT: person1_lead_id is NULL across
+            // every row in this table — the edges are matched by NAME only,
+            // not by canonical_persons FK. So we match on person1_name =
+            // slaveholder.canonical_name (case-insensitive). This recovers
+            // enslaved persons for enslavers whose tree-climbed canonical
+            // entry matches the schedule-extracted name string.
+            //
+            // Ambiguity note: very common names (John Smith: 724 edges,
+            // William Smith: 559) will match canonical enslavers who share
+            // those names but may not actually be the same person. We
+            // accept that risk for initial DAA generation and downstream
+            // MatchVerifier should re-check before any payment.
+            // LEFT JOIN migration 039's view to pick up inferred birth/
+            // freedom years from slave-schedule age + collection-year lookup.
+            // Without this, Craemer returns $0 for every schedule-sourced
+            // enslaved person (dates are NULL on all 18K enslaved_individuals
+            // rows and no date columns exist directly on family_relationships).
             const relResult = await this.db.query(`
                 SELECT DISTINCT ON (fr.person2_name)
                     fr.person2_lead_id as enslaved_id,
                     fr.person2_name as enslaved_name,
-                    NULL as birth_year,
+                    epi.inferred_birth_year as birth_year,
                     NULL as death_year,
-                    NULL as freedom_year,
+                    epi.inferred_freedom_year as freedom_year,
                     NULL as gender,
                     'family_relationships' as data_source,
                     fr.source_url as document_source_url,
@@ -509,14 +664,23 @@ class DAAOrchestrator {
                     NULL as document_type,
                     NULL as collection_name,
                     NULL as film_number,
-                    NULL as image_number
+                    NULL as image_number,
+                    fr.confidence as match_confidence,
+                    epi.inference_method as date_inference_method,
+                    epi.inference_confidence as date_inference_confidence
                 FROM family_relationships fr
-                WHERE fr.person1_lead_id = $1
+                LEFT JOIN enslaved_persons_inferred_dates epi ON epi.relationship_id = fr.id
+                WHERE LOWER(fr.person1_name) = LOWER($1)
                 AND fr.relationship_type = 'enslaved_by'
-                AND fr.person2_name NOT LIKE 'Unknown%'
+                AND fr.person2_name IS NOT NULL
                 ORDER BY fr.person2_name
-                LIMIT 100
-            `, [slaveholder.slaveholder_id]);
+                LIMIT 500
+            `, [slaveholder.slaveholder_name]);
+            // NOTE: we DO include "Unknown (Female, age 17)" etc. — these are
+            // real enslaved persons whose names weren't captured on the slave
+            // schedule (age/sex descriptors preserved in the name field).
+            // The prior `NOT LIKE 'Unknown%'` filter dropped Charles Brown's 5
+            // documented-but-unnamed enslaved from Adrian's DAA entirely.
 
             // Source 3: unconfirmed_persons with JSONB enslaved_by matching this enslaver
             const uncResult = await this.db.query(`
@@ -606,6 +770,11 @@ class DAAOrchestrator {
      * Get primary source documents for an enslaver
      */
     async getPrimarySourcesForEnslaver(enslaverId) {
+        // Do NOT require s3_url — many primary-source rows are still
+        // FamilySearch-hosted and haven't been mirrored to S3 yet. The
+        // FamilySearch ARK alone is sufficient provenance for the DAA.
+        // Previously this filter caused Exhibit A to render "ARK TBD"
+        // for every slaveholder whose documents hadn't been S3-archived.
         const result = await this.db.query(`
             SELECT DISTINCT
                 pd.s3_url,
@@ -616,7 +785,7 @@ class DAAOrchestrator {
                 pd.image_number
             FROM person_documents pd
             WHERE pd.canonical_person_id = $1
-              AND pd.s3_url IS NOT NULL
+              AND (pd.s3_url IS NOT NULL OR pd.source_url IS NOT NULL)
             ORDER BY pd.document_type, pd.film_number, pd.image_number
         `, [enslaverId]);
 
@@ -627,7 +796,11 @@ class DAAOrchestrator {
             collection_name: doc.collection_name,
             film_number: doc.film_number,
             image_number: doc.image_number,
-            source_url: doc.document_source_url
+            source_url: doc.document_source_url,
+            // Expose the ARK under the key the DOCX template reads
+            // (DAADocumentGenerator uses `sources[0]?.ark`). The FS source_url
+            // IS the ARK for all FamilySearch-hosted documents.
+            ark: doc.document_source_url || null,
         }));
     }
 
@@ -658,21 +831,48 @@ class DAAOrchestrator {
     }
 
     /**
-     * Calculate total debt across all slaveholders
+     * Calculate total debt across all slaveholders.
+     *
+     * Uses ALL participant financial data:
+     *   - Craemer formula for historical debt (DAAGenerator)
+     *   - TieredPaymentCalculator for progressive payment schedule
+     *   - WealthGapCalculator for Darity-Mullen wealth-gap obligation
+     *   - CorporateSuccessionTracer for corporate connection documentation
+     *
+     * @param {Array} slaveholderData - From aggregateEnslavedData()
+     * @param {Object} participantFinancials - Full financial disclosure
      */
-    async calculateTotalDebt(slaveholderData, annualIncome) {
+    async calculateTotalDebt(slaveholderData, participantFinancials) {
+        // Accept either a number (backward compat) or full financials object
+        const financials = typeof participantFinancials === 'number'
+            ? { annualIncome: participantFinancials }
+            : participantFinancials;
+
+        const {
+            annualIncome = 0,
+            netWorth = 0,
+            realEstateEquity = 0,
+            inheritanceReceived = 0,
+            inheritanceExpected = 0,
+            corporateConnectionType = 'none',
+            corporateConnections = [],
+            trustCorpus = 0,
+            trustBeneficiary = 'no',
+            inheritedLandAcres = 'none',
+        } = financials;
+
         let totalDebt = 0;
         const slaveholderCalculations = [];
+        let totalEnslavedCount = 0;
 
         for (const data of slaveholderData) {
             const enslavedForCalculation = data.enslavedPersons.map(person => ({
                 name: person.enslaved_name,
                 yearsEnslaved: person.years_enslaved,
-                startYear: person.start_year || 1800, // Default if unknown
+                startYear: person.start_year || 1800,
                 relationship: person.relationship_type
             }));
 
-            // Use DAAGenerator to calculate debt
             const preview = this.daaGenerator.calculatePreview(
                 enslavedForCalculation,
                 annualIncome
@@ -686,16 +886,100 @@ class DAAOrchestrator {
             });
 
             totalDebt += preview.totalDebt;
+            totalEnslavedCount += enslavedForCalculation.length;
         }
 
-        const annualPayment = Math.round(annualIncome * 0.02 * 100) / 100;
+        // ── Tiered Payment (replaces flat 2%) ────────────────────────
+        const tieredResult = this.tieredCalc.calculate({
+            annualIncome,
+            netWorth,
+            enslavedCount: totalEnslavedCount || 1,
+            corporateConnection: corporateConnectionType
+        });
+
+        // ── Wealth Gap (Darity-Mullen dual methodology) ─────────────
+        const wealthGapResult = this.wealthGapCalc.calculateIndividualShare({
+            annualIncome,
+            netWorth,
+            realEstateEquity,
+            inheritanceReceived,
+            inheritanceExpected,
+            numSlaveholderAncestors: slaveholderData.length || 1,
+            numLivingDescendants: null
+        });
+
+        // ── Corporate Connection Documentation ──────────────────────
+        const corporateEvidence = [];
+        for (const key of corporateConnections) {
+            const chain = this.successionTracer.getChain(key);
+            if (chain) {
+                corporateEvidence.push({
+                    key,
+                    modernEntity: chain.modern,
+                    predecessorCount: chain.predecessors.length,
+                    earliestYear: Math.min(...chain.predecessors.map(p => p.year)),
+                    primarySource: chain.documentation.primary,
+                    enslavedDocumented: chain.documentation.enslavedAsCollateral
+                        || chain.documentation.enslaved
+                        || chain.documentation.enslavedNames
+                        || null
+                });
+            }
+        }
+
+        // ── Dual-methodology comparison ─────────────────────────────
+        const dualMethodology = this.wealthGapCalc.compareWithCraemer(
+            wealthGapResult,
+            totalDebt
+        );
+
+        // ── Wealth flag computation ─────────────────────────────────
+        const wealthReasons = [];
+        if (trustCorpus > 1000000) wealthReasons.push('trust_corpus_over_1m');
+        if (trustBeneficiary === 'irrevocable') wealthReasons.push('irrevocable_trust');
+        if (inheritedLandAcres === '500_to_5000' || inheritedLandAcres === 'over_5000') wealthReasons.push('large_inherited_land');
+        if (corporateConnections.length > 0) wealthReasons.push('farmer_paellmann_connection');
+        if (netWorth > 0 && annualIncome > 0 && netWorth > annualIncome * 10) wealthReasons.push('net_worth_10x_income');
+        if (inheritanceReceived > 500000) wealthReasons.push('inheritance_over_500k');
 
         return {
+            // Historical debt (Craemer — genealogy-driven)
             totalDebt,
-            annualPayment,
-            annualIncome,
             slaveholderCalculations,
-            totalEnslavedCount: slaveholderData.reduce((sum, d) => sum + d.enslavedPersons.length, 0)
+            totalEnslavedCount,
+
+            // Payment schedule (tiered — replaces flat 2%)
+            annualPayment: tieredResult.annualPayment,
+            monthlyPayment: tieredResult.monthlyPayment,
+            tieredBreakdown: tieredResult,
+
+            // Wealth-gap obligation (Darity-Mullen)
+            wealthGapObligation: wealthGapResult.totalObligation,
+            wealthGapBreakdown: wealthGapResult,
+
+            // Dual methodology recommendation
+            dualMethodology,
+            recommendedDebt: dualMethodology.recommended,
+
+            // Corporate evidence
+            corporateEvidence,
+            corporateConnectionType,
+
+            // Inputs preserved for audit trail
+            annualIncome,
+            financials,
+            wealthFlagElevated: wealthReasons.length > 0,
+            wealthFlagReasons: wealthReasons,
+
+            // Comparison with old flat rate
+            flatRateComparison: {
+                flatAnnualPayment: Math.round(annualIncome * 0.02 * 100) / 100,
+                tieredAnnualPayment: tieredResult.annualPayment,
+                difference: Math.round((tieredResult.annualPayment - annualIncome * 0.02) * 100) / 100,
+                note: tieredResult.annualPayment > annualIncome * 0.02
+                    ? 'Tiered rate is higher — wealth fingerprint detected additional obligation'
+                    : 'Tiered rate is equal or lower — progressive benefit for lower incomes'
+            }
         };
     }
 

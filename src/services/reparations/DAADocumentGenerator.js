@@ -50,6 +50,21 @@ class DAADocumentGenerator {
      * Generate comprehensive DAA DOCX document
      */
     async generateDOCX(daaRecord, slaveholderData, debtCalculation, acknowledgerInfo) {
+        // Enrich daaRecord with fields from acknowledgerInfo so every
+        // downstream method (createLegalFramework, createDebtAcknowledgment,
+        // etc.) sees the obligor's name/email/income even though DAAGenerator.
+        // generateDAA() only returns DB-allocation fields like daaId,
+        // agreementNumber, totalDebt, annualPayment, enslavedCount,
+        // calculationBreakdown. Pre-fix, the OBLIGOR paragraph rendered
+        // "OBLIGOR: undefined" because those fields were never populated.
+        daaRecord = {
+            ...daaRecord,
+            acknowledger_name: daaRecord.acknowledger_name || acknowledgerInfo?.name,
+            acknowledger_email: daaRecord.acknowledger_email || acknowledgerInfo?.email,
+            acknowledger_address: daaRecord.acknowledger_address || acknowledgerInfo?.address,
+            annual_income: daaRecord.annual_income || acknowledgerInfo?.annualIncome,
+        };
+
         const sections = [];
 
         // Title Page
@@ -205,7 +220,10 @@ class DAADocumentGenerator {
                 spacing: { before: 300, after: 100 }
             }),
             new Paragraph({
-                text: `OBLIGOR: ${daaRecord.acknowledger_name}, a natural person and documented descendant of slaveholders, acknowledging inherited debt arising from the forced labor of enslaved persons.`,
+                // daaRecord is enriched in generateDOCX() with acknowledger_name
+                // from acknowledgerInfo before the createLegalFramework call,
+                // so daaRecord.acknowledger_name is now reliably populated.
+                text: `OBLIGOR: ${daaRecord.acknowledger_name || '(obligor name missing)'}, a natural person and documented descendant of slaveholders, acknowledging inherited debt arising from the forced labor of enslaved persons.`,
                 spacing: { after: 100 }
             }),
             new Paragraph({
