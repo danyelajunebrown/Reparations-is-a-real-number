@@ -73,6 +73,15 @@ router.get('/queues', async (req, res) => {
                 `),
             },
             {
+                name: 'parse_failures',
+                title: 'Parse failures awaiting manual field entry',
+                description: 'Documents where Document AI or Vision OCR failed to extract required fields. Your corrections become labeled training data for the next fine-tune.',
+                count: await pendingCount(`
+                    SELECT COUNT(*)::int c FROM parse_failure_queue
+                    WHERE review_status = 'pending'
+                `),
+            },
+            {
                 name: 'duplicate_canonicals',
                 title: 'Duplicate canonical_persons candidates',
                 description: 'Canonical rows that share a name AND have evidence on more than one row — likely the same historical person.',
@@ -118,6 +127,9 @@ router.get('/queue/:name', async (req, res) => {
                 break;
             case 'ambiguous_unconfirmed':
                 items = await getAmbiguousUnconfirmed(limit, offset);
+                break;
+            case 'parse_failures':
+                items = await getParseFailures(limit, offset);
                 break;
             case 'duplicate_canonicals':
                 items = await getDuplicateCanonicals(limit, offset);
@@ -232,6 +244,29 @@ async function getAmbiguousUnconfirmed(limit, offset) {
         subtitle: `Proposed type: ${row.person_type || '?'}`,
         detail: row.context_text?.slice(0, 400),
         evidence_urls: [row.source_url],
+    }));
+}
+
+async function getParseFailures(limit, offset) {
+    const r = await db.query(`
+        SELECT failure_id AS id, document_type, source_identifier, s3_key, source_url,
+               engine_attempted, engine_confidence, extracted_fields,
+               failure_reason, required_fields_missing, error_message
+        FROM parse_failure_queue
+        WHERE review_status = 'pending'
+        ORDER BY created_at ASC
+        LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+    return r.rows.map(row => ({
+        id: row.id,
+        kind: 'parse_failure',
+        title: `${row.document_type} — ${row.source_identifier || '(no id)'}`,
+        subtitle: `${row.engine_attempted} | conf=${row.engine_confidence ?? '?'} | reason=${row.failure_reason}`
+            + (row.required_fields_missing?.length ? ` | missing: ${row.required_fields_missing.join(', ')}` : ''),
+        detail: (row.error_message ? `Error: ${row.error_message}\n\n` : '')
+            + `Engine extracted: ${JSON.stringify(row.extracted_fields || {}, null, 2)}`,
+        evidence_urls: [row.source_url, row.s3_key ? `/api/review/s3-url?key=${encodeURIComponent(row.s3_key)}` : null].filter(Boolean),
+        extracted_fields: row.extracted_fields || {},
     }));
 }
 
@@ -442,6 +477,49 @@ router.post('/ambiguous_unconfirmed/:id/reject', async (req, res) => {
                 review_notes = COALESCE(review_notes, '') || ' | Rejected via review UI: ' || $2
             WHERE lead_id = $1
         `, [id, reason || 'not_a_person', req.headers['x-reviewer'] || 'admin']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ═══ PARSE FAILURE actions ═══
+
+// POST /api/review/parse_failures/:id/submit
+// Body: { reviewer_fields: { depositor_name, last_master, ... }, mark_training_eligible: true }
+router.post('/parse_failures/:id/submit', async (req, res) => {
+    const { id } = req.params;
+    const { reviewer_fields, mark_training_eligible } = req.body || {};
+    if (!reviewer_fields || typeof reviewer_fields !== 'object') {
+        return res.status(400).json({ success: false, error: 'reviewer_fields object required' });
+    }
+    try {
+        await db.query(`
+            UPDATE parse_failure_queue
+            SET reviewer_fields = $2::jsonb,
+                review_status = 'resolved',
+                training_eligible = $3,
+                reviewed_by = $4, reviewed_at = NOW()
+            WHERE failure_id = $1
+        `, [id, JSON.stringify(reviewer_fields), !!mark_training_eligible, req.headers['x-reviewer'] || 'admin']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// POST /api/review/parse_failures/:id/unreviewable
+router.post('/parse_failures/:id/unreviewable', async (req, res) => {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    try {
+        await db.query(`
+            UPDATE parse_failure_queue
+            SET review_status = 'unreviewable',
+                reviewer_notes = COALESCE(reviewer_notes, '') || ' | Marked unreviewable: ' || $2,
+                reviewed_by = $3, reviewed_at = NOW()
+            WHERE failure_id = $1
+        `, [id, reason || 'no reason', req.headers['x-reviewer'] || 'admin']);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });

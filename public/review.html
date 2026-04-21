@@ -188,10 +188,67 @@ function renderActions(item) {
           <button class="action reject" onclick="rejectAmbiguous('${item.id}')">✗ Not a person</button>
           <button class="action skip" onclick="skip('${item.id}')">skip</button>
         </div>`;
+    case 'parse_failure':
+      return renderParseFailureActions(item);
     case 'duplicate_cluster':
       return `<div class="actions"><button class="action skip" onclick="skip('${item.id}')">dismiss (use merge script for now)</button></div>`;
     default: return '';
   }
+}
+
+// 31 Freedmens schema fields the reviewer may fill. Pre-populated with
+// engine extractions where available.
+const FREEDMENS_FIELDS = [
+  'account_number','date_of_entry','depositor_name','birthplace','where_brought_up',
+  'age','residence','complexion','occupation','employer',
+  'marital_status','spouse_name','spouse_residence','father_name','mother_name',
+  'siblings_names','children_names','family_residences','spouse_father','spouse_mother','spouse_siblings',
+  'last_master','last_mistress','plantation','slave_residence','old_title',
+  'union_lines','post_emancipation','signature','further_facts','remarks',
+];
+
+function renderParseFailureActions(item) {
+  const existing = item.extracted_fields || {};
+  const inputs = FREEDMENS_FIELDS.map(f =>
+    `<div style="display:flex; gap:.5rem; align-items:center; margin-bottom:.25rem;">
+       <label style="width:180px; font-size:11px; color:var(--muted);">${f}</label>
+       <input class="edit" id="pf-${item.id}-${f}" placeholder="(empty)" value="${escapeHtml(existing[f] || '')}" style="flex:1; margin-bottom:0;">
+     </div>`
+  ).join('');
+  return `<details style="margin-top:.5rem;">
+    <summary style="cursor:pointer; color:var(--accent); font-size:12px;">▸ Fill fields manually (${FREEDMENS_FIELDS.length})</summary>
+    <div style="margin-top:.5rem;">${inputs}</div>
+  </details>
+  <div class="actions">
+    <label style="font-size:11px; display:inline-flex; align-items:center; gap:.3rem;">
+      <input type="checkbox" id="pf-${item.id}-training" checked> use as training data
+    </label>
+    <button class="action approve" onclick="submitParseFailure('${item.id}')">✓ Save corrections</button>
+    <button class="action reject" onclick="markUnreviewable('${item.id}')">✗ Unreviewable</button>
+    <button class="action skip" onclick="skip('${item.id}')">skip</button>
+  </div>`;
+}
+
+async function submitParseFailure(id) {
+  const fields = {};
+  for (const f of FREEDMENS_FIELDS) {
+    const v = document.getElementById(`pf-${id}-${f}`)?.value?.trim();
+    if (v) fields[f] = v;
+  }
+  const markTraining = document.getElementById(`pf-${id}-training`)?.checked;
+  try {
+    await api(`/parse_failures/${id}/submit`, { method: 'POST',
+      body: JSON.stringify({ reviewer_fields: fields, mark_training_eligible: markTraining }) });
+    toast(`✓ Saved ${Object.keys(fields).length} fields`);
+    removeItem(id);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function markUnreviewable(id) {
+  const reason = prompt('Why is this unreviewable?', 'page_damaged');
+  if (!reason) return;
+  try { await api(`/parse_failures/${id}/unreviewable`, { method: 'POST', body: JSON.stringify({ reason }) });
+    toast('✗ marked unreviewable'); removeItem(id); } catch (e) { toast(e.message, true); }
 }
 
 function selectCandidate(itemId, cpId) {
