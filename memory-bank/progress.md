@@ -1,12 +1,68 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Freedmen's Bank enslaver extraction running overnight + wealth tracing pivot
-**Last Updated:** April 18/19, 2026
+**Current Phase:** Document AI fine-tune in progress; civilwardc fully ingested; corporate slavery evidence schema live. **Intake form launch Thursday Apr 23, full operational target May 4.**
+**Last Updated:** April 20-21, 2026 (Session 32)
 
 ---
 
-## Session 31 — Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (April 18-19, 2026) 🟡 IN PROGRESS
+## Session 32 — civilwardc TEI + Hopewell OCR + Corporate slavery evidence + Document AI (Apr 20-21, 2026) 🟡 IN PROGRESS
+
+### Delivered
+
+- **Civilwardc.org TEI bulk ingest (100% coverage):** 1,041 petitions, 1,698 enslaved persons indexed, $352,598 in claimed valuations, 1,983 family_relationships edges, 4,174 S3-archived images. Date-variant + bad-href parser hardening. Unique constraint on docket_number added.
+- **Hopewell 1817 will OCR** (orphan PDF sitting in S3 since Dec 2025): Angelica Hopewell identified as wife (married surname — NameResolver missed her under Chesley maiden), bequeathed Lewis; enslaved distributed to daughter Ann Maria Biscoe. 3 `person_relationships_verified` edges created.
+- **DAA probate gate expansion** (src/services/reparations/DAAOrchestrator.js): added compensated_emancipation_petition doc type; per-origin scope CTE traversing spouse/parent/child. Adrian Brown 3/16 → 6/16 passing.
+- **Canonical merges** (person_merge_log populated for first time): Maria Biscoe/Chew (6 dupes→141014), Hopewell (2→1070), Chesley (2→140299). FK references redirected across 24 tables.
+- **Corporate slavery evidence (migration 043):** 3 tables + architectural reframe that every DAA is a class obligation. CA SEIR 675 policies (419 enslaved + 147 slaveholder auto-linked), 11 Philly 2024 bank disclosure PDFs archived, 15 corporate_slavery_disclosures rows total.
+- **Climber data quality:** 390 implausible birth years nulled, HISTORICAL_CUTOFF_YEAR 1450→1600, LX39-1MY relabeled as Gwendolyn Louise Fagan (Eli Neal's grandmother), 2,593 civilwardc ML-misclassified rejected.
+- **Human review UI** at `/review`: 6 queues (enslaver_candidates, unresolved_petitions, pending_climb_matches, ambiguous_unconfirmed, duplicate_canonicals, parse_failures).
+- **Document AI processor** `freedmens-bank-ledger-v1` (ID 30049eebf8debcf4): 31-field schema defined, service account authenticated, regional endpoint `us-documentai.googleapis.com`. Training batch of 36 diverse edge cases staged at ~/Desktop/docai-training-batch/. User labeling, Fine-tune in progress.
+- **Parse failure queue** (migration 044) + `FreedmensBankProcessor.extractWithQueueing()` closes the human-in-loop training cycle.
+
+### Civilwardc extraction gap (audit Apr 21)
+
+| | Count |
+|---|---|
+| Petitions ingested | 1,041 ✓ |
+| Image pages archived to S3 | 4,174 ✓ |
+| **Images OCR'd** | **0 / 4,174** — orphan pattern (narrative prose unextracted) |
+| Enslaved persons in JSONB | 1,698 ✓ |
+| Distinct enslaved names | 1,408 |
+| Linked to canonical_persons | 672 (48%) |
+| **NOT linked (JSONB + edges only, no canonical row)** | **736 (52%)** |
+| Claimants linked to canonical_persons | 947 / 1,041 (91%) |
+| **Unresolved claimants → review queue** | **94** |
+| **Petitions with 0 enslaved extracted (no table, no narrative match)** | **459 / 1,041 (44%)** — JPG OCR will recover these |
+
+### May 4 operational target — priority list
+
+**By Thursday Apr 23 (form release blockers):**
+1. Intake form checklist updated with 25+ corp/uni options
+2. validate-intake-form.js tested on live-form CSV export
+3. /review UI running for curator (admin token + deployed server)
+4. Server reachable by form submission pipeline
+
+**By May 4 (full operational):**
+5. Document AI fine-tune deployed + wired into production batch
+6. 736 unlinked civilwardc enslaved names promoted to canonical_persons
+7. OCR pass on 4,174 civilwardc JPGs (narrative prose → more canonicals + family_relationships)
+8. OCR pass on 11 Philly bank PDFs → corporate_debt_acknowledgments
+9. DAA smoke test for Adrian/Ryan/Drew/Eli (probate pass → PDF → on-chain ack)
+10. Blockchain contract wired to DAAOrchestrator output
+11. land_transfer_events seeded for participants (Shirley Plantation, Ball Hill, etc.)
+12. 1870 Census pilot DC/MD/SC/NY/GA
+13. Participant communication flow (submit → notify → review → sign → publish)
+14. Legal/disclosure copy on form + DAA PDF
+
+### Thought experiments (documented, not implemented)
+
+- **Shirley Plantation / Charles Carter III + Lauren:** 11-gen continuous Hill-Carter ownership 1638-present. Identified methodology gap — continuous-enterprise descendants need a "continuous enterprise" flag; current DAA math double-counts across generations. Estimated per-descendant obligation ~$400M-$600M (1000× typical) because wealth stayed concentrated.
+- **Morgan family (Chauncey, John Jr, Caroline, Quincy):** Institutional trace through Aetna (Joseph III 1820s) + Peabody cotton + Confederate bonds (J.S. Morgan London) + 1871+ railroads/steel. Brattle constants already in DAAGenerator ($134,467/person-year ceiling).
+
+---
+
+## Session 31 — Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (April 18-19, 2026) ✅ DELIVERED
 
 Kernel panic on 8GB laptop triggered a full review of memory pressure, which
 unblocked the Freedmen's Bank enslaver-field extractor rewrite. Separately,

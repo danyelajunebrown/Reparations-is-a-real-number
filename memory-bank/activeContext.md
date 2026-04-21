@@ -1,13 +1,104 @@
 # Active Context: Current Development State
 
-**Last Updated:** April 18/19, 2026 overnight (Session 31 — Freedmen's Bank enslaver extraction parser + wealth tracing pivot + security finding)
-**Current Phase:** Freedmen's Bank enslaver extraction running overnight; wealth tracing pivot in framework-doc stage; urgent credential rotation pending.
+**Last Updated:** April 20–21, 2026 (Session 32 — civilwardc TEI + Hopewell OCR + corporate slavery evidence + Document AI training)
+**Current Phase:** Document AI fine-tune in progress for Freedmens. All 1,041 DC 1862 petitions ingested. Corporate slavery evidence schema live. Human review UI operational at /review.
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
-## Session 31: Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (Apr 18-19, 2026) 🟡 IN PROGRESS
+## Session 32: civilwardc TEI + Hopewell + Corporate + Document AI (Apr 20–21, 2026) 🟡 IN PROGRESS
+
+### Delivered
+
+**Civilwardc.org TEI bulk ingest — 100% coverage:**
+- 1,041 / 1,041 DC 1862 compensated-emancipation petitions (replaced lossy HTML ingest via TEI XML)
+- `historical_reparations_petitions`: 1,041 rows, UNIQUE constraint on `docket_number` added
+- Enslaved persons indexed with structured fields: **1,698** (age/sex/color/value/description parsed from `<table>` rows)
+- Total claimed valuation: **$352,598** in 1862 dollars
+- `family_relationships` enslaved_by edges: **1,983** (named enslaved → claimant)
+- S3-archived 1200px JPGs in `person_documents`: **4,174**
+- Parser tolerates partial dates ("1862", "1862-05", "1862-05-8", "May 6,1862") and filters bad image hrefs (e.g. `.004` without `.jpg`)
+
+**Hopewell 1817 will OCR (PDF was orphaned in S3 since Dec 2025):**
+- Ran Google Vision on 4-page PDF via pdftoppm; stored `ocr_text` + `context_snippet` on `person_documents.id=19`
+- Will names wife as "Angelica Hopewell" (married surname), not "Chesley" — that's why NameResolver missed her
+- Bequeathed "one negro man named Lewis" to wife Angelica; distributed Midley/Alam/Lloyd/Such+3 children/Ester+child to daughter "Ann Maria Bercer" (= Ann Maria Biscoe cp=141015)
+- Created `person_relationships_verified` edges: James↔Angelica spouse, James→Ann Maria parent_of, Angelica→Ann Maria parent_of
+
+**DAA probate gate expansion (DAAOrchestrator.js):**
+- Added `compensated_emancipation_petition`, `dc_petition`, `petition` to `PROBATE_DOC_TYPES` — critical bug: every civilwardc petition doc wasn't firing Tier B without this
+- Rewrote scope CTE as per-origin: each ancestor sees evidence on same-name dupes + spouse/parent/child canonicals via `person_relationships_verified`
+- **Adrian Brown's gate: 3/16 → 6/16 passing.** Angelica Chesley now passes via spouse → James's will.
+
+**Canonical merges (person_merge_log populated for first time):**
+- Maria Angelica Biscoe (6 dupes) → cp=141014 "Angelica Chew (born Maria Angelica Biscoe)"
+- James Hopewell (2 dupes) → cp=1070
+- Angelica Chesley (2 dupes) → cp=140299
+- FK references redirected across 24 tables; 8 merges logged
+
+**Corporate slavery evidence (migration 043):**
+- 3 new tables: `slave_era_insurance_policies`, `corporate_slavery_disclosures`, `corporate_debt_acknowledgments`
+- **Architectural reframe:** every DAA is a class obligation — individual enslavers and corporations share the same debt model, differing only by acknowledger type
+- **CA Slavery Era Insurance Registry** (Harvard Dataverse CSV, 687 rows) ingested: 675 policies, 4 insurer disclosures (Aetna/CVS 28, AIG/Corebridge 173, NY Life 485, ACE/Chubb 1)
+- **419 enslaved names auto-linked** to canonical_persons; 147 slaveholder names linked
+- **11 Philly 2024 bank PDFs** archived to S3 + `corporate_slavery_disclosures` rows: Bank of America, BNY Mellon, Citizens (RI), Fulton, JPMorgan Chase (13,000 enslaved as collateral + 1,250 owned), PNC, Santander, TD, United Bank of Phila, U.S. Bank, Wells Fargo
+
+**Climber + data-quality cleanups:**
+- 390 `ancestor_climb_matches` rows with implausible birth years (<1600 or >1870) nulled; 46 reclassified temporal_impossible
+- Climber `HISTORICAL_CUTOFF_YEAR` changed 1450 → 1600 (stops medieval ancestor walks)
+- LX39-1MY climb relabeled as **Gwendolyn Louise Fagan** (Eli Neal's grandmother); 548 matches flagged for extra review
+- 2,593 civilwardc ML-misclassified `unconfirmed_persons` rejected (dictionary words "Here", "Petition", "Columbia" misclassified as enslaved); 68 flagged for re-parse
+
+**Human review UI:**
+- `/review` admin-gated Express route with 6 queues: enslaver_candidates, unresolved_petitions, pending_climb_matches, ambiguous_unconfirmed, duplicate_canonicals, **parse_failures**
+- Each parse-failure item renders 31 Freedmens schema fields as inline inputs pre-populated with engine output; reviewer corrections flagged `training_eligible`
+
+**Document AI integration (in training):**
+- Custom Extractor processor `freedmens-bank-ledger-v1` (ID `30049eebf8debcf4`) in project `velvety-tangent-476318-u1`
+- 31-field schema defined via `updateDatasetSchema` (root entity `custom_extraction_document_type` + nested properties)
+- Service account `reparations-is-a-real-number@...` has Document AI Editor + Dataset Administrator
+- **Regional endpoint critical:** `us-documentai.googleapis.com` (global returns PERMISSION_DENIED for region-local processors)
+- Canary pre-training: 3/31 fields at 40-89% confidence — cleaner than old parser but undertrained
+- Training batch staged at `~/Desktop/docai-training-batch/`: 36 diverse edge-case pages across 31 branches; user labeling in progress
+- Migration 044 `parse_failure_queue` + `FreedmensBankProcessor.extractWithQueueing()` complete the feedback loop: misses queue for review, reviewer corrections flagged `training_eligible`, next fine-tune picks them up
+
+**Thought experiments (not implemented, documented for future):**
+
+*Shirley Plantation / Charles Carter III + Lauren:*
+- 11-generation continuous Hill-Carter ownership 1638–present
+- Current DB probe: 15 Carter-named enslavers in family_relationships (William 94 enslaved, Robert 92, Charles 51); 4 NY Life insurance policies with "Hill, EN"; 0 land_transfer_events for Shirley; 0 Carter probate in person_documents; 89,941 VA slave schedule records but no Charles City disambiguation
+- Key methodology insight: continuous-enterprise descendants require "total person-years enslaved 1638–1865 × wage-theft × compound" NOT summed per-ancestor (double-counts)
+- Estimated per-descendant obligation: ~$400M–$600M (1000× typical) because wealth stayed concentrated
+- **Methodology gap:** DAAOrchestrator needs "continuous enterprise" flag for small class (Shirley, Westover, Berkeley, Stratford, Sabine Hall)
+
+*Morgan family (Chauncey, John Jr, Caroline, Quincy):*
+- Institutional trace through Aetna (Joseph Morgan III 1820s) + Peabody cotton trade + Confederate bonds (J.S. Morgan London) + 1871+ railroads/steel
+- Existing Brattle constants already in DAAGenerator ($134,467/person-year ceiling) — Brattle PDF noted as ref doc, no S3 archive needed per user
+
+### Priority gaps still open
+
+1. **2,154 civilwardc petition images archived to S3 but not OCR'd** (their metadata is in DB via TEI ingest, but handwritten narrative prose + signatures + endorsements unextracted) — same orphan pattern as Hopewell will was
+2. **15,992 unconfirmed_persons stuck in `needs_review`** — huge limbo backlog
+3. **Empty migration tables from earlier work:** `top_landholder_flags`, `flagrant_heirloom_assets`, `modern_parcel_links`, `land_transfer_events`, `enslaver_lineage_ledger`, `daa_lineage_contributions`, `enslaved_owner_relationships`, `enslaved_descendants_confirmed/suspected`, `person_evidence_sources`
+4. **Old Freedmens Vision parser ceiling is ~50%** yield (record-anchor detection limited by handwriting variance)
+5. **Freedmens "production run" from Apr 18 had a 200-depositor cap per branch** — real coverage was ~840 pages across 28 branches, not thousands. Real full-roll awaits trained Document AI.
+6. **OCR pass on 11 Philly bank PDFs** to extract JPMC-style names lists → populate `corporate_debt_acknowledgments`
+
+### User-approved priority order
+
+1. ✅ Malformed civilwardc re-run (20 → 0)
+2. ✅ TEI re-ingest of all 1,041 civilwardc petitions
+3. 🟡 Freedmens Bank parser audit + Document AI training (user labeling, training queued)
+4. ✅ Human review UI scaffold + parse_failures queue
+5. ⏳ 1870 Census pilot (DC/MD/SC/NY/GA approved, not started)
+6. ⏳ Freedmens Bureau integration (approved, not started)
+7. ⏳ OCR pass on 11 Philly bank PDFs (names lists → corporate_debt_acknowledgments)
+8. ⏳ Participant intake form checklist update (expanded to 25+ corp/uni options)
+
+---
+
+## Session 31: Freedmen's Bank Parser + Wealth Tracing Pivot + Security Audit (Apr 18-19, 2026) ✅ DELIVERED
 
 ### Triggering events
 - Kernel panic on 8GB M1 MacBook Air during Freedmen's Bank scrape work. Root cause: swap thrash from concurrent Puppeteer + Chrome + VS Code + Claude Code.
