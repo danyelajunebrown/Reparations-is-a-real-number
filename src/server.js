@@ -153,6 +153,7 @@ app.use('/api/bibliography', bibliographyRouter);
 app.use('/api/ancestor-climb', ancestorClimbRouter);
 app.use('/api/kiosk', kioskRouter);
 app.use('/api/review', requireAdmin, require('./api/routes/review'));
+app.use('/api/intake', require('./api/routes/intake'));
 
 // Static review UI + pretty URL
 app.use('/public', express.static(path.join(__dirname, '..', 'public')));

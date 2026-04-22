@@ -73,6 +73,15 @@ router.get('/queues', async (req, res) => {
                 `),
             },
             {
+                name: 'intake_submissions',
+                title: 'New intake form submissions',
+                description: 'Participants who submitted the intake form, awaiting human review before ancestor climb is queued.',
+                count: await pendingCount(`
+                    SELECT COUNT(*)::int c FROM participants
+                    WHERE 'intake_pending_review' = ANY(roles)
+                `),
+            },
+            {
                 name: 'parse_failures',
                 title: 'Parse failures awaiting manual field entry',
                 description: 'Documents where Document AI or Vision OCR failed to extract required fields. Your corrections become labeled training data for the next fine-tune.',
