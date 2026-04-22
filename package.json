@@ -46,6 +46,7 @@
     "@neondatabase/serverless": "^1.0.2",
     "adm-zip": "^0.5.16",
     "aws-sdk": "^2.1692.0",
+    "axios": "^1.15.2",
     "better-sqlite3": "^9.2.2",
     "bull": "^4.10.4",
     "cheerio": "^1.1.2",
