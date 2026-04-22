@@ -18,7 +18,13 @@
  *   address_state, address_zip, self_fs_id, self_is_living,
  *   father_name, father_birth_year, father_birthplace, father_fs_id, father_is_living,
  *   mother_name, mother_birth_year, mother_birthplace, mother_fs_id, mother_is_living,
- *   annual_income,
+ *   annual_income, estimated_net_worth, real_estate_equity, inheritance_received,
+ *   inheritance_expected, tax_filing_status, num_dependents,
+ *   trust_beneficiary, trust_corpus,
+ *   family_business_ownership, family_business_details,
+ *   inherited_land_acres, inherited_land_states, inherited_land_use,
+ *   corporate_connections, corporate_connection_details,
+ *   executive_board_history, pre_1865_business_continuity, pre_1865_business_details,
  *   pat_grandfather_name, pat_grandfather_birth_year, pat_grandfather_birthplace, pat_grandfather_fs_id, pat_grandfather_is_living,
  *   pat_grandmother_name, pat_grandmother_birth_year, pat_grandmother_birthplace, pat_grandmother_fs_id, pat_grandmother_is_living,
  *   mat_grandfather_name, mat_grandfather_birth_year, mat_grandfather_birthplace, mat_grandfather_fs_id, mat_grandfather_is_living,
@@ -85,6 +91,18 @@ const COLUMN_MAP = [
   'inheritance_expected',
   'tax_filing_status',
   'num_dependents',
+  'trust_beneficiary',
+  'trust_corpus',
+  'family_business_ownership',
+  'family_business_details',
+  'inherited_land_acres',
+  'inherited_land_states',
+  'inherited_land_use',
+  'corporate_connections',
+  'corporate_connection_details',
+  'executive_board_history',
+  'pre_1865_business_continuity',
+  'pre_1865_business_details',
   'pat_grandfather_name',
   'pat_grandfather_birth_year',
   'pat_grandfather_birthplace',
@@ -604,6 +622,127 @@ function validateParticipant(data) {
   // Cross-check: if net worth is very high but income is very low, flag
   if (netWorth.value && income.value && netWorth.value > income.value * 50) {
     warnings.push(`Net worth ($${netWorth.value.toLocaleString()}) is 50x+ annual income ($${income.value.toLocaleString()}) — likely trust/inheritance wealth, relevant to DAA calculation`);
+  }
+
+  // ── Wealth Fingerprint (Section 3b) ──
+  // These fields feed TieredPaymentCalculator and WealthGapCalculator
+
+  // Trust/estate
+  const validTrustStatuses = ['no', 'revocable', 'irrevocable', 'unsure'];
+  const trustBeneficiary = (data.trust_beneficiary || 'no').trim().toLowerCase();
+  if (!validTrustStatuses.includes(trustBeneficiary)) {
+    warnings.push(`Trust beneficiary: "${data.trust_beneficiary}" is not a recognized option (no/revocable/irrevocable/unsure)`);
+  }
+  participant.trust_beneficiary = trustBeneficiary;
+
+  const trustCorpus = validateFinancialField(data.trust_corpus, 'Trust corpus', false);
+  participant.trust_corpus = trustCorpus.value;
+  if (trustCorpus.errors.length) warnings.push(...trustCorpus.errors);
+
+  if (trustBeneficiary !== 'no' && trustBeneficiary !== 'unsure' && !trustCorpus.value) {
+    warnings.push('Trust beneficiary answered yes but trust corpus is blank — ask participant for approximate value');
+  }
+
+  // Family business
+  const validBusinessStatuses = ['no', 'founded_in_lifetime', 'inherited_multigenerational', 'unsure'];
+  const businessOwnership = (data.family_business_ownership || 'no').trim().toLowerCase().replace(/ /g, '_');
+  participant.family_business_ownership = validBusinessStatuses.includes(businessOwnership) ? businessOwnership : 'no';
+  participant.family_business_details = (data.family_business_details || '').trim() || null;
+
+  if (businessOwnership === 'inherited_multigenerational' && !participant.family_business_details) {
+    warnings.push('Multi-generational family business reported but no details provided — need sector and founding year');
+  }
+
+  // Inherited land
+  const validLandTiers = ['none', 'under_500', '500_to_5000', 'over_5000', 'unsure'];
+  const landAcres = (data.inherited_land_acres || 'none').trim().toLowerCase().replace(/ /g, '_');
+  participant.inherited_land_acres = validLandTiers.includes(landAcres) ? landAcres : 'none';
+
+  // Land states — comma-separated state abbreviations
+  const landStatesRaw = (data.inherited_land_states || '').trim().toUpperCase();
+  if (landStatesRaw) {
+    const landStates = landStatesRaw.split(/[,;]+/).map(s => s.trim()).filter(s => US_STATES.includes(s));
+    participant.inherited_land_states = landStates;
+    const invalid = landStatesRaw.split(/[,;]+/).map(s => s.trim()).filter(s => s && !US_STATES.includes(s));
+    if (invalid.length) warnings.push(`Inherited land states: unrecognized abbreviation(s): ${invalid.join(', ')}`);
+  } else {
+    participant.inherited_land_states = [];
+  }
+
+  // Land use — comma-separated from checklist
+  const validLandUse = ['timber', 'mineral_rights', 'agricultural', 'ranching', 'residential_commercial', 'heir_property', 'other'];
+  const landUseRaw = (data.inherited_land_use || '').trim().toLowerCase();
+  if (landUseRaw) {
+    participant.inherited_land_use = landUseRaw.split(/[,;]+/).map(s => s.trim().replace(/ /g, '_')).filter(s => validLandUse.includes(s));
+  } else {
+    participant.inherited_land_use = [];
+  }
+
+  if (landAcres !== 'none' && landAcres !== 'unsure' && participant.inherited_land_states.length === 0) {
+    warnings.push('Inherited land reported but no state(s) given — needed for county-level slave schedule cross-reference');
+  }
+
+  // Corporate connections — semicolon-separated keys from Farmer-Paellmann defendants
+  const KNOWN_CORPORATE_KEYS = ['jpmorgan', 'aetna', 'cvs', 'new_york_life', 'bbh', 'csx', 'norfolk_southern', 'union_pacific', 'canadian_national'];
+  const corpRaw = (data.corporate_connections || '').trim().toLowerCase();
+  if (corpRaw && corpRaw !== 'none of the above' && corpRaw !== 'none') {
+    participant.corporate_connections = corpRaw.split(/[,;]+/)
+      .map(s => s.trim().replace(/ /g, '_').replace('cvs/aetna', 'aetna').replace('cvs_/_aetna', 'aetna').replace('jpmorgan_chase', 'jpmorgan'))
+      .filter(s => KNOWN_CORPORATE_KEYS.includes(s));
+    const unrecognized = corpRaw.split(/[,;]+/)
+      .map(s => s.trim())
+      .filter(s => s && s !== 'none of the above');
+    if (participant.corporate_connections.length === 0 && unrecognized.length > 0) {
+      warnings.push(`Corporate connections: "${corpRaw}" didn't match known defendants — flagging for manual review`);
+      participant.corporate_connections_raw = corpRaw;
+    }
+  } else {
+    participant.corporate_connections = [];
+  }
+  participant.corporate_connection_details = (data.corporate_connection_details || '').trim() || null;
+
+  // Executive/board history
+  participant.executive_board_history = (data.executive_board_history || '').trim() || null;
+
+  // Pre-1865 business continuity
+  const validContinuity = ['no', 'yes', 'unsure'];
+  const continuity = (data.pre_1865_business_continuity || 'no').trim().toLowerCase();
+  participant.pre_1865_business_continuity = validContinuity.includes(continuity) ? continuity : 'no';
+  participant.pre_1865_business_details = (data.pre_1865_business_details || '').trim() || null;
+
+  if (continuity === 'yes' && !participant.pre_1865_business_details) {
+    warnings.push('Pre-1865 business continuity reported as "yes" but no details — this is the strongest wealth transfer signal, need description');
+  }
+
+  // ── Elevated Wealth Flag (auto-computed) ──
+  const wealthReasons = [];
+  if (participant.trust_corpus > 1000000) wealthReasons.push('trust_corpus_over_1m');
+  if (trustBeneficiary === 'irrevocable') wealthReasons.push('irrevocable_trust_beneficiary');
+  if (landAcres === '500_to_5000' || landAcres === 'over_5000') wealthReasons.push('large_inherited_land');
+  if (participant.corporate_connections.length > 0) wealthReasons.push('farmer_paellmann_connection');
+  if (continuity === 'yes') wealthReasons.push('pre_1865_business_continuity');
+  if (businessOwnership === 'inherited_multigenerational') wealthReasons.push('multigenerational_family_business');
+  if (netWorth.value && income.value && netWorth.value > income.value * 10) wealthReasons.push('net_worth_10x_income');
+  if (inheritReceived.value > 500000) wealthReasons.push('inheritance_over_500k');
+
+  participant.wealth_flag_elevated = wealthReasons.length > 0;
+  participant.wealth_flag_reasons = wealthReasons;
+
+  if (wealthReasons.length > 0) {
+    warnings.push(`ELEVATED WEALTH FLAG: ${wealthReasons.join(', ')} — tiered payment calculator will apply higher rates`);
+  }
+
+  // ── Derive corporate_connection_type for TieredPaymentCalculator ──
+  if (participant.corporate_connections.length > 0) {
+    if (continuity === 'yes' || businessOwnership === 'inherited_multigenerational') {
+      participant.corporate_connection_type = 'owner';
+    } else if (inheritReceived.value > 100000 || trustBeneficiary === 'irrevocable') {
+      participant.corporate_connection_type = 'direct';
+    } else {
+      participant.corporate_connection_type = 'indirect';
+    }
+  } else {
+    participant.corporate_connection_type = 'none';
   }
 
   // ── Father ──
