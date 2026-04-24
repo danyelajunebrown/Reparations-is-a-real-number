@@ -1,13 +1,113 @@
 # Active Context: Current Development State
 
-**Last Updated:** April 20–21, 2026 (Session 32 — civilwardc TEI + Hopewell OCR + corporate slavery evidence + Document AI training)
-**Current Phase:** Document AI fine-tune in progress for Freedmens. All 1,041 DC 1862 petitions ingested. Corporate slavery evidence schema live. Human review UI operational at /review.
+**Last Updated:** April 24, 2026 (Session 33 — three-machine offload + durable monitoring stack)
+**Current Phase:** Infrastructure day. All long-running work moved from MacBook to Mac Mini under PM2 + Tailscale. Pi back online as health watchdog. Premiere May 4 (10 days out).
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
-## Session 32: civilwardc TEI + Hopewell + Corporate + Document AI (Apr 20–21, 2026) 🟡 IN PROGRESS
+## Session 33: Three-machine offload + monitoring (Apr 24, 2026) 🟡 IN PROGRESS
+
+### Why this session
+Premiere is May 4. Every night of runtime matters. MacBook closing = work stopping. Needed to move everything to the always-on Mini, make the Pi a health watchdog, and reach all of it from anywhere (coffee shop, plane, premiere venue).
+
+### Delivered
+
+**Network migration discovered + fixed:**
+- Router moved subnet `192.168.0.x` → `192.168.1.x` around late March 2026. Memory-bank IPs were stale.
+- Mini at `192.168.1.160`, Pi at `192.168.1.157`, Gateway `.1.1`.
+- **Pi kiosk had been silently dead for ~4 weeks** (Mar 27 → Apr 24) — `launch-kiosk.sh` hardcoded old Mini IP, kept failing 60 ping retries per boot. Updated + restarted, now loading kiosk.html again.
+- SSH config on MacBook updated for both hosts (LAN + Tailscale aliases).
+
+**Mac Mini offload infrastructure (commit 9612e6be5):**
+- `migrations/045-scrape-runs.sql` — per-branch run state queryable from any machine. `runner, branch, host, status, pages_ocrd, records_parsed, matches, db_updates, errors, last_heartbeat, last_log_tail` + indexes.
+- `src/api/routes/ops.js` — `/api/ops/status | /logs | /restart | /heartbeat`, X-Ops-Secret header auth. Returns PM2 state via `pm2 jlist`, active + recent scrape_runs, host identification.
+- `ecosystem.config.js` — adds `freedmens-runner` PM2 app.
+- `scripts/mac-mini-setup/offload-migration.sh` — one-shot Mini bootstrap (git pull, npm install, migration, OPS_SECRET gen, PM2 restart, smoke test).
+- Mini validated end-to-end: `OPS_SECRET=7ab0c5bd…`, INSERT to scrape_runs surfaces via ops endpoint.
+
+**Tailscale mesh (all three machines):**
+- MacBook `100.126.59.107`, Mini `100.114.130.16`, Pi `100.68.207.72`
+- SSH aliases: `mac-mini` (LAN), `mac-mini-ts` (Tailscale), `pi`, `pi-ts`
+- Verified: ops endpoint reachable from MacBook over Tailscale after switching WiFi networks.
+
+**Pi health watchdog (commit 3c6ac02a9):**
+- `scripts/pi/health-watchdog.js` — 2-min poll loop against Mini ops + Render health
+- 3-consecutive-failure threshold before paging (absorbs jitter)
+- Recovery notifications when targets come back
+- 30-min re-page cadence for sustained outages
+- Per-PM2-app restart detection
+- Systemd service `reparations-watchdog.service` with `Restart=always`, `EnvironmentFile`, logs to `~/reparations-watchdog/watchdog.log`
+- Installed via `scripts/pi/install-watchdog.sh`
+- Pi separate failure domain — if Mini crashes, Pi keeps reporting
+
+**Zero-yield detection (commit 998f72e72):**
+- `/api/ops/status` now returns `data_health` block: last-hour INSERT/UPDATE counts on `unconfirmed_persons`, `canonical_persons`, `ancestor_climb_matches`; last-24h `participants`
+- Watchdog alerts if any scraper online AND total writes = 0 for 30 consecutive checks (60 min)
+- Recovery notification when writes resume
+- Re-pages every 2h for sustained zero-yield
+- **Caught Savannah R8 same day deployed:** scraper online 3.5h, 0 writes — user approved kill + skip to DC R4
+
+**Notification channel (ntfy.sh):**
+- Topic: `reparations-ops-119d6914242d` (in Mini + Pi `.env` files, not committed)
+- `src/utils/notify.js` — fire-and-forget helper. ASCII-only headers (non-ASCII emojis go in body — fetch() HTTP header limitation). Never throws.
+- Scraper shells call `notify()` on branch start/success/crash
+- Watchdog calls `notify()` on target up/down/recovery + zero-yield
+
+**Scraper migration to Mini:**
+- MacBook Freedmens runner was mid-flight through branches. First decision: let it finish on MacBook. User corrected — wanted Mini. Killed MacBook runner.
+- `scripts/run-freedmens-remaining-3.sh` + `scripts/run-1860-mini.sh` + `scripts/queue-1860-after-freedmens.sh` now run under PM2 on Mini.
+- Chrome on Mini relaunched with `--remote-debugging-port=9222 --user-data-dir=/tmp/familysearch-ancestor-climber`. User signed into FamilySearch manually.
+
+**Freedmens remaining: Savannah R8 (killed, zero yield) → DC R4 (running) → New Orleans (queued)**
+
+**1860 slave schedule:** 2,022 locations remaining (memory was stale at 1,132). Biggest gaps Virginia 315, Mississippi 218, Louisiana 205, Kentucky 201, Missouri 201. `slave-schedule-1860` PM2 app armed, `queue-1860` polling freedmens-remaining to flip it on.
+
+### Architectural rules codified
+- **One FS scraper at a time per logged-in Chrome session.** User caught me running Freedmens + 1860 concurrently → both hammering FS from same session → near rate-limit. Rule saved to feedback memory. Queue pattern `queue-<next>` PM2 app polls the prior app's status, only starts next when prior is `stopped`/`errored`.
+- **Pi = separate failure domain.** Never run health watchdog on the machine it's watching.
+- **Observability must not break business logic.** `notify()` swallows all errors; scraper shells use `|| true` on curl to ntfy.
+
+### Tomorrow/weekend priorities (from memory-bank/architecture-apr24.md)
+
+**TIER 1 (must do Apr 25–26):**
+1. IdentityResolver + UNIQUE identity_fingerprint backfill (issue #36, task #41)
+2. Freedmens remaining-3 finishes + 1860 auto-starts (runs itself)
+3. Neon DB password rotation (task #17)
+4. Biscoe 1858 will PDF → S3 → Adrian's DAA (user-flagged highest priority)
+5. Pollard 1749 will acquisition from FS Dorchester Co will book (task #45)
+6. (done today) Pi health watchdog
+7. (done today) Pi on Tailscale
+
+**TIER 2:**
+8. Adrian full DAA end-to-end rehearsal (task #50)
+9. BlockchainNotary stub → tx hash on one test DAA (task #43)
+10. Top 3 methodology fixes (task #46)
+11. (partial) OPS_NOTIFY helper — done via ntfy; Discord/Slack still available later
+
+### Current PM2 state on Mini (Apr 24, mid-afternoon)
+```
+reparations-server    online  2h     Express + /api/ops + intake + /review
+freedmens-remaining   online  90m+   Savannah R8 killed, DC R4 running, NOLA queued
+queue-1860            online  80m+   gatekeeper polling freedmens every 60s
+slave-schedule-1860   stopped armed  picks largest remaining state first
+```
+
+### Current data state (Apr 24)
+- 559,464 canonical_persons
+- 1,959,090 family_relationships
+- 18,246 enslaved_individuals
+- 1,041 civilwardc petitions with structured enslaved-person rows (1,698)
+- 7,096 person_documents (S3 refs)
+- 675 CA insurance policies, 15 corporate disclosures
+- 1 `top_landholder_flags` row (George W. Biscoe)
+- 1 `land_transfer_events` row (Biscoe 1858 deed)
+- 5 participants (Adrian Lee Brown submitted intake Apr 24 08:59)
+
+---
+
+## Session 32: civilwardc TEI + Hopewell + Corporate + Document AI (Apr 20–21, 2026)
 
 ### Delivered
 
