@@ -1,0 +1,18 @@
+[Unit]
+Description=Reparations Health Watchdog (Mini + Render + scraper liveness)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=danyelicafish
+WorkingDirectory=/home/danyelicafish/reparations-watchdog
+EnvironmentFile=/home/danyelicafish/reparations-watchdog/.env
+ExecStart=/usr/bin/node /home/danyelicafish/reparations-watchdog/scripts/pi/health-watchdog.js
+Restart=always
+RestartSec=30
+StandardOutput=append:/home/danyelicafish/reparations-watchdog/watchdog.log
+StandardError=append:/home/danyelicafish/reparations-watchdog/watchdog.log
+
+[Install]
+WantedBy=multi-user.target
