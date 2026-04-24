@@ -856,7 +856,8 @@ async function main() {
                     requires_human_review: requiresReview,
                     review_reason: requiresReview ? `acct# ${dep.acct} matched but extracted header "${match.headerName || ''}" does not share tokens with DB depositor "${dep.full_name}" — likely FS index↔ledger inconsistency` : null,
                     extracted_at: new Date().toISOString(),
-                })}::jsonb
+                })}::jsonb,
+                updated_at = NOW()
             WHERE lead_id = ${dep.lead_id}
         `;
         stats.dbUpdates++;
