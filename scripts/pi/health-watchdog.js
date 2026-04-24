@@ -45,6 +45,12 @@ const state = {
 // Per-PM2-app stall state
 const scraperStall = {};
 
+// Zero-yield detection: if a scraper is online but DB growth has been zero
+// for this many consecutive checks, alert. (30 checks × 2 min = 60 min.)
+const ZERO_YIELD_THRESHOLD = 30;
+let zeroYieldStreak = 0;
+let zeroYieldAlertedAt = 0;
+
 async function fetchJson(url, opts = {}, timeoutMs = 10000) {
     const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -124,6 +130,56 @@ async function checkScraperStalls(miniData) {
     }
 }
 
+async function checkZeroYield(miniData) {
+    if (!miniData?.pm2 || !miniData?.data_health) return;
+
+    // Are any scrapers online?
+    const onlineScrapers = miniData.pm2.filter(a =>
+        a.status === 'online' &&
+        a.name !== 'reparations-server' &&
+        !a.name.startsWith('queue-')
+    );
+    if (onlineScrapers.length === 0) {
+        zeroYieldStreak = 0;
+        return;
+    }
+
+    const dh = miniData.data_health;
+    const totalWrites =
+        (dh.unconfirmed_persons_updates_1h || 0) +
+        (dh.unconfirmed_persons_inserts_1h || 0) +
+        (dh.canonical_persons_inserts_1h || 0) +
+        (dh.climb_matches_inserts_1h || 0);
+
+    if (totalWrites === 0) {
+        zeroYieldStreak += 1;
+        if (zeroYieldStreak === ZERO_YIELD_THRESHOLD) {
+            zeroYieldAlertedAt = Date.now();
+            const scraperNames = onlineScrapers.map(a => a.name).join(', ');
+            await notify(
+                `Zero-yield scraper: ${scraperNames} online for 60+ min, 0 DB writes. Branch may be low-signal or parser broken. Check logs.`,
+                { severity: 'warn', tags: ['zero-yield', 'data-quality'] }
+            );
+        } else if (zeroYieldStreak > ZERO_YIELD_THRESHOLD && Date.now() - zeroYieldAlertedAt > 2 * 60 * 60 * 1000) {
+            // Still zero-yield after 2h, re-page
+            zeroYieldAlertedAt = Date.now();
+            const scraperNames = onlineScrapers.map(a => a.name).join(', ');
+            await notify(
+                `Still zero-yield: ${scraperNames} has produced 0 writes for ${Math.floor(zeroYieldStreak * 2 / 60)} hours.`,
+                { severity: 'warn', tags: ['zero-yield', 'stillZeroYield'] }
+            );
+        }
+    } else {
+        if (zeroYieldStreak >= ZERO_YIELD_THRESHOLD) {
+            await notify(
+                `Scraper yield recovered: ${totalWrites} writes in last hour.`,
+                { severity: 'info', tags: ['recovery', 'data-quality'] }
+            );
+        }
+        zeroYieldStreak = 0;
+    }
+}
+
 async function cycle() {
     const [mini, render] = await Promise.all([checkMini(), checkRender()]);
 
@@ -132,6 +188,7 @@ async function cycle() {
 
     if (mini.ok) {
         await checkScraperStalls(mini.data);
+        await checkZeroYield(mini.data);
     }
 }
 

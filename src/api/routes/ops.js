@@ -37,6 +37,23 @@ router.get('/status', authed, async (req, res) => {
             LIMIT 50
         `);
 
+        // Data-health: last-hour write activity on scraper-targeted tables.
+        // Watchdog uses this to catch silent zero-yield branches (Savannah R8
+        // scenario: scraper online for 3.5h, DB writes = 0).
+        const dataHealth = await db.query(`
+            SELECT
+                (SELECT count(*)::int FROM unconfirmed_persons
+                    WHERE updated_at > NOW() - INTERVAL '1 hour' AND updated_at != created_at) AS unconfirmed_persons_updates_1h,
+                (SELECT count(*)::int FROM unconfirmed_persons
+                    WHERE created_at > NOW() - INTERVAL '1 hour') AS unconfirmed_persons_inserts_1h,
+                (SELECT count(*)::int FROM canonical_persons
+                    WHERE created_at > NOW() - INTERVAL '1 hour') AS canonical_persons_inserts_1h,
+                (SELECT count(*)::int FROM ancestor_climb_matches
+                    WHERE created_at > NOW() - INTERVAL '1 hour') AS climb_matches_inserts_1h,
+                (SELECT count(*)::int FROM participants
+                    WHERE intake_date > NOW() - INTERVAL '24 hours') AS participants_inserts_24h
+        `);
+
         let pm2 = null;
         try {
             const out = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf8', timeout: 5000 });
@@ -60,6 +77,7 @@ router.get('/status', authed, async (req, res) => {
             pm2,
             active_runs: runs.rows.filter(r => r.status === 'running'),
             recent_runs: runs.rows.filter(r => r.status !== 'running'),
+            data_health: dataHealth.rows[0],
         });
     } catch (e) {
         logger.error('ops/status error', { e: e.message });
