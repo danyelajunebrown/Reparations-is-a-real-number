@@ -38,6 +38,28 @@ module.exports = {
       out_file: 'logs/pm2-out.log',
       log_file: 'logs/pm2-combined.log',
       time: true
+    },
+    {
+      name: 'freedmens-runner',
+      script: 'scripts/run-freedmens-full-11.sh',
+      interpreter: 'bash',
+      instances: 1,
+      autorestart: false,  // finite job; don't loop it
+      watch: false,
+      max_memory_restart: '2G',
+      env: {
+        NODE_ENV: process.env.NODE_ENV || 'production',
+        DATABASE_URL: process.env.DATABASE_URL,
+        S3_ENABLED: process.env.S3_ENABLED,
+        S3_BUCKET: process.env.S3_BUCKET,
+        S3_REGION: process.env.S3_REGION,
+        AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+        AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+        GOOGLE_VISION_API_KEY: process.env.GOOGLE_VISION_API_KEY,
+      },
+      error_file: 'logs/pm2-freedmens-err.log',
+      out_file:   'logs/pm2-freedmens-out.log',
+      time: true,
     }
   ]
 };
