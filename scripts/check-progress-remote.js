@@ -2,14 +2,17 @@
 /**
  * CHECK SCRAPER PROGRESS REMOTELY
  *
- * Run this from ANY computer with Node.js to check progress:
- *   node check-progress-remote.js
- *
- * Or run directly (no install needed):
- *   npx -y @neondatabase/serverless && node check-progress-remote.js
+ * Reads DATABASE_URL from env. Set it before running:
+ *   DATABASE_URL='postgresql://...' node check-progress-remote.js
+ * Or with a .env in the same directory: `node -r dotenv/config check-progress-remote.js`
  */
 
-const DATABASE_URL = 'postgresql://neondb_owner:<REDACTED-neon-old-rotated-2026-04-25>@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require';
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env') });
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+    console.error('DATABASE_URL not set. Put it in .env or export before running.');
+    process.exit(1);
+}
 
 async function checkProgress() {
     const { neon } = require('@neondatabase/serverless');

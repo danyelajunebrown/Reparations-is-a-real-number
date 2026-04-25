@@ -84,7 +84,7 @@ Security inventory surfaced a committed production DB password.
 - Charleston Roll 21 branch 1: 50 depositors with full-field extraction, 32 with enslaver (master/mistress), 26 with enslaved-name (old title), 0 garbage
 
 ### Open / pending
-- [ ] **URGENT:** Rotate leaked Render DB password `<REDACTED-render-pg-decommissioned-2026-04-25>` (committed in 5 files on public repo) — tracked as task #17
+- [x] **URGENT:** Rotate leaked Render DB password (committed in 5 files on public repo) — tracked as task #17. **Done 2026-04-25:** Render db deleted, files scrubbed, history rewritten via git filter-repo, force-pushed. Google Vision key + FamilySearch password rotated in parallel.
 - [ ] Re-run Charleston Roll 23 (crashed on FS rate-limit mid-branch; no DB corruption)
 - [ ] Run migration 038 on Neon
 - [ ] Ingest user's 5 DC ancestor probate/deed/administration/guardianship records when they arrive

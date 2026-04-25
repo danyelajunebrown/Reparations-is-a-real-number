@@ -58,7 +58,8 @@ Create `.env` file with database credentials:
 ```bash
 cat > .env << 'EOF'
 # Database (Neon PostgreSQL)
-DATABASE_URL=postgresql://neondb_owner:<REDACTED-neon-old-rotated-2026-04-25>@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgresql://neondb_owner:YOUR_NEON_PASSWORD@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
+# Get the live password from Neon console (https://console.neon.tech) — never commit it.
 
 # Google Cloud Vision (for OCR)
 GOOGLE_APPLICATION_CREDENTIALS=./google-vision-key.json

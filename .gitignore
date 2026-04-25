@@ -67,3 +67,9 @@ eng.traineddata
 contracts/artifacts/
 contracts/cache/
 storage/temp-ocr/
+
+# Claude Code local settings (contains user-specific allowlist + secrets)
+.claude/
+
+# Local audit / scratch / ephemeral files
+tmp/

@@ -75,7 +75,10 @@ AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXXXXXX
 AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Database (already configured)
-DATABASE_URL=postgresql://reparations_user:<REDACTED-render-pg-decommissioned-2026-04-25>@dpg-d3v78f7diees73epc4k0-a.virginia-postgres.render.com/reparations?sslmode=require
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require
+# NOTE: The original Render Postgres credential here was leaked publicly and
+# the database was decommissioned on 2026-04-25. Production now runs on Neon;
+# put the live Neon URL in .env, not in committed docs.
 
 # Storage Root (fallback only)
 STORAGE_ROOT=./storage

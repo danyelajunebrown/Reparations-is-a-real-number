@@ -2,7 +2,9 @@
 
 # Run autonomous agent test with proper environment
 
-export DATABASE_URL="postgresql://reparations_user:<REDACTED-render-pg-decommissioned-2026-04-25>@dpg-d3v78f7diees73epc4k0-a.virginia-postgres.render.com/reparations?sslmode=require"
+# Render Postgres decommissioned 2026-04-25 (credential leaked in git history, db deleted).
+# Use the DATABASE_URL from .env (Neon) instead.
+: "${DATABASE_URL:?set DATABASE_URL in .env (Neon) before running}"
 export NODE_ENV="production"
 
 node test-autonomous-agent.js "$1"

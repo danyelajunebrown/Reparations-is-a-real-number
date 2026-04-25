@@ -9,6 +9,10 @@ set -uo pipefail
 cd "$HOME/Desktop/Reparations-is-a-real-number"
 export NODE_OPTIONS="--max-old-space-size=2048"
 export FAMILYSEARCH_INTERACTIVE=true
+# Connect extract-census-ocr.js to the existing logged-in Chrome on :9222
+# (without this, the script falls back to puppeteer.launch() and spawns a fresh
+# unauthenticated Chrome window every cycle — see scripts/extract-census-ocr.js:194).
+export CHROME_REMOTE_PORT=9222
 
 set -a; [ -f .env ] && source .env; set +a
 

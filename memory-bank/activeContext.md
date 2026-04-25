@@ -254,7 +254,7 @@ After the user's critique of the aggregate-statistics framing, we established:
 
 ### 🚨 Security finding
 
-- **Production Render PostgreSQL password `<REDACTED-render-pg-decommissioned-2026-04-25>` is committed in git HEAD** on public repo `github.com/danyelajunebrown/Reparations-is-a-real-number` in 5 files: `docs/deployment/DEPLOYMENT-FIX-GUIDE.md:78`, `memory-bank/activeContext.md:1867`, `run-test.sh:5`, `setup-agent.sh:8`, `test-simple.sh:5`.
+- **Production Render PostgreSQL password `<REDACTED 2026-04-25>` was committed in git HEAD** on public repo `github.com/danyelajunebrown/Reparations-is-a-real-number` in 5 files: `docs/deployment/DEPLOYMENT-FIX-GUIDE.md:78`, `memory-bank/activeContext.md:1867`, `run-test.sh:5`, `setup-agent.sh:8`, `test-simple.sh:5`. **Resolved 2026-04-25:** Render db deleted, files scrubbed, history rewritten via git filter-repo, force-pushed.
 - **Google Vision API key + FamilySearch password** are only in local `.claude/settings.local.json` (not tracked). Less severe but still good-hygiene rotate.
 - Action plan (task #17): rotate in Render → update .env → remove from 5 files → `git filter-repo` to purge history → force-push → audit DB for suspicious activity. User aware; rotation timing TBD (overnight run holds DB connection).
 
@@ -2277,12 +2277,10 @@ Password: <REDACTED-neon-old-rotated-2026-04-25>
 Connection String: postgresql://neondb_owner:<REDACTED-neon-old-rotated-2026-04-25>@ep-still-glade-ad8qq83f-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require
 ```
 
-### Legacy Database (Render PostgreSQL) - DEPRECATED
+### Legacy Database (Render PostgreSQL) - DELETED 2026-04-25
 ```
-Host: dpg-d3v78f7diees73epc4k0-a.oregon-postgres.render.com
-Database: reparations
-User: reparations_user
-Password: <REDACTED-render-pg-decommissioned-2026-04-25>
+Decommissioned. Credential rotated/scrubbed; instance deleted on Render.
+Production runs on Neon (see DATABASE_URL in .env).
 ```
 
 ### Database Statistics (Dec 14, 2025) - POST-CLEANUP
