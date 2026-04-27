@@ -2,6 +2,11 @@
 # Full-roll Freedmens enslaver-field extraction on the 11 branches that
 # have "Name of last master/mistress/plantation" fields per the form
 # inventory. No 200-depositor cap. Honors mid-roll template cutoffs.
+#
+# Optional: set FREEDMENS_BRANCHES to a space-separated list of slugs to
+# restrict the run, e.g. FREEDMENS_BRANCHES="huntsville memphis tallahassee
+# savannah-r8 charleston-r21" to retry only the branches that failed in
+# the Apr 24 run. Empty / unset = run all branches.
 set -uo pipefail
 cd "/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main"
 export NODE_OPTIONS="--max-old-space-size=1536"
@@ -23,8 +28,16 @@ declare -a BRANCHES=(
   "new-orleans|New Orleans, Louisiana|101|"
 )
 
+FILTER="${FREEDMENS_BRANCHES:-}"
+
 for spec in "${BRANCHES[@]}"; do
     IFS='|' read -r slug branch max_img acct_max <<< "$spec"
+
+    if [ -n "$FILTER" ] && [[ " $FILTER " != *" $slug "* ]]; then
+        echo "[$(date +%T)] --- skipping $slug (not in FREEDMENS_BRANCHES) ---" | tee -a "$RUN_LOG"
+        continue
+    fi
+
     log="$OUT/${slug}.log"
     echo "[$(date +%T)] === $branch (max_img=$max_img) ===" | tee -a "$RUN_LOG"
 
@@ -38,4 +51,4 @@ for spec in "${BRANCHES[@]}"; do
     grep -E "Records parsed|Cache hits|Depositors matched|DB updates|Errors|Pages OCRd" "$log" 2>/dev/null | tail -8 | tee -a "$RUN_LOG"
     sleep 75
 done
-echo "[$(date +%T)] === ALL 10 BRANCHES COMPLETE ===" | tee -a "$RUN_LOG"
+echo "[$(date +%T)] === FREEDMENS RUN COMPLETE ===" | tee -a "$RUN_LOG"

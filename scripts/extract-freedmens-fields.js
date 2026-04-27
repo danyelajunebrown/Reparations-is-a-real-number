@@ -734,7 +734,18 @@ async function main() {
             // depositors hit the same cache entry in acct mode.
             const tag = dep.acct != null ? `acct-${dep.acct}` : `lead-${dep.lead_id}`;
             console.log(`\n  OCR call #${ocrCalls + 1}: acct ${dep.acct} (${dep.full_name})${REUSE_OCR ? ' [reuse-ocr]' : ''}`);
-            pageResult = await ocrAndParsePage(page, origLink, localDir, tag);
+            const fullResult = await ocrAndParsePage(page, origLink, localDir, tag);
+            // Cache only the lightweight fields needed by downstream depositor
+            // matching. screenshot (~2-5MB PNG buffer) and annotation (full
+            // Vision response with every word box) are NOT consumed after this
+            // point — retaining them in the Map leaks ~GB across long runs
+            // (Huntsville Abort trap 6 at ~1,250 unique pages).
+            pageResult = {
+                skip: fullResult.skip,
+                reason: fullResult.reason,
+                imageNum: fullResult.imageNum,
+                records: fullResult.records,
+            };
             pageCache.set(origLink, pageResult);
             ocrCalls++;
             if (!REUSE_OCR) await new Promise(r => setTimeout(r, 5000)); // rate-limit courtesy
