@@ -155,6 +155,9 @@ app.use('/api/kiosk', kioskRouter);
 app.use('/api/review', requireAdmin, require('./api/routes/review'));
 app.use('/api/intake', require('./api/routes/intake'));
 app.use('/api/ops', require('./api/routes/ops'));
+app.use('/api/match-verification', require('./api/routes/match-verification'));
+app.use('/api/daa', require('./api/routes/daa'));
+app.use('/api/pipeline', require('./api/routes/pipeline'));
 
 // Static review UI + pretty URL
 app.use('/public', express.static(path.join(__dirname, '..', 'public')));

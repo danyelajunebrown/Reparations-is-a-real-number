@@ -99,6 +99,13 @@ function fsIdClean(v) {
     if (!v) return null;
     const s = String(v).trim().toUpperCase();
     if (!/^[A-Z0-9]{4}-[A-Z0-9]{2,4}$/.test(s)) return null;
+    // Reject placeholder/example IDs that the form's instruction text uses
+    // (XXXX-XXX, GXXX-XXX, "EXAMPLE", etc.). Real FamilySearch IDs always
+    // contain at least one digit AND at least one letter, and never have
+    // 3+ repeating characters in a row.
+    if (!/[0-9]/.test(s)) return null;
+    if (!/[A-Z]/.test(s)) return null;
+    if (/(.)\1{2,}/.test(s.replace('-', ''))) return null;
     return s;
 }
 
@@ -165,6 +172,46 @@ router.post('/submit', async (req, res) => {
 
     const { participant: p, family } = mapValues(values);
 
+    // Map free-text wealth-fingerprint answers from the form into the
+    // controlled vocabulary that M037 columns + calculators expect.
+    const yesNoUnsure = (v) => {
+        const s = String(v ?? '').toLowerCase().trim();
+        if (!s) return 'no';
+        if (s.startsWith('yes')) return 'yes';
+        if (s.startsWith('no')) return 'no';
+        if (s.includes('unsure') || s.includes("don't") || s.includes('not sure')) return 'unsure';
+        return 'no';
+    };
+    const trustEnum = (v) => {
+        const s = String(v ?? '').toLowerCase();
+        if (s.includes('irrevocable')) return 'irrevocable';
+        if (s.includes('revocable')) return 'revocable';
+        if (s.includes('unsure') || s.includes("don't")) return 'unsure';
+        return 'no';
+    };
+    const businessEnum = (v) => {
+        const s = String(v ?? '').toLowerCase();
+        if (s.includes('inherited') || s.includes('multigeneration')) return 'inherited_multigenerational';
+        if (s.includes('founded')) return 'founded_in_lifetime';
+        if (s.includes('unsure')) return 'unsure';
+        return 'no';
+    };
+    const acresEnum = (v) => {
+        const s = String(v ?? '').toLowerCase();
+        if (s.includes('over_5000') || s.includes('5,000+') || s.includes('over 5000')) return 'over_5000';
+        if (s.includes('500_to_5000') || s.includes('500-5')) return '500_to_5000';
+        if (s.includes('under_500') || s.includes('< 500') || s.includes('under 500')) return 'under_500';
+        if (s.includes('unsure')) return 'unsure';
+        return 'none';
+    };
+    // Form delivers corporate connections as comma-separated text or a
+    // single value; split + lowercase + filter to non-empty tokens.
+    const corpArray = (v) => {
+        if (!v) return [];
+        const tokens = String(v).split(/[,;]/).map(t => t.trim().toLowerCase()).filter(Boolean);
+        return tokens.filter(t => t !== 'none' && t !== 'no' && t.length > 1);
+    };
+
     // Coerce types for participants insertion
     const coerced = {
         full_name:           p.full_name ? String(p.full_name).trim() : null,
@@ -188,6 +235,16 @@ router.post('/submit', async (req, res) => {
         consent_income:      parseBool(p.consent_income),
         consent_negative:    parseBool(p.consent_negative),
         consent_blockchain:  parseBool(p.consent_blockchain),
+        // M037 wealth fingerprint
+        trust_beneficiary:        trustEnum(p.trust_beneficiary),
+        trust_corpus:             parseNum(p.trust_corpus),
+        family_business_ownership: businessEnum(p.family_business_ownership),
+        family_business_details:  p.family_business_details || null,
+        inherited_land_acres:     acresEnum(p.inherited_land_50_acres),
+        inherited_land_details:   p.inherited_land_details || null,
+        corporate_connections:    corpArray(p.corporate_connections),
+        executive_board_history:  p.executive_board_history || null,
+        pre_1865_business_continuity: yesNoUnsure(p.pre_1865_business),
     };
 
     if (!coerced.full_name) {
@@ -199,6 +256,24 @@ router.post('/submit', async (req, res) => {
             success: false,
             error: 'full_name required (column index 6 was empty)',
             received_values_length: values.length,
+        });
+    }
+
+    // Reject placeholder FS IDs at the top level. fsIdClean has already
+    // returned null for "XXXX-XXX" / "GXXX-XXX" / etc. — but the form's
+    // *example* placeholder is the most common bad input and produces the
+    // same NULL self_fs_id as a missing-but-required field. Rather than
+    // silently store NULL and watch the pipeline stall later, fail loud
+    // here so the participant can correct the submission.
+    const rawFsId = p.self_fs_id ? String(p.self_fs_id).trim().toUpperCase() : '';
+    if (rawFsId && !coerced.self_fs_id) {
+        logger.warn('Intake webhook 400: rejected placeholder/invalid FS ID', {
+            received: rawFsId, full_name: coerced.full_name,
+        });
+        return res.status(400).json({
+            success: false,
+            error: `self_fs_id "${rawFsId}" looks like a placeholder. Real FamilySearch IDs contain both letters and digits and don't have repeating chars (e.g. P4RF-PFQ, G21N-HD2). Please copy the FS ID from the participant's FamilySearch profile URL.`,
+            field: 'self_fs_id',
         });
     }
 
@@ -228,6 +303,11 @@ router.post('/submit', async (req, res) => {
                 self_fs_id, self_is_living,
                 roles, intake_source, intake_date,
                 consent_research, consent_income, consent_negative, consent_blockchain,
+                trust_beneficiary, trust_corpus,
+                family_business_ownership, family_business_details,
+                inherited_land_acres, inherited_land_details,
+                corporate_connections,
+                executive_board_history, pre_1865_business_continuity,
                 notes
             ) VALUES (
                 $1, $2, $3, $4,
@@ -237,7 +317,12 @@ router.post('/submit', async (req, res) => {
                 $16, $17,
                 $18::text[], $19, NOW(),
                 $20, $21, $22, $23,
-                $24
+                $24, $25,
+                $26, $27,
+                $28, $29,
+                $30::text[],
+                $31, $32,
+                $33
             )
             RETURNING id
         `, [
@@ -248,8 +333,12 @@ router.post('/submit', async (req, res) => {
             coerced.self_fs_id, coerced.self_is_living,
             ['intake_pending_review'], 'google_form_webhook',
             coerced.consent_research, coerced.consent_income, coerced.consent_negative, coerced.consent_blockchain,
+            coerced.trust_beneficiary, coerced.trust_corpus,
+            coerced.family_business_ownership, coerced.family_business_details,
+            coerced.inherited_land_acres, coerced.inherited_land_details,
+            coerced.corporate_connections,
+            coerced.executive_board_history, coerced.pre_1865_business_continuity,
             `Intake via webhook at ${payload.submitted_at || new Date().toISOString()}. ` +
-            `Wealth fingerprint: trust=${p.trust_beneficiary || '?'} business=${p.family_business_ownership || '?'} land50ac=${p.inherited_land_50_acres || '?'} pre1865=${p.pre_1865_business || '?'} corp=${p.corporate_connections || '?'}. ` +
             (p.additional_notes ? `Additional: ${String(p.additional_notes).slice(0, 500)}` : ''),
         ]);
         const participantId = insert.rows[0].id;
