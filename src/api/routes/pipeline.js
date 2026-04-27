@@ -12,9 +12,11 @@ const db = require('../../database/connection');
 const orchestrator = require('../../services/pipeline-orchestrator');
 
 // POST /api/pipeline/advance/:participantId
+// Body: { dryRun?: boolean — return what *would* happen without writing }
 router.post('/advance/:participantId', async (req, res) => {
     try {
-        const result = await orchestrator.advance(req.params.participantId);
+        const opts = { dryRun: req.body?.dryRun === true };
+        const result = await orchestrator.advance(req.params.participantId, opts);
         res.json({ success: true, ...result });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -52,6 +54,7 @@ router.get('/status/:participantId', async (req, res) => {
 // cron for long-running queues.
 router.post('/advance-all', async (req, res) => {
     const limit = Math.min(parseInt(req.body?.limit) || 50, 200);
+    const opts = { dryRun: req.body?.dryRun === true };
     try {
         const r = await db.query(
             `SELECT id FROM participants
@@ -62,7 +65,7 @@ router.post('/advance-all', async (req, res) => {
         const results = [];
         for (const row of r.rows) {
             try {
-                results.push(await orchestrator.advance(row.id));
+                results.push(await orchestrator.advance(row.id, opts));
             } catch (e) {
                 results.push({ participantId: row.id, error: e.message });
             }

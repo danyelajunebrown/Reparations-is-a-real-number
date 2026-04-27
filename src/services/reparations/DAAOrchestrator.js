@@ -502,45 +502,9 @@ class DAAOrchestrator {
 
         console.log(`   → Found ${climbNames.rows.length} ancestor names in climb`);
 
-        // Step 2: Get ALL canonical_persons marked as enslavers.
-        //
-        // IMPORTANT: we do NOT filter on `HAVING COUNT(enslaved_individuals) > 0`
-        // here. Many real enslavers in canonical_persons have their enslaved
-        // persons linked via `family_relationships(enslaved_by)` or
-        // `unconfirmed_persons.relationships[enslaved_by]` rather than the
-        // `enslaved_individuals` table — so the old HAVING filter dropped 93%
-        // of Adrian Brown's 16 verified climb matches on the first run.
-        // Enslaved-count is computed per-slaveholder below via UNION across
-        // all three storage locations.
-        const documentedSlaveholders = await this.db.query(`
-            SELECT
-                cp.id,
-                cp.canonical_name,
-                cp.birth_year_estimate,
-                cp.death_year_estimate,
-                cp.primary_state,
-                cp.primary_county,
-                cp.notes,
-                cp.person_type
-            FROM canonical_persons cp
-            WHERE cp.person_type IN ('enslaver', 'descendant')
-            ORDER BY cp.canonical_name ASC
-        `);
-        // Index by id and (normalized) canonical_name for quick lookup
-        const byId = new Map();
-        const byName = new Map();
-        for (const sh of documentedSlaveholders.rows) {
-            byId.set(sh.id, sh);
-            const key = (sh.canonical_name || '').toLowerCase().trim();
-            if (!byName.has(key)) byName.set(key, []);
-            byName.get(key).push(sh);
-        }
-
-        console.log(`   → ${documentedSlaveholders.rows.length} canonical_persons in scope (enslaver or descendant)`);
-
-        // Step 2b: Pre-resolve FS IDs via person_external_ids so the
-        // highest-quality linkage (verified external ID from the climber)
-        // becomes a direct UUID match rather than a fuzzy name guess.
+        // Step 2a: Pre-resolve FS IDs via person_external_ids so we know
+        // which canonical_persons IDs the climb already locked in. We need
+        // these for the filter on the canonical_persons fetch below.
         const fsIds = climbNames.rows.map(r => r.slaveholder_fs_id).filter(Boolean);
         const fsIdLookup = new Map();
         if (fsIds.length) {
@@ -552,6 +516,64 @@ class DAAOrchestrator {
             for (const r of pei.rows) fsIdLookup.set(r.external_id, r);
         }
         console.log(`   → Resolved ${fsIdLookup.size} of ${fsIds.length} climb FS IDs via person_external_ids`);
+
+        // Step 2b: Get canonical_persons marked as enslavers/descendants
+        // whose names share at least one token with a climb match, OR whose
+        // ids were already resolved via person_external_ids.
+        //
+        // The previous unfiltered "WHERE person_type IN ('enslaver','descendant')"
+        // query loaded ~100K+ rows × all columns including `notes` TEXT and
+        // tripped Neon serverless's 64MB HTTP response limit (HTTP 507) once
+        // the canonical_persons table got large enough.
+        //
+        // Token-based filter (rather than exact name match) is needed so the
+        // fuzzy-match logic below still catches name variants — e.g.
+        // climb has "Angelica Chesley" and the canonical row is
+        // "Angelica Chew" or "Maria Angelica Biscoe". Tokens of length < 4
+        // are dropped so common particles like "de", "of", "jr" don't
+        // pull in noise.
+        //
+        // We also stop SELECTing cp.notes (often very long primary-source
+        // narrative); the matcher doesn't need it.
+        const idsFromFsLookup = [...fsIdLookup.values()].map(r => r.canonical_person_id).filter(Boolean);
+        const tokens = new Set();
+        for (const r of climbNames.rows) {
+            const name = (r.slaveholder_name || '').toLowerCase();
+            for (const t of name.split(/[\s,.]+/)) {
+                if (t.length >= 4) tokens.add(t);
+            }
+        }
+        const tokenPatterns = [...tokens].map(t => `%${t}%`);
+
+        const documentedSlaveholders = await this.db.query(`
+            SELECT
+                cp.id,
+                cp.canonical_name,
+                cp.birth_year_estimate,
+                cp.death_year_estimate,
+                cp.primary_state,
+                cp.primary_county,
+                cp.person_type
+            FROM canonical_persons cp
+            WHERE cp.person_type IN ('enslaver', 'descendant')
+              AND (
+                  LOWER(cp.canonical_name) ILIKE ANY($1::text[])
+                  OR cp.id = ANY($2::int[])
+              )
+            ORDER BY cp.canonical_name ASC
+            LIMIT 10000
+        `, [tokenPatterns.length ? tokenPatterns : ['__no_match__'], idsFromFsLookup]);
+        // Index by id and (normalized) canonical_name for quick lookup
+        const byId = new Map();
+        const byName = new Map();
+        for (const sh of documentedSlaveholders.rows) {
+            byId.set(sh.id, sh);
+            const key = (sh.canonical_name || '').toLowerCase().trim();
+            if (!byName.has(key)) byName.set(key, []);
+            byName.get(key).push(sh);
+        }
+
+        console.log(`   → ${documentedSlaveholders.rows.length} canonical_persons in scope (enslaver or descendant)`);
 
         // Step 3: Resolve each climb ancestor to a canonical_persons row.
         // Priority: (1) FS ID via person_external_ids, (2) existing_match_id,
