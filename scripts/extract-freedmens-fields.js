@@ -155,15 +155,31 @@ const LABEL_PATTERNS = [
 const stats = { pagesOcrd: 0, recordsParsed: 0, depositorsMatched: 0, dbUpdates: 0, skippedPastCutoff: 0, errors: 0, cacheHits: 0, startTime: Date.now() };
 
 // ── Vision OCR returning full response (not just text) ──────────────────────
+// Retries transient Vision API failures (5xx + network errors) with exponential
+// backoff. The Apr 27 savannah run died at OCR call #992 from a single
+// uncaught HTTP 503 — long branches need a retry layer or one transient blip
+// kills hours of progress.
 async function ocrImageFull(imageBuffer) {
-    const res = await axios.post(
-        `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
-        { requests: [{ image: { content: imageBuffer.toString('base64') }, features: [{ type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }] }] },
-        { timeout: 60000 }
-    );
-    const annotation = res.data.responses[0];
-    if (annotation.error) throw new Error(`Vision API: ${annotation.error.message}`);
-    return annotation.fullTextAnnotation || null;
+    const url = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`;
+    const body = { requests: [{ image: { content: imageBuffer.toString('base64') }, features: [{ type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }] }] };
+    const delays = [5000, 15000, 45000];
+    let lastErr = null;
+    for (let attempt = 0; attempt <= delays.length; attempt++) {
+        try {
+            const res = await axios.post(url, body, { timeout: 60000 });
+            const annotation = res.data.responses[0];
+            if (annotation.error) throw new Error(`Vision API: ${annotation.error.message}`);
+            return annotation.fullTextAnnotation || null;
+        } catch (e) {
+            lastErr = e;
+            const status = e.response?.status;
+            const transient = !status || (status >= 500 && status < 600) || e.code === 'ECONNRESET' || e.code === 'ETIMEDOUT' || e.code === 'ECONNABORTED';
+            if (!transient || attempt === delays.length) break;
+            console.log(`  ⚠ Vision API ${status || e.code || 'error'}, retrying in ${delays[attempt] / 1000}s (attempt ${attempt + 1}/${delays.length})`);
+            await new Promise(r => setTimeout(r, delays[attempt]));
+        }
+    }
+    throw lastErr;
 }
 
 // ── Flatten the nested Vision response to a flat word list with bounding boxes
