@@ -758,6 +758,49 @@ async function main() {
     let ocrCalls = 0;
     const localDir = path.resolve(__dirname, `../debug/freedmens-bank/enslaver-test/${branchLocation.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${(rollLabel || 'roll').toLowerCase().replace(/ /g,'-')}`);
 
+    // Retry-aware page navigation. Both Tallahassee (Apr 28, 5h 37m) and
+    // Huntsville (Apr 28, 5 min) crashed at this exact navigate→evaluate
+    // step from "Attempted to use detached Frame" / "net::ERR_ABORTED"
+    // errors — Chrome/Puppeteer state corruption after macOS sleep events
+    // or rapid navigations. One per-depositor failure used to abort the
+    // whole branch.
+    //
+    // Strategy: on transient errors (detached frame, ERR_ABORTED,
+    // navigation timeout, Target closed), retry up to 3 times. If the
+    // current page is unusable, close it and open a fresh one from the
+    // existing browser. After all retries fail, skip the depositor and
+    // continue the branch.
+    const isTransientPuppeteerError = (err) => {
+        const m = (err?.message || '').toLowerCase();
+        return m.includes('detached frame') ||
+               m.includes('err_aborted') ||
+               m.includes('navigation timeout') ||
+               m.includes('target closed') ||
+               m.includes('execution context was destroyed') ||
+               m.includes('net::err_') ||
+               m.includes('frame got detached');
+    };
+    async function fetchOrigLink(detailUrl, depLabel) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                await new Promise(r => setTimeout(r, 4000));
+                return await page.evaluate(() => {
+                    const links = [...document.querySelectorAll('a')];
+                    const orig = links.find(a => /original|document/i.test(a.innerText || ''));
+                    return orig ? orig.href : null;
+                });
+            } catch (err) {
+                if (!isTransientPuppeteerError(err) || attempt === 3) throw err;
+                console.log(`    ⚠ ${depLabel}: ${err.message.split('\n')[0]} — retry ${attempt}/3 with fresh page`);
+                stats.errors++;
+                try { await page.close(); } catch (_) {}
+                page = await browser.newPage();
+                await new Promise(r => setTimeout(r, 5000 * attempt));
+            }
+        }
+    }
+
     for (const dep of depositors) {
         if (LIMIT && ocrCalls >= LIMIT) break;
 
@@ -768,13 +811,13 @@ async function main() {
             origLink = `cached://acct-${dep.acct}`;
         } else {
             const detailUrl = `${dep.source_url}?lang=en`;
-            await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await new Promise(r => setTimeout(r, 4000));
-            origLink = await page.evaluate(() => {
-                const links = [...document.querySelectorAll('a')];
-                const orig = links.find(a => /original|document/i.test(a.innerText || ''));
-                return orig ? orig.href : null;
-            });
+            try {
+                origLink = await fetchOrigLink(detailUrl, `${dep.full_name} (acct ${dep.acct})`);
+            } catch (err) {
+                console.log(`  ✗ ${dep.full_name} (acct ${dep.acct}) — gave up after 3 retries: ${err.message.split('\n')[0]}`);
+                stats.errors++;
+                continue;
+            }
             if (!origLink) {
                 console.log(`  ✗ ${dep.full_name} (acct ${dep.acct}) — no original-document link`);
                 continue;
