@@ -61,6 +61,13 @@ const REUSE_OCR = process.argv.includes('--reuse-ocr');
 // verification sweeps where we want to probe "any page" not "first page".
 const RANDOM_SAMPLE = process.argv.includes('--random');
 
+// USE_DOCUMENT_AI=true (env var or --document-ai flag) routes OCR through
+// the deployed Freedmans_Bank_Deposit_Reader Custom Extractor instead of
+// the Vision-API-plus-spatial-parser path. See src/services/document-ai-extractor.js
+// for thresholds, schema, and cost notes.
+const USE_DOCUMENT_AI = process.env.USE_DOCUMENT_AI === 'true' || process.argv.includes('--document-ai');
+const docAiExtractor = USE_DOCUMENT_AI ? require('../src/services/document-ai-extractor') : null;
+
 const sql = neon(process.env.DATABASE_URL);
 const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 
@@ -616,6 +623,37 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
 
         screenshot = await page.screenshot({ encoding: 'binary' });
         stats.pagesOcrd++;
+
+        // ── Document AI path ───────────────────────────────────────────
+        // When USE_DOCUMENT_AI=true, route through the deployed
+        // Freedmans_Bank_Deposit_Reader Custom Extractor instead of Vision +
+        // spatial parser. Returns records[] in the same shape the spatial
+        // parser produces so downstream depositor matching is unchanged.
+        if (USE_DOCUMENT_AI) {
+            try {
+                const result = await docAiExtractor.extractFromImage(screenshot);
+                const records = result.records;
+                stats.recordsParsed += records.length;
+
+                // Persist artifacts for canary inspection
+                if (localDir) {
+                    fs.mkdirSync(localDir, { recursive: true });
+                    const outTag = tag || `image-docai-${Date.now()}`;
+                    fs.writeFileSync(path.join(localDir, `${outTag}.png`), screenshot);
+                    fs.writeFileSync(
+                        path.join(localDir, `${outTag}-docai.json`),
+                        JSON.stringify({ records, raw: result.raw }, null, 2)
+                    );
+                }
+
+                return { skip: false, imageNum: null, records, screenshot, _source: 'document_ai' };
+            } catch (e) {
+                console.log(`  ⚠ Document AI failed: ${e.message} — falling back to Vision+spatial parser`);
+                // Fall through to Vision path below; helps during canary so a
+                // single Document AI outage doesn't kill the run.
+            }
+        }
+
         annotation = await ocrImageFull(screenshot);
         if (!annotation) return { skip: true, reason: 'no_ocr' };
 
@@ -678,9 +716,10 @@ async function main() {
     }
 
     console.log('\n' + '═'.repeat(64));
-    console.log(`  FREEDMEN'S BANK — ENSLAVER FIELD EXTRACTION (Google Vision)`);
+    console.log(`  FREEDMEN'S BANK — ENSLAVER FIELD EXTRACTION (${USE_DOCUMENT_AI ? 'Document AI' : 'Google Vision'})`);
     console.log(`  Branch:     ${BRANCH}`);
     console.log(`  Mode:       ${DRY_RUN ? 'DRY RUN (no DB/S3 writes)' : 'LIVE'}`);
+    if (USE_DOCUMENT_AI) console.log(`  OCR engine: Document AI Custom Extractor (${docAiExtractor.DEFAULT_PROCESSOR_PATH.split('/').pop()})`);
     console.log(`  Max image:  ${MAX_IMAGE}`);
     console.log(`  Max acct#:  ${ACCT_MAX}`);
     console.log('═'.repeat(64) + '\n');
