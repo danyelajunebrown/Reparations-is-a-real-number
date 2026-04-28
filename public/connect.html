@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Reparations — Connect & Deposit</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body { font-family: ui-monospace, 'SF Mono', Menlo, monospace; background: #f5f1e8; color: #2a2a2a;
+         max-width: 720px; margin: 2em auto; padding: 0 1em; line-height: 1.5; }
+  h1 { font-size: 1.4em; border-bottom: 1px solid #2a2a2a; padding-bottom: 0.3em; }
+  h2 { font-size: 0.95em; margin: 1.5em 0 0.6em; color: #5a5a5a; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card { border: 1px solid #2a2a2a; padding: 1em 1.2em; margin: 1em 0; background: #fff; }
+  button { font-family: inherit; padding: 0.5em 1em; border: 1px solid #2a2a2a; background: #2a2a2a;
+           color: #f5f1e8; cursor: pointer; margin: 0.2em 0.3em 0.2em 0; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: transparent; color: #2a2a2a; }
+  input { font-family: inherit; padding: 0.4em 0.6em; border: 1px solid #2a2a2a; background: #fff;
+          font-size: 1em; }
+  input[type=number] { width: 12em; }
+  .status { padding: 0.5em 0.8em; margin: 0.5em 0; }
+  .status.error   { background: #fee; border-left: 3px solid #c00; }
+  .status.warn    { background: #ffd; border-left: 3px solid #c80; }
+  .status.ok      { background: #efe; border-left: 3px solid #0a0; }
+  .status.pending { background: #eef; border-left: 3px solid #04c; }
+  .row { display: flex; justify-content: space-between; padding: 0.2em 0; }
+  .label { color: #5a5a5a; }
+  .mono { font-size: 0.85em; word-break: break-all; }
+  a { color: #04c; }
+  .lede { font-size: 0.95em; color: #5a5a5a; margin-bottom: 1.5em; }
+</style>
+</head>
+<body>
+<h1>Reparations — On-Chain Deposit</h1>
+<p class="lede">
+  Acknowledge your ancestral debt by depositing USDC into the
+  <span class="mono">ReparationsEscrow</span> contract on Base. Funds enter
+  escrow and remain there until descendants of enslaved persons are
+  identified and verified, then distribute according to documented shares.
+</p>
+
+<div class="card" id="connect-card">
+  <h2>Step 1 — Connect Wallet</h2>
+  <div id="wallet-status" class="status warn">Not connected.</div>
+  <button id="connect-btn">Connect MetaMask</button>
+</div>
+
+<div class="card" id="network-card" style="display:none">
+  <h2>Step 2 — Network</h2>
+  <div id="network-status"></div>
+  <button id="switch-btn" style="display:none">Switch to Base</button>
+</div>
+
+<div class="card" id="record-card" style="display:none">
+  <h2>Step 3 — Look up your DAA record</h2>
+  <p class="lede">Enter the record ID you were given. This is the on-chain index of your ancestry record.</p>
+  <input id="record-id-input" type="number" placeholder="Record ID" min="1">
+  <button id="load-record-btn">Load record</button>
+  <div id="record-display"></div>
+</div>
+
+<div class="card" id="deposit-card" style="display:none">
+  <h2>Step 4 — Deposit USDC</h2>
+  <div id="usdc-balance"></div>
+  <p class="lede">USDC has 6 decimals. Enter a whole-USDC amount (e.g. <span class="mono">100</span> = $100).</p>
+  <input id="amount-input" type="number" step="0.01" placeholder="Amount in USDC">
+  <button id="approve-btn">1. Approve USDC</button>
+  <button id="deposit-btn" disabled>2. Deposit</button>
+  <div id="deposit-status"></div>
+</div>
+
+<script type="module">
+import { BrowserProvider, Contract, formatUnits, parseUnits } from 'https://esm.sh/ethers@6.13.4';
+
+let provider, signer, contract, usdcContract, config;
+const USDC_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function approve(address,uint256) returns (bool)',
+  'function allowance(address,address) view returns (uint256)',
+  'function decimals() view returns (uint8)'
+];
+
+const setStatus = (id, html, kind = '') => {
+  document.getElementById(id).innerHTML = `<div class="status ${kind}">${html}</div>`;
+};
+
+document.getElementById('connect-btn').addEventListener('click', async () => {
+  if (!window.ethereum) {
+    setStatus('wallet-status', 'MetaMask not detected. Install from <a href="https://metamask.io" target="_blank">metamask.io</a>.', 'error');
+    return;
+  }
+  config = await (await fetch('/api/blockchain/config')).json();
+  if (!config.contractAddress) {
+    setStatus('wallet-status', 'Contract not configured on the server (missing deployments/base-deployment.json).', 'error');
+    return;
+  }
+  provider = new BrowserProvider(window.ethereum);
+  await provider.send('eth_requestAccounts', []);
+  signer = await provider.getSigner();
+  const addr = await signer.getAddress();
+  setStatus('wallet-status', `Connected: <span class="mono">${addr}</span>`, 'ok');
+
+  const network = await provider.getNetwork();
+  document.getElementById('network-card').style.display = '';
+  if (Number(network.chainId) !== config.chainId) {
+    setStatus('network-status', `Wrong network (chainId ${network.chainId}). Need ${config.chainId} (Base).`, 'warn');
+    document.getElementById('switch-btn').style.display = '';
+  } else {
+    setStatus('network-status', `On Base mainnet (chainId ${config.chainId}).`, 'ok');
+    document.getElementById('record-card').style.display = '';
+  }
+
+  contract = new Contract(config.contractAddress, config.abi, signer);
+  usdcContract = new Contract(config.usdcAddress, USDC_ABI, signer);
+});
+
+document.getElementById('switch-btn').addEventListener('click', async () => {
+  try {
+    await provider.send('wallet_switchEthereumChain', [{ chainId: '0x' + config.chainId.toString(16) }]);
+    location.reload();
+  } catch (e) {
+    if (e.code === 4902) {
+      await provider.send('wallet_addEthereumChain', [config.networkParams]);
+      location.reload();
+    } else {
+      setStatus('network-status', `Switch failed: ${e.message}`, 'error');
+    }
+  }
+});
+
+document.getElementById('load-record-btn').addEventListener('click', async () => {
+  const id = parseInt(document.getElementById('record-id-input').value);
+  if (!id) return;
+  try {
+    const r = await contract.getRecord(id);
+    if (!r.ancestorName) {
+      setStatus('record-display', `Record ${id} has no ancestor name — likely empty / never submitted.`, 'error');
+      return;
+    }
+    const owed = parseFloat(formatUnits(r.totalReparationsOwed, 6));
+    const deposited = parseFloat(formatUnits(r.totalDeposited, 6));
+    const remaining = (owed - deposited).toFixed(2);
+    document.getElementById('record-display').innerHTML = `
+      <div class="row"><span class="label">Ancestor:</span> <span>${r.ancestorName}</span></div>
+      <div class="row"><span class="label">FamilySearch ID:</span> <span class="mono">${r.familySearchId || 'n/a'}</span></div>
+      <div class="row"><span class="label">Total reparations owed:</span> <span><strong>${owed.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USDC</strong></span></div>
+      <div class="row"><span class="label">Already deposited:</span> <span>${deposited.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USDC</span></div>
+      <div class="row"><span class="label">Remaining to deposit:</span> <span>${remaining} USDC</span></div>
+      <div class="row"><span class="label">Verified by validator:</span> <span>${r.verified ? 'yes' : 'no — pending'}</span></div>
+    `;
+    document.getElementById('deposit-card').style.display = '';
+    document.getElementById('deposit-card').dataset.recordId = id;
+    const addr = await signer.getAddress();
+    const balance = await usdcContract.balanceOf(addr);
+    document.getElementById('usdc-balance').innerHTML =
+      `<div class="row"><span class="label">Your USDC balance:</span> <span>${parseFloat(formatUnits(balance, 6)).toFixed(2)} USDC</span></div>`;
+  } catch (e) {
+    setStatus('record-display', `Could not load record: ${e.shortMessage || e.message}`, 'error');
+  }
+});
+
+document.getElementById('approve-btn').addEventListener('click', async () => {
+  const raw = document.getElementById('amount-input').value;
+  if (!raw || parseFloat(raw) <= 0) return setStatus('deposit-status', 'Enter a positive USDC amount.', 'warn');
+  const amount = parseUnits(raw, 6);
+  setStatus('deposit-status', 'Approving USDC spend (confirm in MetaMask)…', 'pending');
+  try {
+    const tx = await usdcContract.approve(config.contractAddress, amount);
+    setStatus('deposit-status', `Approval tx submitted: <a href="${config.explorerUrl}/tx/${tx.hash}" target="_blank" class="mono">${tx.hash.slice(0,10)}…</a>`, 'pending');
+    await tx.wait();
+    setStatus('deposit-status', `Approved. Now click Deposit.`, 'ok');
+    document.getElementById('deposit-btn').disabled = false;
+  } catch (e) {
+    setStatus('deposit-status', `Approval failed: ${e.shortMessage || e.message}`, 'error');
+  }
+});
+
+document.getElementById('deposit-btn').addEventListener('click', async () => {
+  const recordId = parseInt(document.getElementById('deposit-card').dataset.recordId);
+  const raw = document.getElementById('amount-input').value;
+  const amount = parseUnits(raw, 6);
+  setStatus('deposit-status', 'Depositing (confirm in MetaMask)…', 'pending');
+  try {
+    const tx = await contract.depositReparations(recordId, config.usdcAddress, amount);
+    setStatus('deposit-status', `Deposit tx submitted: <a href="${config.explorerUrl}/tx/${tx.hash}" target="_blank" class="mono">${tx.hash.slice(0,10)}…</a> — waiting for confirmation`, 'pending');
+    const receipt = await tx.wait();
+    setStatus('deposit-status', `Deposit confirmed in block ${receipt.blockNumber}. <a href="${config.explorerUrl}/tx/${tx.hash}" target="_blank">View on Basescan</a>`, 'ok');
+    document.getElementById('deposit-btn').disabled = true;
+  } catch (e) {
+    setStatus('deposit-status', `Deposit failed: ${e.shortMessage || e.message}`, 'error');
+  }
+});
+</script>
+</body>
+</html>
