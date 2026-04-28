@@ -461,6 +461,15 @@ class DAAOrchestrator {
         // match session has table_cnt=0, inline=15) — probably a historical
         // pipeline variation. We read both and prefer the normalized table
         // when it has rows, else fall back to JSONB.
+        // Skip matches classified as temporal_impossible or common_name_suspect:
+        // these are climb matches the verifier explicitly disqualified, and
+        // including them downstream forces the probate gate to demand
+        // documentary evidence for ancestors who shouldn't have made the
+        // shortlist in the first place. The fallback path at line ~78 already
+        // applies this filter; adding it to the primary path makes the two
+        // paths consistent and lets operator annotations (UPDATE classification
+        // = 'common_name_suspect' on a known false-positive match) actually
+        // remove that match from gate scope.
         let climbNames = await this.db.query(`
             SELECT DISTINCT
                 acm.id as match_id,
@@ -474,6 +483,8 @@ class DAAOrchestrator {
                 acm.slaveholder_id as existing_match_id
             FROM ancestor_climb_matches acm
             WHERE acm.session_id = $1
+              AND (acm.classification IS NULL
+                   OR acm.classification NOT IN ('temporal_impossible', 'common_name_suspect'))
             ORDER BY acm.generation_distance ASC
         `, [sessionId]);
 
