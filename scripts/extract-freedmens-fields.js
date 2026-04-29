@@ -635,15 +635,17 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
                 const records = result.records;
                 stats.recordsParsed += records.length;
 
-                // Persist artifacts for canary inspection
+                // Persist artifacts for canary inspection (local + S3)
                 if (localDir) {
                     fs.mkdirSync(localDir, { recursive: true });
                     const outTag = tag || `image-docai-${Date.now()}`;
+                    const branchSlug = path.basename(localDir);
                     fs.writeFileSync(path.join(localDir, `${outTag}.png`), screenshot);
-                    fs.writeFileSync(
-                        path.join(localDir, `${outTag}-docai.json`),
-                        JSON.stringify({ records, raw: result.raw }, null, 2)
-                    );
+                    const docaiJson = JSON.stringify({ records, raw: result.raw }, null, 2);
+                    fs.writeFileSync(path.join(localDir, `${outTag}-docai.json`), docaiJson);
+                    // S3 mirror — silent no-op when S3 disabled or auth fails
+                    await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}.png`, screenshot, 'image/png');
+                    await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}-docai.json`, docaiJson, 'application/json');
                 }
 
                 return { skip: false, imageNum: null, records, screenshot, _source: 'document_ai' };
@@ -689,16 +691,27 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
 
     // Save artifacts for debugging — include row-grouped word positions so
     // we can spot-check whether labels and values are actually on the same y.
+    // Also mirror to S3 (silent no-op if S3 disabled / auth fails) so the
+    // source ledger images survive Mac Mini disk failure.
     if (localDir) {
         fs.mkdirSync(localDir, { recursive: true });
         const outTag = tag || `image-${imageNum || 'unk'}`;
-        if (screenshot) fs.writeFileSync(path.join(localDir, `${outTag}.png`), screenshot);
-        fs.writeFileSync(path.join(localDir, `${outTag}-ocr.txt`), annotation.text || '');
+        const branchSlug = path.basename(localDir);
+        if (screenshot) {
+            fs.writeFileSync(path.join(localDir, `${outTag}.png`), screenshot);
+            await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}.png`, screenshot, 'image/png');
+        }
+        const ocrText = annotation.text || '';
+        fs.writeFileSync(path.join(localDir, `${outTag}-ocr.txt`), ocrText);
+        await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}-ocr.txt`, ocrText, 'text/plain');
+
         const rowsDump = groupIntoRows(words, 12).map(r => ({
             y: Math.round(r.mid),
             words: r.words.map(w => `${w.text}@(${w.x},${w.y},${w.xR - w.x}×${w.h})`),
         }));
-        fs.writeFileSync(path.join(localDir, `${outTag}-parsed.json`), JSON.stringify({ imageNum, anchors, records, rows: rowsDump }, null, 2));
+        const parsedJson = JSON.stringify({ imageNum, anchors, records, rows: rowsDump }, null, 2);
+        fs.writeFileSync(path.join(localDir, `${outTag}-parsed.json`), parsedJson);
+        await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}-parsed.json`, parsedJson, 'application/json');
     }
 
     return { skip: false, imageNum, records, screenshot, annotation };
