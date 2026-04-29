@@ -50,13 +50,90 @@ function sha256(text) {
     return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-// Strip "-- ..." line comments and split on ; into individual statements.
-// This is good enough for the project's existing migrations (no $$ blocks
-// or DO blocks). If a future migration uses those, the runner will fail
-// loudly and we can switch to a real SQL parser then.
+// Statement-aware SQL splitter. Walks the source character-by-character,
+// tracking whether we are inside a `--` line comment, `/* */` block comment,
+// `'...'` single-quoted string literal (with `''` as escaped quote), or
+// `$tag$ ... $tag$` dollar-quoted string. Only splits on `;` outside all of
+// these. Required for migrations whose string literals contain `;` (e.g.,
+// 060 seeds methodology descriptions that include semicolons).
 function splitStatements(sqlText) {
-    const stripped = sqlText.replace(/--[^\n]*/g, '');
-    return stripped.split(';').map(s => s.trim()).filter(Boolean);
+    const out = [];
+    let cur = '';
+    let i = 0;
+    const n = sqlText.length;
+    while (i < n) {
+        const c = sqlText[i];
+        const next = sqlText[i + 1];
+
+        // Line comment: skip to end-of-line, do not append.
+        if (c === '-' && next === '-') {
+            const eol = sqlText.indexOf('\n', i);
+            i = eol === -1 ? n : eol;
+            continue;
+        }
+
+        // Block comment: skip to closing */, do not append.
+        if (c === '/' && next === '*') {
+            const end = sqlText.indexOf('*/', i + 2);
+            i = end === -1 ? n : end + 2;
+            continue;
+        }
+
+        // Single-quoted string literal — append verbatim, handle '' as escape.
+        if (c === "'") {
+            cur += c;
+            i++;
+            while (i < n) {
+                if (sqlText[i] === "'" && sqlText[i + 1] === "'") {
+                    cur += "''";
+                    i += 2;
+                    continue;
+                }
+                if (sqlText[i] === "'") {
+                    cur += "'";
+                    i++;
+                    break;
+                }
+                cur += sqlText[i];
+                i++;
+            }
+            continue;
+        }
+
+        // Dollar-quoted string $tag$ ... $tag$ (tag may be empty: $$ ... $$).
+        if (c === '$') {
+            const m = sqlText.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+            if (m) {
+                const tag = m[0];
+                cur += tag;
+                i += tag.length;
+                const endIdx = sqlText.indexOf(tag, i);
+                if (endIdx === -1) {
+                    cur += sqlText.slice(i);
+                    i = n;
+                    continue;
+                }
+                cur += sqlText.slice(i, endIdx + tag.length);
+                i = endIdx + tag.length;
+                continue;
+            }
+        }
+
+        // Statement terminator outside any string/comment context.
+        if (c === ';') {
+            const t = cur.trim();
+            if (t) out.push(t);
+            cur = '';
+            i++;
+            continue;
+        }
+
+        cur += c;
+        i++;
+    }
+    const t = cur.trim();
+    if (t) out.push(t);
+    return out;
 }
 
 async function ensureTrackingTableExists() {
