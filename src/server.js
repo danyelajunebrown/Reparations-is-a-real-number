@@ -162,6 +162,14 @@ app.use('/api/pipeline', require('./api/routes/pipeline'));
 // Static review UI + pretty URL
 app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 app.get('/review', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'review.html')));
+app.get('/connect', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'connect.html')));
+
+// React SPA mounted at /app — built from frontend/ with VITE_BASE_PATH=/app.
+// Static asset serving + SPA fallback so client-side routes (e.g. /app/admin,
+// /app/person/X) all return the SPA shell which then handles routing client-side.
+app.use('/app', express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+app.get('/app', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html')));
+app.get('/app/*', (req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html')));
 
 // Make database pool available to routes (for bibliography manager)
 app.set('pool', db);
