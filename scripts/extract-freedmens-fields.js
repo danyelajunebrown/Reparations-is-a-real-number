@@ -648,7 +648,18 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
                     await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}-docai.json`, docaiJson, 'application/json');
                 }
 
-                return { skip: false, imageNum: null, records, screenshot, _source: 'document_ai' };
+                const docaiBranchSlug = localDir ? path.basename(localDir) : null;
+                const docaiOutTag = tag || `image-docai-${Date.now()}`;
+                const docaiS3Key = docaiBranchSlug ? `freedmens-bank/${docaiBranchSlug}/${docaiOutTag}.png` : null;
+                return {
+                    skip: false,
+                    imageNum: null,
+                    records,
+                    screenshot,
+                    _source: 'document_ai',
+                    _image_s3_key: docaiS3Key,
+                    _branch_slug: docaiBranchSlug,
+                };
             } catch (e) {
                 console.log(`  ⚠ Document AI failed: ${e.message} — falling back to Vision+spatial parser`);
                 // Fall through to Vision path below; helps during canary so a
@@ -693,13 +704,17 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
     // we can spot-check whether labels and values are actually on the same y.
     // Also mirror to S3 (silent no-op if S3 disabled / auth fails) so the
     // source ledger images survive Mac Mini disk failure.
+    let visionImageS3Key = null;
+    let visionBranchSlug = null;
     if (localDir) {
         fs.mkdirSync(localDir, { recursive: true });
         const outTag = tag || `image-${imageNum || 'unk'}`;
         const branchSlug = path.basename(localDir);
+        visionBranchSlug = branchSlug;
         if (screenshot) {
             fs.writeFileSync(path.join(localDir, `${outTag}.png`), screenshot);
             await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}.png`, screenshot, 'image/png');
+            visionImageS3Key = `freedmens-bank/${branchSlug}/${outTag}.png`;
         }
         const ocrText = annotation.text || '';
         fs.writeFileSync(path.join(localDir, `${outTag}-ocr.txt`), ocrText);
@@ -714,7 +729,16 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
         await archiveToS3(`freedmens-bank/${branchSlug}/${outTag}-parsed.json`, parsedJson, 'application/json');
     }
 
-    return { skip: false, imageNum, records, screenshot, annotation };
+    return {
+        skip: false,
+        imageNum,
+        records,
+        screenshot,
+        annotation,
+        _source: 'google_vision_spatial_parser_v2',
+        _image_s3_key: visionImageS3Key,
+        _branch_slug: visionBranchSlug,
+    };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -966,13 +990,16 @@ async function main() {
         }
 
         const requiresReview = matchTier === 'acct_only_name_mismatch';
+        const extractionSource = pageResult._source || 'google_vision_spatial_parser_v2';
         await sql`
             UPDATE unconfirmed_persons
             SET relationships = ${JSON.stringify(rels)}::jsonb,
                 review_notes = ${JSON.stringify({
                     ledger_extraction: f,
-                    extraction_source: 'google_vision_spatial_parser_v2',
+                    extraction_source: extractionSource,
                     image_num: pageResult.imageNum,
+                    image_s3_key: pageResult._image_s3_key || null,
+                    branch_slug: pageResult._branch_slug || null,
                     match_tier: matchTier,
                     match_confidence: matchConfidence,
                     requires_human_review: requiresReview,
@@ -983,6 +1010,82 @@ async function main() {
             WHERE lead_id = ${dep.lead_id}
         `;
         stats.dbUpdates++;
+
+        // ── Document-level audit row ────────────────────────────────────
+        // Per memory-bank/plan-apr29 Stage 4 commitment: every extracted
+        // record must have a person_documents row pointing to its source
+        // image in S3. Without this, downstream readers can't verify claims
+        // against the ledger image, can't re-extract under different OCR
+        // engines, and can't audit the trail from field → primary source.
+        //
+        // Idempotency: skip if a person_documents row already exists for
+        // this (unconfirmed_person_id, s3_key). Same depositor across
+        // multiple ledger pages produces multiple rows (correct behavior).
+        if (pageResult._image_s3_key) {
+            try {
+                const existsRows = await sql`
+                    SELECT 1 FROM person_documents
+                    WHERE unconfirmed_person_id = ${dep.lead_id}
+                      AND s3_key = ${pageResult._image_s3_key}
+                    LIMIT 1
+                `;
+                if (existsRows.length === 0) {
+                    const ledgerSummary = [
+                        f.last_master ? `master="${f.last_master}"` : null,
+                        f.last_mistress ? `mistress="${f.last_mistress}"` : null,
+                        f.plantation ? `plantation="${f.plantation}"` : null,
+                        f.old_title ? `old_title="${f.old_title}"` : null,
+                        f.residence ? `residence="${f.residence}"` : null,
+                    ].filter(Boolean).join('; ').slice(0, 500);
+
+                    const s3Bucket = process.env.S3_BUCKET || 'reparations-them';
+                    const s3Url = `s3://${s3Bucket}/${pageResult._image_s3_key}`;
+
+                    await sql`
+                        INSERT INTO person_documents (
+                            unconfirmed_person_id,
+                            name_as_appears,
+                            s3_url,
+                            s3_key,
+                            source_url,
+                            source_type,
+                            collection_name,
+                            image_number,
+                            page_reference,
+                            ocr_text,
+                            context_snippet,
+                            person_type,
+                            document_type,
+                            extraction_confidence,
+                            created_at,
+                            created_by
+                        ) VALUES (
+                            ${dep.lead_id},
+                            ${match.headerName || dep.full_name || null},
+                            ${s3Url},
+                            ${pageResult._image_s3_key},
+                            ${dep.source_url || null},
+                            ${'freedmens_bank'},
+                            ${pageResult._branch_slug || null},
+                            ${pageResult.imageNum || null},
+                            ${`acct ${dep.acct}, image ${pageResult.imageNum}`},
+                            ${JSON.stringify(f).slice(0, 8000)},
+                            ${ledgerSummary || null},
+                            ${'depositor'},
+                            ${'freedmens_bank_ledger'},
+                            ${matchConfidence},
+                            NOW(),
+                            ${`freedmens-extract-${extractionSource}`}
+                        )
+                    `;
+                    stats.documentsCreated = (stats.documentsCreated || 0) + 1;
+                }
+            } catch (e) {
+                // Log but don't fail the depositor match; person_documents
+                // is an audit-trail concern, not business logic.
+                console.log(`      ⚠ person_documents insert failed for lead_id=${dep.lead_id}: ${e.message.slice(0, 100)}`);
+            }
+        }
     }
 
     const elapsed = ((Date.now() - stats.startTime) / 1000 / 60).toFixed(1);
@@ -995,6 +1098,7 @@ async function main() {
     console.log(`  Cache hits:          ${stats.cacheHits}`);
     console.log(`  Skipped past cutoff: ${stats.skippedPastCutoff}`);
     console.log(`  DB updates:          ${stats.dbUpdates}`);
+    console.log(`  person_documents:    ${stats.documentsCreated || 0}`);
     console.log(`  Errors:              ${stats.errors}`);
     console.log(`  Elapsed:             ${elapsed} min`);
     console.log(`  Artifacts:           ${localDir}\n`);
