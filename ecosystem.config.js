@@ -56,12 +56,22 @@ module.exports = {
         AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
         AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
         GOOGLE_VISION_API_KEY: process.env.GOOGLE_VISION_API_KEY,
-        // Document AI extraction. Without this in the PM2 env block, the
-        // bash script's `export USE_DOCUMENT_AI=true` would still propagate
-        // through to the node child — but only if PM2 had inherited it from
-        // the shell. PM2's `env: {...}` is exhaustive: vars not listed get
-        // stripped. Keeping it here is the durable fix.
-        USE_DOCUMENT_AI: process.env.USE_DOCUMENT_AI || 'true',
+        // Document AI extraction. PM2's `env: {...}` is exhaustive: vars
+        // not listed get stripped from the spawned process. Keeping this
+        // block ensures USE_DOCUMENT_AI propagates when the operator
+        // explicitly sets it.
+        //
+        // DEFAULT IS NOW 'false' (2026-04-30): the deployed Custom Extractor
+        // version `b249cf11f364e209` is currently broken — it rejects all
+        // images including its own training set with INVALID_ARGUMENT,
+        // cause unknown without GCP audit logs (Data Access logging not
+        // yet enabled for Document AI). Foundation model is a quality
+        // regression for our use case (it doesn't extract last_master /
+        // last_mistress / plantation, which are the load-bearing fields
+        // for enslaver attribution). Vision spatial parser produces
+        // those fields (noisily). When the Custom Extractor is fixed,
+        // flip this back to 'true' and re-run the affected branches.
+        USE_DOCUMENT_AI: process.env.USE_DOCUMENT_AI || 'false',
         DOCUMENT_AI_PROCESSOR_PATH: process.env.DOCUMENT_AI_PROCESSOR_PATH,
         GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
       },
