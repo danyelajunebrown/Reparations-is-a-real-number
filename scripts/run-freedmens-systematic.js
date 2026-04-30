@@ -174,7 +174,12 @@ async function runBranchOnce(branch, attempt) {
             '--branch', branch,
         ], {
             cwd: path.resolve(__dirname, '..'),
-            env: { ...process.env, USE_DOCUMENT_AI: 'true' },
+            // Inherit the runner's env (USE_DOCUMENT_AI propagates via PM2
+            // ecosystem.config.js). NEVER hardcode 'true' here — that
+            // overrides operator intent. The Custom Extractor is currently
+            // broken (2026-04-30); operators set USE_DOCUMENT_AI=false to
+            // skip the per-call failure + retry overhead until it's fixed.
+            env: { ...process.env },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
 
