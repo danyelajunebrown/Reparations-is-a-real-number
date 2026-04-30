@@ -204,7 +204,7 @@ async function bootstrapDebtAcknowledgments() {
         SELECT
             daa.slaveholder_canonical_id,
             'debt_acknowledgment_agreements',
-            daa.id::text,
+            daa.daa_id::text,
             'direct_primary',
             'Corporate debt acknowledgment agreement',
             'bootstrap-stage2.5'
