@@ -929,11 +929,20 @@ async function main() {
             // Vision response with every word box) are NOT consumed after this
             // point — retaining them in the Map leaks ~GB across long runs
             // (Huntsville Abort trap 6 at ~1,250 unique pages).
+            //
+            // We DO retain _image_s3_key, _branch_slug, and _source: those are
+            // small strings (~80 bytes each) that downstream needs to write
+            // person_documents audit rows. Earlier omission caused ~734 OCR
+            // calls to extract data without a single person_documents insert
+            // (caught live 2026-04-30).
             pageResult = {
                 skip: fullResult.skip,
                 reason: fullResult.reason,
                 imageNum: fullResult.imageNum,
                 records: fullResult.records,
+                _image_s3_key: fullResult._image_s3_key || null,
+                _branch_slug: fullResult._branch_slug || null,
+                _source: fullResult._source || null,
             };
             pageCache.set(origLink, pageResult);
             ocrCalls++;

@@ -182,10 +182,16 @@ async function extractFromImage(imageBuffer, opts = {}) {
     const processorPath = opts.processorPath || DEFAULT_PROCESSOR_PATH;
     const mimeType = opts.mimeType || 'image/png';
 
+    // The @google-cloud/documentai SDK base64-encodes Buffer content for us
+    // when serializing to protobuf. Passing imageBuffer.toString('base64')
+    // double-encodes the bytes and Doc AI rejects with
+    //   3 INVALID_ARGUMENT: Request contains an invalid argument
+    // (caught live 2026-04-30: ~734 OCR calls every silently fell back to
+    // Vision because of this). Fix is to pass the raw Buffer.
     const [result] = await client.processDocument({
         name: processorPath,
         rawDocument: {
-            content: imageBuffer.toString('base64'),
+            content: imageBuffer,
             mimeType,
         },
     });
