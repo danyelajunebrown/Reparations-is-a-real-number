@@ -130,7 +130,7 @@ async function bootstrapHistoricalReparationsPetitions(methodologyId) {
         SELECT
             hrp.claimant_canonical_id,
             'historical_reparations_petitions',
-            hrp.id::text,
+            hrp.petition_id::text,
             'direct_primary',
             'Government compensation petition by claimant '
                 || COALESCE(hrp.claimant_name, '(unnamed)')
