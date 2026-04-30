@@ -1,0 +1,9 @@
+{
+  "document_class": "narrative",
+  "title": "Douglass, Frederick — Narrative of the Life\n",
+  "publication_date": "1845",
+  "source_url": "https://docsouth.unc.edu/fpn/douglass/douglass.html",
+  "files": {"narrative_html": "page.html"},
+  "note": "Documenting the American South (UNC) digitized narrative. HTML page; extractor will need to strip navigation chrome and isolate narrative body.",
+  "license": "DocSouth (UNC) — academic use; check individual rights"
+}
