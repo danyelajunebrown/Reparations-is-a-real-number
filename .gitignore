@@ -73,3 +73,5 @@ storage/temp-ocr/
 
 # Local audit / scratch / ephemeral files
 tmp/
+tmp-*.js
+.env.bak*
