@@ -134,7 +134,7 @@ async function bootstrapPersonExternalIds(methodologyId) {
             'person_external_ids',
             pei.id::text,
             'indirect_primary',
-            'External ID linkage: ' || COALESCE(pei.source_system, 'unknown')
+            'External ID linkage: ' || COALESCE(pei.id_system, 'unknown')
                 || COALESCE(' / ' || pei.external_id, ''),
             ${methodologyId}::uuid,
             'bootstrap-stage2.5'
@@ -169,7 +169,7 @@ async function bootstrapInsurancePolicies() {
         SELECT
             sip.slaveholder_canonical_id,
             'slave_era_insurance_policies',
-            sip.id::text,
+            sip.policy_id::text,
             'direct_primary',
             'Slave-era insurance policy registered to slaveholder',
             'bootstrap-stage2.5'
