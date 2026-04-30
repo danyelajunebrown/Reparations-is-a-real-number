@@ -215,10 +215,29 @@ async function runBranchOnce(branch, attempt) {
     });
 }
 
+// Hard-stop exit codes from extract-freedmens-fields.js — these indicate
+// system-level problems (auth, rate limit, markup change) where retrying
+// would only burn credits. Surface immediately and halt the whole run.
+const HARD_STOP_EXIT_CODES = {
+    2: { kind: 'SESSION_EXPIRED', message: 'FS Chrome session is logged out. VNC into Mac Mini and re-login, then restart the runner.' },
+    3: { kind: 'RATE_LIMITED', message: 'FamilySearch rate-limited us. Wait at least 30 minutes before any restart.' },
+    4: { kind: 'SYSTEMIC_LINK_MISSING', message: '25 consecutive depositors had no original-document link. Likely FS HTML change or silent session issue — investigate before re-running.' },
+};
+
 async function runBranchWithRetry(branch) {
     for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
         const r = await runBranchOnce(branch, attempt);
         if (r.exitCode === 0) return r;
+
+        // Hard stops — don't retry, propagate up to halt the run.
+        if (HARD_STOP_EXIT_CODES[r.exitCode]) {
+            const info = HARD_STOP_EXIT_CODES[r.exitCode];
+            r.hardStop = info;
+            r.hardStopBranch = branch;
+            await notify(`HARD STOP on branch "${branch}": ${info.kind}\n${info.message}`, 'error');
+            return r;
+        }
+
         if (attempt > MAX_RETRIES) {
             await notify(`Branch "${branch}" failed after ${MAX_RETRIES + 1} attempts. Last log tail:\n${r.logTail}`, 'error');
             return r;
@@ -267,6 +286,14 @@ async function runBranchWithRetry(branch) {
         const r = await runBranchWithRetry(branch);
         if (r.exitCode === 0) summary.ok.push(branch);
         else summary.failed.push(branch);
+
+        // Hard stop — halt the whole run, don't iterate to next branch.
+        if (r.hardStop) {
+            console.log(`\n  ⛔ HARD STOP at branch "${r.hardStopBranch}": ${r.hardStop.kind}`);
+            console.log(`  ${r.hardStop.message}`);
+            summary.hardStopped = { branch: r.hardStopBranch, ...r.hardStop };
+            break;
+        }
     }
 
     const elapsed = Math.round((Date.now() - startTime) / 60_000);
@@ -276,12 +303,17 @@ async function runBranchWithRetry(branch) {
     console.log(`  failed:  ${summary.failed.length}`);
     console.log(`  skipped: ${summary.skipped.length}`);
     if (summary.failed.length > 0) console.log(`  failed branches: ${summary.failed.join(', ')}`);
+    if (summary.hardStopped) {
+        console.log(`  HARD STOP: ${summary.hardStopped.kind} on branch "${summary.hardStopped.branch}"`);
+        console.log(`             ${summary.hardStopped.message}`);
+    }
     console.log('═══════════════════════════════════════════════════════════════');
 
     await notify(
         `Freedmens systematic runner done. ok=${summary.ok.length} failed=${summary.failed.length} skipped=${summary.skipped.length} elapsed=${elapsed}m`
-            + (summary.failed.length > 0 ? `\nFailed: ${summary.failed.join(', ')}` : ''),
-        summary.failed.length > 0 ? 'warn' : 'info'
+            + (summary.failed.length > 0 ? `\nFailed: ${summary.failed.join(', ')}` : '')
+            + (summary.hardStopped ? `\nHARD STOP: ${summary.hardStopped.kind} on "${summary.hardStopped.branch}"` : ''),
+        (summary.hardStopped || summary.failed.length > 0) ? 'warn' : 'info'
     );
 })().catch(async e => {
     console.error('FATAL:', e.message);

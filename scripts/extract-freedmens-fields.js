@@ -822,12 +822,42 @@ async function main() {
             try {
                 await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 await new Promise(r => setTimeout(r, 4000));
-                return await page.evaluate(() => {
+
+                // Detect catastrophic page states BEFORE looking for the link.
+                // Without these checks, login-redirect and rate-limit pages
+                // silently return null and the caller can't tell the difference
+                // from "depositor genuinely has no original-document link" —
+                // and we burn through every depositor in the branch before
+                // anyone notices. (This actually happened on 2026-04-30.)
+                const pageState = await page.evaluate(() => {
+                    const url = location.href;
+                    const bodyText = (document.body?.innerText || '').slice(0, 4000).toLowerCase();
                     const links = [...document.querySelectorAll('a')];
                     const orig = links.find(a => /original|document/i.test(a.innerText || ''));
-                    return orig ? orig.href : null;
+                    return {
+                        url,
+                        loggedOut: url.includes('ident.familysearch.org/identity/login') || url.includes('/identity/login'),
+                        rateLimited:
+                            /too\s+many\s+requests|rate\s+limit|please\s+try\s+again\s+later|temporarily\s+unavailable|usage\s+limit\s+exceeded/.test(bodyText)
+                            || /\/(rate-limit|throttled|429)/.test(url),
+                        origLinkHref: orig ? orig.href : null,
+                    };
                 });
+
+                if (pageState.loggedOut) {
+                    const e = new Error('SESSION_EXPIRED: redirected to FS login');
+                    e.code = 'SESSION_EXPIRED';
+                    throw e;
+                }
+                if (pageState.rateLimited) {
+                    const e = new Error('RATE_LIMITED: FS rate-limit page detected');
+                    e.code = 'RATE_LIMITED';
+                    throw e;
+                }
+                return pageState.origLinkHref;
             } catch (err) {
+                // Hard-stop conditions bubble up immediately; don't retry these.
+                if (err.code === 'SESSION_EXPIRED' || err.code === 'RATE_LIMITED') throw err;
                 if (!isTransientPuppeteerError(err) || attempt === 3) throw err;
                 console.log(`    ⚠ ${depLabel}: ${err.message.split('\n')[0]} — retry ${attempt}/3 with fresh page`);
                 stats.errors++;
@@ -837,6 +867,14 @@ async function main() {
             }
         }
     }
+
+    // Track consecutive "no original-document link" failures so we can abort
+    // the whole branch if we see a sustained pattern (signal that something
+    // is systemically wrong — login expired silently, FS HTML changed,
+    // browser session lost, etc.) instead of churning through 1,675
+    // depositors logging the same misleading message.
+    let consecutiveLinkMissing = 0;
+    const ABORT_AFTER_CONSECUTIVE_MISSING = 25;
 
     for (const dep of depositors) {
         if (LIMIT && ocrCalls >= LIMIT) break;
@@ -851,14 +889,30 @@ async function main() {
             try {
                 origLink = await fetchOrigLink(detailUrl, `${dep.full_name} (acct ${dep.acct})`);
             } catch (err) {
+                if (err.code === 'SESSION_EXPIRED') {
+                    console.log(`  ✗ ABORTING BRANCH: FS session expired (redirected to login). Re-login Chrome and restart.`);
+                    stats.errors++;
+                    process.exit(2);
+                }
+                if (err.code === 'RATE_LIMITED') {
+                    console.log(`  ✗ ABORTING BRANCH: FS rate-limit detected. Wait at least 30 minutes before retrying.`);
+                    stats.errors++;
+                    process.exit(3);
+                }
                 console.log(`  ✗ ${dep.full_name} (acct ${dep.acct}) — gave up after 3 retries: ${err.message.split('\n')[0]}`);
                 stats.errors++;
                 continue;
             }
             if (!origLink) {
                 console.log(`  ✗ ${dep.full_name} (acct ${dep.acct}) — no original-document link`);
+                consecutiveLinkMissing++;
+                if (consecutiveLinkMissing >= ABORT_AFTER_CONSECUTIVE_MISSING) {
+                    console.log(`  ✗ ABORTING BRANCH: ${ABORT_AFTER_CONSECUTIVE_MISSING} consecutive depositors with no original-document link. Likely FS markup change or silent session issue — investigate before re-running.`);
+                    process.exit(4);
+                }
                 continue;
             }
+            consecutiveLinkMissing = 0;  // reset on success
         }
 
         let pageResult = pageCache.get(origLink);
