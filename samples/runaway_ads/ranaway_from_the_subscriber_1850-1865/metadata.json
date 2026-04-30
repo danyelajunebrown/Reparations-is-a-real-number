@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn89060060/1855-07-12/ed-1/?sp=3\n",
+  "newspaper_title": "Image 3 of Port Tobacco times, and Charles County advertiser (Port Tobacco, Md.), July 12, 1855\n",
+  "publication_date": "1855-07-12",
+  "search_era": "1850/1865",
+  "search_query": "ranaway+from+the+subscriber",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:mdu:batch_mdu_elsberg_ver02:data:sn89060060:00415624281:1855071201:0095/full/pct:6.25/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/mdu/batch_mdu_elsberg_ver02/data/sn89060060/00415624281/1855071201/0095.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

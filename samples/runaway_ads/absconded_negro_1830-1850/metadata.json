@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn87065377/1838-10-10/ed-1/?sp=4\n",
+  "newspaper_title": "Image 4 of Macon intelligencer (Macon, Miss.), October 10, 1838\n",
+  "publication_date": "1838-10-10",
+  "search_era": "1830/1850",
+  "search_query": "absconded+negro",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:msar:batch_msar_ikat_ver01:data:sn87065377:00199917304:1838101001:0240/full/pct:6.25/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/msar/batch_msar_ikat_ver01/data/sn87065377/00199917304/1838101001/0240.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

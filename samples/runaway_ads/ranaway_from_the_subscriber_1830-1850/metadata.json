@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn89066057/1848-10-23/ed-1/?sp=3\n",
+  "newspaper_title": "Image 3 of Democratic banner (Bowling Green, Pike County, Mo.), October 23, 1848\n",
+  "publication_date": "1848-10-23",
+  "search_era": "1830/1850",
+  "search_query": "ranaway+from+the+subscriber",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:mohi:batch_mohi_jerome_ver01:data:sn89066057:00200292121:1848102301:0501/full/pct:12.5/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/mohi/batch_mohi_jerome_ver01/data/sn89066057/00200292121/1848102301/0501.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

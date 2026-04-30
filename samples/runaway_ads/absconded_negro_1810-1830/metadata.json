@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn83026170/1820-09-09/ed-1/?sp=1\n",
+  "newspaper_title": "Image 1 of Alexandria gazette & daily advertiser (Alexandria [Va.]), September 9, 1820\n",
+  "publication_date": "1820-09-09",
+  "search_era": "1810/1830",
+  "search_query": "absconded+negro",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:vi:batch_vi_hops_ver01:data:sn83026170:00414216286:1820090901:0553/full/pct:6.25/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/vi/batch_vi_hops_ver01/data/sn83026170/00414216286/1820090901/0553.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

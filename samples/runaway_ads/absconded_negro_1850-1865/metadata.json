@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn84026536/1854-12-08/ed-1/?sp=1\n",
+  "newspaper_title": "Image 1 of Wilmington journal (Wilmington, N.C.), December 8, 1854\n",
+  "publication_date": "1854-12-08",
+  "search_era": "1850/1865",
+  "search_query": "absconded+negro",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:ncu:batch_ncu_lumber_ver01:data:sn84026536:00295879087:1854120801:0202/full/pct:6.25/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/ncu/batch_ncu_lumber_ver01/data/sn84026536/00295879087/1854120801/0202.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

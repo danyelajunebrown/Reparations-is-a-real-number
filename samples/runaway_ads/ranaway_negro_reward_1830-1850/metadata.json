@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn84020496/1843-02-11/ed-1/?sp=1\n",
+  "newspaper_title": "Image 1 of The People's advocate (Concord, N.H.), February 11, 1843\n",
+  "publication_date": "1843-02-11",
+  "search_era": "1830/1850",
+  "search_query": "ranaway+negro+reward",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:nhd:batch_nhd_eisenhower_ver01:data:sn84020496:0051701526A:1843021101:0017/full/pct:6.25/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/nhd/batch_nhd_eisenhower_ver01/data/sn84020496/0051701526A/1843021101/0017.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

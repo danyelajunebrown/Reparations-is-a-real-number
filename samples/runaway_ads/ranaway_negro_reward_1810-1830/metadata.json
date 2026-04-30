@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn83026172/1817-03-20/ed-1/?sp=4\n",
+  "newspaper_title": "Image 4 of Daily national intelligencer (Washington City [D.C.]), March 20, 1817\n",
+  "publication_date": "1817-03-20",
+  "search_era": "1810/1830",
+  "search_query": "ranaway+negro+reward",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:dlc:batch_dlc_beaker_ver01:data:sn83026172:print:1817032001:0004/full/pct:12.5/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/dlc/batch_dlc_beaker_ver01/data/sn83026172/print/1817032001/0004.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}

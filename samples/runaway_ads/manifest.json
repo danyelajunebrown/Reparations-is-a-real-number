@@ -1,0 +1,155 @@
+[
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn83026170/1820-09-09/ed-1/?sp=1\n",
+    "newspaper_title": "Image 1 of Alexandria gazette & daily advertiser (Alexandria [Va.]), September 9, 1820\n",
+    "publication_date": "1820-09-09",
+    "search_era": "1810/1830",
+    "search_query": "absconded+negro",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:vi:batch_vi_hops_ver01:data:sn83026170:00414216286:1820090901:0553/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/vi/batch_vi_hops_ver01/data/sn83026170/00414216286/1820090901/0553.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "absconded_negro_1810-1830"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn87065377/1838-10-10/ed-1/?sp=4\n",
+    "newspaper_title": "Image 4 of Macon intelligencer (Macon, Miss.), October 10, 1838\n",
+    "publication_date": "1838-10-10",
+    "search_era": "1830/1850",
+    "search_query": "absconded+negro",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:msar:batch_msar_ikat_ver01:data:sn87065377:00199917304:1838101001:0240/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/msar/batch_msar_ikat_ver01/data/sn87065377/00199917304/1838101001/0240.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "absconded_negro_1830-1850"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn84026536/1854-12-08/ed-1/?sp=1\n",
+    "newspaper_title": "Image 1 of Wilmington journal (Wilmington, N.C.), December 8, 1854\n",
+    "publication_date": "1854-12-08",
+    "search_era": "1850/1865",
+    "search_query": "absconded+negro",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:ncu:batch_ncu_lumber_ver01:data:sn84026536:00295879087:1854120801:0202/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/ncu/batch_ncu_lumber_ver01/data/sn84026536/00295879087/1854120801/0202.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "absconded_negro_1850-1865"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn82014384/1817-10-25/ed-1/?sp=1\n",
+    "newspaper_title": "Image 1 of Delaware gazette and peninsula advertiser (Wilmington, Del.), October 25, 1817\n",
+    "publication_date": "1817-10-25",
+    "search_era": "1810/1830",
+    "search_query": "ranaway+from+the+subscriber",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:deu:batch_deu_kedavra_ver01:data:sn82014384:00271740232:1817102501:0334/full/pct:12.5/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/deu/batch_deu_kedavra_ver01/data/sn82014384/00271740232/1817102501/0334.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_from_the_subscriber_1810-1830"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn89066057/1848-10-23/ed-1/?sp=3\n",
+    "newspaper_title": "Image 3 of Democratic banner (Bowling Green, Pike County, Mo.), October 23, 1848\n",
+    "publication_date": "1848-10-23",
+    "search_era": "1830/1850",
+    "search_query": "ranaway+from+the+subscriber",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:mohi:batch_mohi_jerome_ver01:data:sn89066057:00200292121:1848102301:0501/full/pct:12.5/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/mohi/batch_mohi_jerome_ver01/data/sn89066057/00200292121/1848102301/0501.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_from_the_subscriber_1830-1850"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn89060060/1855-07-12/ed-1/?sp=3\n",
+    "newspaper_title": "Image 3 of Port Tobacco times, and Charles County advertiser (Port Tobacco, Md.), July 12, 1855\n",
+    "publication_date": "1855-07-12",
+    "search_era": "1850/1865",
+    "search_query": "ranaway+from+the+subscriber",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:mdu:batch_mdu_elsberg_ver02:data:sn89060060:00415624281:1855071201:0095/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/mdu/batch_mdu_elsberg_ver02/data/sn89060060/00415624281/1855071201/0095.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_from_the_subscriber_1850-1865"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn83026172/1817-03-20/ed-1/?sp=4\n",
+    "newspaper_title": "Image 4 of Daily national intelligencer (Washington City [D.C.]), March 20, 1817\n",
+    "publication_date": "1817-03-20",
+    "search_era": "1810/1830",
+    "search_query": "ranaway+negro+reward",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:dlc:batch_dlc_beaker_ver01:data:sn83026172:print:1817032001:0004/full/pct:12.5/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/dlc/batch_dlc_beaker_ver01/data/sn83026172/print/1817032001/0004.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_negro_reward_1810-1830"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn84020496/1843-02-11/ed-1/?sp=1\n",
+    "newspaper_title": "Image 1 of The People's advocate (Concord, N.H.), February 11, 1843\n",
+    "publication_date": "1843-02-11",
+    "search_era": "1830/1850",
+    "search_query": "ranaway+negro+reward",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:nhd:batch_nhd_eisenhower_ver01:data:sn84020496:0051701526A:1843021101:0017/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/nhd/batch_nhd_eisenhower_ver01/data/sn84020496/0051701526A/1843021101/0017.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_negro_reward_1830-1850"
+  },
+  {
+    "document_class": "newspaper_runaway_ad",
+    "loc_id": "http://www.loc.gov/resource/sn89060060/1855-07-12/ed-1/?sp=3\n",
+    "newspaper_title": "Image 3 of Port Tobacco times, and Charles County advertiser (Port Tobacco, Md.), July 12, 1855\n",
+    "publication_date": "1855-07-12",
+    "search_era": "1850/1865",
+    "search_query": "ranaway+negro+reward",
+    "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:mdu:batch_mdu_elsberg_ver02:data:sn89060060:00415624281:1855071201:0095/full/pct:6.25/0/default.jpg",
+    "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/mdu/batch_mdu_elsberg_ver02/data/sn89060060/00415624281/1855071201/0095.xml&format=alto_xml",
+    "files": {
+      "page_image": "page.jpg",
+      "alto_json": "alto.json"
+    },
+    "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+    "license": "Library of Congress public-domain (No Known Restrictions)",
+    "_dir": "ranaway_negro_reward_1850-1865"
+  }
+]

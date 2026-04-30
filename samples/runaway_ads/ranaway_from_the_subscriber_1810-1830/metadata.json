@@ -1,0 +1,16 @@
+{
+  "document_class": "newspaper_runaway_ad",
+  "loc_id": "http://www.loc.gov/resource/sn82014384/1817-10-25/ed-1/?sp=1\n",
+  "newspaper_title": "Image 1 of Delaware gazette and peninsula advertiser (Wilmington, Del.), October 25, 1817\n",
+  "publication_date": "1817-10-25",
+  "search_era": "1810/1830",
+  "search_query": "ranaway+from+the+subscriber",
+  "image_url": "https://tile.loc.gov/image-services/iiif/service:ndnp:deu:batch_deu_kedavra_ver01:data:sn82014384:00271740232:1817102501:0334/full/pct:12.5/0/default.jpg",
+  "alto_url": "https://tile.loc.gov/text-services/word-coordinates-service?segment=/service/ndnp/deu/batch_deu_kedavra_ver01/data/sn82014384/00271740232/1817102501/0334.xml&format=alto_xml",
+  "files": {
+    "page_image": "page.jpg",
+    "alto_json": "alto.json"
+  },
+  "note": "Page-level image. Per-ad block segmentation happens at extraction time. ALTO XML carries word-level bounding boxes for block extraction.",
+  "license": "Library of Congress public-domain (No Known Restrictions)"
+}
