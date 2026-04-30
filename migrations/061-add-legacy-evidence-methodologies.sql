@@ -1,0 +1,23 @@
+-- Migration 061: legacy evidence stream methodologies
+-- Date: 2026-04-29
+--
+-- Per memory-bank/plan-apr29-will-source-registry-dual-ledger-daa.md §7
+-- Stage 2 (revised). Adds methodology rows to M060 acknowledging legacy
+-- evidence streams that the enslaver_evidence_compendium (M053) bootstrap
+-- and going-forward compiler will cite when ingesting from those sources.
+--
+-- These are NOT inference methodologies (those live in M060 already).
+-- These are SOURCE-acknowledgment methodologies: they describe the legacy
+-- table, the metadata that table did and did not capture, and the
+-- evidence-tier we assign to rows derived from it. Adding them lets the
+-- compendium cite a methodology row even for non-inferred rows when we
+-- want to flag a particular source's limitations.
+--
+-- The architectural pushback (skipping M052 bulk backfill in favor of
+-- legacy-source-aware compiler) is captured in plan §7 Stage 2 revision.
+
+INSERT INTO estimation_methodology_registry (name, version, description, role_tags, assumptions_jsonb, citations, known_failure_modes) VALUES ('legacy_family_relationships_pointer', '1.0.0', 'Acknowledgment of family_relationships(enslaved_by) as a legacy evidence stream. Rows in this table were ingested without typed metadata: no date_window, no place, no relationship_subtype, often no source_document_id. Treated as Tier C (secondary) evidence in the compendium. Enslaver-side person identification is name-based against canonical_persons.canonical_name (not by id) since the legacy table was populated before the identity system landed.', ARRAY['legacy_source_acknowledgment','evidence_strength'], '{"source_table": "family_relationships", "relationship_filter": "enslaved_by", "name_match_required": true, "tier": "C", "confidence_default_low": 0.35, "confidence_default_high": 0.65}'::jsonb, 'Internal project: family_relationships table predates the identity system (M033) and the typed M052 surface. Documented in memory-bank/plan-apr29-will-source-registry-dual-ledger-daa.md §7 Stage 2 revision.', 'Name-based join produces false positives for common names; downstream readers should treat these rows as starting points for verification, not as confirmed enslaver-enslaved pairings. Many person1_lead_id and person2_lead_id are NULL. Phase out via lazy migration to M052 as source documents are reprocessed.') ON CONFLICT (name, version) DO NOTHING;
+
+INSERT INTO estimation_methodology_registry (name, version, description, role_tags, assumptions_jsonb, citations, known_failure_modes) VALUES ('legacy_person_documents_pointer', '1.0.0', 'Acknowledgment of person_documents linkages as evidence for enslaver classification. A person_documents row whose canonical_person_id resolves to a canonical_persons row with person_type=enslaver counts as Tier B (indirect_primary) evidence — the document existing and being attributed to the person is documentary support, but the document_type may or may not directly attest enslavement. Compiler should later upgrade specific document_types (will, deed, slave_schedule) to Tier A.', ARRAY['legacy_source_acknowledgment','evidence_strength'], '{"source_table": "person_documents", "tier": "B", "tier_upgrade_rules": {"will": "A", "deed": "A", "slave_schedule": "A", "compensation_petition": "A"}}'::jsonb, 'Internal project: person_documents (M016) is the long-standing document-linkage surface. Documented in memory-bank/plan-apr29-will-source-registry-dual-ledger-daa.md §7 Stage 2.', 'Document type may not directly attest enslavement (e.g., a baptism record). Reviewer should re-tier specific rows when document content is examined.') ON CONFLICT (name, version) DO NOTHING;
+
+INSERT INTO estimation_methodology_registry (name, version, description, role_tags, assumptions_jsonb, citations, known_failure_modes) VALUES ('historical_reparations_petitions_direct', '1.0.0', 'Acknowledgment of historical_reparations_petitions (M041) as Tier A direct primary evidence. Each row represents a documented government compensation petition by an enslaver claiming compensation for their enslaved persons under the 1862 DC Compensated Emancipation Act or equivalent. The claimant is the enslaver by definition of the document.', ARRAY['legacy_source_acknowledgment','evidence_strength'], '{"source_table": "historical_reparations_petitions", "tier": "A", "claimant_is_enslaver": true}'::jsonb, 'Internal project: M041; District of Columbia compensated emancipation petitions and analogous government-compensation programs.', 'Some petitions were denied or withdrawn; petition existence is the evidence, not award status. A claim does not imply award.') ON CONFLICT (name, version) DO NOTHING;
