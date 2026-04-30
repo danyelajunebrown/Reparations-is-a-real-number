@@ -185,7 +185,7 @@ async function bootstrapFamilyRelationships(methodologyId) {
             INSERT INTO enslaver_evidence_compendium
                 (canonical_person_id, evidence_source_table, evidence_source_id,
                  evidence_strength, claim_summary, methodology_id, ingested_by)
-            SELECT DISTINCT ON (cp.id, 'family_relationships', fr.id::text)
+            SELECT
                 cp.id,
                 'family_relationships',
                 fr.id::text,
