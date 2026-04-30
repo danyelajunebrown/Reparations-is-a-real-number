@@ -68,6 +68,19 @@ const NOTES_PATTERNS = [
       ilike: 'Natchez District probate records%' },
     { source: 'mdsa_sc2908_vol812', strength: 'direct_primary',
       ilike: 'Slaveholder identified from Maryland State Archives SC 2908 Vol. 812%' },
+    { source: 'book_of_negroes_1783_lac_carleton', strength: 'direct_primary',
+      ilike: 'Slaveholder documented in Book of Negroes (1783)%LAC Carleton Papers%' },
+    { source: 'thomas_porcher_ravenel_papers', strength: 'direct_primary',
+      ilike: 'Slaveholder from Thomas Porcher Ravenel papers%' },
+    { source: 'colonial_estate_inventory', strength: 'direct_primary',
+      ilike: '%estate inventory dated%' },
+    { source: 'colonial_estate_inventory', strength: 'direct_primary',
+      ilike: 'Deceased slaveholder. Estate inventory%' },
+    // Catch-all: any ungrounded enslaver whose notes describe slaveholding
+    // gets a generic pointer to canonical_persons.notes itself. Strength is
+    // secondary because we haven't verified the specific citation.
+    { source: 'canonical_persons_notes_generic', strength: 'secondary',
+      ilike: '%' },
 ];
 
 async function bootstrapNotesPattern(pattern, methodologyId) {
