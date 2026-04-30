@@ -61,17 +61,15 @@ module.exports = {
         // block ensures USE_DOCUMENT_AI propagates when the operator
         // explicitly sets it.
         //
-        // DEFAULT IS NOW 'false' (2026-04-30): the deployed Custom Extractor
-        // version `b249cf11f364e209` is currently broken — it rejects all
-        // images including its own training set with INVALID_ARGUMENT,
-        // cause unknown without GCP audit logs (Data Access logging not
-        // yet enabled for Document AI). Foundation model is a quality
-        // regression for our use case (it doesn't extract last_master /
-        // last_mistress / plantation, which are the load-bearing fields
-        // for enslaver attribution). Vision spatial parser produces
-        // those fields (noisily). When the Custom Extractor is fixed,
-        // flip this back to 'true' and re-run the affected branches.
-        USE_DOCUMENT_AI: process.env.USE_DOCUMENT_AI || 'false',
+        // Default 'true' — the project is built around the Custom
+        // Extractor and Vision is not an acceptable substitute (Vision
+        // produces garbage fields like master="Cave & Bla, very small"
+        // that contaminate the enslaver-attribution pipeline). When the
+        // Custom Extractor is having issues, the runner now hard-stops
+        // after 5 consecutive Doc AI failures rather than silently
+        // continuing on Vision (filed in extract-freedmens-fields.js
+        // and run-freedmens-systematic.js, 2026-04-30).
+        USE_DOCUMENT_AI: process.env.USE_DOCUMENT_AI || 'true',
         DOCUMENT_AI_PROCESSOR_PATH: process.env.DOCUMENT_AI_PROCESSOR_PATH,
         GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
       },

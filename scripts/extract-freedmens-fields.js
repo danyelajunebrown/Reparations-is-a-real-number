@@ -68,6 +68,14 @@ const RANDOM_SAMPLE = process.argv.includes('--random');
 const USE_DOCUMENT_AI = process.env.USE_DOCUMENT_AI === 'true' || process.argv.includes('--document-ai');
 const docAiExtractor = USE_DOCUMENT_AI ? require('../src/services/document-ai-extractor') : null;
 
+// Hard-stop after this many consecutive Doc AI failures within a branch.
+// Vision is NOT an acceptable fallback for this project — its garbage
+// extractions contaminate enslaver attribution. Sustained failures
+// indicate the Custom Extractor is broken; halt and surface for the
+// operator to investigate.
+const DOCAI_FAILURE_LIMIT = parseInt(process.env.DOCAI_FAILURE_LIMIT || '5', 10);
+let consecutiveDocAiFailures = 0;
+
 const sql = neon(process.env.DATABASE_URL);
 const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 
@@ -629,9 +637,17 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
         // Freedmans_Bank_Deposit_Reader Custom Extractor instead of Vision +
         // spatial parser. Returns records[] in the same shape the spatial
         // parser produces so downstream depositor matching is unchanged.
+        //
+        // Hard-stop on systemic Doc AI failure: project quality depends on
+        // Doc AI; silently degrading to Vision contaminates every depositor's
+        // enslaver fields with OCR garbage like master="Cave & Bla, very
+        // small". Track consecutive failures and abort the branch after
+        // DOCAI_FAILURE_LIMIT (5) in a row so the operator investigates
+        // via Doc AI Workbench Evaluate & test.
         if (USE_DOCUMENT_AI) {
             try {
                 const result = await docAiExtractor.extractFromImage(screenshot);
+                consecutiveDocAiFailures = 0;  // reset on success
                 const records = result.records;
                 stats.recordsParsed += records.length;
 
@@ -661,9 +677,15 @@ async function ocrAndParsePage(page, imageUrl, localDir, tag) {
                     _branch_slug: docaiBranchSlug,
                 };
             } catch (e) {
-                console.log(`  ⚠ Document AI failed: ${e.message} — falling back to Vision+spatial parser`);
-                // Fall through to Vision path below; helps during canary so a
-                // single Document AI outage doesn't kill the run.
+                consecutiveDocAiFailures++;
+                console.log(`  ⚠ Document AI failed (${consecutiveDocAiFailures}/${DOCAI_FAILURE_LIMIT}): ${e.message}`);
+                if (consecutiveDocAiFailures >= DOCAI_FAILURE_LIMIT) {
+                    console.log(`  ✗ ABORTING BRANCH: Doc AI has failed ${DOCAI_FAILURE_LIMIT} consecutive times. Custom Extractor is broken — investigate via Doc AI Workbench Evaluate & test page before re-running. Vision fallback is NOT acceptable: it produces garbage fields like master="Cave & Bla, very small" that contaminate enslaver attribution.`);
+                    process.exit(5);
+                }
+                console.log(`     falling back to Vision for THIS call only — branch will abort after ${DOCAI_FAILURE_LIMIT - consecutiveDocAiFailures} more failures`);
+                // Fall through to Vision path below; allow a small number of
+                // transient Doc AI errors but never sustained ones.
             }
         }
 

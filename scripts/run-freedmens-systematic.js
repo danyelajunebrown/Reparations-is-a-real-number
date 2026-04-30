@@ -227,6 +227,7 @@ const HARD_STOP_EXIT_CODES = {
     2: { kind: 'SESSION_EXPIRED', message: 'FS Chrome session is logged out. VNC into Mac Mini and re-login, then restart the runner.' },
     3: { kind: 'RATE_LIMITED', message: 'FamilySearch rate-limited us. Wait at least 30 minutes before any restart.' },
     4: { kind: 'SYSTEMIC_LINK_MISSING', message: '25 consecutive depositors had no original-document link. Likely FS HTML change or silent session issue — investigate before re-running.' },
+    5: { kind: 'DOCAI_BROKEN', message: 'Doc AI Custom Extractor failed 5 consecutive times. Investigate via GCP Doc AI Workbench → freedmens-bank-ledger-v1 → Evaluate & test before re-running. Vision fallback contaminates enslaver attribution and is not acceptable.' },
 };
 
 async function runBranchWithRetry(branch) {
