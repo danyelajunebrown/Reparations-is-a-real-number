@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
+import { DocOverlay } from '../DocumentViewer/DocumentViewer.jsx';
 import { formatClass, CLASS_LABELS, CLASS_DESCRIPTIONS, formatYear } from '../../api/format.js';
 
 /**
@@ -16,6 +17,7 @@ import { formatClass, CLASS_LABELS, CLASS_DESCRIPTIONS, formatYear } from '../..
  * view unverified via /admin route (separate component).
  */
 export function PersonProfile({ personId, tableSource, adminOverride = false }) {
+  const [viewDocId, setViewDocId] = useState(null);
   const { data, loading, error } = useApi(
     signal => api.getPerson(personId, tableSource, signal),
     [personId, tableSource]
@@ -145,21 +147,30 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
       {(documents.length > 0 || ownerDocuments.length > 0) && (
         <Section title="Primary source documents">
           <div className="stack">
-            {[...documents, ...ownerDocuments].map(doc => (
-              <Link
-                key={doc.id || doc.document_id}
-                to={`/documents/${doc.id || doc.document_id}`}
-                className="box"
-                style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-              >
-                <div>{doc.title || doc.filename || 'Untitled document'}</div>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {doc.doc_type} {doc.source_ark && `· ARK: ${doc.source_ark}`}
-                </div>
-              </Link>
-            ))}
+            {[...documents, ...ownerDocuments].map(doc => {
+              const docId = doc.id || doc.document_id;
+              return (
+                <button
+                  key={docId}
+                  type="button"
+                  onClick={() => setViewDocId(docId)}
+                  className="box"
+                  style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                >
+                  <div>{doc.title || doc.filename || 'Untitled document'}</div>
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    {doc.doc_type} {doc.source_ark && `· ARK: ${doc.source_ark}`}
+                    <span style={{ marginLeft: 8, color: 'var(--dim)' }}>↗ view fullscreen</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </Section>
+      )}
+
+      {viewDocId && (
+        <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />
       )}
 
       {descendants.length > 0 && (
