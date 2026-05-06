@@ -1,6 +1,14 @@
 #!/bin/bash
 # Simple sequential runner to finish all remaining 1860 states
 # Each state runs to completion before moving to next
+#
+# ⚠️  CHROME MUST ALREADY BE RUNNING on port 9222, signed into FamilySearch:
+#   open -na "Google Chrome" --args \
+#     --remote-debugging-port=9222 \
+#     --user-data-dir=/tmp/familysearch-ancestor-climber
+# Then sign in manually, then run this script.
+# Using CHROME_REMOTE_PORT connects to that existing session — no new login needed.
+# (FAMILYSEARCH_INTERACTIVE=true launches a fresh Chrome that Google OAuth will block)
 
 cd "/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main"
 
@@ -32,7 +40,7 @@ for state_info in "${STATES[@]}"; do
     echo "Started: $(date)"
     echo "========================================"
     
-    FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js \
+    CHROME_REMOTE_PORT=9222 node scripts/extract-census-ocr.js \
         --state "$state" \
         --limit "$limit"
     

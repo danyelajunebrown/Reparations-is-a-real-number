@@ -28,7 +28,8 @@
  *
  * Usage:
  *   node scripts/enrich-freedmens-docai.js                          # all un-enriched
- *   node scripts/enrich-freedmens-docai.js --branch "Richmond, Virginia"
+ *   node scripts/enrich-freedmens-docai.js --branch "Richmond, Virginia — Roll 26"
+ *   node scripts/enrich-freedmens-docai.js --branch-like "Washington" # partial/ILIKE match
  *   node scripts/enrich-freedmens-docai.js --limit 100              # first 100 records
  *   node scripts/enrich-freedmens-docai.js --dry-run                # no DB/S3 writes
  *   node scripts/enrich-freedmens-docai.js --reprocess              # re-enrich done records
@@ -55,7 +56,8 @@ const opt  = (name, def = null) => {
     return (i !== -1 && argv[i + 1]) ? argv[i + 1] : def;
 };
 
-const BRANCH_FILTER   = opt('--branch');
+const BRANCH_FILTER      = opt('--branch');
+const BRANCH_LIKE_FILTER = opt('--branch-like');
 const LIMIT           = parseInt(opt('--limit', '0')) || 0;
 const START_ID        = parseInt(opt('--start-id', '0')) || 0;
 const DRY_RUN         = flag('--dry-run');
@@ -125,6 +127,11 @@ async function fetchRecords() {
     if (BRANCH_FILTER) {
         params.push(BRANCH_FILTER);
         conditions.push(`locations @> ARRAY[$${params.length}]::text[]`);
+    } else if (BRANCH_LIKE_FILTER) {
+        // Partial/case-insensitive match — useful when roll suffix is unknown
+        // e.g. --branch-like "Washington" matches all DC rolls
+        params.push(`%${BRANCH_LIKE_FILTER}%`);
+        conditions.push(`EXISTS (SELECT 1 FROM unnest(locations) loc WHERE loc ILIKE $${params.length})`);
     }
 
     if (START_ID > 0) {
@@ -504,7 +511,7 @@ async function main() {
     console.log(`  Processor:  ${PROCESSOR_NAME}`);
     console.log(`  Mode:       ${DRY_RUN ? '⚠ DRY RUN (no DB/S3 writes)' : 'LIVE'}`);
     console.log(`  S3:         ${S3_BUCKET || '(not configured — screenshots not archived)'}`);
-    console.log(`  Branch:     ${BRANCH_FILTER || '(all branches)'}`);
+    console.log(`  Branch:     ${BRANCH_FILTER || (BRANCH_LIKE_FILTER ? `(like: "${BRANCH_LIKE_FILTER}")` : '(all branches)')}`);
     console.log(`  Limit:      ${LIMIT || '(no limit)'}`);
     console.log(`  Start ID:   ${START_ID || '(from beginning)'}`);
     console.log(`  Reprocess:  ${REPROCESS}`);
