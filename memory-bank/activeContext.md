@@ -1,9 +1,168 @@
 # Active Context: Current Development State
 
-**Last Updated:** May 5, 2026 (Session 34 — comprehensive audit + critical fixes)
-**Current Phase:** Core pipeline verified and patched. All five primary functionalities audited and hardened. Pending: Base blockchain payment smoke-test with real DAA, 1870 Census pilot, Document AI fine-tune deployment.
+**Last Updated:** May 6, 2026 (Session 36 — Layer 1 confirmed complete; DocAI pilot strategy)
+**Current Phase:** Layer 1 scrape DONE (410,430 records / 29 branches). DocAI enrichment not yet started. Rate limiting diagnosed as root cause of scraper stalls. Pivot to supervised DocAI pilot.
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
+
+---
+
+## Session 36: Layer 1 Complete — DocAI Pilot Strategy (May 6, 2026)
+
+### Key Finding
+**Layer 1 scraping is DONE.** All 29 Freedmen's Bank branches are in the DB:
+
+| Stat | Value |
+|------|-------|
+| Total records | 410,430 |
+| Branches | 29 / 27 planned (Atlanta + Augusta had two scrape sessions) |
+| Records with individual ARK URLs | 410,430 (100%) |
+| DocAI enriched | 0 (not started) |
+
+**Stop running `run-all-freedmens.sh`.** The rate limiting was a signal, not a problem to overcome — the collection browser scraping is done.
+
+### Why the Scraper Was Failing (Root Cause)
+FamilySearch rate-limits rapid automated navigation through their collection Image Index browser. After hours of "Next Image" clicking:
+- Session expires silently → Image Index returns empty tables → scraper sees duplicate/empty pages
+- IP/account throttling → `identity` or `getinvolved` page redirects
+- `checkPageHealth()` catches these but not all cases
+
+The `&& signature` bug (empty page = no duplicate detection) compounded this — but rate limiting was the underlying driver.
+
+### Individual ARK URLs vs Collection Browser
+**Individual record ARKs** (`/1:1:` path) in `source_url` are fundamentally different from collection browsing:
+- Normal users navigate to these constantly — not flagged as bot traffic
+- DocAI enricher navigates to one record, waits 4-6s, moves on → looks like human browsing
+- FS does not rate-limit this the same way
+
+### DocAI Enrichment Plan: Supervised Pilot First
+
+**Do NOT try to enrich all 410K records:**
+- At GCP DocAI custom extractor pricing (~$65/1K pages) = ~$26K for full corpus
+- At 10 records/min = ~690 hours of Chrome time for 410K records
+
+**Right approach: prioritized pilot of 5K-10K records**
+- Focus on highest-value branches: Richmond VA, Charleston SC, Washington D.C., New Orleans LA, Memphis TN
+- Run supervised (human watching), one branch at a time
+- Set `--limit 500` per branch run to stay under FS individual-record rate limits
+- Evaluate quality after pilot before deciding how much more to enrich
+
+**Run command on Mac Mini (supervised, one branch at a time):**
+```bash
+node scripts/enrich-freedmens-docai.js --branch "Richmond, Virginia" --limit 500
+```
+
+### Branches — Do NOT re-scrape these (data is in)
+All 29 branches. Notable truncated ones (rate-limited before completion, still have useful data):
+- Philadelphia, PA: 122 records (small branch historically)
+- Raleigh, NC: 4 records (historically only 4 depositors in the ledger)
+- Lynchburg, VA: 413 records
+- St. Louis, MO: 628 records
+
+---
+
+## Session 35: Freedmens Bank DocAI Pipeline + Mac Mini Watchdog (May 5, 2026) ✅ CODE COMPLETE
+
+### Context
+User asked what it would take to complete the Freedmens Bank enrichment (DocAI → S3) and the 1860 slave schedule scrape on the Mac Mini. All missing code was written and pushed; the Mini needs `git pull` + `node scripts/agents/PipelineWatchdogAgent.js` to begin.
+
+### Mac Mini Repo Path
+`/Users/danyelica/Desktop/Reparations-is-a-real-number`  (user `danyelica`, not `danyelabrown`)
+
+### Files Written This Session
+
+#### `scripts/enrich-freedmens-docai.js` (NEW — commit 040506c5e + 6720b5d59)
+Layer 2 enrichment pass for Freedmens Bank indexed records.
+- For each `unconfirmed_persons` row with `extraction_method = 'freedmens_bank_index'`:
+  1. Navigates Chrome (port 9222) to the record ARK URL (handwritten ledger image)
+  2. Screenshots at 2800×1700 viewport
+  3. Calls `freedmens-bank-ledger-v1` via `us-documentai.googleapis.com` (MUST use regional — global returns PERMISSION_DENIED)
+  4. Parses 31-field entity response
+  5. **Runs `validateFields()` false-positive validator before any DB write**
+  6. Upserts into `unconfirmed_persons.relationships` JSONB as `docai_fields` key
+  7. Tags `review_notes` with `'docai_enrichment'` (resume marker)
+  8. Archives screenshot to S3: `freedmens-bank/{branch-slug}/docai/{id}.png`
+  9. Low-conf / missing critical fields / FP warnings → `parse_failure_queue` (M044)
+- Flags: `--branch`, `--limit`, `--start-id`, `--dry-run`, `--reprocess`, `--min-confidence`
+- Fully resumable (idempotent)
+
+#### `validateFields()` false-positive validator (17 check categories, in enrich-freedmens-docai.js)
+Runs after every DocAI response, before DB write. Rejects or flags:
+
+**Field-level rejections (value nulled, never enters DB):**
+- Empty / < 2 chars
+- Punctuation-only strings
+- Numeric-only in name fields (account# leaked into last_master)
+- > 80 chars (multi-field OCR capture — grabbed whole row)
+- Exact junk words: `unknown`, `none`, `freed`, `free`, `same`, `deceased`, `n/a`, `himself`, `herself`, `don't know`, `not given`, `not stated`, `-`, `--`, `?`, `0`
+- Near-junk: starts with junk word + tiny suffix
+- Page/column header text: `savings and trust`, `last master or mistress`, `plantation where`, `signature of depositor`, `branch at`, `account number`, etc.
+- City/state name in enslaver field (all 27 branch cities + US states)
+- Single short all-lowercase token in name field (stray OCR word)
+- Account number pattern (`No. 1234`, `# 567`) in any field
+- Depositor name verbatim in enslaver field
+
+**Cross-field rejections:**
+- `last_master == depositor_name` → hard reject (can't be own enslaver)
+- `last_mistress == depositor_name` → hard reject
+- `last_master` overlaps `plantation` text → field boundary confusion warning
+
+**Soft flags (value kept, queued for review):**
+- `last_master == last_mistress` same string → column bleed warning
+- `old_title` without title prefix at confidence < 0.70
+
+FP records stored with `failure_reason = 'false_positive_detected'`, `training_eligible = true`.
+FP audit trail stored in `_fp_warnings` / `_fp_rejected_fields` inside `docai_fields` JSONB.
+
+#### `scripts/run-freedmens-complete.sh` (NEW — commit 9e8275ef3)
+Single shell wrapper that chains the full pipeline sequentially:
+1. `git pull origin main`
+2. `bash scripts/run-all-freedmens.sh` (Layer 1: 27 branches)
+3. `node scripts/enrich-freedmens-docai.js` (Layer 2: DocAI)
+4. `node scripts/backfill-freedmens-to-s3.js` (S3)
+5. `pm2 start slave-schedule-1860` (1860 schedule)
+Flags: `--skip-layer1`, `--skip-layer2`, `--skip-1860`, `--dry-run-docai`
+
+#### `scripts/agents/PipelineWatchdogAgent.js` (NEW — commits 1ac859472 + 5b0d3b1eb)
+Autonomous watchdog that spawns and monitors all pipeline phases:
+- **Phase 1:** Layer 1 scrape. DB poll every 90s. Stall detection (10 min no growth) → SIGTERM + restart (max 3x).
+- **Phase 2:** DocAI enrichment. Polls enrichment count + parse_failure_queue. Stall → respawn (resumable). Quality check every ~500 records.
+- **Phase 2b:** Targeted `--reprocess` on low-confidence branches (avg master_conf < 0.35). Warns on < 0.45.
+- **Phase 3:** S3 backfill.
+- **Phase 4:** PM2 start slave-schedule-1860. Polls PM2 status every 2 min. Crash → `pm2 restart` (max 10x). Stops when queue = 0.
+Log: `debug/logs/watchdog-YYYYMMDD.log`
+Flags: `--start-phase N`, `--dry-run`
+
+### Current Status
+- All code committed and pushed to `origin/main` (latest: `6720b5d59`)
+- Mac Mini has NOT yet done `git pull` — watchdog not yet running
+- Tail command that failed: `tail -f ~/Desktop/Reparations-is-a-real-number/debug/logs/watchdog-20260505.log` — file doesn't exist yet because watchdog hasn't started
+
+### To Start on Mini
+```bash
+cd ~/Desktop/Reparations-is-a-real-number
+git pull origin main
+node scripts/agents/PipelineWatchdogAgent.js &
+tail -f debug/logs/watchdog-$(date +%Y%m%d).log
+```
+
+### Pipeline Architecture (Two-Layer)
+- **Layer 1** (`scrape-freedmens-bank-indexed.js` via `run-all-freedmens.sh`): reads FS Image Index panel (volunteer-indexed data), NO DocAI, stores name/family/account into `unconfirmed_persons`
+- **Layer 2** (`enrich-freedmens-docai.js`): navigates to each ARK URL, screenshots actual handwritten ledger, calls DocAI Custom Extractor
+- **One FS scraper at a time** — cannot run Layer 1 + Layer 2 concurrently (both use same Chrome/FS session)
+
+### 1860 Slave Schedule Status
+- ~2,022 locations remaining
+- Big gaps: VA 315, MS 218, LA 205, KY 201, MO 201
+- PM2 app `slave-schedule-1860` registered and armed (stopped)
+- Will auto-start when watchdog Phase 4 fires
+
+### GCP DocAI
+- Processor: `freedmens-bank-ledger-v1` (ID `30049eebf8debcf4`)
+- Project: `velvety-tangent-476318-u1`
+- 83 documents in dataset, trained version deployed as default
+- Regional endpoint: `us-documentai.googleapis.com` (REQUIRED — global returns PERMISSION_DENIED)
+- 31 fields: last_master, last_mistress, plantation, slave_residence, old_title, depositor_name, birthplace, where_brought_up, age, residence, complexion, occupation, employer, marital_status, spouse_name, spouse_residence, father_name, mother_name, siblings_names, children_names, family_residences, spouse_father, spouse_mother, spouse_siblings, union_lines, post_emancipation, signature, further_facts, remarks, account_number, date_of_entry
 
 ---
 
