@@ -1,9 +1,23 @@
 -- Migration 041: historical_reparations_petitions table
 --
--- Creates the long-planned table that was specified in migration 011's
--- spirit but never actually applied to the production DB. Gives DC
--- compensated-emancipation petition records (1862) — and similar historical
--- petition instruments from other jurisdictions — a first-class home.
+-- STATUS: ACTIVE — this migration creates a real table. It is NOT a no-op.
+--
+-- Relationship to migration 011:
+--   Migration 011 (011-historical-reparations-petitions.sql) provided an
+--   EARLIER, NARROWER schema focused only on UK 1833 compensation claims.
+--   Migration 041 supersedes that schema with a unified model that covers
+--   DC 1862 Compensated Emancipation Act petitions, UK 1833 claims, and
+--   any future class of historical reparations / compensation petition.
+--   Both migrations use CREATE TABLE IF NOT EXISTS, so running them in
+--   order on a fresh DB applies whichever runs first; the second is safely
+--   idempotent. If 011 ran first the columns it defines are already present;
+--   this migration's broader column set may add columns 011 lacked.
+--   TODO (low priority): consolidate 011 and 041 into a single canonical
+--   migration once the schema is stable.
+--
+-- Primary use case driving this migration:
+--   DC 1862 Act petitions — Maria Angelica Biscoe a.k.a. Angelica Chew's
+--   claim is the immediate driver (user's Apr 20, 2026 research).
 --
 -- Primary use cases:
 --   • DC 1862 Act petitions (Maria Angelica Biscoe a.k.a. Angelica Chew's

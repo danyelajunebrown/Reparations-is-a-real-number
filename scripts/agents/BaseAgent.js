@@ -13,6 +13,16 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { neon } = require('@neondatabase/serverless');
 
+// ── Validate required env at module load ────────────────────────────────────
+// Fail immediately with a clear message rather than surfacing a cryptic
+// Neon "Invalid URL" error deep inside agent execution.
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    'FATAL: DATABASE_URL environment variable is not set. ' +
+    'Add DATABASE_URL=postgres://... to your .env file before starting any agent.'
+  );
+}
+
 class BaseAgent {
   constructor(config = {}) {
     this.agentType = config.agentType || 'base_agent';

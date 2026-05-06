@@ -1,5 +1,6 @@
--- Migration 024: Ancestor Climb Sessions
+-- Migration 027: Ancestor Climb Sessions
 -- Purpose: Track ancestor climbing sessions for resume capability and results storage
+-- NOTE: Header previously mis-labeled as "Migration 024". Correct number is 027 (matches filename).
 --
 -- The ancestor climber now:
 -- 1. Finds ALL slaveholder matches (not just first)

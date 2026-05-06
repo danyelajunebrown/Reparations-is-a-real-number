@@ -16,6 +16,7 @@ const fs = require('fs');
 const TieredPaymentCalculator = require('./TieredPaymentCalculator');
 const WealthGapCalculator = require('./WealthGapCalculator');
 const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
+const FamilySearchClimberAgent = require('../../../scripts/agents/FamilySearchClimberAgent');
 
 /**
  * Thrown by _enforceProbateGate when the slaveholders identified for a
@@ -142,20 +143,23 @@ class DAAOrchestrator {
         console.log(`   ✓ Total enslaved persons documented: ${totalEnslavedCount}`);
         console.log();
 
-        // Step 4: Calculate total debt (using ALL financial data)
-        console.log('Step 4: Calculating total debt (Craemer + tiered payment + wealth gap)...');
-        const debtCalculation = await this.calculateTotalDebt(slaveholderData, {
-            annualIncome: acknowledgerInfo.annualIncome || 0,
-            netWorth: acknowledgerInfo.netWorth || 0,
-            realEstateEquity: acknowledgerInfo.realEstateEquity || 0,
-            inheritanceReceived: acknowledgerInfo.inheritanceReceived || 0,
-            inheritanceExpected: acknowledgerInfo.inheritanceExpected || 0,
-            corporateConnectionType: acknowledgerInfo.corporateConnectionType || 'none',
-            corporateConnections: acknowledgerInfo.corporateConnections || [],
-            trustCorpus: acknowledgerInfo.trustCorpus || 0,
-            trustBeneficiary: acknowledgerInfo.trustBeneficiary || 'no',
-            inheritedLandAcres: acknowledgerInfo.inheritedLandAcres || 'none',
-        });
+        // Step 4a: Load participant wealth fingerprint from DB (migration 037).
+        // Merges DB-stored fingerprint fields with any fields supplied inline
+        // by the caller (inline values take precedence so API callers can
+        // override DB data without a separate participants update).
+        console.log('Step 4: Loading participant wealth fingerprint (M037)...');
+        const wealthFingerprint = await this.loadParticipantWealthFingerprint(
+            acknowledgerInfo.participantId || null,
+            acknowledgerInfo
+        );
+        console.log(`   ✓ Wealth fingerprint loaded: corporateConnectionType=${wealthFingerprint.corporateConnectionType}, trustBeneficiary=${wealthFingerprint.trustBeneficiary}`);
+        if (wealthFingerprint.wealthFlagElevated) {
+            console.log(`   ⚑ DB wealth_flag_elevated=TRUE (${wealthFingerprint.wealthFlagReasons?.join(', ')})`);
+        }
+
+        // Step 4b: Calculate total debt (using ALL financial data)
+        console.log('Step 4b: Calculating total debt (Craemer + tiered payment + wealth gap)...');
+        const debtCalculation = await this.calculateTotalDebt(slaveholderData, wealthFingerprint);
         console.log(`   ✓ Craemer debt: $${debtCalculation.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
         console.log(`   ✓ Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
         console.log(`   ✓ Recommended (higher): $${debtCalculation.recommendedDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${debtCalculation.dualMethodology.recommendedMethodology})`);
@@ -178,6 +182,22 @@ class DAAOrchestrator {
         );
         console.log(`   ✓ DAA ID: ${daaRecord.daaId}`);
         console.log(`   ✓ Agreement Number: ${daaRecord.agreementNumber}`);
+        console.log();
+
+        // Step 5b: Wire DAA into enslaver_lineage_ledger (migration 040).
+        // Upserts one enslaver_lineage_ledger row per slaveholder and creates
+        // daa_lineage_contributions links. This is the mechanism that lets
+        // multiple descendants' DAAs aggregate toward a single lineage total
+        // (rhizomatic/distributed pledge model).
+        console.log('Step 5b: Updating enslaver lineage ledger (M040)...');
+        try {
+            await this.upsertLineageLedger(slaveholders, debtCalculation, daaRecord.daaId);
+            console.log(`   ✓ Lineage ledger updated for ${slaveholders.length} enslaver(s)`);
+        } catch (ledgerErr) {
+            // Non-fatal: ledger update failure should NOT block DAA generation.
+            // Log and continue — the DAA document is the primary deliverable.
+            console.warn(`   ⚠ Lineage ledger update failed (non-fatal): ${ledgerErr.message}`);
+        }
         console.log();
 
         // Step 6: Generate DOCX document
@@ -1289,6 +1309,176 @@ class DAAOrchestrator {
         ]);
 
         return daaResult;
+    }
+
+    /**
+     * Load participant wealth fingerprint from the M037 participants table,
+     * then merge with any inline acknowledgerInfo fields.
+     * Inline values take precedence so callers can always override via the
+     * HTTP request body without a DB round-trip.
+     *
+     * @param {string|null} participantId  - UUID from participants.participant_id (may be null)
+     * @param {Object}      acknowledgerInfo - Raw acknowledger payload from the API caller
+     * @returns {Object} Merged financial fingerprint ready for calculateTotalDebt()
+     */
+    async loadParticipantWealthFingerprint(participantId, acknowledgerInfo) {
+        // Sensible defaults — matches the schema nullable columns in M037
+        const defaults = {
+            annualIncome:           acknowledgerInfo.annualIncome           ?? null,
+            netWorth:               acknowledgerInfo.netWorth               ?? null,
+            corporateConnections:   acknowledgerInfo.corporateConnections   ?? false,
+            corporateConnectionType:acknowledgerInfo.corporateConnectionType?? null,
+            trustBeneficiary:       acknowledgerInfo.trustBeneficiary       ?? false,
+            trustCorpus:            acknowledgerInfo.trustCorpus            ?? null,
+            inheritedLandAcres:     acknowledgerInfo.inheritedLandAcres     ?? null,
+            wealthFlagElevated:     acknowledgerInfo.wealthFlagElevated     ?? false,
+            wealthFlagReasons:      acknowledgerInfo.wealthFlagReasons      ?? [],
+        };
+
+        if (!participantId) {
+            return defaults;
+        }
+
+        let dbRow = null;
+        try {
+            const result = await this.db.query(`
+                SELECT
+                    annual_income,
+                    net_worth,
+                    corporate_connections,
+                    corporate_connection_type,
+                    trust_beneficiary,
+                    trust_corpus,
+                    inherited_land_acres,
+                    wealth_flag_elevated,
+                    wealth_flag_reasons
+                FROM participants
+                WHERE participant_id = $1
+                LIMIT 1
+            `, [participantId]);
+
+            if (result.rows.length > 0) {
+                dbRow = result.rows[0];
+            }
+        } catch (err) {
+            // Non-fatal: participants table may not yet be migrated on this environment
+            console.warn(`[DAAOrchestrator] Could not load M037 wealth fingerprint for participant ${participantId}: ${err.message}`);
+        }
+
+        if (!dbRow) {
+            return defaults;
+        }
+
+        // Merge: inline acknowledgerInfo wins, DB fills gaps
+        return {
+            annualIncome:           acknowledgerInfo.annualIncome           ?? dbRow.annual_income           ?? null,
+            netWorth:               acknowledgerInfo.netWorth               ?? dbRow.net_worth               ?? null,
+            corporateConnections:   acknowledgerInfo.corporateConnections   ?? dbRow.corporate_connections   ?? false,
+            corporateConnectionType:acknowledgerInfo.corporateConnectionType?? dbRow.corporate_connection_type?? null,
+            trustBeneficiary:       acknowledgerInfo.trustBeneficiary       ?? dbRow.trust_beneficiary       ?? false,
+            trustCorpus:            acknowledgerInfo.trustCorpus            ?? dbRow.trust_corpus            ?? null,
+            inheritedLandAcres:     acknowledgerInfo.inheritedLandAcres     ?? dbRow.inherited_land_acres    ?? null,
+            wealthFlagElevated:     acknowledgerInfo.wealthFlagElevated     ?? dbRow.wealth_flag_elevated    ?? false,
+            wealthFlagReasons:      acknowledgerInfo.wealthFlagReasons      ?? dbRow.wealth_flag_reasons     ?? [],
+        };
+    }
+
+    /**
+     * Upsert rows in enslaver_lineage_ledger (M040) for each slaveholder
+     * that has a canonical slaveholder_id, then link each ledger entry to
+     * the newly created DAA via daa_lineage_contributions.
+     *
+     * Failures are non-fatal: the DAA document has already been committed to
+     * the DB by the time this is called, so a ledger write failure should only
+     * warn — never roll back the DAA.
+     *
+     * @param {Array}  slaveholders    - Array of slaveholder objects from getDocumentedSlaveholders()
+     * @param {Object} debtCalculation - Result of calculateTotalDebt()
+     * @param {string} daaId           - UUID of the newly created DAA record
+     */
+    async upsertLineageLedger(slaveholders, debtCalculation, daaId) {
+        if (!slaveholders || slaveholders.length === 0) return;
+
+        // slaveholders is the raw array returned by getDocumentedSlaveholders():
+        // each item has flat properties slaveholder_id, slaveholder_name,
+        // generation_distance etc. directly on the object (NOT wrapped in
+        // a .slaveholder sub-object). debtCalculation.slaveholderCalculations
+        // items have shape { slaveholder: {...}, debt, enslavedCount, calculations }.
+
+        for (const sh of slaveholders) {
+            const slaveholderId = sh.slaveholder_id;
+            if (!slaveholderId) continue;   // Skip unresolved climb matches
+
+            // Find this slaveholder's per-slaveholder Craemer calculation if present.
+            const slaveholderCalc = (debtCalculation.slaveholderCalculations || [])
+                .find(c =>
+                    c.slaveholder?.slaveholder_id === slaveholderId ||
+                    c.slaveholder?.slaveholder_name === sh.slaveholder_name
+                );
+
+            // 'debt' is the Craemer total for this one slaveholder.
+            // Fall back to the DAA-wide Craemer total when per-slaveholder
+            // breakdown is absent (e.g. zero-slaveholder DAA fallback path).
+            const craemerTotal       = slaveholderCalc?.debt        ?? debtCalculation.totalDebt          ?? 0;
+            const wealthGapShare     = debtCalculation.wealthGapObligation                                ?? 0;
+            const combinedObligation = slaveholderCalc?.debt        ?? debtCalculation.recommendedDebt
+                                       ?? debtCalculation.totalDebt ?? 0;
+
+            try {
+                // Upsert the lineage ledger row — one row per (enslaver_canonical_id, generation_from_enslaver)
+                const lineageResult = await this.db.query(`
+                    INSERT INTO enslaver_lineage_ledger (
+                        enslaver_canonical_id,
+                        enslaver_name_display,
+                        generation_from_enslaver,
+                        craemer_2015_total_usd,
+                        wealth_gap_share_usd,
+                        combined_obligation_usd,
+                        share_basis,
+                        methodology_version,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6,
+                        'full_obligation_ceiling',
+                        '2025-layer-a',
+                        NOW(), NOW()
+                    )
+                    ON CONFLICT (enslaver_canonical_id, generation_from_enslaver)
+                    DO UPDATE SET
+                        craemer_2015_total_usd   = EXCLUDED.craemer_2015_total_usd,
+                        wealth_gap_share_usd     = EXCLUDED.wealth_gap_share_usd,
+                        combined_obligation_usd  = EXCLUDED.combined_obligation_usd,
+                        updated_at               = NOW()
+                    RETURNING lineage_id
+                `, [
+                    slaveholderId,
+                    sh.slaveholder_name,
+                    sh.generation_distance ?? 0,
+                    craemerTotal,
+                    wealthGapShare,
+                    combinedObligation,
+                ]);
+
+                const lineageId = lineageResult.rows[0]?.lineage_id;
+                if (!lineageId) continue;
+
+                // Link this lineage entry to the DAA (idempotent — ignore duplicates)
+                await this.db.query(`
+                    INSERT INTO daa_lineage_contributions (
+                        daa_id,
+                        lineage_id,
+                        contribution_share,
+                        created_at
+                    ) VALUES ($1, $2, 1.0, NOW())
+                    ON CONFLICT (daa_id, lineage_id) DO NOTHING
+                `, [daaId, lineageId]);
+
+            } catch (err) {
+                console.warn(`[DAAOrchestrator] upsertLineageLedger failed for slaveholder ${slaveholderId}: ${err.message}`);
+                // Non-fatal — continue with remaining slaveholders
+            }
+        }
     }
 }
 
