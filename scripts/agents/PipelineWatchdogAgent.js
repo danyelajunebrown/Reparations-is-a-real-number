@@ -491,7 +491,7 @@ async function runPhase4() {
         }
 
         // ── Crash recovery ──
-        if (!DRY_RUN && pm2Status === 'stopped' || pm2Status === 'errored') {
+        if (!DRY_RUN && (pm2Status === 'stopped' || pm2Status === 'errored')) {
             crashRestarts++;
             warn(`[Phase4] slave-schedule-1860 is ${pm2Status} — restarting (attempt ${crashRestarts})`);
             pm2Command(['restart', 'slave-schedule-1860']);
