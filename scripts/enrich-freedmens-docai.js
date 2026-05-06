@@ -140,8 +140,8 @@ async function fetchRecords() {
                       ORDER BY id
                       ${limitSql}`;
 
-    const result = await sql(query, params);
-    return result;
+    const result = await sql.query(query, params);
+    return result.rows;
 }
 
 // ── Navigate to ARK URL + screenshot the ledger image ────────────────────────
