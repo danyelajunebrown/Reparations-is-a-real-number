@@ -27,7 +27,7 @@ export function StatsRibbon() {
 
 function Stat({ label, value, loading, error }) {
   let display;
-  if (error) display = <span className="err">ERR</span>;
+  if (error) display = <span className="dim">—</span>;
   else if (loading) display = <span className="dim blink">...</span>;
   else display = formatNumber(value);
   return (

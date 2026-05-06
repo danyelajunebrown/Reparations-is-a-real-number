@@ -1,73 +1,182 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
+import { api } from '../api/client.js';
+import { useApi } from '../hooks/useApi.js';
+import { formatNumber } from '../api/format.js';
 
 export default function HomePage() {
+  const statsState = useApi(() => api.stats(), []);
+  const branchesState = useApi(() => api.getDepositorBranches(), []);
+
+  const stats = statsState.data?.stats || {};
+  const branches = branchesState.data?.branches || [];
+  const totalDepositors = branches.reduce((s, b) => s + (b.depositor_count || 0), 0);
+
   return (
     <div className="stack-xl">
+
+      {/* ── Live stats ── */}
+      <section>
+        <div className="stats-ribbon" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: 12,
+        }}>
+          <StatBox label="Total records"     value={stats.total_records}  loading={statsState.loading}    error={statsState.error} />
+          <StatBox label="Slaveholders"      value={stats.slaveholders}   loading={statsState.loading}    error={statsState.error} />
+          <StatBox label="Enslaved persons"  value={stats.enslaved}       loading={statsState.loading}    error={statsState.error} />
+          <StatBox
+            label="Freedmen's Bank depositors"
+            value={totalDepositors || null}
+            loading={branchesState.loading}
+            error={branchesState.error}
+          />
+        </div>
+      </section>
+
+      {/* ── Search ── */}
       <section>
         <SearchBar autoFocus />
         <div className="dim" style={{ marginTop: 8, fontSize: 12 }}>
-          Search across verified slaveholders, enslaved persons, corporate debtors, and legal precedents.
-          Unverified data is never displayed here — human review is required before any record appears.
+          Search verified slaveholders, enslaved persons, corporate debtors, and legal precedents.
+          Human review is required before any record appears here.
         </div>
       </section>
 
-      <section className="grid-2">
-        <Tile
-          to="/lineage"
-          title="Lineage visualization"
-          body="Zoomable graph of all verified ownership lineages, side by side. Each lineage is a participant's traced ancestry from a confirmed slaveholder down to the present."
-        />
-        <Tile
-          to="/documents"
-          title="Historical documents"
-          body="Primary sources — wills, bills of sale, slave schedules, freedmen's bureau records, plantation papers. Every record here has a documented ARK."
-        />
-        <Tile
-          to="/corporate"
-          title="Corporate debts"
-          body="17 Farmer-Paellmann defendants and their succession chains. Insurance underwriters, banks, railroads whose wealth traces directly to slave labor."
-        />
-        <Tile
-          to="/legal"
-          title="Legal framework"
-          body="Triangle Trade jurisdictions. UK 1833 compensation loan (repaid 2015 — 182-year debt enforcement). Haiti independence debt as counter-precedent. Farmer-Paellmann strategic lessons."
-        />
-        <Tile
-          to="/search"
-          title="Search"
-          body="Full-text search across canonical persons, enslaved individuals, corporate entities, and legal precedents. Verified-only by default."
-        />
-        <Tile
-          to="/pay"
-          title="Payment"
-          body="Connect MetaMask. Submit a Debt Acknowledgment Agreement on-chain. Make a USDC or ETH payment toward reparations escrow."
-        />
+      {/* ── Featured dataset: Freedmen's Bank ── */}
+      <section className="box" style={{ padding: 20 }}>
+        <div className="upper" style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 8 }}>
+          Featured dataset
+        </div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Freedmen's Bank Depositors</div>
+        <div className="dim" style={{ fontSize: 13, marginBottom: 16, lineHeight: 1.6 }}>
+          Formerly enslaved persons who opened accounts at the Freedman's Savings Bank (1865–1874).
+          29 branches. Every record linked to its FamilySearch ARK.
+        </div>
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          <Link to="/depositors" className="box" style={{
+            padding: '8px 16px',
+            textDecoration: 'none',
+            color: 'inherit',
+            fontSize: 13,
+          }}>
+            Search depositors →
+          </Link>
+          <Link to="/depositors" className="box" style={{
+            padding: '8px 16px',
+            textDecoration: 'none',
+            color: 'inherit',
+            fontSize: 13,
+          }}>
+            Browse by branch →
+          </Link>
+        </div>
       </section>
 
+      {/* ── Three paths ── */}
       <section>
-        <h2 className="upper" style={{ fontSize: 14, marginBottom: 8 }}>The three audiences</h2>
-        <div className="stack dim" style={{ fontSize: 13 }}>
-          <div><span className="fg" style={{ color: 'var(--fg)' }}>Descendants of slaveholders</span> who completed intake: receive a DAA and payment page (via admin).</div>
-          <div><span style={{ color: 'var(--fg)' }}>Descendants of enslaved people</span> who want to clearly traverse all verified data: this page is for you.</div>
-          <div><span style={{ color: 'var(--fg)' }}>Expert collaborators</span> — genealogists, economists, lawyers, historians: the source is on GitHub. Collaborate line by line.</div>
+        <h2 className="upper" style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 16 }}>
+          Who this is for
+        </h2>
+        <div className="grid-2" style={{ gap: 12 }}>
+
+          <PathCard
+            title="Descendants of enslaved people"
+            body="Search the Freedmen's Bank. Trace ancestry through verified lineage graphs. View primary source documents with documented ARKs."
+            links={[
+              { to: '/depositors', label: 'Freedmen\'s Bank' },
+              { to: '/lineage',    label: 'Lineage graphs' },
+              { to: '/documents',  label: 'Documents' },
+            ]}
+          />
+
+          <PathCard
+            title="Descendants of slaveholders"
+            body="Complete a Debt Acknowledgment Agreement. Submit payment toward reparations escrow via blockchain."
+            links={[
+              {
+                href: 'https://docs.google.com/forms/d/e/1FAIpQLScIek-qQmGj7esA3spu6zclP2VvU8cZwWbLmDMJ0GJjSCX_BA/viewform?usp=dialog',
+                label: 'Open intake form ↗',
+                external: true,
+              },
+              { to: '/pay', label: 'Payment' },
+            ]}
+          />
+
+          <PathCard
+            title="Researchers and collaborators"
+            body="Corporate debt chains. Legal framework spanning three jurisdictions. Primary sources. Every line of code is open."
+            links={[
+              { to: '/corporate', label: 'Corporate debts' },
+              { to: '/legal',     label: 'Legal framework' },
+              { to: '/documents', label: 'Primary sources' },
+              {
+                href: 'https://github.com/danyelajunebrown/Reparations-is-a-real-number',
+                label: 'GitHub ↗',
+                external: true,
+              },
+            ]}
+          />
+
+          <PathCard
+            title="All verified data"
+            body="Full-text search across canonical persons, enslaved individuals, corporate entities, and legal precedents. Verified-only by default."
+            links={[
+              { to: '/search',   label: 'Search' },
+              { to: '/lineage',  label: 'Lineages' },
+              { to: '/corporate',label: 'Corporate' },
+            ]}
+          />
+
         </div>
       </section>
+
     </div>
   );
 }
 
-function Tile({ to, title, body }) {
+function StatBox({ label, value, loading, error }) {
+  let display;
+  if (error)   display = <span className="dim">—</span>;
+  else if (loading) display = <span className="dim blink">...</span>;
+  else         display = formatNumber(value);
   return (
-    <Link to={to} className="box" style={{
-      textDecoration: 'none',
-      color: 'inherit',
-      display: 'block',
-      padding: 16,
-    }}>
-      <div className="upper" style={{ fontSize: 12, color: 'var(--dim)' }}>{title}</div>
-      <div style={{ marginTop: 6, fontSize: 13 }}>{body}</div>
-    </Link>
+    <div className="box" style={{ padding: 12 }}>
+      <div className="box-label" style={{ fontSize: 11 }}>{label}</div>
+      <div style={{ fontSize: 20, marginTop: 4 }}>{display}</div>
+    </div>
+  );
+}
+
+function PathCard({ title, body, links }) {
+  return (
+    <div className="box" style={{ padding: 16 }}>
+      <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>{title}</div>
+      <div className="dim" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>{body}</div>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {links.map(({ to, href, label, external }) =>
+          external ? (
+            <a
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: 'var(--dim)' }}
+            >
+              {label}
+            </a>
+          ) : (
+            <Link
+              key={label}
+              to={to}
+              style={{ fontSize: 12, color: 'var(--dim)', textDecoration: 'none' }}
+            >
+              {label}
+            </Link>
+          )
+        )}
+      </div>
+    </div>
   );
 }

@@ -63,10 +63,6 @@ export default function App() {
 
       <footer className="app-footer">
         <div>
-          Built for the May 2026 premiere. This is a proof-of-concept for a
-          living, globally-aware accountability system — not the product.
-        </div>
-        <div style={{ marginTop: 8 }}>
           Source on GitHub. Every line open for collaboration.
         </div>
       </footer>
