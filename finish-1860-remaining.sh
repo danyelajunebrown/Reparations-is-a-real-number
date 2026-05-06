@@ -2,15 +2,20 @@
 # Simple sequential runner to finish all remaining 1860 states
 # Each state runs to completion before moving to next
 #
-# ⚠️  CHROME MUST ALREADY BE RUNNING on port 9222, signed into FamilySearch:
-#   open -na "Google Chrome" --args \
-#     --remote-debugging-port=9222 \
-#     --user-data-dir=/tmp/familysearch-ancestor-climber
-# Then sign in manually, then run this script.
-# Using CHROME_REMOTE_PORT connects to that existing session — no new login needed.
-# (FAMILYSEARCH_INTERACTIVE=true launches a fresh Chrome that Google OAuth will block)
+# Prerequisites:
+#   • fs-cookies.json must exist with valid FamilySearch session cookies.
+#     Run any state once interactively (FAMILYSEARCH_INTERACTIVE=true) and log in
+#     when the Chrome window opens — cookies are saved automatically.
+#   • Each state launches its own Chrome window (FAMILYSEARCH_INTERACTIVE=true),
+#     loads saved cookies, and proceeds. If cookies have expired, you'll see the
+#     login window and can sign in manually.
+#
+# NOTE: CHROME_REMOTE_PORT is intentionally NOT used here because extract-census-ocr.js
+# calls browser.close() at the end of each run, which kills Chrome — so port 9222 only
+# works for the first state and breaks all subsequent ones.
 
-cd "/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 echo "========================================"
 echo "FINISHING 1860 SLAVE SCHEDULE"
@@ -40,7 +45,7 @@ for state_info in "${STATES[@]}"; do
     echo "Started: $(date)"
     echo "========================================"
     
-    CHROME_REMOTE_PORT=9222 node scripts/extract-census-ocr.js \
+    FAMILYSEARCH_INTERACTIVE=true node scripts/extract-census-ocr.js \
         --state "$state" \
         --limit "$limit"
     

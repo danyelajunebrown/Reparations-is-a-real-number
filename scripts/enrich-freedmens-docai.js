@@ -147,8 +147,8 @@ async function fetchRecords() {
                       ORDER BY lead_id
                       ${limitSql}`;
 
-    const result = await sql.query(query, params);
-    return result.rows;
+    const raw = await sql.query(query, params);
+    return Array.isArray(raw) ? raw : raw.rows;
 }
 
 // ── Navigate to ARK URL + screenshot the ledger image ────────────────────────
