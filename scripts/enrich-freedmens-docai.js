@@ -129,15 +129,15 @@ async function fetchRecords() {
 
     if (START_ID > 0) {
         params.push(START_ID);
-        conditions.push(`id >= $${params.length}`);
+        conditions.push(`lead_id >= $${params.length}`);
     }
 
     const where    = conditions.join(' AND ');
     const limitSql = LIMIT > 0 ? `LIMIT ${LIMIT}` : '';
-    const query    = `SELECT id, full_name, source_url, locations, relationships
+    const query    = `SELECT lead_id AS id, full_name, source_url, locations, relationships
                       FROM unconfirmed_persons
                       WHERE ${where}
-                      ORDER BY id
+                      ORDER BY lead_id
                       ${limitSql}`;
 
     const result = await sql.query(query, params);
@@ -445,7 +445,7 @@ async function storeEnrichment(recordId, flatFields) {
                                 ELSE review_notes || '; docai_enrichment'
                             END,
             updated_at    = NOW()
-        WHERE id = ${recordId}
+        WHERE lead_id = ${recordId}
     `;
 }
 
