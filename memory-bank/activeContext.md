@@ -62,10 +62,22 @@ User directive: deeply audit every file in the codebase against the five core fu
 1. Base blockchain smoke-test: run generateComprehensiveDAA() for Adrian Brown end-to-end, submit resulting DAA hash to ReparationsEscrow on Base mainnet
 2. Run migration 037 on Neon (participants wealth fingerprint columns)
 3. Run migration 040 on Neon (enslaver_lineage_ledger) — needed for upsertLineageLedger to succeed
-4. Document AI fine-tune deploy + wire into production Freedmens batch
-5. 1870 Census pilot DC/MD/SC/NY/GA
-6. Transfer ReparationsEscrow ownership to fresh wallet (deployer key was exposed in chat, Session 27)
-7. May 10 pivot to LLM/neural-network development phase (user noted this is coming)
+4. **Freedmens Bank + Document AI + S3 — Mac Mini run order (Session 35):**
+   - Layer 1 (indexing): `bash scripts/run-all-freedmens.sh`  → stores name/family/account data for all 27 branches into unconfirmed_persons. Re-run Charleston Roll 23 separately. No code changes needed.
+   - Layer 2 (enrichment): `node scripts/enrich-freedmens-docai.js` → navigates to each ARK URL, screenshots ledger, sends to freedmens-bank-ledger-v1 (trained, deployed as default), extracts 31 enslaver fields, upserts into relationships JSONB, archives screenshot to S3, queues low-conf records to parse_failure_queue. MUST run AFTER Layer 1 finishes. Use `--dry-run` for smoke test first.
+   - S3 backfill: `node scripts/backfill-freedmens-to-s3.js` for debug screenshots.
+   - Prerequisites: Chrome running with --remote-debugging-port=9222, signed into FS. One FS scraper at a time (stop 1860 first). .env: DATABASE_URL, GCP_PROJECT_ID, DOCUMENT_AI_PROCESSOR_ID, GOOGLE_APPLICATION_CREDENTIALS, S3_BUCKET.
+5. **1860 slave schedule — Mac Mini (after Freedmens finishes):**
+   - SSH to Mini: `pm2 list` — verify slave-schedule-1860 is armed/stopped and queue-1860 gatekeeper is alive.
+   - If queue-1860 is dead: `pm2 start slave-schedule-1860` manually after Freedmens completes.
+   - ~2,022 locations remaining: VA 315, MS 218, LA 205, KY 201, MO 201 are the big gaps.
+   - Verify: `node check-state-progress.js`
+6. 1870 Census pilot DC/MD/SC/NY/GA
+7. Transfer ReparationsEscrow ownership to fresh wallet (deployer key was exposed in chat, Session 27)
+8. May 10 pivot to LLM/neural-network development phase (user noted this is coming)
+
+### New file (Session 35)
+- `scripts/enrich-freedmens-docai.js` — NEW. Document AI enrichment batch runner. Resumes cleanly (skips records with 'docai_enrichment' in review_notes). Supports --branch, --limit, --start-id, --dry-run, --reprocess, --min-confidence flags. Logs low-confidence records to parse_failure_queue (migration 044) for /review UI. S3 screenshot archival at freedmens-bank/{branch-slug}/docai/{id}.png.
 
 
 ---
