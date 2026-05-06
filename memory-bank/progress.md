@@ -1,8 +1,125 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Core pipeline audited and hardened. All five primary functionalities verified. May 10 pivot to LLM/neural-network development phase.
-**Last Updated:** May 5, 2026 (Session 34)
+**Current Phase:** 1860 slave schedule ACTIVELY RUNNING on Mac Mini. DocAI pilot ready pending Chrome on port 9222.
+**Last Updated:** May 6, 2026 (Session 37)
+
+---
+
+## Session 37 — 1860 Pipeline Debugging + ntfy Wiring (May 6, 2026) ✅ COMPLETE
+
+### What was fixed
+
+Two bugs diagnosed and patched (commit `9e9be89fa`):
+
+| File | Bug | Fix |
+|------|-----|-----|
+| `finish-1860-remaining.sh` | `CHROME_REMOTE_PORT=9222` used in loop → `browser.close()` kills Chrome after first state → all subsequent states run headless with no visible window | Changed to `FAMILYSEARCH_INTERACTIVE=true` — each state launches its own headed Chrome, loads `fs-cookies.json`, auto-logs in |
+| `scripts/enrich-freedmens-docai.js` | `const result = await sql.query(); return result.rows;` → older neon package returns rows array directly → `result.rows` is `undefined` → Fatal crash on `.length` | `const raw = await sql.query(); return Array.isArray(raw) ? raw : raw.rows;` |
+
+### ntfy wired into finish-1860-remaining.sh
+
+Added fire-and-forget `ntfy_post()` helper that sources `OPS_NOTIFY_WEBHOOK` from `.env` and curl-posts (backgrounded) to ntfy.sh. Notifications fire on:
+- Script start (lists all states)
+- Each state start (state name + location limit)
+- Each state success (`done at HH:MM`)
+- Each state error (exit code, high priority)
+- All states complete
+
+Cookie behavior **CONFIRMED WORKING**: `fs-cookies.json` auto-logs in for every state. Chrome window opens, login page flashes briefly, script proceeds automatically. User must NOT interact with the Chrome window.
+
+### 1860 current state (May 6)
+| State | Status |
+|-------|--------|
+| Washington DC | ✅ Done (0 locations) |
+| South Carolina | ✅ Done (0 locations) |
+| Georgia | 🔄 Running (20 locations, ~2 images processed before prior interruption; now restarted) |
+| Maryland | ⏳ Queued |
+| Mississippi | ⏳ Queued |
+| Louisiana | ⏳ Queued |
+| Texas | ⏳ Queued |
+| Virginia | ⏳ Queued |
+
+### DocAI status
+- Neon crash fixed. 500 Washington DC records in queue.
+- **REQUIRES** Chrome on port 9222 + FS login before running.
+- Run AFTER 1860 completes (one FS scraper at a time).
+
+---
+
+## Session 35 — Freedmens Bank DocAI Pipeline + Mac Mini Watchdog (May 5, 2026) ✅ CODE COMPLETE
+
+### What was asked
+User asked what it would take to complete the Freedmens Bank enrichment through Document AI to S3, and the 1860 slave schedule scrape on the Mac Mini. All missing code was identified, written, and pushed.
+
+### Files Shipped
+
+| File | Commit | Description |
+|------|--------|-------------|
+| `scripts/enrich-freedmens-docai.js` | `040506c5e` | NEW: Layer 2 DocAI enrichment batch runner |
+| `scripts/run-freedmens-complete.sh` | `9e8275ef3` | NEW: Single-command pipeline wrapper |
+| `scripts/agents/PipelineWatchdogAgent.js` | `1ac859472` | NEW: 4-phase autonomous pipeline monitor |
+| Bug fix: Phase 4 crash recovery logic | `5b0d3b1eb` | Fix operator precedence in PM2 restart condition |
+| FP validator added to enrichment script | `6720b5d59` | 17-category false-positive detection layer |
+
+### enrich-freedmens-docai.js
+
+For each `unconfirmed_persons` row with `extraction_method = 'freedmens_bank_index'`:
+1. Navigates Chrome (9222) to the ARK URL (handwritten ledger image)
+2. Screenshots at 2800×1700
+3. Calls `freedmens-bank-ledger-v1` via `us-documentai.googleapis.com` (regional endpoint REQUIRED)
+4. Runs `validateFields()` false-positive validator (17 checks, see below)
+5. Upserts into `relationships` JSONB as `docai_fields`; tags `review_notes` with `'docai_enrichment'`
+6. Archives screenshot to S3: `freedmens-bank/{branch-slug}/docai/{id}.png`
+7. Low-conf / missing critical fields / FP warnings → `parse_failure_queue` (M044)
+
+Flags: `--branch`, `--limit`, `--start-id`, `--dry-run`, `--reprocess`, `--min-confidence`
+Fully resumable (idempotent).
+
+### validateFields() — 17 false-positive check categories
+
+**Field-level rejections (value nulled before DB write):**
+1. Empty / < 2 chars
+2. Punctuation-only strings
+3. Numeric-only in name fields (account# bled into last_master)
+4. > 80 chars (multi-field OCR capture)
+5. Exact junk words: `unknown`, `none`, `freed`, `free`, `same`, `deceased`, `n/a`, `himself`, `herself`, `don't know`, `not given`, `-`, `--`, `?`, `0`
+6. Near-junk: starts with junk word + tiny suffix
+7. Page/column header text: `savings and trust`, `last master or mistress`, `plantation where`, `signature of depositor`, `branch at`, `account number`, etc.
+8. City/state name in enslaver field (all 27 branch cities + US states)
+9. Single short all-lowercase token in name field (stray OCR word)
+10. Account number pattern (`No. 1234`, `# 567`)
+11. Depositor name verbatim in enslaver field
+
+**Cross-field rejections:**
+12. `last_master == depositor_name` → hard reject
+13. `last_mistress == depositor_name` → hard reject
+14. `last_master` overlaps `plantation` → field boundary warning
+
+**Soft flags (kept, queued for review):**
+15. `last_master == last_mistress` same string → column bleed warning
+16. `old_title` lacks title prefix at confidence < 0.70
+
+All FP records stored with `failure_reason = 'false_positive_detected'`, `training_eligible = true`. Full audit trail in `_fp_warnings` / `_fp_rejected_fields` inside `docai_fields` JSONB.
+
+### run-freedmens-complete.sh
+Chains: git pull → Layer 1 → Layer 2 → S3 backfill → pm2 start slave-schedule-1860
+Flags: `--skip-layer1`, `--skip-layer2`, `--skip-1860`, `--dry-run-docai`
+
+### PipelineWatchdogAgent.js
+4-phase autonomous orchestrator + monitor:
+- **Phase 1**: DB poll every 90s, stall detection (10 min no growth) → restart Layer 1 (max 3x)
+- **Phase 2**: DocAI progress poll, quality check every ~500 records, stall → respawn
+- **Phase 2b**: Targeted `--reprocess` on branches with avg master_conf < 0.35
+- **Phase 3**: S3 backfill
+- **Phase 4**: PM2 start 1860, poll every 2 min, crash → restart (max 10x), stop at queue = 0
+Log: `debug/logs/watchdog-YYYYMMDD.log`
+
+### Mac Mini state
+- Repo path: `/Users/danyelica/Desktop/Reparations-is-a-real-number`
+- Has NOT yet done `git pull` — watchdog not yet running
+- To start: `cd ~/Desktop/Reparations-is-a-real-number && git pull origin main && node scripts/agents/PipelineWatchdogAgent.js &`
+- 1860 remaining: ~2,022 locations (VA 315, MS 218, LA 205, KY 201, MO 201)
 
 ---
 

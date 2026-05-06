@@ -1,9 +1,68 @@
 # Active Context: Current Development State
 
-**Last Updated:** May 6, 2026 (Session 36 — Layer 1 confirmed complete; DocAI pilot strategy)
-**Current Phase:** Layer 1 scrape DONE (410,430 records / 29 branches). DocAI enrichment not yet started. Rate limiting diagnosed as root cause of scraper stalls. Pivot to supervised DocAI pilot.
+**Last Updated:** May 6, 2026 (Session 37 — 1860 scraper running unattended; ntfy wired; DocAI needs Chrome on 9222)
+**Current Phase:** 1860 slave schedule ACTIVELY RUNNING on Mac Mini (Georgia in progress, DC+SC already done). DocAI pilot ready but requires Chrome on port 9222 first.
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
+
+---
+
+## Session 37: 1860 Pipeline Debugging + ntfy Wiring (May 6, 2026)
+
+### Two Bugs Fixed and Pushed (commit 9e9be89fa)
+
+**Bug 1 — `finish-1860-remaining.sh` running headless (no visible window)**
+- Root cause: `extract-census-ocr.js` calls `browser.close()` at the end of each state run, killing the Chrome process. `CHROME_REMOTE_PORT=9222` only works for the first state. All subsequent states silently fell back to headless Chrome — no visible window, no progress.
+- Fix: Changed every state's run command from `CHROME_REMOTE_PORT=9222` → `FAMILYSEARCH_INTERACTIVE=true`. Each state now launches its own visible headed Chrome, loads `fs-cookies.json` automatically, proceeds without user interaction. Login window only appears if cookies have expired.
+
+**Bug 2 — `enrich-freedmens-docai.js` crash: `Cannot read properties of undefined (reading 'length')`**
+- Root cause: The Mac Mini's version of `@neondatabase/serverless` returns the rows array directly from `sql.query()`, not wrapped in `{ rows, fields }`. So `result.rows` was `undefined` → `records.length` crashed.
+- Fix in `fetchRecords()`:
+  ```js
+  const raw = await sql.query(query, params);
+  return Array.isArray(raw) ? raw : raw.rows;
+  ```
+
+### ntfy Added to finish-1860-remaining.sh
+Added fire-and-forget `ntfy_post()` helper (curl to `$OPS_NOTIFY_WEBHOOK`) with notifications on:
+- Script start (all states enumerated)
+- Each state start (state name + limit)
+- Each state complete (timestamp)
+- Each state error (exit code, high priority)
+- All states complete + check-state-progress summary
+
+### 1860 Current State (as of May 6 ~3pm ET)
+- **Washington DC** — ✅ Already done (0 locations remaining)
+- **Georgia** — 🔄 Running (20 locations, was at image 2 of 30 for Chattooga when interrupted; now re-running from start with cookie auto-login confirmed working)
+- **South Carolina** — ✅ Already done (0 locations remaining)
+- **Maryland, Mississippi, Louisiana, Texas, Virginia** — ⏳ Queued (will run sequentially after Georgia)
+- Cookie behavior CONFIRMED: `fs-cookies.json` auto-logs in every state without user intervention. Login window flashes briefly then disappears. **Do NOT touch Chrome window while script runs.**
+
+### DocAI Status
+- Script is working (neon crash fixed). 500 Washington DC records queued.
+- **BLOCKER**: Chrome must be running on port 9222 BEFORE the script starts.
+- **Once 1860 finishes**, launch Chrome then run:
+  ```bash
+  open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=/tmp/familysearch-docai
+  # → sign into FamilySearch in that window (username/password, NOT Google OAuth)
+  node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500
+  ```
+- Do NOT run DocAI and 1860 concurrently — both need FS access.
+
+### Mac Mini Run Instructions
+```bash
+# Kill stale process if needed:
+pkill -f "extract-census-ocr"
+
+# Re-run 1860 (already doing this as of 3pm ET):
+git pull && bash finish-1860-remaining.sh
+
+# Optional: run in tmux so it survives terminal close:
+tmux new -s scrape1860
+bash finish-1860-remaining.sh
+# Ctrl+B, D to detach
+```
+
 
 ---
 
