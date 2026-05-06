@@ -47,6 +47,11 @@ fi
 CHROME_ARGS=$(echo "$CHROME_CMD" | sed -E 's|^.*/Google Chrome[^ ]*||' | sed -E 's/^ +//')
 echo "Detected Chrome args: $CHROME_ARGS"
 
+# ── Optional: start from a specific branch name ──────────────────────────────
+# Usage: START_BRANCH="Augusta, Georgia" bash scripts/run-all-freedmens.sh
+# All branches before the match are skipped.
+START_BRANCH="${START_BRANCH:-}"
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 swap_pct() {
@@ -153,8 +158,23 @@ echo "  Chrome restart every $CHROME_RESTART_EVERY branch(es)"
 echo "  Abort if swap > ${SWAP_ABORT_PCT}%"
 echo "════════════════════════════════════════════════════════"
 
+# Track whether we have reached the start branch yet (empty = start immediately)
+FOUND_START=0
+[ -z "$START_BRANCH" ] && FOUND_START=1
+
 for branch in "${BRANCHES[@]}"; do
     COUNT=$((COUNT + 1))
+
+    # --start-branch: skip everything before the named branch
+    if [ "$FOUND_START" -eq 0 ]; then
+        if [ "$branch" = "$START_BRANCH" ]; then
+            FOUND_START=1
+        else
+            echo "  ⏭  Skipping '$branch' (before START_BRANCH=$START_BRANCH)"
+            continue
+        fi
+    fi
+
     LOGFILE="/tmp/freedmens-$(echo "$branch" | tr ' ,' '--' | tr -d '.').log"
 
     echo ""

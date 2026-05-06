@@ -738,8 +738,12 @@ async function main() {
         // extractRecords keeps returning the previous image's data. Build a
         // simple fingerprint of this page's records and bail if we see the
         // same one twice in a row (skipped for the first iteration).
+        //
+        // NOTE: intentionally do NOT guard with `&& signature` — empty pages
+        // (no table rows, signature="") must also trigger duplicate detection
+        // so the scraper terminates when the roll ends with blank images.
         const signature = records.map(r => `${r.full_name}|${r.account_number}|${r.record_ark}`).join('||');
-        if (!isFirst && signature && signature === prevRowSignature) {
+        if (!isFirst && signature === prevRowSignature) {
             duplicateStreak++;
             console.log(`Page ${pageNum}/${endIdx0Inclusive + 1} — duplicate of previous page, skipping insert (streak: ${duplicateStreak})`);
             if (duplicateStreak >= 2) {
@@ -754,18 +758,27 @@ async function main() {
         const inserted = await storeRecords(records, config);
         totalInserted += inserted;
 
-        if (records.length > 0) consecutiveEmpty = 0;
-        else consecutiveEmpty++;
+        if (records.length > 0) {
+            consecutiveEmpty = 0;
+        } else {
+            consecutiveEmpty++;
+            // Only save a debug dump for the first few empty pages to avoid
+            // filling disk when scraper is iterating past end of roll.
+            if (consecutiveEmpty <= 3) {
+                const debugDir = path.resolve(__dirname, '../debug/freedmens-bank');
+                if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+                const bodyHtml = await page.evaluate(() => document.body.innerHTML).catch(() => '');
+                fs.writeFileSync(path.join(debugDir, `page-${pageNum}-empty.html`), bodyHtml);
+                console.warn(`  → Debug dump saved to debug/freedmens-bank/page-${pageNum}-empty.html`);
+            }
+            // Bail after 5 consecutive empty pages — roll is clearly over.
+            if (consecutiveEmpty >= 5) {
+                console.log(`  → ${consecutiveEmpty} consecutive empty pages — end of roll reached. Stopping.`);
+                break;
+            }
+        }
 
         console.log(`Page ${pageNum}/${endIdx0Inclusive + 1} — extracted ${records.length}, inserted ${inserted} (total: ${totalInserted})`);
-
-        if (records.length === 0) {
-            const debugDir = path.resolve(__dirname, '../debug/freedmens-bank');
-            if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
-            const bodyHtml = await page.evaluate(() => document.body.innerHTML).catch(() => '');
-            fs.writeFileSync(path.join(debugDir, `page-${pageNum}-empty.html`), bodyHtml);
-            console.warn(`  → Debug dump saved to debug/freedmens-bank/page-${pageNum}-empty.html`);
-        }
     }
 
     console.log(`\n✅ Done. Total inserted: ${totalInserted}`);
