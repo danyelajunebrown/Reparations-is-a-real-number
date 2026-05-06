@@ -222,6 +222,182 @@ function parseEntities(document) {
     return { fields, rawEntities, avgConf };
 }
 
+// ── False-positive validator ───────────────────────────────────────────────────
+// Catches all known classes of DocAI hallucination / misread on Freedmens ledger pages.
+// Returns { cleaned, warnings, rejectedFields } — cleaned has FP values nulled out,
+// warnings is an array of human-readable explanations for the review queue.
+
+const FP_JUNK_EXACT = new Set([
+    'unknown', 'none', 'freed', 'free', 'same', 'above', 'n/a', 'na', 'deceased',
+    'dead', 'not given', 'not stated', "don't know", 'do not know', 'not known',
+    'himself', 'herself', 'themselves', 'self', 'himself/herself',
+    '-', '--', '---', '?', '??', 'x', 'xx', 'xxx', '0', '00',
+]);
+
+// Substrings that almost certainly mean the OCR grabbed a page/column header
+const FP_HEADER_SUBSTRINGS = [
+    'savings and trust', 'freedmen', 'last master or mistress',
+    'plantation where', 'residence of', 'where brought up',
+    'name of last', 'name of father', 'name of mother',
+    'further facts', 'signature of depositor', 'date of entry',
+    'remarks', 'branch at', 'account no', 'account number',
+];
+
+// Known city/state names that appear as branch locations — should never be
+// an enslaver name. Expand as new branches are scraped.
+const FP_CITY_NAMES = new Set([
+    'atlanta', 'augusta', 'baltimore', 'columbus', 'huntsville',
+    'lexington', 'little rock', 'louisville', 'lynchburg', 'memphis',
+    'mobile', 'nashville', 'natchez', 'new bern', 'new orleans',
+    'new york', 'norfolk', 'philadelphia', 'raleigh', 'richmond',
+    'savannah', 'shreveport', 'st. louis', 'saint louis', 'tallahassee',
+    'vicksburg', 'washington', 'washington d.c.', 'wilmington',
+    'georgia', 'maryland', 'mississippi', 'alabama', 'kentucky',
+    'arkansas', 'virginia', 'tennessee', 'north carolina', 'louisiana',
+    'new york', 'pennsylvania', 'florida', 'missouri', 'south carolina',
+    'district of columbia',
+]);
+
+// Fields where the value should look like a human name
+const NAME_FIELDS = new Set([
+    'last_master', 'last_mistress', 'depositor_name',
+    'father_name', 'mother_name', 'spouse_name',
+    'spouse_father', 'spouse_mother',
+]);
+
+// Enslaver-specific fields (extra scrutiny)
+const ENSLAVER_FIELDS = new Set(['last_master', 'last_mistress', 'old_title']);
+
+function isNumericOnly(s) { return /^\d[\d\s.,/-]*$/.test(s.trim()); }
+function isPunctuationOnly(s) { return /^[\s\-_.,;:'"?!()[\]{}/*]+$/.test(s); }
+
+function cleanText(s) {
+    return (s || '').trim()
+        .replace(/\s+/g, ' ')       // collapse whitespace
+        .replace(/^[,.\-_"']+/, '') // strip leading junk chars
+        .replace(/[,.\-_"']+$/, ''); // strip trailing junk chars
+}
+
+function validateFields(fields, depositorName) {
+    const cleaned  = {};  // field_name → { text, confidence } (validated)
+    const warnings = [];  // human-readable FP explanations
+    const rejectedFields = [];
+
+    const depositorLower = (depositorName || '').toLowerCase().trim();
+
+    for (const [field, value] of Object.entries(fields)) {
+        // Multi-value fields (arrays)
+        if (Array.isArray(value)) {
+            const validItems = [];
+            for (const item of value) {
+                const { flagged, reason } = checkValue(item.text, field, depositorLower);
+                if (flagged) {
+                    warnings.push(`[FP] ${field}[] item rejected — ${reason}: "${item.text.substring(0, 40)}"`);
+                } else {
+                    validItems.push(item);
+                }
+            }
+            if (validItems.length > 0) cleaned[field] = validItems;
+            else if (value.length > 0) rejectedFields.push(field);
+            continue;
+        }
+
+        // Single-value fields
+        const { flagged, reason } = checkValue(value.text, field, depositorLower);
+        if (flagged) {
+            warnings.push(`[FP] ${field} rejected — ${reason}: "${value.text.substring(0, 60)}"`);
+            rejectedFields.push(field);
+        } else {
+            cleaned[field] = value;
+        }
+    }
+
+    // ── Cross-field checks ───────────────────────────────────────────────────
+    const masterText    = cleaned['last_master']?.text?.toLowerCase()   || '';
+    const mistressText  = cleaned['last_mistress']?.text?.toLowerCase() || '';
+    const plantText     = cleaned['plantation']?.text?.toLowerCase()    || '';
+
+    // Depositor as their own enslaver
+    if (depositorLower && masterText && masterText === depositorLower) {
+        warnings.push(`[FP-CROSS] last_master == depositor_name ("${cleaned['last_master'].text}") — almost certainly misread`);
+        delete cleaned['last_master'];
+        rejectedFields.push('last_master');
+    }
+    if (depositorLower && mistressText && mistressText === depositorLower) {
+        warnings.push(`[FP-CROSS] last_mistress == depositor_name ("${cleaned['last_mistress'].text}") — almost certainly misread`);
+        delete cleaned['last_mistress'];
+        rejectedFields.push('last_mistress');
+    }
+
+    // Master and mistress are identical exact strings (OCR bled between columns)
+    if (masterText && mistressText && masterText === mistressText) {
+        warnings.push(`[FP-CROSS] last_master == last_mistress ("${masterText}") — likely column bleed`);
+        // Keep both but log — don't reject since married couples can share a surname
+    }
+
+    // Master name === plantation name (e.g., OCR confused field boundaries)
+    if (masterText && plantText && (masterText.includes(plantText) || plantText.includes(masterText)) && plantText.length > 5) {
+        warnings.push(`[FP-CROSS] last_master overlaps plantation ("${masterText}" / "${plantText}") — possible field boundary confusion`);
+    }
+
+    // old_title check: if it doesn't start with a recognizable title prefix, flag but keep
+    if (cleaned['old_title']) {
+        const t = cleaned['old_title'].text.toLowerCase();
+        const hasTitle = ['mr', 'mrs', 'dr', 'col', 'gen', 'maj', 'capt', 'rev', 'hon',
+                          'judge', 'estate', 'esq', 'lt', 'prof', 'miss', 'ms'].some(p => t.startsWith(p));
+        if (!hasTitle && cleaned['old_title'].confidence < 0.70) {
+            warnings.push(`[FP-WARN] old_title "${cleaned['old_title'].text}" has no recognizable title prefix (conf=${cleaned['old_title'].confidence.toFixed(2)}) — may be misclassified`);
+        }
+    }
+
+    return { cleaned, warnings, rejectedFields };
+}
+
+function checkValue(raw, field, depositorLower) {
+    const text = cleanText(raw || '');
+    const lower = text.toLowerCase();
+
+    if (!text || text.length < 2)             return { flagged: true, reason: 'too short / empty' };
+    if (isPunctuationOnly(text))               return { flagged: true, reason: 'punctuation only' };
+    if (isNumericOnly(text) && NAME_FIELDS.has(field)) return { flagged: true, reason: 'numeric only in name field' };
+    if (text.length > 80)                      return { flagged: true, reason: `too long (${text.length} chars — likely multi-field capture)` };
+    if (FP_JUNK_EXACT.has(lower))              return { flagged: true, reason: `junk value "${lower}"` };
+
+    // Partial junk check (starts with known junk word + minimal suffix)
+    for (const junk of FP_JUNK_EXACT) {
+        if (lower.startsWith(junk + ' ') && text.length < junk.length + 5) {
+            return { flagged: true, reason: `near-junk value "${lower}"` };
+        }
+    }
+
+    // Page/column header text leaked in
+    for (const hdr of FP_HEADER_SUBSTRINGS) {
+        if (lower.includes(hdr)) return { flagged: true, reason: `contains page/column header text "${hdr}"` };
+    }
+
+    // City/state name in enslaver field
+    if (ENSLAVER_FIELDS.has(field) && FP_CITY_NAMES.has(lower)) {
+        return { flagged: true, reason: `city/state name in enslaver field: "${lower}"` };
+    }
+
+    // Single-word, all-lowercase, < 4 chars in a name field → likely a stray word
+    if (NAME_FIELDS.has(field) && !text.includes(' ') && text === text.toLowerCase() && text.length < 4) {
+        return { flagged: true, reason: `suspicious short lowercase token in name field: "${text}"` };
+    }
+
+    // Depositor name appears verbatim in enslaver field (case-insensitive)
+    if (ENSLAVER_FIELDS.has(field) && depositorLower && lower === depositorLower) {
+        return { flagged: true, reason: 'enslaver field matches depositor name' };
+    }
+
+    // Looks like an account number (e.g., "No. 1234", "# 567")
+    if (/^(no\.?|#)\s*\d+/i.test(text)) {
+        return { flagged: true, reason: `looks like an account number: "${text}"` };
+    }
+
+    return { flagged: false, reason: null };
+}
+
 // ── Flatten fields for DB storage ─────────────────────────────────────────────
 function flattenFields(fields) {
     const flat = {};
@@ -363,12 +539,14 @@ async function main() {
     console.log('');
 
     const stats = {
-        processed:  0,
-        enriched:   0,
-        queued:     0,
-        navErrors:  0,
+        processed:   0,
+        enriched:    0,
+        queued:      0,
+        navErrors:   0,
         docaiErrors: 0,
-        skipped:    0,
+        skipped:     0,
+        fpRejected:  0,   // total fields cleaned out by false-positive validator
+        fpWarned:    0,   // records that had at least one FP warning
     };
     const startTime = Date.now();
 
@@ -429,10 +607,27 @@ async function main() {
         }
 
         // ── 4. Parse entities ───────────────────────────────────────────────
-        const { fields, rawEntities, avgConf } = parseEntities(document);
-        const flatFields   = flattenFields(fields);
-        const criticalHit  = CRITICAL_FIELDS.some(f => fields[f]?.text);
-        const missingCrit  = CRITICAL_FIELDS.filter(f => !fields[f]?.text);
+        const { fields: rawFields, rawEntities, avgConf } = parseEntities(document);
+
+        // ── 4b. False-positive validation ───────────────────────────────────
+        const { cleaned: fields, warnings: fpWarnings, rejectedFields } = validateFields(rawFields, full_name);
+
+        if (fpWarnings.length > 0) {
+            stats.fpRejected += rejectedFields.length;
+            stats.fpWarned++;
+            // Print FP warnings inline under the record line
+            fpWarnings.forEach(w => console.log(`    ⚠ FP  ${w}`));
+        }
+
+        // Build flat map — embed FP audit trail so the review queue has full context
+        const flatFields = flattenFields(fields);
+        if (fpWarnings.length > 0) {
+            flatFields._fp_warnings = fpWarnings;
+            flatFields._fp_rejected_fields = rejectedFields;
+        }
+
+        const criticalHit = CRITICAL_FIELDS.some(f => fields[f]?.text);
+        const missingCrit = CRITICAL_FIELDS.filter(f => !fields[f]?.text);
 
         // Build a summary for the console
         const hitStr = CRITICAL_FIELDS
@@ -440,14 +635,14 @@ async function main() {
             .map(f => `${f}="${fields[f].text.substring(0, 20)}"`)
             .join(' | ') || '(no critical fields)';
 
-        console.log(`conf=${avgConf.toFixed(2)}  ${hitStr}`);
+        console.log(`    conf=${avgConf.toFixed(2)}  FP-rejected=${rejectedFields.length}  ${hitStr}`);
 
         // ── 5. Store enrichment ─────────────────────────────────────────────
         await storeEnrichment(id, flatFields);
         stats.enriched++;
 
-        // ── 6. Queue for human review if quality is low ─────────────────────
-        const shouldQueue = !criticalHit || avgConf < MIN_CONFIDENCE;
+        // ── 6. Queue for human review if quality is low OR FP warnings present
+        const shouldQueue = !criticalHit || avgConf < MIN_CONFIDENCE || fpWarnings.length > 0;
         if (shouldQueue) {
             await queueFailure({
                 sourceUrl: source_url,
@@ -455,9 +650,14 @@ async function main() {
                 s3Key,
                 extractedFields: flatFields,
                 rawEntities,
-                failureReason: !criticalHit ? 'required_fields_empty' : 'sub_threshold_confidence',
+                failureReason: !criticalHit
+                    ? 'required_fields_empty'
+                    : fpWarnings.length > 0
+                        ? 'false_positive_detected'
+                        : 'sub_threshold_confidence',
                 missingFields: missingCrit,
                 avgConf,
+                errorMessage: fpWarnings.length > 0 ? fpWarnings.join(' | ') : null,
             });
             stats.queued++;
         }
@@ -471,6 +671,7 @@ async function main() {
             console.log(
                 `\n  ── progress: ${stats.processed}/${records.length}  ` +
                 `enriched=${stats.enriched} queued=${stats.queued} ` +
+                `fp-warned=${stats.fpWarned} fp-fields-rejected=${stats.fpRejected} ` +
                 `navErr=${stats.navErrors} docaiErr=${stats.docaiErrors} ` +
                 `elapsed=${elapsed}s (${rate} rec/s) ──\n`
             );
@@ -484,18 +685,27 @@ async function main() {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log('\n═══════════════════════════════════════════════════════════════════');
-    console.log(`Total processed:        ${stats.processed}`);
-    console.log(`Enriched (DB updated):  ${stats.enriched}`);
-    console.log(`Queued (human review):  ${stats.queued}`);
-    console.log(`Nav errors:             ${stats.navErrors}`);
-    console.log(`Doc AI errors:          ${stats.docaiErrors}`);
-    console.log(`Elapsed:                ${elapsed}s`);
+    console.log(`Total processed:          ${stats.processed}`);
+    console.log(`Enriched (DB updated):    ${stats.enriched}`);
+    console.log(`Queued (human review):    ${stats.queued}`);
+    console.log(`FP-warned records:        ${stats.fpWarned}  (had ≥1 false-positive warning)`);
+    console.log(`FP-rejected fields total: ${stats.fpRejected}  (fields nulled out by validator)`);
+    console.log(`Nav errors:               ${stats.navErrors}`);
+    console.log(`Doc AI errors:            ${stats.docaiErrors}`);
+    console.log(`Elapsed:                  ${elapsed}s`);
     if (stats.enriched > 0) {
-        console.log(`Avg throughput:         ${(stats.enriched / parseFloat(elapsed)).toFixed(2)} records/s`);
+        console.log(`Avg throughput:           ${(stats.enriched / parseFloat(elapsed)).toFixed(2)} records/s`);
     }
     if (!DRY_RUN && stats.queued > 0) {
         console.log(`\n  → ${stats.queued} records queued in parse_failure_queue for human review.`);
+        console.log(`    Reasons: required_fields_empty | false_positive_detected | sub_threshold_confidence`);
         console.log(`    View at /review → Parse Failures queue.`);
+    }
+    if (stats.fpWarned > 0) {
+        const fpRate = ((stats.fpWarned / stats.processed) * 100).toFixed(1);
+        console.log(`\n  ⚠ FP rate: ${fpRate}% of records had at least one false-positive field removed.`);
+        console.log(`    Check parse_failure_queue WHERE failure_reason = 'false_positive_detected'`);
+        console.log(`    to review rejected values for potential model retraining.`);
     }
     console.log('═══════════════════════════════════════════════════════════════════');
 }
