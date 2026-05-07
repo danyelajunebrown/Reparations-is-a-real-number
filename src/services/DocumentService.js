@@ -95,7 +95,36 @@ class DocumentService {
    * @returns {Promise<Object|null>} Document with relations
    */
   async getDocumentById(documentId) {
-    return DocumentRepository.findByIdWithRelations(documentId);
+    // Try the primary documents table first
+    const doc = await DocumentRepository.findByIdWithRelations(documentId);
+    if (doc) return doc;
+
+    // Fall back to person_documents (DC compensated emancipation petitions, etc.)
+    // These are primary-source image rows linked to canonical_persons.
+    try {
+      const { pool } = require('../database/connection');
+      const result = await pool.query(`
+        SELECT
+          id::text        AS document_id,
+          s3_key          AS file_path,
+          s3_key,
+          name_as_appears AS owner_name,
+          document_type   AS doc_type,
+          page_reference  AS filename,
+          COALESCE(collection_name || ' — ' || page_reference, page_reference) AS title,
+          source_url,
+          ocr_text,
+          document_date,
+          document_year,
+          'person_documents' AS table_source
+        FROM person_documents
+        WHERE id = $1
+      `, [parseInt(documentId, 10)]);
+      if (result.rows.length > 0) return result.rows[0];
+    } catch (e) {
+      // person_documents fallback failed — return null gracefully
+    }
+    return null;
   }
 
   /**

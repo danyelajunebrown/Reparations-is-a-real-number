@@ -1066,6 +1066,34 @@ router.get('/person/:id', async (req, res) => {
             `, [`%${person.full_name}%`]);
             ownerDocuments = ownerDocsResult.rows;
 
+            // Also pull primary-source images from person_documents (linked by canonical_person_id)
+            // These are DC compensated emancipation petitions, wills, etc. uploaded to S3.
+            try {
+                const personDocsResult = await pool.query(`
+                    SELECT
+                        id,
+                        name_as_appears AS filename,
+                        document_type   AS doc_type,
+                        COALESCE(collection_name || ' — ' || page_reference, page_reference, collection_name) AS title,
+                        page_reference,
+                        s3_key,
+                        s3_url,
+                        source_url,
+                        document_date,
+                        document_year,
+                        ocr_text
+                    FROM person_documents
+                    WHERE canonical_person_id = $1
+                    ORDER BY COALESCE(image_number, 999) ASC
+                `, [parseInt(id, 10)]);
+                if (personDocsResult.rows.length > 0) {
+                    // Prepend petition images so they appear first in "Primary source documents"
+                    ownerDocuments = [...personDocsResult.rows, ...ownerDocuments];
+                }
+            } catch (personDocsErr) {
+                console.log('person_documents query error (non-fatal):', personDocsErr.message);
+            }
+
             // Get enslaved persons connected to this owner
             // First try enslaved_individuals with direct owner link
             const directLinked = await pool.query(`
