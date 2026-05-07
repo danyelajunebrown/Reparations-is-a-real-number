@@ -309,87 +309,59 @@ router.get('/:documentId/access',
     }
 
     // CASE 2: Try S3 if enabled
+    // Note: We do NOT gate on objectExists() here — many IAM policies grant
+    // s3:GetObject but not s3:HeadObject, causing HeadObject to 403/AccessDenied
+    // even when the object exists and GetObjectCommand works fine.
+    // Instead we try the presigned URL generation directly and let the AWS SDK
+    // error tell us if the object genuinely doesn't exist or if auth is broken.
     if (S3Service.isEnabled()) {
-      // Strip 'storage/' prefix if present to get correct S3 key
       let s3Key = filePath.replace(/^storage\//, '');
       s3Key = S3Service.constructor.normalizeS3Key(s3Key);
-      const checkResult = await S3Service.objectExists(s3Key);
 
-      if (checkResult.exists) {
-        logger.info('Document access: generating S3 presigned URLs', { documentId, s3Key });
+      logger.info('Document access: attempting S3 presigned URL', { documentId, s3Key });
 
-        try {
-          const viewUrl = await S3Service.getViewUrl(s3Key, expiresIn, document.filename);
-          const downloadUrl = await S3Service.getDownloadUrl(s3Key, expiresIn, document.filename);
+      try {
+        const viewUrl = await S3Service.getViewUrl(s3Key, expiresIn, document.filename);
+        const downloadUrl = await S3Service.getDownloadUrl(s3Key, expiresIn, document.filename);
 
-          return res.json({
-            success: true,
-            documentId,
-            storageType: 's3',
-            viewUrl,
-            downloadUrl,
-            expiresIn,
-            expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
-            metadata: {
-              filename: document.filename,
-              mimeType: document.mime_type || checkResult.metadata?.contentType,
-              fileSize: document.file_size || checkResult.metadata?.contentLength,
-              ownerName: document.owner_name,
-              docType: document.doc_type
-            }
-          });
-        } catch (urlError) {
-          await ErrorLogger.logDocumentError({
-            type: 'S3_URL_GENERATION_FAILED',
-            documentId,
-            s3Key,
-            message: urlError.message
-          });
-
-          return res.status(500).json({
-            success: false,
-            error: 'S3_URL_GENERATION_FAILED',
-            message: 'Failed to generate access URL',
-            documentId
-          });
-        }
-      }
-
-      // S3 object not found (or credentials error — checkResult.error will say which)
-      const s3ErrorMsg = checkResult.error || null;
-      const isCredentialError = s3ErrorMsg && (
-        s3ErrorMsg.includes('credential') ||
-        s3ErrorMsg.includes('InvalidSignature') ||
-        s3ErrorMsg.includes('InvalidAccessKeyId') ||
-        s3ErrorMsg.includes('AccessDenied') ||
-        s3ErrorMsg.includes('NoCredentials') ||
-        s3ErrorMsg.includes('403')
-      );
-
-      await ErrorLogger.logDocumentError({
-        type: isCredentialError ? 'S3_CREDENTIALS_ERROR' : 'S3_OBJECT_NOT_FOUND',
-        documentId,
-        s3Key,
-        bucket: config.storage.s3.bucket,
-        message: s3ErrorMsg || 'File not found in S3 bucket'
-      });
-
-      return res.status(404).json({
-        success: false,
-        error: isCredentialError ? 'S3_CREDENTIALS_ERROR' : 'FILE_NOT_FOUND',
-        message: isCredentialError
-          ? 'S3 credential/permission error — check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on Render'
-          : 'Document file not found in storage',
-        documentId,
-        debugInfo: {
+        return res.json({
+          success: true,
+          documentId,
           storageType: 's3',
+          viewUrl,
+          downloadUrl,
+          expiresIn,
+          expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+          metadata: {
+            filename: document.filename,
+            mimeType: document.mime_type,
+            fileSize: document.file_size,
+            ownerName: document.owner_name,
+            docType: document.doc_type
+          }
+        });
+      } catch (urlError) {
+        const msg = urlError.message || urlError.name || 'Unknown AWS error';
+        await ErrorLogger.logDocumentError({
+          type: 'S3_URL_GENERATION_FAILED',
+          documentId,
           s3Key,
-          bucket: config.storage.s3.bucket,
-          localPathChecked: localPath,
-          localExists: false,
-          s3Error: s3ErrorMsg
-        }
-      });
+          message: msg
+        });
+
+        return res.status(500).json({
+          success: false,
+          error: 'S3_URL_GENERATION_FAILED',
+          message: 'Failed to generate presigned URL',
+          documentId,
+          debugInfo: {
+            storageType: 's3',
+            s3Key,
+            bucket: config.storage.s3.bucket,
+            s3Error: msg
+          }
+        });
+      }
     }
 
     // CASE 3: File not found anywhere
