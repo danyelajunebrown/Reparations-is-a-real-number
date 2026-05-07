@@ -95,14 +95,28 @@ class DocumentService {
    * @returns {Promise<Object|null>} Document with relations
    */
   async getDocumentById(documentId) {
-    // Try the primary documents table first
-    const doc = await DocumentRepository.findByIdWithRelations(documentId);
-    if (doc) return doc;
+    // Try the primary documents table first (UUID-keyed).
+    // Wrap in try/catch: if documentId is an integer string like '11092',
+    // PostgreSQL throws "invalid input syntax for type uuid" which would
+    // otherwise propagate and skip the person_documents fallback entirely.
+    try {
+      const doc = await DocumentRepository.findByIdWithRelations(documentId);
+      if (doc) return doc;
+    } catch (e) {
+      // Not a valid UUID or unexpected DB error — fall through to integer fallback
+      logger.debug('documents table lookup failed, trying person_documents', {
+        documentId,
+        error: e.message
+      });
+    }
 
     // Fall back to person_documents (DC compensated emancipation petitions, etc.)
-    // These are primary-source image rows linked to canonical_persons.
+    // These are primary-source image rows linked to canonical_persons via integer PKs.
     try {
       const { pool } = require('../database/connection');
+      const intId = parseInt(documentId, 10);
+      if (isNaN(intId)) return null; // Not a UUID and not an integer — nothing to look up
+
       const result = await pool.query(`
         SELECT
           id::text        AS document_id,
@@ -119,10 +133,11 @@ class DocumentService {
           'person_documents' AS table_source
         FROM person_documents
         WHERE id = $1
-      `, [parseInt(documentId, 10)]);
+      `, [intId]);
       if (result.rows.length > 0) return result.rows[0];
     } catch (e) {
       // person_documents fallback failed — return null gracefully
+      logger.debug('person_documents fallback failed', { documentId, error: e.message });
     }
     return null;
   }
