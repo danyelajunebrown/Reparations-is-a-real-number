@@ -355,26 +355,39 @@ router.get('/:documentId/access',
         }
       }
 
-      // S3 object not found
+      // S3 object not found (or credentials error — checkResult.error will say which)
+      const s3ErrorMsg = checkResult.error || null;
+      const isCredentialError = s3ErrorMsg && (
+        s3ErrorMsg.includes('credential') ||
+        s3ErrorMsg.includes('InvalidSignature') ||
+        s3ErrorMsg.includes('InvalidAccessKeyId') ||
+        s3ErrorMsg.includes('AccessDenied') ||
+        s3ErrorMsg.includes('NoCredentials') ||
+        s3ErrorMsg.includes('403')
+      );
+
       await ErrorLogger.logDocumentError({
-        type: 'S3_OBJECT_NOT_FOUND',
+        type: isCredentialError ? 'S3_CREDENTIALS_ERROR' : 'S3_OBJECT_NOT_FOUND',
         documentId,
         s3Key,
         bucket: config.storage.s3.bucket,
-        message: 'File not found in S3 bucket'
+        message: s3ErrorMsg || 'File not found in S3 bucket'
       });
 
       return res.status(404).json({
         success: false,
-        error: 'FILE_NOT_FOUND',
-        message: 'Document file not found in storage',
+        error: isCredentialError ? 'S3_CREDENTIALS_ERROR' : 'FILE_NOT_FOUND',
+        message: isCredentialError
+          ? 'S3 credential/permission error — check AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on Render'
+          : 'Document file not found in storage',
         documentId,
         debugInfo: {
           storageType: 's3',
           s3Key,
           bucket: config.storage.s3.bucket,
           localPathChecked: localPath,
-          localExists: false
+          localExists: false,
+          s3Error: s3ErrorMsg
         }
       });
     }
