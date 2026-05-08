@@ -5,6 +5,7 @@
  * Provides presigned URL generation for secure document access.
  */
 
+const https = require('https');
 const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, GetBucketLocationCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const path = require('path');
@@ -46,30 +47,103 @@ class S3Service {
    * Verify the configured region matches the bucket's actual region.
    * If not, recreate the client with the correct region.
    * Called once at startup; awaited before any presigned URL generation.
+   *
+   * Two-method approach:
+   *   1. GetBucketLocation via SDK (requires s3:GetBucketLocation IAM perm)
+   *   2. Unauthenticated redirect probe — S3 returns PermanentRedirect with the
+   *      correct endpoint in the XML body. No credentials needed.
    */
   async _verifyAndCorrectRegion() {
     if (!this.client) return;
+
+    // ── Method 1: SDK GetBucketLocation ──────────────────────────────────────
     try {
-      // GetBucketLocation works from any region — uses followRegionRedirects
       const cmd = new GetBucketLocationCommand({ Bucket: this.bucket });
       const result = await this.client.send(cmd);
-      // AWS returns null/empty for us-east-1 (it's the default / legacy region)
+      // AWS returns null/empty for us-east-1 (legacy default region)
       const actualRegion = result.LocationConstraint || 'us-east-1';
       if (actualRegion !== this.region) {
         logger.warn(
-          `S3 region mismatch detected! Configured: "${this.region}", bucket actual: "${actualRegion}". ` +
-          `Recreating S3 client with correct region. ` +
-          `Fix: set S3_REGION=${actualRegion} in your Render environment variables.`
+          `S3 region mismatch (GetBucketLocation): configured="${this.region}", actual="${actualRegion}". ` +
+          `Recreating client. Fix: set S3_REGION=${actualRegion} in Render env vars.`
         );
         this.region = actualRegion;
         this.client = this._makeClient(actualRegion);
       } else {
-        logger.info(`S3 region verified: ${this.region} ✓`);
+        logger.info(`S3 region verified via GetBucketLocation: ${this.region} ✓`);
+      }
+      return;
+    } catch (e) {
+      logger.warn(
+        `GetBucketLocation failed (likely missing IAM permission s3:GetBucketLocation): ${e.message}. ` +
+        `Falling back to redirect probe.`
+      );
+    }
+
+    // ── Method 2: Unauthenticated redirect probe ──────────────────────────────
+    // S3 returns HTTP 301 + PermanentRedirect XML (including the correct
+    // <Endpoint>) for ANY request to the wrong regional endpoint — no auth needed.
+    try {
+      const probeRegion = await this._probeRegionViaRedirect();
+      if (probeRegion && probeRegion !== this.region) {
+        logger.warn(
+          `S3 region mismatch (redirect probe): configured="${this.region}", actual="${probeRegion}". ` +
+          `Recreating client. Fix: set S3_REGION=${probeRegion} in Render env vars.`
+        );
+        this.region = probeRegion;
+        this.client = this._makeClient(probeRegion);
+      } else if (probeRegion) {
+        logger.info(`S3 region verified via redirect probe: ${this.region} ✓`);
       }
     } catch (e) {
-      // Non-fatal — log and continue. The configured region may still work.
-      logger.warn(`S3 bucket region verification failed (non-fatal): ${e.message}`);
+      logger.warn(`S3 region redirect probe failed (non-fatal): ${e.message}`);
     }
+  }
+
+  /**
+   * Make an unauthenticated GET to the bucket root.
+   * If the configured region is wrong, S3 responds HTTP 301 with:
+   *   <Code>PermanentRedirect</Code>
+   *   <Endpoint>bucket.s3.CORRECT-REGION.amazonaws.com</Endpoint>
+   *
+   * We parse that endpoint to extract the actual region.
+   * Returns the detected region string, or null if it cannot be determined.
+   * Does NOT require any AWS credentials or IAM permissions.
+   */
+  _probeRegionViaRedirect() {
+    return new Promise((resolve, reject) => {
+      const probeUrl = `https://${this.bucket}.s3.${this.region}.amazonaws.com/`;
+      const req = https.get(probeUrl, { timeout: 8000 }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { if (body.length < 4096) body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 301 || res.statusCode === 307) {
+            // Parse <Endpoint> from AWS XML error body
+            // e.g. <Endpoint>reparations-them.s3.us-east-2.amazonaws.com</Endpoint>
+            const match = body.match(/<Endpoint>([^<]+)<\/Endpoint>/);
+            if (match) {
+              // extract region from "bucket.s3.REGION.amazonaws.com"
+              const regionMatch = match[1].match(/\.s3[.-]([a-z]{2}-[a-z]+-\d+)\.amazonaws\.com/);
+              if (regionMatch) {
+                resolve(regionMatch[1]);
+                return;
+              }
+            }
+            // Redirect but couldn't parse region — try Location header
+            if (res.headers.location) {
+              const locMatch = res.headers.location.match(/\.s3[.-]([a-z]{2}-[a-z]+-\d+)\.amazonaws\.com/);
+              if (locMatch) { resolve(locMatch[1]); return; }
+            }
+          }
+          // HTTP 403 = correct region (access denied, bucket exists at this endpoint)
+          // HTTP 200 = correct region (bucket listing, unlikely for private bucket)
+          resolve(this.region);
+        });
+      });
+      req.on('error', (e) => reject(e));
+      req.on('timeout', () => { req.destroy(); reject(new Error('region probe timeout after 8s')); });
+      req.setTimeout(8000);
+    });
   }
 
   /**
