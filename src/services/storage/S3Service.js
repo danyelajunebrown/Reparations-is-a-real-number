@@ -44,8 +44,8 @@ class S3Service {
       // to GetObject presigned URLs, which causes HTTP 403 for objects that
       // were uploaded without a checksum (the vast majority of our S3 objects).
       // Setting these to 'when_required' disables the automatic injection.
-      requestChecksumCalculation: 'WHEN_REQUIRED',
-      responseChecksumValidation: 'WHEN_REQUIRED',
+      requestChecksumCalculation: 'when_required',
+      responseChecksumValidation: 'when_required',
     });
   }
 
