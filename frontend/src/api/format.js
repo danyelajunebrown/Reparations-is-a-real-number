@@ -33,6 +33,23 @@ export function formatYear(y) {
   return String(y);
 }
 
+/**
+ * Returns either a plain string (primary source) or an object with
+ * { yearStr, isEstimate, tooltip } for rendering an estimation badge.
+ *
+ * Usage in JSX:
+ *   const y = formatYearWithEstimation(p.birth_year, p.birth_year_source, p.birth_year_confidence, p.birth_year_formula);
+ *   typeof y === 'string' ? y : <EstimatedYear {...y} />
+ */
+export function formatYearWithEstimation(year, source, confidence, formula) {
+  if (!year) return '—';
+  const yearStr = String(year);
+  if (!source || source === 'primary_source' || source === 'exact') return yearStr;
+  const pct = confidence != null ? Math.round(Number(confidence) * 100) : 65;
+  const tooltip = formula || `estimated · ${pct}% confidence`;
+  return { yearStr, isEstimate: true, tooltip };
+}
+
 export function formatClass(cls) {
   if (!cls) return 'unverified';
   return cls.replace(/_/g, ' ');

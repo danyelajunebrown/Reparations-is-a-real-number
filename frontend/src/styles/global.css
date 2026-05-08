@@ -411,3 +411,44 @@ hr {
 @keyframes blink {
   to { visibility: hidden; }
 }
+
+/* ── Estimation badge (dashed underline + tooltip) ───────── */
+.estimate-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.estimate-badge-year {
+  border-bottom: 1px dashed var(--dim);
+  cursor: help;
+}
+
+.estimate-badge-label {
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Provenance / inheritance chain block */
+.provenance-chain {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  margin-top: 8px;
+}
+
+.provenance-chain > * + * {
+  margin-top: 6px;
+}
+
+.provenance-step {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.provenance-step strong {
+  color: var(--fg);
+}

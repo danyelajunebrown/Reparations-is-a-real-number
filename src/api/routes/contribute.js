@@ -905,9 +905,12 @@ router.get('/person/:id', async (req, res) => {
         };
         
         if (tableSource === 'enslaved_individuals' && person.enslaved_by_individual_id) {
-            // Get owner from canonical_persons table
+            // Get owner from canonical_persons table — include full location fields
             const ownerResult = await pool.query(`
-                SELECT id, canonical_name as full_name, person_type, primary_county, primary_state, notes
+                SELECT id, canonical_name as full_name, person_type,
+                       primary_county, primary_state, primary_plantation,
+                       CONCAT_WS(', ', primary_plantation, primary_county, primary_state) AS location,
+                       notes
                 FROM canonical_persons
                 WHERE id::text = $1
             `, [person.enslaved_by_individual_id]);
@@ -916,21 +919,77 @@ router.get('/person/:id', async (req, res) => {
                 ownerName = owner.full_name;
                 dataAvailability.hasOwnerData = true;
                 dataAvailability.hasStructuredOwner = true;
+
+                // Check for DC Compensated Emancipation petition tied to this owner
+                // Exposes compensation_paid and petition_date on the enslaved person's modal
+                try {
+                    const petitionResult = await pool.query(`
+                        SELECT docket_number, petition_date, total_compensation_paid,
+                               petition_reference, source_archive, enslaved_names
+                        FROM historical_reparations_petitions
+                        WHERE petitioner_canonical_id = $1
+                        LIMIT 1
+                    `, [person.enslaved_by_individual_id]);
+                    if (petitionResult.rows.length > 0) {
+                        owner.petition = petitionResult.rows[0];
+                        dataAvailability.hasPetitionRecord = true;
+                    }
+                } catch (e) {
+                    // Table may not have petitioner_canonical_id column yet — non-fatal
+                    console.log('petition lookup (non-fatal):', e.message?.substring(0, 80));
+                }
+
+                // Check person_relationships_verified for inheritance chain
+                // (e.g. enslaved person inherited from Hopewell will → Ann Maria Biscoe)
+                try {
+                    const inheritanceResult = await pool.query(`
+                        SELECT prv.relationship_type, prv.evidence_text,
+                               prv.document_date,
+                               cp.canonical_name AS from_person_name,
+                               cp.id AS from_person_id
+                        FROM person_relationships_verified prv
+                        JOIN canonical_persons cp ON cp.id = prv.person1_id
+                        WHERE prv.person2_id = $1
+                          AND prv.relationship_type IN ('inherited', 'bequeathed', 'transferred')
+                        LIMIT 3
+                    `, [person.enslaved_by_individual_id]);
+                    if (inheritanceResult.rows.length > 0) {
+                        owner.inheritance_chain = inheritanceResult.rows;
+                        dataAvailability.hasInheritanceChain = true;
+                    }
+                } catch (e) {
+                    console.log('inheritance chain (non-fatal):', e.message?.substring(0, 80));
+                }
             }
         } else if (tableSource === 'unconfirmed_persons') {
             // First check relationships JSON (used by census OCR extraction)
             if (person.relationships && typeof person.relationships === 'object') {
-                if (person.relationships.owner) {
-                    ownerName = person.relationships.owner;
+                // Support census OCR 'owner' key AND Freedmen's Bank 'last_master'/'last_mistress' keys
+                const rawOwner = person.relationships.owner
+                    || person.relationships.last_master
+                    || person.relationships.last_mistress;
+                if (rawOwner) {
+                    ownerName = rawOwner;
                     owner = {
                         full_name: ownerName,
-                        location: person.relationships.county && person.relationships.state
-                            ? `${person.relationships.county}, ${person.relationships.state}`
-                            : null,
-                        year: person.relationships.year
+                        // Freedmen's Bank: master_location or county/state
+                        location: person.relationships.master_location
+                            || (person.relationships.county && person.relationships.state
+                                ? `${person.relationships.county}, ${person.relationships.state}`
+                                : null),
+                        year: person.relationships.year,
+                        // Freedmen's Bank-specific enrichment
+                        branch: person.relationships.branch || null,
+                        account_number: person.relationships.account_number || null,
+                        plantation: person.relationships.slave_residence || null,
                     };
                     dataAvailability.hasOwnerData = true;
                     dataAvailability.hasStructuredOwner = true;
+                }
+                // Freedmen's Bank: infer location from branch city if not set
+                if (!person.location && person.relationships.branch) {
+                    person.location = person.relationships.branch;
+                    person.location_source = 'freedmens_bank_branch';
                 }
             }
 
@@ -1409,38 +1468,132 @@ router.get('/person/:id', async (req, res) => {
                 }
             }
         }
+        // ── W1: Normalize enslavedPersons so every item has a stable `id` and
+        //         `full_name`, and a `table_source` for building the correct link.
+        //         Different queries return different field names (enslaved_id, lead_id,
+        //         enslaved_name, etc.) — normalize here so PersonProfile.jsx never
+        //         renders a broken /person/enslaved_individuals/undefined link.
+        const normalizedEnslavedPersons = (enslavedPersons || []).map(ep => ({
+            ...ep,
+            id: ep.enslaved_id || ep.id || ep.lead_id,
+            full_name: ep.full_name || ep.enslaved_name || 'Unknown',
+            table_source: (ep.enslaved_id && !ep.lead_id) ? 'enslaved_individuals' : 'unconfirmed_persons',
+        })).filter(ep => ep.id); // drop any that still have no id (safety guard)
+
+        // ── W1b: Normalize descendants — slave_owner_descendants_suspected uses
+        //         `descendant_name`, not `full_name`. PersonProfile renders d.full_name.
+        const normalizedDescendants = (descendants || []).map(d => ({
+            ...d,
+            full_name: d.full_name || d.descendant_name || 'Unknown descendant',
+            birth_year: d.birth_year || d.descendant_birth_year,
+            death_year: d.death_year || d.descendant_death_year,
+            generation: d.generation || d.generation_from_owner,
+        }));
+
+        // ── W2: Infer birth_year from notes for enslaved_individuals if still missing.
+        //         MSA Certificates of Freedom and many civilwardc records include age
+        //         and document year in their notes/OCR text. Format example:
+        //         "...age 28...1848..." or "...age: 34...year: 1862..."
+        if (tableSource === 'enslaved_individuals' && !person.birth_year) {
+            const notesText = person.notes || '';
+            const ageMatch = notesText.match(/\bage[:\s]+(\d{1,3})\b/i)
+                || notesText.match(/,\s*age\s+(\d{1,3})\b/i);
+            // Year: look for 4-digit year in 1600–1870 range
+            const yearMatch = notesText.match(/\b(1[6-8]\d{2})\b/);
+            if (ageMatch && yearMatch) {
+                const age = parseInt(ageMatch[1], 10);
+                const docYear = parseInt(yearMatch[1], 10);
+                if (age > 0 && age < 110 && docYear > 1600 && docYear <= 1870) {
+                    person.birth_year = docYear - age;
+                    person.birth_year_source = 'notes_age_year_inference';
+                    person.birth_year_confidence = 0.65;
+                    person.birth_year_formula = `document year (${docYear}) − stated age (${age}) = ${person.birth_year} · confidence 65%`;
+                    dataAvailability.hasBirthYear = true;
+                }
+            }
+        }
+
+        // ── W6: Query person_external_ids for FamilySearch / WikiTree / Ancestry links.
+        //         The canonical_persons SELECT does not include familysearch_id (it doesn't
+        //         exist as a direct column — IDs live in person_external_ids). Same for
+        //         enslaved_individuals. We do a quick lookup here and merge into `links`.
+        let externalLinks = {
+            sourceUrl: person.source_url || null,
+            familySearch: null,
+            ancestry: null,
+            wikiTree: null,
+        };
+        try {
+            const canonicalIdForLinks = tableSource === 'canonical_persons'
+                ? parseInt(id, 10)
+                : (tableSource === 'enslaved_individuals' && person.enslaved_by_individual_id
+                    ? parseInt(person.enslaved_by_individual_id, 10)
+                    : null);
+            if (canonicalIdForLinks) {
+                const extIdResult = await pool.query(`
+                    SELECT external_id, id_type, system_name
+                    FROM person_external_ids
+                    WHERE canonical_person_id = $1
+                      AND id_type IN ('familysearch', 'wikitree', 'ancestry')
+                    LIMIT 5
+                `, [canonicalIdForLinks]);
+                for (const row of extIdResult.rows) {
+                    if (row.id_type === 'familysearch' && !externalLinks.familySearch) {
+                        externalLinks.familySearch = `https://www.familysearch.org/tree/person/details/${row.external_id}`;
+                    } else if (row.id_type === 'wikitree' && !externalLinks.wikiTree) {
+                        externalLinks.wikiTree = `https://www.wikitree.com/wiki/${row.external_id}`;
+                    } else if (row.id_type === 'ancestry' && !externalLinks.ancestry) {
+                        externalLinks.ancestry = `https://www.ancestry.com/family-tree/person/${row.external_id}`;
+                    }
+                }
+            }
+        } catch (e) {
+            // person_external_ids may not exist on older schema — non-fatal
+            console.log('person_external_ids lookup (non-fatal):', e.message?.substring(0, 80));
+        }
+        // Fallback to legacy notes-based WikiTree scrape pattern
+        if (!externalLinks.wikiTree && person.notes && person.notes.includes('WikiTree:')) {
+            const wtMatch = person.notes.match(/WikiTree:\s*([^\s.]+)/);
+            if (wtMatch) externalLinks.wikiTree = `https://www.wikitree.com/wiki/${wtMatch[1]}`;
+        }
+
+        // ── W3: Build location string that includes plantation name if available.
+        const locationStr = person.owner_location
+            || [person.primary_plantation, person.primary_county, person.primary_state]
+                .filter(Boolean).join(', ')
+            || person.location   // may have been set from Freedmen's Bank branch (W4)
+            || null;
+
         res.json({
             success: true,
             person: {
                 ...person,
                 tableSource,
-                location: person.owner_location || (person.primary_county && person.primary_state ? `${person.primary_county}, ${person.primary_state}` : null)
+                location: locationStr,
+                // Estimation metadata — used by UI to render "(est.)" labels with hover tooltips
+                birth_year_source: person.birth_year_source || null,
+                birth_year_confidence: person.birth_year_confidence || null,
+                birth_year_formula: person.birth_year_formula || null,
+                death_year_source: person.death_year_source || null,
+                freedom_year: person.freedom_year || null,
+                freedom_year_source: person.freedom_year_source || null,
+                // Plantation displayed separately in identity grid
+                primary_plantation: person.primary_plantation || null,
             },
             reparations,
             owner,
-            familyMembers,  // Parents, children, spouse for enslaved individuals
+            familyMembers,
             dataAvailability,
             documents,
-            ownerDocuments,  // Documents belonging to slaveholders
-            enslavedPersons, // Enslaved persons connected to this owner
-            descendants,     // Descendants of slaveholder from WikiTree
+            ownerDocuments,
+            enslavedPersons: normalizedEnslavedPersons,
+            descendants: normalizedDescendants,
             rawData: {
                 contextText: person.context_text || null,
                 locations: person.locations || null,
                 notes: person.notes || null
             },
-            links: {
-                sourceUrl: person.source_url || null,
-                familySearch: person.familysearch_id
-                    ? `https://www.familysearch.org/tree/person/details/${person.familysearch_id}`
-                    : null,
-                ancestry: person.ancestry_id
-                    ? `https://www.ancestry.com/family-tree/person/${person.ancestry_id}`
-                    : null,
-                wikiTree: person.notes && person.notes.includes('WikiTree:')
-                    ? `https://www.wikitree.com/wiki/${person.notes.match(/WikiTree:\s*([^\s.]+)/)?.[1] || ''}`
-                    : null
-            }
+            links: externalLinks,
         });
 
     } catch (error) {

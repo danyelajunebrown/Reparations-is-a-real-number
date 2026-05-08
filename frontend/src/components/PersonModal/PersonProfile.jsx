@@ -4,7 +4,13 @@ import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
 import { DocOverlay } from '../DocumentViewer/DocumentViewer.jsx';
-import { formatClass, CLASS_LABELS, CLASS_DESCRIPTIONS, formatYear } from '../../api/format.js';
+import {
+  formatClass,
+  CLASS_LABELS,
+  CLASS_DESCRIPTIONS,
+  formatYear,
+  formatYearWithEstimation,
+} from '../../api/format.js';
 
 /**
  * PersonProfile — full page view of a verified person.
@@ -51,6 +57,22 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   const ownerDocuments = data.ownerDocuments || [];
   const descendants = data.descendants || [];
   const links = data.links || {};
+  const familyMembers = data.familyMembers || [];
+
+  // Separate parents and children from familyMembers
+  const parents = familyMembers.filter(m => m.relationship_type === 'parent' || m.role === 'parent');
+  const children = familyMembers.filter(m => m.relationship_type === 'child' || m.role === 'child');
+
+  // Birth/death year formatted with estimation badge support
+  const birthYearFormatted = formatYearWithEstimation(
+    p.birth_year, p.birth_year_source, p.birth_year_confidence, p.birth_year_formula
+  );
+  const deathYearFormatted = formatYearWithEstimation(
+    p.death_year, p.death_year_source, p.death_year_confidence, p.death_year_formula
+  );
+  const freedomYearFormatted = formatYearWithEstimation(
+    p.freedom_year, p.freedom_year_source, null, null
+  );
 
   return (
     <div className="stack-xl">
@@ -80,10 +102,16 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
 
       <Section title="Identity">
         <div className="grid-3">
-          <Field label="Birth year" value={formatYear(p.birth_year)} />
-          <Field label="Death year" value={formatYear(p.death_year)} />
+          <Field label="Birth year" value={<YearDisplay formatted={birthYearFormatted} />} />
+          <Field label="Death year" value={<YearDisplay formatted={deathYearFormatted} />} />
           <Field label="Gender" value={p.gender} />
           <Field label="Location" value={p.location} />
+          {p.primary_plantation && (
+            <Field label="Plantation" value={p.primary_plantation} />
+          )}
+          {p.freedom_year && (
+            <Field label="Freedom year" value={<YearDisplay formatted={freedomYearFormatted} />} />
+          )}
           <Field label="Occupation" value={p.occupation} />
           <Field label="Spouse" value={p.spouse_name} />
           <Field label="Racial designation" value={p.racial_designation} />
@@ -101,9 +129,124 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
           >
             <div>{owner.full_name}</div>
             <div className="dim" style={{ fontSize: 12 }}>
-              {owner.location} {owner.birth_year && `· b.${owner.birth_year}`}
+              {owner.location}{owner.birth_year && ` · b.${owner.birth_year}`}
             </div>
+            {owner.account_number && (
+              <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
+                Freedmen's Bank acct #{owner.account_number}
+                {owner.branch && ` · ${owner.branch} branch`}
+                {owner.plantation && ` · ${owner.plantation}`}
+              </div>
+            )}
           </Link>
+
+          {/* DC Compensated Emancipation Petition */}
+          {owner.petition && (
+            <div className="box" style={{ marginTop: 8, borderColor: 'var(--cls-free-poc)' }}>
+              <div className="box-label" style={{ color: 'var(--cls-free-poc)' }}>
+                DC Compensated Emancipation Petition
+              </div>
+              <div style={{ fontSize: 12 }}>
+                {owner.petition.petitioner_name && (
+                  <div>Petitioner: <strong>{owner.petition.petitioner_name}</strong></div>
+                )}
+                {owner.petition.petition_date && (
+                  <div className="dim">Date: {owner.petition.petition_date}</div>
+                )}
+                {owner.petition.enslaved_name && (
+                  <div className="dim">Enslaved named: {owner.petition.enslaved_name}</div>
+                )}
+                {owner.petition.compensation_amount && (
+                  <div className="dim">Compensation claimed: ${owner.petition.compensation_amount}</div>
+                )}
+                {owner.petition.source_url && (
+                  <a
+                    href={owner.petition.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 11, marginTop: 4, display: 'inline-block' }}
+                  >
+                    Primary source →
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Inheritance / provenance chain */}
+          {owner.inheritance_chain && owner.inheritance_chain.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div className="box-label">Provenance / inheritance chain</div>
+              <div className="provenance-chain">
+                {owner.inheritance_chain.map((step, i) => (
+                  <div key={i} className="provenance-step">
+                    <strong>{step.from_name || step.from_person_name || 'Unknown'}</strong>
+                    {' → '}
+                    <strong>{step.to_name || step.to_person_name || 'Unknown'}</strong>
+                    {step.relationship_type && (
+                      <span className="dim"> ({step.relationship_type})</span>
+                    )}
+                    {step.document_reference && (
+                      <span className="dim"> · {step.document_reference}</span>
+                    )}
+                    {(step.year || step.transfer_year) && (
+                      <span className="dim"> · {step.year || step.transfer_year}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {/* Family members (parents / children) */}
+      {(parents.length > 0 || children.length > 0) && (
+        <Section title="Family">
+          {parents.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div className="box-label" style={{ marginBottom: 6 }}>Parents</div>
+              <div className="stack">
+                {parents.map((m, i) => (
+                  <Link
+                    key={m.id || i}
+                    to={`/person/${m.table_source || 'canonical_persons'}/${m.id}`}
+                    className="box"
+                    style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                  >
+                    <div>{m.full_name || m.name || 'Unknown'}</div>
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      {m.birth_year && `b.${m.birth_year} `}
+                      {m.death_year && `d.${m.death_year} `}
+                      {m.location}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {children.length > 0 && (
+            <div>
+              <div className="box-label" style={{ marginBottom: 6 }}>Children</div>
+              <div className="stack">
+                {children.map((m, i) => (
+                  <Link
+                    key={m.id || i}
+                    to={`/person/${m.table_source || 'canonical_persons'}/${m.id}`}
+                    className="box"
+                    style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                  >
+                    <div>{m.full_name || m.name || 'Unknown'}</div>
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      {m.birth_year && `b.${m.birth_year} `}
+                      {m.death_year && `d.${m.death_year} `}
+                      {m.location}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </Section>
       )}
 
@@ -113,11 +256,11 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
             {enslavedPersons.slice(0, 50).map(ep => (
               <Link
                 key={ep.id}
-                to={`/person/enslaved_individuals/${ep.id}`}
+                to={`/person/${ep.table_source || 'enslaved_individuals'}/${ep.id}`}
                 className="box"
                 style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
               >
-                <div>{ep.full_name}</div>
+                <div>{ep.full_name || ep.enslaved_name || 'Unknown'}</div>
                 <div className="dim" style={{ fontSize: 12 }}>
                   {ep.birth_year && `b.${ep.birth_year} `}
                   {ep.age && `age ${ep.age} `}
@@ -241,6 +384,9 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
           {links.wikiTree && (
             <a href={links.wikiTree} target="_blank" rel="noopener noreferrer">WikiTree →</a>
           )}
+          {links.ancestry && (
+            <a href={links.ancestry} target="_blank" rel="noopener noreferrer">Ancestry →</a>
+          )}
           {p.source_url && (
             <a href={p.source_url} target="_blank" rel="noopener noreferrer">Original source →</a>
           )}
@@ -258,6 +404,8 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   );
 }
 
+// ── Sub-components ────────────────────────────────────────────────────────────
+
 function Section({ title, children }) {
   return (
     <section>
@@ -273,5 +421,25 @@ function Field({ label, value }) {
       <div className="box-label">{label}</div>
       <div>{value || <span className="dimmer">—</span>}</div>
     </div>
+  );
+}
+
+/**
+ * YearDisplay — renders a plain year string OR an estimation badge.
+ * The `formatted` prop is the return value of formatYearWithEstimation().
+ * If it's a plain string, render it directly.
+ * If it's an object { yearStr, isEstimate, tooltip }, render a dashed
+ * underline with "(est.)" label and native title tooltip.
+ */
+function YearDisplay({ formatted }) {
+  if (!formatted || formatted === '—') return <span className="dimmer">—</span>;
+  if (typeof formatted === 'string') return <span>{formatted}</span>;
+
+  const { yearStr, tooltip } = formatted;
+  return (
+    <span className="estimate-badge">
+      <span className="estimate-badge-year" title={tooltip}>{yearStr}</span>
+      <span className="estimate-badge-label" title={tooltip}>(est.)</span>
+    </span>
   );
 }
