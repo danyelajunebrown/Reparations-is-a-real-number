@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
@@ -278,6 +278,165 @@ function DocEmbed({ viewUrl, downloadUrl, filename, isPdf: isPdfHint, isImage: i
     <div className={fullscreen ? undefined : 'box'} style={fullscreen ? { color: '#aaa', padding: 40 } : undefined}>
       <div>Unrecognized format — direct download:</div>
       <a href={downloadUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#66aaff' }}>{downloadUrl}</a>
+    </div>
+  );
+}
+
+/**
+ * DocCollectionOverlay — fullscreen fixed overlay for multi-page document collections.
+ * Accepts a `collection` object: { collection_name, source_type_label, doc_type, pages[] }
+ * where each page has { id, s3_url, source_url, title, filename, ocr_text, ... }.
+ * ← / → arrow keys navigate pages. Escape closes.
+ *
+ * Presigned URL flow:
+ *   Each page's s3_url is a raw S3 URL (bucket not public).
+ *   We call GET /api/documents/person-doc/:id/access per page to get a presigned URL.
+ *   Falls back to page.s3_url / page.source_url if presign fails or page has no id.
+ */
+export function DocCollectionOverlay({ collection, onClose }) {
+  const [pageIdx, setPageIdx] = useState(0);
+  const pages = collection.pages || [];
+  const page = pages[pageIdx];
+  const total = pages.length;
+
+  // Presigned URL state — refetched whenever the current page changes
+  const [accessData, setAccessData] = useState(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+
+  useEffect(() => {
+    if (!page?.id) return;
+    setAccessLoading(true);
+    setAccessData(null);
+    const controller = new AbortController();
+    api.getPersonDocAccess(page.id, controller.signal)
+      .then(data => { if (!controller.signal.aborted) setAccessData(data); })
+      .catch(err => {
+        if (!controller.signal.aborted) {
+          console.warn('[DocCollectionOverlay] presign error:', err.message);
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setAccessLoading(false); });
+    return () => controller.abort();
+  }, [page?.id]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown')
+        setPageIdx(i => Math.min(i + 1, total - 1));
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+        setPageIdx(i => Math.max(i - 1, 0));
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, total]);
+
+  // Lock body scroll while open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  if (!page) return null;
+
+  // Prefer backend presigned URL; fall back to raw s3_url / source_url
+  const access = accessData || {};
+  const viewUrl = access.viewUrl || access.view_url || page.source_url;
+  const downloadUrl = access.downloadUrl || access.download_url || viewUrl;
+
+  const urlExt = viewUrl ? viewUrl.split('?')[0].toLowerCase().split('.').pop() : '';
+  const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'tiff', 'gif', 'webp'];
+  const isImage = IMAGE_EXTS.includes(urlExt);
+  const isPdf   = urlExt === 'pdf';
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 999, background: '#000', display: 'flex', flexDirection: 'column' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Top bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid #333', flexShrink: 0, gap: 12 }}>
+        <div style={{ color: '#ccc', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {collection.collection_name}
+          {collection.source_type_label && (
+            <span style={{ color: '#555', marginLeft: 8, fontSize: 11 }}>· {collection.source_type_label}</span>
+          )}
+        </div>
+
+        {/* Page navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => setPageIdx(i => Math.max(i - 1, 0))}
+            disabled={pageIdx === 0}
+            style={{ background: 'none', border: '1px solid #444', color: pageIdx === 0 ? '#444' : '#ccc', cursor: pageIdx === 0 ? 'default' : 'pointer', padding: '4px 10px' }}
+            aria-label="Previous page"
+          >←</button>
+          <span style={{ color: '#888', fontSize: 12, minWidth: 75, textAlign: 'center' }}>
+            Page {pageIdx + 1} of {total}
+          </span>
+          <button
+            onClick={() => setPageIdx(i => Math.min(i + 1, total - 1))}
+            disabled={pageIdx === total - 1}
+            style={{ background: 'none', border: '1px solid #444', color: pageIdx === total - 1 ? '#444' : '#ccc', cursor: pageIdx === total - 1 ? 'default' : 'pointer', padding: '4px 10px' }}
+            aria-label="Next page"
+          >→</button>
+          {viewUrl && (
+            <a
+              href={viewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#aaa', fontSize: 12, textDecoration: 'none', padding: '4px 8px', border: '1px solid #444' }}
+            >
+              ↓ download
+            </a>
+          )}
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: '1px solid #444', color: '#ccc', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 10px' }}
+            aria-label="Close document viewer"
+          >×</button>
+        </div>
+      </div>
+
+      {/* Page content */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+        {accessLoading && (
+          <div style={{ color: '#aaa', padding: 40 }}>Loading<span className="blink">_</span></div>
+        )}
+        {!accessLoading && !viewUrl && (
+          <div style={{ color: '#f66', padding: 40 }}>No document URL available for page {pageIdx + 1}.</div>
+        )}
+        {!accessLoading && viewUrl && isImage && (
+          <img
+            src={viewUrl}
+            alt={page.title || page.filename || `Page ${pageIdx + 1}`}
+            style={{ maxWidth: '100%', display: 'block' }}
+          />
+        )}
+        {!accessLoading && viewUrl && isPdf && (
+          <iframe
+            src={viewUrl}
+            title={page.title || `Page ${pageIdx + 1}`}
+            style={{ width: '100%', flex: 1, border: 'none', alignSelf: 'stretch', minHeight: '80vh' }}
+          />
+        )}
+        {!accessLoading && viewUrl && !isImage && !isPdf && (
+          <div style={{ color: '#aaa', padding: 40 }}>
+            <div>Unrecognized format — open directly:</div>
+            <a href={viewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#66aaff' }}>{viewUrl}</a>
+          </div>
+        )}
+      </div>
+
+      {/* OCR text strip */}
+      {page.ocr_text && (
+        <div style={{ maxHeight: 120, overflow: 'auto', borderTop: '1px solid #333', padding: '8px 16px', fontSize: 11, color: '#777', whiteSpace: 'pre-wrap', flexShrink: 0 }}>
+          <span style={{ color: '#555', marginRight: 8 }}>OCR:</span>
+          {page.ocr_text}
+        </div>
+      )}
     </div>
   );
 }

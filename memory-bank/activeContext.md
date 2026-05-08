@@ -1,8 +1,168 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-08 (Session 43)_
+_Last updated: 2026-05-08 (Session 44)_
 
-## Current Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
+## Current Focus: Document Collection Grouping + Presigned URL Fix — COMPLETED (Session 44)
+
+### What Was Done (Session 44)
+
+Multi-page primary source documents (e.g., Ann Maria Biscoe's 12-page DC Emancipation Petition)
+were showing as anonymous flat pages with no grouping. Fixed by adding collection grouping to
+`person_documents`, a new multi-page viewer component, and S3 presigned URL wiring.
+
+#### Migration 064 — `migrations/064-person-documents-collection-grouping.sql` (APPLIED TO NEON)
+Added columns to `person_documents`:
+- `collection_name TEXT` — human-readable collection name (e.g., "DC Emancipation Petition cww.00429")
+- `collection_key TEXT` — grouping key (e.g., "cww.00429")
+- `collection_page_number INTEGER` — page index within collection
+- `collection_page_count INTEGER` — total pages in collection
+- `source_type_label TEXT` — display label (e.g., "CivilWarDC Petition")
+
+#### Script: `scripts/backfill-document-collections.js`
+Backfills `collection_key`, `collection_name`, `collection_page_number`, `collection_page_count`,
+`source_type_label` for CivilWarDC (cww.NNNNN pattern), MSA SC 2908 (am812--N pattern), and
+Freedmen's Bank (freedmens-bank/{branch}/docai/{id}.png) rows.
+
+#### Backend — `src/api/routes/contribute.js`
+1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside it in `res.json()`. For enslaved/unconfirmed persons this was a `ReferenceError`. Moved declaration to outer scope alongside `ownerDocuments`.
+2. **Document grouping query:** Collection-expanded UNION query — fetches all pages belonging to the same `collection_key` as any doc linked to this person:
+   ```sql
+   SELECT ... FROM person_documents pd
+   WHERE pd.collection_key IN (
+     SELECT DISTINCT collection_key FROM person_documents
+     WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
+   )
+   UNION
+   SELECT ... FROM person_documents pd2
+   WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
+   ORDER BY collection_key NULLS LAST, collection_page_number ASC
+   ```
+3. **Inline grouping logic** builds `documentCollections` array:
+   `{ collection_key, collection_name, source_type_label, doc_type, page_count, pages[] }`
+4. **`documentCollections` added to `res.json()` response** alongside `ownerDocuments`.
+
+#### Backend — `src/api/routes/documents.js`
+New endpoint: `GET /api/documents/person-doc/:pdId/access`
+- Queries `person_documents` by `id`
+- Derives `s3_key` from stored value or by normalizing `s3_url`
+- Falls back to `source_url` / `s3_url` for external links (no presigning needed)
+- Returns `{ success, viewUrl, downloadUrl, filename, presigned }` — same shape as existing `/access` endpoint
+- Added `const db = require('../../database/connection')` import
+- Inserted BEFORE `/:documentId/access` to avoid route shadowing
+
+#### Frontend — `frontend/src/api/client.js`
+Added: `getPersonDocAccess: (pdId, signal) => request('/api/documents/person-doc/${pdId}/access', { signal })`
+
+#### Frontend — `frontend/src/components/DocumentViewer/DocumentViewer.jsx`
+New component: `DocCollectionOverlay` (exported)
+- Multi-page viewer with ←/→ navigation, keyboard arrows, "Page N of M" indicator
+- **Presigned URL fetching per page:** `useEffect` calls `api.getPersonDocAccess(page.id)` on each page change via `AbortController`
+- Loading state shown while presigning (prevents S3 403 "no permission" flash)
+- Falls back to `page.source_url` if presign fails or S3 not enabled
+- Escape to close, body scroll locked while open
+
+#### Frontend — `frontend/src/components/PersonModal/PersonProfile.jsx`
+- Added `const [viewCollection, setViewCollection] = useState(null)`
+- Added `const documentCollections = data.documentCollections || []`
+- Replaced flat document list with collection cards: each card shows `collection_name`, `doc_type · N pages`, source label, and "↗ view" button
+- `onClick={() => setViewCollection(col)}` opens `DocCollectionOverlay`
+- Solo docs (no `collection_key`) continue to render as flat cards
+- `{viewCollection && <DocCollectionOverlay collection={viewCollection} onClose={() => setViewCollection(null)} />}`
+
+### S3 Presigned URL Architecture (FINAL)
+```
+User clicks collection card
+  → setViewCollection(col)
+  → DocCollectionOverlay opens with page 0
+  → useEffect fires: api.getPersonDocAccess(page.id)
+  → GET /api/documents/person-doc/:pdId/access
+  → db.query person_documents for s3_key
+  → S3Service.getViewUrl(s3Key, 3600) → presigned URL (1hr TTL)
+  → setAccessData({ viewUrl, downloadUrl, presigned: true })
+  → image/PDF renders with presigned URL
+User presses → (next page)
+  → pageIdx++ → page.id changes
+  → useEffect refires for new page.id
+  → new presigned URL fetched
+```
+
+### Key Facts for Future Sessions
+- `documentCollections` field now always present in `/api/contribute/person/:id` response (empty array for persons with no grouped docs)
+- All presigned URL fetching for `person_documents` rows goes through `/api/documents/person-doc/:pdId/access`
+- S3 bucket `reparations-them` is NOT public — always need presigned URLs for S3-backed docs
+- CivilWarDC image S3 key pattern: `civilwardc/petitions/cww.NNNNN/cww.NNNNN.NNN.jpg`
+- MSA SC 2908 S3 key pattern: `msa/sc2908/am812--N.pdf`
+- Freedmen's Bank S3 key pattern: `freedmens-bank/{branch-slug}/docai/{id}.png`
+
+### Files Modified (Session 44)
+| File | Change |
+|------|--------|
+| `migrations/064-person-documents-collection-grouping.sql` | NEW — applied to Neon |
+| `scripts/backfill-document-collections.js` | NEW — backfill script |
+| `src/api/routes/contribute.js` | 500 fix + collection grouping query + documentCollections in response |
+| `src/api/routes/documents.js` | NEW endpoint `/person-doc/:pdId/access` + `db` import |
+| `frontend/src/api/client.js` | Added `getPersonDocAccess` |
+| `frontend/src/components/DocumentViewer/DocumentViewer.jsx` | NEW `DocCollectionOverlay` with presigned URL wiring |
+| `frontend/src/components/PersonModal/PersonProfile.jsx` | Collection card rendering + `viewCollection` state |
+
+### Known Remaining Work
+1. Run `scripts/backfill-document-collections.js` against production Neon DB to populate `collection_key` etc. on existing `person_documents` rows
+2. Build+deploy frontend to `gh-pages-react` branch
+3. Push backend changes to `main` → Render auto-deploy
+
+## Previous Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
+# Active Context — Reparations Platform
+
+_Last updated: 2026-05-08 (Session 44)_
+
+## Current Focus: Document Collection Grouping + Presigned URL Fix — COMPLETED (Session 44)
+
+### What Was Done (Session 44)
+
+Multi-page primary source documents (e.g., Ann Maria Biscoe's 12-page DC Emancipation Petition)
+were showing as anonymous flat pages with no grouping. Fixed by adding collection grouping to
+`person_documents`, a new multi-page viewer component, and S3 presigned URL wiring.
+
+#### Migration 064 — `migrations/064-person-documents-collection-grouping.sql` (APPLIED TO NEON)
+Added columns to `person_documents`:
+- `collection_name TEXT` — human-readable collection name (e.g., "DC Emancipation Petition cww.00429")
+- `collection_key TEXT` — grouping key (e.g., "cww.00429")
+- `collection_page_number INTEGER` — page index within collection
+- `collection_page_count INTEGER` — total pages in collection
+- `source_type_label TEXT` — display label (e.g., "CivilWarDC Petition")
+
+#### Script: `scripts/backfill-document-collections.js`
+Backfills `collection_key`, `collection_name`, `collection_page_number`, `collection_page_count`,
+`source_type_label` for CivilWarDC (cww.NNNNN pattern), MSA SC 2908 (am812--N pattern), and
+Freedmen's Bank (freedmens-bank/{branch}/docai/{id}.png) rows.
+
+#### Backend — `src/api/routes/contribute.js`
+1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside it in `res.json()`. For enslaved/unconfirmed persons this was a `ReferenceError`. Moved declaration to outer scope alongside `ownerDocuments`.
+2. **Document grouping query + inline grouping** builds `documentCollections` array in response.
+3. `documentCollections` added to `res.json()` response.
+
+#### Backend — `src/api/routes/documents.js`
+New endpoint: `GET /api/documents/person-doc/:pdId/access`
+- Queries `person_documents` by `id`, presigns via `S3Service.getViewUrl`
+- Falls back to `source_url` for external links
+- Returns `{ viewUrl, downloadUrl, filename, presigned }`
+- Added before `/:documentId/access` (route order matters)
+
+#### Frontend — `frontend/src/api/client.js`
+`getPersonDocAccess: (pdId, signal) => request('/api/documents/person-doc/${pdId}/access', { signal })`
+
+#### Frontend — `frontend/src/components/DocumentViewer/DocumentViewer.jsx`
+New `DocCollectionOverlay` component: multi-page viewer, presigned URL per page via `useEffect`+`api.getPersonDocAccess`, loading state, keyboard nav, escape-to-close.
+
+#### Frontend — `frontend/src/components/PersonModal/PersonProfile.jsx`
+Collection cards rendering `documentCollections`, `viewCollection` state, `DocCollectionOverlay` mounted.
+
+### Known Remaining Work
+1. Run `scripts/backfill-document-collections.js` against Neon to populate `collection_key` etc.
+2. Build+deploy frontend: `cd frontend && npm run deploy:gh-pages`
+3. Push backend to `main` → Render auto-deploy
+
+## Previous Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
 
 ### What Was Done (Session 43)
 

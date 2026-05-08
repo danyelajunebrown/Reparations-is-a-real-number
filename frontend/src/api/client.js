@@ -121,7 +121,9 @@ export const api = {
 
   // Documents
   getDocument: (id) => request(`/api/documents/${id}`),
-  getDocumentAccess: (id) => request(`/api/documents/${id}/access`),
+  getDocumentAccess: (id, signal) => request(`/api/documents/${id}/access`, { signal }),
+  // person_documents presigned URL (used by DocCollectionOverlay for S3 images/PDFs)
+  getPersonDocAccess: (pdId, signal) => request(`/api/documents/person-doc/${pdId}/access`, { signal }),
 
   // Corporate debts
   listFarmerPaellmann: () => request('/api/corporate-debts/farmer-paellmann'),

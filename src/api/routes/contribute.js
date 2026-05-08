@@ -1110,28 +1110,59 @@ router.get('/person/:id', async (req, res) => {
             //    records that name the enslaved person by full_name.
             if (person.enslaved_by_individual_id) {
                 try {
+                    // Expand to all pages in each matched collection:
+                    // Step 1 finds collection_keys where any page names this person.
+                    // Step 2 returns ALL pages for those collections so the viewer
+                    // can navigate the complete document, not just the name-matched pages.
                     const petitionDocs = await pool.query(`
-                        SELECT
-                            id,
-                            name_as_appears           AS filename,
-                            document_type             AS doc_type,
-                            COALESCE(
-                                collection_name || CASE WHEN page_reference IS NOT NULL THEN ' — ' || page_reference ELSE '' END,
-                                page_reference,
-                                collection_name,
-                                document_type
-                            )                         AS title,
-                            page_reference,
-                            s3_key,
-                            s3_url,
-                            source_url,
-                            document_date,
-                            document_year
-                        FROM person_documents
-                        WHERE canonical_person_id = $1
-                          AND name_as_appears ILIKE $2
-                        ORDER BY COALESCE(image_number, 999) ASC
-                        LIMIT 10
+                        SELECT pd.id,
+                            pd.name_as_appears           AS filename,
+                            pd.document_type             AS doc_type,
+                            pd.collection_name,
+                            pd.collection_key,
+                            pd.collection_page_number,
+                            pd.collection_page_count,
+                            pd.source_type_label,
+                            COALESCE(pd.title, pd.collection_name,
+                                pd.document_type)        AS title,
+                            pd.page_reference,
+                            pd.s3_key,
+                            pd.s3_url,
+                            pd.source_url,
+                            pd.document_date,
+                            pd.document_year
+                        FROM person_documents pd
+                        WHERE pd.collection_key IN (
+                            SELECT DISTINCT collection_key
+                            FROM person_documents
+                            WHERE canonical_person_id = $1
+                              AND name_as_appears ILIKE $2
+                              AND collection_key IS NOT NULL
+                        )
+                        UNION
+                        -- Ungrouped single-page docs that name this person directly
+                        SELECT pd2.id,
+                            pd2.name_as_appears           AS filename,
+                            pd2.document_type             AS doc_type,
+                            pd2.collection_name,
+                            pd2.collection_key,
+                            pd2.collection_page_number,
+                            pd2.collection_page_count,
+                            pd2.source_type_label,
+                            COALESCE(pd2.title, pd2.collection_name,
+                                pd2.document_type)        AS title,
+                            pd2.page_reference,
+                            pd2.s3_key,
+                            pd2.s3_url,
+                            pd2.source_url,
+                            pd2.document_date,
+                            pd2.document_year
+                        FROM person_documents pd2
+                        WHERE pd2.canonical_person_id = $1
+                          AND pd2.name_as_appears ILIKE $2
+                          AND pd2.collection_key IS NULL
+                        ORDER BY collection_key NULLS LAST, collection_page_number ASC
+                        LIMIT 50
                     `, [person.enslaved_by_individual_id, `%${person.full_name}%`]);
                     documents = petitionDocs.rows.map(d => ({ ...d, document_id: String(d.id) }));
                 } catch (e) {
@@ -1238,6 +1269,7 @@ router.get('/person/:id', async (req, res) => {
 
         // For slaveholders, get their documents from documents table
         let ownerDocuments = [];
+        let documentCollections = [];
         let enslavedPersons = [];
         let descendants = [];
         if (person.person_type === 'slaveholder' || person.person_type === 'owner' || tableSource === 'canonical_persons' || tableSource === 'documents') {
@@ -1258,26 +1290,51 @@ router.get('/person/:id', async (req, res) => {
 
             // Also pull primary-source images from person_documents (linked by canonical_person_id)
             // These are DC compensated emancipation petitions, wills, etc. uploaded to S3.
+            // Expands to full collections — e.g. all 12 pages of a DC petition, not just the pages
+            // directly linked to this person's canonical_person_id.
             try {
                 const personDocsResult = await pool.query(`
-                    SELECT
-                        id,
-                        name_as_appears AS filename,
-                        document_type   AS doc_type,
-                        COALESCE(collection_name || ' — ' || page_reference, page_reference, collection_name) AS title,
-                        page_reference,
-                        s3_key,
-                        s3_url,
-                        source_url,
-                        document_date,
-                        document_year,
-                        ocr_text
-                    FROM person_documents
-                    WHERE canonical_person_id = $1
-                    ORDER BY COALESCE(image_number, 999) ASC
+                    SELECT pd.id, pd.name_as_appears AS filename, pd.document_type AS doc_type,
+                        pd.collection_name, pd.collection_key, pd.collection_page_number,
+                        pd.collection_page_count, pd.source_type_label,
+                        COALESCE(pd.title, pd.collection_name, pd.document_type) AS title,
+                        pd.page_reference, pd.s3_key, pd.s3_url, pd.source_url,
+                        pd.document_date, pd.document_year, pd.ocr_text
+                    FROM person_documents pd
+                    WHERE pd.collection_key IN (
+                        SELECT DISTINCT collection_key FROM person_documents
+                        WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
+                    )
+                    UNION
+                    SELECT pd2.id, pd2.name_as_appears AS filename, pd2.document_type AS doc_type,
+                        pd2.collection_name, pd2.collection_key, pd2.collection_page_number,
+                        pd2.collection_page_count, pd2.source_type_label,
+                        COALESCE(pd2.title, pd2.collection_name, pd2.document_type) AS title,
+                        pd2.page_reference, pd2.s3_key, pd2.s3_url, pd2.source_url,
+                        pd2.document_date, pd2.document_year, pd2.ocr_text
+                    FROM person_documents pd2
+                    WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
+                    ORDER BY collection_key NULLS LAST, collection_page_number ASC
                 `, [parseInt(id, 10)]);
                 if (personDocsResult.rows.length > 0) {
-                    // Prepend petition images so they appear first in "Primary source documents"
+                    // Group into collection cards for the UI
+                    const grouped = {};
+                    for (const row of personDocsResult.rows) {
+                        const key = row.collection_key || `__solo__${row.id}`;
+                        if (!grouped[key]) {
+                            grouped[key] = {
+                                collection_key: row.collection_key,
+                                collection_name: row.collection_name || row.title || row.filename,
+                                source_type_label: row.source_type_label,
+                                doc_type: row.doc_type,
+                                page_count: row.collection_page_count || 1,
+                                pages: [],
+                            };
+                        }
+                        grouped[key].pages.push(row);
+                    }
+                    documentCollections = Object.values(grouped);
+                    // Prepend flat rows so they appear first in legacy "Primary source documents"
                     ownerDocuments = [...personDocsResult.rows, ...ownerDocuments];
                 }
             } catch (personDocsErr) {
@@ -1595,6 +1652,7 @@ router.get('/person/:id', async (req, res) => {
             dataAvailability,
             documents,
             ownerDocuments,
+            documentCollections,
             enslavedPersons: normalizedEnslavedPersons,
             descendants: normalizedDescendants,
             rawData: {

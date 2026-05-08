@@ -13,6 +13,7 @@ const router = express.Router();
 const DocumentService = require('../../services/DocumentService');
 const EnhancedDocumentProcessor = require('../../services/document/EnhancedDocumentProcessor');
 const S3Service = require('../../services/storage/S3Service');
+const db = require('../../database/connection');
 const ErrorLogger = require('../../services/ErrorLogger');
 const logger = require('../../utils/logger');
 const config = require('../../../config');
@@ -230,6 +231,81 @@ router.get('/upload-status/:jobId',
         success: false,
         error: 'Job not found or failed',
         details: error.message
+      });
+    }
+  })
+);
+
+/**
+ * GET /api/documents/person-doc/:pdId/access
+ * Get a presigned S3 URL for a person_documents row (used by DocCollectionOverlay).
+ * Queries person_documents by id, generates presigned URL from s3_key or s3_url.
+ */
+router.get('/person-doc/:pdId/access',
+  moderateLimiter,
+  asyncHandler(async (req, res) => {
+    const pdId = parseInt(req.params.pdId, 10);
+    if (!pdId || isNaN(pdId)) {
+      return res.status(400).json({ success: false, error: 'Invalid person document id' });
+    }
+
+    const expiresIn = parseInt(req.query.expiresIn) || 3600; // 1 hour default
+
+    const result = await db.query(
+      `SELECT id, s3_key, s3_url, source_url, name_as_appears AS filename, document_type
+       FROM person_documents WHERE id = $1`,
+      [pdId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, error: 'Person document not found' });
+    }
+
+    const pd = result.rows[0];
+
+    // Determine the s3_key — either stored directly or derivable from s3_url
+    let s3Key = pd.s3_key;
+    if (!s3Key && pd.s3_url) {
+      // Normalize URL to key (strip bucket prefix / hostname)
+      s3Key = S3Service.constructor.normalizeS3Key
+        ? S3Service.constructor.normalizeS3Key(pd.s3_url)
+        : pd.s3_url.replace(/^https?:\/\/[^/]+\//, '').split('?')[0];
+    }
+
+    if (!s3Key) {
+      // Fall back to source_url (external link — no presigning needed)
+      const fallback = pd.source_url || pd.s3_url;
+      return res.json({
+        success: true,
+        viewUrl: fallback,
+        downloadUrl: fallback,
+        filename: pd.filename,
+        presigned: false,
+      });
+    }
+
+    if (!S3Service.isEnabled()) {
+      return res.json({
+        success: false,
+        error: 'S3 is not configured on this server',
+        debugInfo: { s3Key, s3Enabled: false },
+      });
+    }
+
+    try {
+      const normalizedKey = S3Service.constructor.normalizeS3Key
+        ? S3Service.constructor.normalizeS3Key(s3Key)
+        : s3Key;
+      const viewUrl     = await S3Service.getViewUrl(normalizedKey, expiresIn, pd.filename);
+      const downloadUrl = await S3Service.getDownloadUrl(normalizedKey, expiresIn, pd.filename);
+      return res.json({ success: true, viewUrl, downloadUrl, filename: pd.filename, presigned: true });
+    } catch (err) {
+      console.error('[person-doc/access] presign error:', err.message);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to generate presigned URL',
+        details: err.message,
+        debugInfo: { s3Key },
       });
     }
   })

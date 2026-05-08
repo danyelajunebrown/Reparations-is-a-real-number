@@ -1,8 +1,72 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Person modal metadata enrichment complete. Backend enriched (W1–W8), frontend YearDisplay component with (est.) badges live, 142 canonical_persons backfilled from climb data, Ann Maria Biscoe fully repaired in DB.
-**Last Updated:** May 8, 2026 (Session 43 — COMPLETE)
+**Current Phase:** Document collection grouping complete. Multi-page primary source viewer live with presigned S3 URLs. 500 errors on person search fixed.
+**Last Updated:** May 8, 2026 (Session 44 — COMPLETE)
+
+---
+
+## Session 44 — Document Collection Grouping + S3 Presigned URL Fix (May 8, 2026) ✅ COMPLETE
+
+### What Was Asked
+1. Ann Maria Biscoe's profile shows anonymous pages with no grouping — pages from the same physical source document should be grouped into a collection viewer.
+2. 500 errors on all person searches (broken depositors page + all person profiles).
+3. S3 "no permission" error on document images — bucket not public.
+4. Apply collection grouping across all primary source types.
+
+### Root Causes Found
+1. **500 errors:** `let documentCollections = []` was scoped inside `if (person.person_type === 'slaveholder')` block but referenced in `res.json()` outside it. For enslaved/unconfirmed persons → `ReferenceError` → 500. Fixed by moving to outer scope.
+2. **S3 no-permission:** `DocCollectionOverlay` was using `page.s3_url` directly — raw S3 URL without presigning. Bucket requires presigned URLs.
+
+### Delivered
+
+**Migration 064 applied to Neon** — 5 new columns on `person_documents`:
+- `collection_name`, `collection_key`, `collection_page_number`, `collection_page_count`, `source_type_label`
+
+**Backend (`src/api/routes/contribute.js`):**
+- Moved `documentCollections = []` to outer scope (500 fix)
+- Collection-expanded UNION query fetches all pages in the same collection
+- Inline grouping builds `documentCollections` array: `{ collection_key, collection_name, source_type_label, doc_type, page_count, pages[] }`
+- `documentCollections` added to `res.json()` response
+
+**New backend endpoint (`src/api/routes/documents.js`):**
+- `GET /api/documents/person-doc/:pdId/access`
+- Queries `person_documents.s3_key` by id, generates presigned URL via `S3Service.getViewUrl`
+- Falls back to `source_url` for external links
+- Returns `{ viewUrl, downloadUrl, filename, presigned }`
+
+**Frontend (`frontend/src/api/client.js`):**
+- `getPersonDocAccess: (pdId, signal) => request('/api/documents/person-doc/${pdId}/access', { signal })`
+
+**Frontend (`frontend/src/components/DocumentViewer/DocumentViewer.jsx`):**
+- New `DocCollectionOverlay` export: fullscreen multi-page viewer
+- Per-page presigned URL via `useEffect` + `AbortController` + `api.getPersonDocAccess`
+- Loading state while presigning, keyboard ←/→ navigation, Escape to close
+
+**Frontend (`frontend/src/components/PersonModal/PersonProfile.jsx`):**
+- Collection cards replacing flat document list
+- `viewCollection` state + `DocCollectionOverlay` mounted at bottom
+
+**New script (`scripts/backfill-document-collections.js`):**
+- Backfills `collection_key`, `collection_name`, `collection_page_number`, etc. for all existing `person_documents` rows by pattern-matching S3 keys
+
+### Files Changed (Session 44)
+| File | Change |
+|------|--------|
+| `migrations/064-person-documents-collection-grouping.sql` | NEW |
+| `scripts/backfill-document-collections.js` | NEW |
+| `src/api/routes/contribute.js` | 500 fix + collection grouping |
+| `src/api/routes/documents.js` | New `/person-doc/:pdId/access` endpoint |
+| `frontend/src/api/client.js` | `getPersonDocAccess` added |
+| `frontend/src/components/DocumentViewer/DocumentViewer.jsx` | `DocCollectionOverlay` with presigned URLs |
+| `frontend/src/components/PersonModal/PersonProfile.jsx` | Collection card rendering |
+
+### Remaining Before Deploy
+- Run `scripts/backfill-document-collections.js` against Neon (populates collection_key for existing rows)
+- `cd frontend && npm run deploy:gh-pages`
+- Push `main` → Render auto-deploy
+
+---
 
 ---
 

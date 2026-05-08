@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
-import { DocOverlay } from '../DocumentViewer/DocumentViewer.jsx';
+import { DocOverlay, DocCollectionOverlay } from '../DocumentViewer/DocumentViewer.jsx';
 import {
   formatClass,
   CLASS_LABELS,
@@ -24,6 +24,7 @@ import {
  */
 export function PersonProfile({ personId, tableSource, adminOverride = false }) {
   const [viewDocId, setViewDocId] = useState(null);
+  const [viewCollection, setViewCollection] = useState(null);
   const { data, loading, error } = useApi(
     signal => api.getPerson(personId, tableSource, signal),
     [personId, tableSource]
@@ -55,6 +56,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   const enslavedPersons = data.enslavedPersons || [];
   const documents = data.documents || [];
   const ownerDocuments = data.ownerDocuments || [];
+  const documentCollections = data.documentCollections || [];
   const descendants = data.descendants || [];
   const links = data.links || {};
 
@@ -293,15 +295,51 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         </Section>
       )}
 
-      {(documents.length > 0 || ownerDocuments.length > 0) && (
+      {/* ── Primary source documents ─────────────────────────────────────
+           If backend returned documentCollections (grouped by source), render
+           collection cards with multi-page viewer support. Otherwise fall back
+           to the legacy flat list of documents + ownerDocuments.
+      ──────────────────────────────────────────────────────────────────── */}
+      {(documentCollections.length > 0 || documents.length > 0) && (
         <Section title="Primary source documents">
           <div className="stack">
-            {[...documents, ...ownerDocuments].map((doc, idx) => {
+            {/* Collection cards — each card opens the full multi-page viewer */}
+            {documentCollections.map((col, idx) => {
+              const hasPages = col.pages && col.pages.some(p => p.s3_url || p.source_url);
+              if (!hasPages) {
+                // No viewable URL in any page — show metadata-only card
+                return (
+                  <div key={col.collection_key || idx} className="box" style={{ opacity: 0.6 }}>
+                    <div>{col.collection_name || 'Primary source document'}</div>
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      {col.doc_type}{col.page_count > 1 ? ` · ${col.page_count} pages` : ''}
+                      {col.source_type_label && ` · ${col.source_type_label}`}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  key={col.collection_key || idx}
+                  type="button"
+                  onClick={() => setViewCollection(col)}
+                  className="box"
+                  style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+                >
+                  <div>{col.collection_name || 'Primary source document'}</div>
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    {col.doc_type}
+                    {col.page_count > 1 ? ` · ${col.page_count} pages` : ' · 1 page'}
+                    {col.source_type_label && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>{col.source_type_label}</span>}
+                    <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
+                  </div>
+                </button>
+              );
+            })}
+
+            {/* Enslaved individual's own directly-linked documents (flat list) */}
+            {documents.map((doc, idx) => {
               const docId = doc.id || doc.document_id;
-              // A document is viewable in the inline viewer only if it has
-              // a real document DB id AND either an s3_key or s3_url.
-              // Everything else (source_url only, external PDFs) opens
-              // directly in a new tab — no viewer wrapper needed.
               const hasS3 = !!(doc.s3_key || doc.s3_url);
               const canUseViewer = !!(docId && hasS3);
               const externalUrl = doc.source_url;
@@ -309,22 +347,24 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
               if (canUseViewer) {
                 return (
                   <button
-                    key={`${docId}-${idx}`}
+                    key={`doc-${docId}-${idx}`}
                     type="button"
                     onClick={() => setViewDocId(docId)}
                     className="box"
-                    style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                    style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
                   >
                     <div>{doc.title || doc.filename || 'Untitled document'}</div>
                     <div className="dim" style={{ fontSize: 12 }}>
                       {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                      <span style={{ marginLeft: 8, color: 'var(--dim)' }}>↗ view fullscreen</span>
+                      <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
                     </div>
                   </button>
                 );
               }
 
               if (externalUrl) {
+                let hostname = externalUrl;
+                try { hostname = new URL(externalUrl).hostname; } catch (_) {}
                 return (
                   <a
                     key={`ext-${idx}`}
@@ -337,21 +377,16 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                     <div>{doc.title || doc.filename || 'Primary source document'}</div>
                     <div className="dim" style={{ fontSize: 12 }}>
                       {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                      {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>
-                        {new URL(externalUrl).hostname} ↗
-                      </span>
+                      {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>{hostname} ↗</span>
                     </div>
                   </a>
                 );
               }
 
-              // No usable URL at all — show as metadata only
               return (
                 <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
                   <div>{doc.title || doc.filename || 'Document reference'}</div>
-                  <div className="dim" style={{ fontSize: 12 }}>
-                    {doc.doc_type} · no file available
-                  </div>
+                  <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
                 </div>
               );
             })}
@@ -361,6 +396,9 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
 
       {viewDocId && (
         <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />
+      )}
+      {viewCollection && (
+        <DocCollectionOverlay collection={viewCollection} onClose={() => setViewCollection(null)} />
       )}
 
       {descendants.length > 0 && (
