@@ -173,6 +173,8 @@ export function DocOverlay({ docId, onClose }) {
             isPdf={isPdf}
             isImage={isImage}
             fullscreen
+            accessError={accessState.error}
+            accessData={accessState.data}
           />
         )}
       </div>
@@ -198,11 +200,30 @@ export function DocOverlay({ docId, onClose }) {
 }
 
 /** Shared embed logic for PDF / image / fallback. */
-function DocEmbed({ viewUrl, downloadUrl, filename, isPdf, isImage, fullscreen = false }) {
+function DocEmbed({ viewUrl, downloadUrl, filename, isPdf, isImage, fullscreen = false, accessError, accessData }) {
   if (!viewUrl) {
+    // Build a useful diagnostic message from whatever the API returned
+    let errMsg = 'No access URL available for this document.';
+    if (accessError) {
+      errMsg = `Access error: ${accessError.message || String(accessError)}`;
+    } else if (accessData) {
+      // API returned 200 but no viewUrl — show whatever came back
+      const detail = accessData.error || accessData.message || JSON.stringify(accessData).slice(0, 200);
+      errMsg = `Document access failed: ${detail}`;
+    }
     return (
-      <div className={fullscreen ? undefined : 'state err'} style={fullscreen ? { color: '#f66', padding: 40 } : undefined}>
-        No access URL available for this document.
+      <div
+        className={fullscreen ? undefined : 'state err'}
+        style={fullscreen
+          ? { color: '#f66', padding: 40, fontFamily: 'monospace', fontSize: 13, whiteSpace: 'pre-wrap', maxWidth: 600 }
+          : undefined}
+      >
+        {errMsg}
+        {accessData?.debugInfo && (
+          <pre style={{ marginTop: 12, fontSize: 11, color: '#a44', whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(accessData.debugInfo, null, 2)}
+          </pre>
+        )}
       </div>
     );
   }

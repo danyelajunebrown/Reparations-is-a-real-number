@@ -5,7 +5,7 @@
  * Provides presigned URL generation for secure document access.
  */
 
-const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, GetBucketLocationCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const path = require('path');
 const config = require('../../../config');
@@ -19,16 +19,57 @@ class S3Service {
       return;
     }
 
-    this.client = new S3Client({
-      region: config.storage.s3.region,
+    this.bucket = config.storage.s3.bucket;
+    this.region = config.storage.s3.region;
+
+    this.client = this._makeClient(this.region);
+
+    // Auto-detect and self-correct region mismatch at startup.
+    // This guards against Render env vars having the wrong S3_REGION
+    // (e.g. us-east-1 when bucket is in us-east-2), which causes presigned
+    // URLs to be signed for the wrong endpoint and return HTTP 301.
+    this._regionVerifiedPromise = this._verifyAndCorrectRegion();
+  }
+
+  _makeClient(region) {
+    return new S3Client({
+      region,
       credentials: {
         accessKeyId: config.storage.s3.accessKeyId,
         secretAccessKey: config.storage.s3.secretAccessKey
       },
       followRegionRedirects: true
     });
-    this.bucket = config.storage.s3.bucket;
-    this.region = config.storage.s3.region;
+  }
+
+  /**
+   * Verify the configured region matches the bucket's actual region.
+   * If not, recreate the client with the correct region.
+   * Called once at startup; awaited before any presigned URL generation.
+   */
+  async _verifyAndCorrectRegion() {
+    if (!this.client) return;
+    try {
+      // GetBucketLocation works from any region — uses followRegionRedirects
+      const cmd = new GetBucketLocationCommand({ Bucket: this.bucket });
+      const result = await this.client.send(cmd);
+      // AWS returns null/empty for us-east-1 (it's the default / legacy region)
+      const actualRegion = result.LocationConstraint || 'us-east-1';
+      if (actualRegion !== this.region) {
+        logger.warn(
+          `S3 region mismatch detected! Configured: "${this.region}", bucket actual: "${actualRegion}". ` +
+          `Recreating S3 client with correct region. ` +
+          `Fix: set S3_REGION=${actualRegion} in your Render environment variables.`
+        );
+        this.region = actualRegion;
+        this.client = this._makeClient(actualRegion);
+      } else {
+        logger.info(`S3 region verified: ${this.region} ✓`);
+      }
+    } catch (e) {
+      // Non-fatal — log and continue. The configured region may still work.
+      logger.warn(`S3 bucket region verification failed (non-fatal): ${e.message}`);
+    }
   }
 
   /**
@@ -49,6 +90,9 @@ class S3Service {
     if (!this.isEnabled()) {
       throw new Error('S3 is not enabled');
     }
+
+    // Ensure region is correct before signing (no-op if already verified)
+    await this._regionVerifiedPromise;
 
     const command = new GetObjectCommand({
       Bucket: this.bucket,
@@ -83,6 +127,9 @@ class S3Service {
     if (!this.isEnabled()) {
       throw new Error('S3 is not enabled');
     }
+
+    // Ensure region is correct before signing (no-op if already verified)
+    await this._regionVerifiedPromise;
 
     const downloadFilename = filename || path.basename(key);
 
