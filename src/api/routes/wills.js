@@ -98,19 +98,23 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       const pdResult = await db.query(
         `INSERT INTO person_documents
            (s3_key, s3_url, document_type, filename, file_size, mime_type,
-            title, source_type_label, collection_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            title, source_type_label, collection_name,
+            name_as_appears, document_year, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id`,
         [
-          s3Key,
-          s3Url,
-          'will',
-          file.originalname,
-          file.size,
-          'application/pdf',
-          titleText,
-          'probate_record',
-          testatorName ? `Will of ${testatorName}` : 'Uploaded Will',
+          s3Key,                                               // $1  s3_key
+          s3Url,                                               // $2  s3_url
+          'will',                                              // $3  document_type
+          file.originalname,                                   // $4  filename
+          file.size,                                           // $5  file_size
+          'application/pdf',                                   // $6  mime_type
+          titleText,                                           // $7  title
+          'probate_record',                                    // $8  source_type_label
+          testatorName ? `Will of ${testatorName}` : 'Uploaded Will', // $9  collection_name
+          testatorName || file.originalname,                   // $10 name_as_appears (NOT NULL)
+          testatorYear ? parseInt(testatorYear, 10) : null,    // $11 document_year
+          'public-ingestion',                                  // $12 created_by
         ]
       );
       personDocId = pdResult.rows[0].id;
