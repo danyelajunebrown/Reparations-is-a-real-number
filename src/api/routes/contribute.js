@@ -924,10 +924,15 @@ router.get('/person/:id', async (req, res) => {
                 // Exposes compensation_paid and petition_date on the enslaved person's modal
                 try {
                     const petitionResult = await pool.query(`
-                        SELECT docket_number, petition_date, total_compensation_paid,
-                               petition_reference, source_archive, enslaved_names
+                        SELECT docket_number, filed_date AS petition_date,
+                               total_approved_usd AS total_compensation_paid,
+                               source_citation AS petition_reference,
+                               source_archive,
+                               enslaved_persons_claimed AS enslaved_names,
+                               source_document_url, claimant_name,
+                               petition_type, filed_year
                         FROM historical_reparations_petitions
-                        WHERE petitioner_canonical_id = $1
+                        WHERE claimant_canonical_id = $1::integer
                         LIMIT 1
                     `, [person.enslaved_by_individual_id]);
                     if (petitionResult.rows.length > 0) {
@@ -943,13 +948,14 @@ router.get('/person/:id', async (req, res) => {
                 // (e.g. enslaved person inherited from Hopewell will → Ann Maria Biscoe)
                 try {
                     const inheritanceResult = await pool.query(`
-                        SELECT prv.relationship_type, prv.evidence_text,
-                               prv.document_date,
+                        SELECT prv.relationship_type,
+                               prv.conflict_notes AS evidence_text,
+                               NULL::date AS document_date,
                                cp.canonical_name AS from_person_name,
                                cp.id AS from_person_id
                         FROM person_relationships_verified prv
-                        JOIN canonical_persons cp ON cp.id = prv.person1_id
-                        WHERE prv.person2_id = $1
+                        JOIN canonical_persons cp ON cp.id = prv.person_id
+                        WHERE prv.related_person_id = $1::integer
                           AND prv.relationship_type IN ('inherited', 'bequeathed', 'transferred')
                         LIMIT 3
                     `, [person.enslaved_by_individual_id]);
@@ -1531,19 +1537,22 @@ router.get('/person/:id', async (req, res) => {
                     : null);
             if (canonicalIdForLinks) {
                 const extIdResult = await pool.query(`
-                    SELECT external_id, id_type, system_name
+                    SELECT external_id, id_system, external_url
                     FROM person_external_ids
                     WHERE canonical_person_id = $1
-                      AND id_type IN ('familysearch', 'wikitree', 'ancestry')
+                      AND id_system IN ('familysearch', 'wikitree', 'ancestry')
                     LIMIT 5
                 `, [canonicalIdForLinks]);
                 for (const row of extIdResult.rows) {
-                    if (row.id_type === 'familysearch' && !externalLinks.familySearch) {
-                        externalLinks.familySearch = `https://www.familysearch.org/tree/person/details/${row.external_id}`;
-                    } else if (row.id_type === 'wikitree' && !externalLinks.wikiTree) {
-                        externalLinks.wikiTree = `https://www.wikitree.com/wiki/${row.external_id}`;
-                    } else if (row.id_type === 'ancestry' && !externalLinks.ancestry) {
-                        externalLinks.ancestry = `https://www.ancestry.com/family-tree/person/${row.external_id}`;
+                    if (row.id_system === 'familysearch' && !externalLinks.familySearch) {
+                        externalLinks.familySearch = row.external_url
+                            || `https://www.familysearch.org/tree/person/details/${row.external_id}`;
+                    } else if (row.id_system === 'wikitree' && !externalLinks.wikiTree) {
+                        externalLinks.wikiTree = row.external_url
+                            || `https://www.wikitree.com/wiki/${row.external_id}`;
+                    } else if (row.id_system === 'ancestry' && !externalLinks.ancestry) {
+                        externalLinks.ancestry = row.external_url
+                            || `https://www.ancestry.com/family-tree/person/${row.external_id}`;
                     }
                 }
             }
