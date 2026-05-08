@@ -147,22 +147,63 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
       {(documents.length > 0 || ownerDocuments.length > 0) && (
         <Section title="Primary source documents">
           <div className="stack">
-            {[...documents, ...ownerDocuments].map(doc => {
+            {[...documents, ...ownerDocuments].map((doc, idx) => {
               const docId = doc.id || doc.document_id;
+              // A document is viewable in the inline viewer only if it has
+              // a real document DB id AND either an s3_key or s3_url.
+              // Everything else (source_url only, external PDFs) opens
+              // directly in a new tab — no viewer wrapper needed.
+              const hasS3 = !!(doc.s3_key || doc.s3_url);
+              const canUseViewer = !!(docId && hasS3);
+              const externalUrl = doc.source_url;
+
+              if (canUseViewer) {
+                return (
+                  <button
+                    key={`${docId}-${idx}`}
+                    type="button"
+                    onClick={() => setViewDocId(docId)}
+                    className="box"
+                    style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                  >
+                    <div>{doc.title || doc.filename || 'Untitled document'}</div>
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+                      <span style={{ marginLeft: 8, color: 'var(--dim)' }}>↗ view fullscreen</span>
+                    </div>
+                  </button>
+                );
+              }
+
+              if (externalUrl) {
+                return (
+                  <a
+                    key={`ext-${idx}`}
+                    href={externalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="box"
+                    style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                  >
+                    <div>{doc.title || doc.filename || 'Primary source document'}</div>
+                    <div className="dim" style={{ fontSize: 12 }}>
+                      {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+                      {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>
+                        {new URL(externalUrl).hostname} ↗
+                      </span>
+                    </div>
+                  </a>
+                );
+              }
+
+              // No usable URL at all — show as metadata only
               return (
-                <button
-                  key={docId}
-                  type="button"
-                  onClick={() => setViewDocId(docId)}
-                  className="box"
-                  style={{ textDecoration: 'none', color: 'inherit', display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer' }}
-                >
-                  <div>{doc.title || doc.filename || 'Untitled document'}</div>
+                <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
+                  <div>{doc.title || doc.filename || 'Document reference'}</div>
                   <div className="dim" style={{ fontSize: 12 }}>
-                    {doc.doc_type} {doc.source_ark && `· ARK: ${doc.source_ark}`}
-                    <span style={{ marginLeft: 8, color: 'var(--dim)' }}>↗ view fullscreen</span>
+                    {doc.doc_type} · no file available
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

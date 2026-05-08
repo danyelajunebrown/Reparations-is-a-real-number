@@ -1033,17 +1033,135 @@ router.get('/person/:id', async (req, res) => {
             reparations.yearsEnslaved = yearsEnslaved;
         }
 
-        // Get related documents
+        // Get related documents for enslaved individuals.
+        // Priority order:
+        //   1. person_documents linked via enslaver's canonical_person_id (DC petitions, plantation records)
+        //   2. Source URL extracted from the notes field (MSA, NARA, etc.)
+        //   3. confirming_documents (legacy — mostly broken beyondkin.org header images, skipped if useless)
         let documents = [];
         if (tableSource === 'enslaved_individuals') {
-            const docsResult = await pool.query(`
-                SELECT cd.id as document_id, cd.document_url, cd.document_type as doc_type
-                FROM confirming_documents cd
-                JOIN unconfirmed_persons up ON cd.unconfirmed_person_id = up.lead_id
-                WHERE up.full_name ILIKE $1
-                LIMIT 5
-            `, [`%${person.full_name}%`]);
-            documents = docsResult.rows;
+
+            // 1. Query person_documents linked to the enslaver — these are petition/plantation
+            //    records that name the enslaved person by full_name.
+            if (person.enslaved_by_individual_id) {
+                try {
+                    const petitionDocs = await pool.query(`
+                        SELECT
+                            id,
+                            name_as_appears           AS filename,
+                            document_type             AS doc_type,
+                            COALESCE(
+                                collection_name || CASE WHEN page_reference IS NOT NULL THEN ' — ' || page_reference ELSE '' END,
+                                page_reference,
+                                collection_name,
+                                document_type
+                            )                         AS title,
+                            page_reference,
+                            s3_key,
+                            s3_url,
+                            source_url,
+                            document_date,
+                            document_year
+                        FROM person_documents
+                        WHERE canonical_person_id = $1
+                          AND name_as_appears ILIKE $2
+                        ORDER BY COALESCE(image_number, 999) ASC
+                        LIMIT 10
+                    `, [person.enslaved_by_individual_id, `%${person.full_name}%`]);
+                    documents = petitionDocs.rows.map(d => ({ ...d, document_id: String(d.id) }));
+                } catch (e) {
+                    console.log('person_documents enslaver query error (non-fatal):', e.message);
+                }
+            }
+
+            // If still no docs, also check ALL petition docs for this enslaver
+            // (some petitions list multiple enslaved people by name on one page —
+            //  name match above might miss abbreviations like "O. Brown")
+            if (documents.length === 0 && person.enslaved_by_individual_id) {
+                try {
+                    const allPetitionDocs = await pool.query(`
+                        SELECT
+                            id,
+                            name_as_appears           AS filename,
+                            document_type             AS doc_type,
+                            COALESCE(
+                                collection_name || CASE WHEN page_reference IS NOT NULL THEN ' — ' || page_reference ELSE '' END,
+                                page_reference,
+                                collection_name,
+                                document_type
+                            )                         AS title,
+                            page_reference,
+                            s3_key,
+                            s3_url,
+                            source_url,
+                            document_date,
+                            document_year
+                        FROM person_documents
+                        WHERE canonical_person_id = $1
+                        ORDER BY COALESCE(image_number, 999) ASC
+                        LIMIT 5
+                    `, [person.enslaved_by_individual_id]);
+                    documents = allPetitionDocs.rows.map(d => ({ ...d, document_id: String(d.id) }));
+                } catch (e) {
+                    console.log('person_documents enslaver fallback query error (non-fatal):', e.message);
+                }
+            }
+
+            // 2. Extract source URL from the notes field.
+            //    Format: "...Source: https://msa.maryland.gov/...pdf..."
+            //    This is the primary proof link for enslaved individuals like Otho Brown
+            //    whose source document is stored at MSA/NARA but not yet in S3.
+            const noteSourceMatch = person.notes
+                ? person.notes.match(/Source:\s*(https?:\/\/\S+)/i)
+                : null;
+            if (noteSourceMatch) {
+                // Parse a human-readable title from the notes (e.g. "SC 2908, Vol. 812, p. 97")
+                const archiveRef = person.notes.match(/SC\s*\d+[^.]*p\.\s*\d+/i);
+                const noteDoc = {
+                    document_id: null,
+                    doc_type: 'primary_source',
+                    title: archiveRef
+                        ? archiveRef[0].trim()
+                        : 'Primary Source Document',
+                    filename: noteSourceMatch[1].split('/').pop() || 'document.pdf',
+                    source_url: noteSourceMatch[1],
+                    s3_key: null,
+                    s3_url: null,
+                };
+                // Only add if not already covered by a person_documents row with same URL
+                const alreadyCovered = documents.some(d => d.source_url === noteSourceMatch[1]);
+                if (!alreadyCovered) {
+                    documents = [noteDoc, ...documents];
+                }
+            }
+
+            // 3. confirming_documents (legacy fallback — skip if document_url looks like
+            //    a placeholder/broken image rather than an actual document)
+            if (documents.length === 0) {
+                const docsResult = await pool.query(`
+                    SELECT
+                        cd.id         AS legacy_id,
+                        cd.document_url,
+                        cd.document_type AS doc_type
+                    FROM confirming_documents cd
+                    JOIN unconfirmed_persons up ON cd.unconfirmed_person_id = up.lead_id
+                    WHERE up.full_name ILIKE $1
+                      AND cd.document_url NOT ILIKE '%BK-Header%'
+                      AND cd.document_url NOT ILIKE '%.jpg'
+                    LIMIT 5
+                `, [`%${person.full_name}%`]);
+                if (docsResult.rows.length > 0) {
+                    documents = docsResult.rows.map(d => ({
+                        document_id: null,
+                        doc_type: d.doc_type,
+                        title: d.doc_type,
+                        filename: d.document_url.split('/').pop() || 'document',
+                        source_url: d.document_url,
+                        s3_key: null,
+                        s3_url: null,
+                    }));
+                }
+            }
         }
 
         // For slaveholders, get their documents from documents table
