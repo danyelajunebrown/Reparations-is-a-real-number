@@ -39,7 +39,13 @@ class S3Service {
         accessKeyId: config.storage.s3.accessKeyId,
         secretAccessKey: config.storage.s3.secretAccessKey
       },
-      followRegionRedirects: true
+      followRegionRedirects: true,
+      // AWS SDK v3 (≥3.750) automatically appends x-amz-checksum-mode=ENABLED
+      // to GetObject presigned URLs, which causes HTTP 403 for objects that
+      // were uploaded without a checksum (the vast majority of our S3 objects).
+      // Setting these to 'when_required' disables the automatic injection.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
