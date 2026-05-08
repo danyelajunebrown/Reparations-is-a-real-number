@@ -1115,21 +1115,28 @@ router.get('/person/:id', async (req, res) => {
                 ? person.notes.match(/Source:\s*(https?:\/\/\S+)/i)
                 : null;
             if (noteSourceMatch) {
-                // Parse a human-readable title from the notes (e.g. "SC 2908, Vol. 812, p. 97")
-                const archiveRef = person.notes.match(/SC\s*\d+[^.]*p\.\s*\d+/i);
+                // Strip trailing punctuation that the greedy \S+ regex may pull in
+                // e.g. "...am812--97.pdf. Row OCR:" → strip the trailing "."
+                const cleanUrl = noteSourceMatch[1].replace(/[.,;:!?]+$/, '');
+
+                // Parse a human-readable title from the notes
+                // Handles formats like "SC 2908, Vol. 812, p. 97" or "Maryland State Archives..."
+                const archiveRef = person.notes.match(
+                    /SC\s*\d+[^,]*,\s*[Vv]ol\.\s*\d+[^,]*,\s*p\.\s*\d+/i
+                ) || person.notes.match(/SC\s*\d+.*?p\.\s*\d+/i);
                 const noteDoc = {
                     document_id: null,
                     doc_type: 'primary_source',
                     title: archiveRef
                         ? archiveRef[0].trim()
                         : 'Primary Source Document',
-                    filename: noteSourceMatch[1].split('/').pop() || 'document.pdf',
-                    source_url: noteSourceMatch[1],
+                    filename: cleanUrl.split('/').pop() || 'document.pdf',
+                    source_url: cleanUrl,
                     s3_key: null,
                     s3_url: null,
                 };
                 // Only add if not already covered by a person_documents row with same URL
-                const alreadyCovered = documents.some(d => d.source_url === noteSourceMatch[1]);
+                const alreadyCovered = documents.some(d => d.source_url === cleanUrl);
                 if (!alreadyCovered) {
                     documents = [noteDoc, ...documents];
                 }
