@@ -1,13 +1,364 @@
 # Active Context: Current Development State
 
-**Last Updated:** May 6, 2026 (Session 37 — 1860 scraper running unattended; ntfy wired; DocAI needs Chrome on 9222)
-**Current Phase:** 1860 slave schedule ACTIVELY RUNNING on Mac Mini (Georgia in progress, DC+SC already done). DocAI pilot ready but requires Chrome on port 9222 first.
+**Last Updated:** May 8, 2026 (Session 44 — S3 document pipeline FULLY WORKING. 21/21 verified end-to-end. 2903 s3_key backfill pending.)
+**Current Phase:** S3 pipeline fully operational. Next: backfill 2903 person_documents rows with NULL s3_key.
 **Active Branch:** main
 **Project Title:** Reparations ∈ ℝ ("you can do it, put your back into it")
 
 ---
 
-## Session 37: 1860 Pipeline Debugging + ntfy Wiring (May 6, 2026)
+## Session 44 — S3 Pipeline FULLY RESTORED (May 8, 2026) ✅ COMPLETE
+
+### Summary
+The S3 document serving pipeline is now **fully operational end-to-end**. All 21 sampled documents
+(1 PDF will + 20 PNG/JPEG plantation records and Civil War DC petitions) returned `FULLY_WORKING`
+via the `debug-doc-pipeline.js` tool — meaning all 6 layers pass:
+1. HeadObject (local) ✓
+2. Presign generation (local) ✓
+3. S3 bytes (local presign) ✓
+4. Render `/access` API ✓
+5. Iframe URL (Render presign) ✓ HTTP 200
+
+### Fix Applied
+Render's `AWS_ACCESS_KEY_ID=AKIAU7BYZX2VYR6CS73L` (the deleted/deactivated IAM key) was replaced
+with the working key `AKIAU7BYZX2VRR5ROV6I` from local `.env`. Also set `S3_REGION=us-east-2`
+permanently to eliminate the startup redirect probe overhead.
+
+### Current State
+- **4,196 person_documents** rows have s3_key → all now serving correctly
+- **2,903 person_documents** rows have NULL s3_key → need backfill via `backfill-freedmens-to-s3.js`
+- All previously deployed code fixes remain in place:
+  - Region self-heal probe (commit `bca1bb6d2`)
+  - Checksum suppression `requestChecksumCalculation: 'when_required'` (commit `522e378d0`)
+  - Debug script XML error parsing (commit `feca4a7b6`)
+
+### Next Step
+Run: `node scripts/backfill-freedmens-to-s3.js` to upload the 2,903 missing documents to S3
+and set their `s3_key` values in the database.
+
+---
+
+## Session 43 — S3 InvalidAccessKeyId (May 8, 2026) 🔴 RESOLVED
+
+### Summary
+After fixing the region (Session 42) and removing the `x-amz-checksum-mode=ENABLED` parameter
+(this session), the presigned URL is now correctly signed for `us-east-2` with no extra checksum
+headers — but S3 still returns HTTP 403 with `<Code>InvalidAccessKeyId</Code>`.
+
+### Root Cause (FINAL)
+Render's `AWS_ACCESS_KEY_ID=AKIAU7BYZX2VYR6CS73L` **has been deleted or deactivated in AWS IAM**.
+The SDK generates a presigned URL using this key (signing is purely local), but when the presigned
+URL is presented to S3, AWS looks up the key ID and returns InvalidAccessKeyId because it no longer
+exists in IAM.
+
+**Evidence (from fetching the presigned URL directly):**
+```xml
+<Error><Code>InvalidAccessKeyId</Code>
+<Message>The AWS Access Key Id you provided does not exist in our records.</Message>
+<AWSAccessKeyId>AKIAU7BYZX2VYR6CS73L</AWSAccessKeyId></Error>
+```
+
+**Local `.env` credentials WORK** (HeadObject + local presigned URL both succeed). The local key
+has prefix `AKIAU7BY...5ROV6I` — same IAM user, different key ID. Render has a stale key pair.
+
+### Code Fixes Deployed This Session (all on main)
+
+| Commit | Fix |
+|--------|-----|
+| `dae989191` | Add `requestChecksumCalculation: 'WHEN_REQUIRED'` (initial attempt, uppercase) |
+| `522e378d0` | Correct to lowercase `'when_required'` (SDK enum value) |
+| `feca4a7b6` | Debug script: parse S3 XML error body to show `<Code>` instead of null |
+
+**Verification:** `/api/debug/s3-test/` now returns presigned URLs with:
+- ✅ `X-Amz-Credential=.../us-east-2/s3/aws4_request` (correct region)
+- ✅ No `x-amz-checksum-mode=ENABLED` parameter
+- ❌ S3 returns 403 `InvalidAccessKeyId` (credential is deleted in AWS IAM)
+
+### 🔑 USER ACTION REQUIRED — Render Credential Update
+
+1. **Go to Render Dashboard** → `reparations-platform` service → **Environment** tab
+2. Find `AWS_ACCESS_KEY_ID` (current value: `AKIAU7BYZX2VYR6CS73L`) → replace with the value from your local `.env`
+3. Find `AWS_SECRET_ACCESS_KEY` → replace with the corresponding secret from your local `.env`
+4. **Also fix permanently:** Set `S3_REGION=us-east-2` (currently wrong as `us-east-1` — the redirect probe corrects it at startup but proper config is cleaner)
+5. Click **Save Changes** → Render will auto-redeploy
+
+### After Render Redeploys — Verification Runbook
+```bash
+# 1. Confirm new key is live (should show a different key ID prefix in presigned URL)
+curl -sf "https://reparations-platform.onrender.com/api/debug/s3-test/owners%2FJames-Hopewell%2Fwill%2FJames-Hopewell-Will-1817-complete.pdf" | python3 -m json.tool
+
+# 2. Full end-to-end truth table — expect FULLY_WORKING
+node scripts/debug-doc-pipeline.js --id james-hopewell-will-1817
+
+# 3. Broader sample (20 person_documents)
+node scripts/debug-doc-pipeline.js --table person_documents --limit 20
+```
+
+### Debug Script Improvements (this session)
+- `testPresignedUrl()` now parses `<Code>` and `<Message>` from S3 XML error body
+- Shows `InvalidAccessKeyId: The AWS Access Key Id you provided...` instead of `HTTP 403: null`
+- Makes credential errors immediately diagnosable without manual curl
+
+### Still Pending After Fix
+- **2903 of 7099** `person_documents` rows have NULL `s3_key` (never uploaded to S3)
+  - Run `node scripts/backfill-freedmens-to-s3.js` to fill these after credentials are fixed
+- **Permanent cleanup:** Set `S3_REGION=us-east-2` in Render to eliminate startup probe overhead
+
+---
+
+## Session 42 — S3 Redirect Probe Fix (May 8, 2026)
+
+### What Happened
+Session 41's fix (`_verifyAndCorrectRegion()` via `GetBucketLocationCommand`) was deployed as commit `2ba1fd8e9`, but silently failed at runtime on Render. Debug endpoint confirmed:
+```json
+{ "configuredRegion": "us-east-1", "activeRegion": "us-east-1", "regionMismatch": false }
+```
+The self-heal appeared to confirm `us-east-1` = correct. But curl of the presigned URL still showed HTTP 301 `PermanentRedirect`.
+
+### Root Cause of Root Cause
+`GetBucketLocationCommand` requires `s3:GetBucketLocation` IAM permission. Render's IAM credentials lack this permission. The SDK threw an exception, which was caught silently, and the original `us-east-1` region was kept.
+
+### Empirical Confirmation (PermanentRedirect body)
+```
+curl -s -o /tmp/s3resp.txt -w "HTTP_STATUS:%{http_code}" "$PRESIGNED_URL"
+HTTP_STATUS:301
+<Error><Code>PermanentRedirect</Code>
+<Endpoint>reparations-them.s3.us-east-2.amazonaws.com</Endpoint>
+```
+S3 itself says: bucket is in `us-east-2`. Case closed.
+
+### Fix Applied (commit `bca1bb6d2`)
+Added `_probeRegionViaRedirect()` as a fallback in `_verifyAndCorrectRegion()`:
+- Makes an unauthenticated GET to `https://bucket.s3.WRONG-REGION.amazonaws.com/`
+- S3 responds HTTP 301 + PermanentRedirect XML with `<Endpoint>` pointing to correct region
+- Parses region from that endpoint string: `\.s3[.-]([a-z]{2}-[a-z]+-\d+)\.amazonaws\.com`
+- No IAM credentials needed — works because S3 PermanentRedirect is returned for ANY request
+
+**Verified locally:** probe correctly detects `us-east-2` when configured with `us-east-1`.
+
+### Current Deploy Status
+Pushed `bca1bb6d2` to origin/main at 1:19am ET. Render free tier deploys in ~5-15 min.
+
+### Verification Runbook (after Render deploys)
+```bash
+# Step 1: Confirm activeRegion auto-corrected to us-east-2
+curl https://reparations-platform.onrender.com/api/debug/s3-config
+# Expected: {"configuredRegion":"us-east-1","activeRegion":"us-east-2","regionMismatch":true}
+
+# Step 2: Full truth table — should show FULLY_WORKING
+node scripts/debug-doc-pipeline.js --id james-hopewell-will-1817
+
+# Step 3: Sample 20 person_documents
+node scripts/debug-doc-pipeline.js --table person_documents --limit 20
+```
+
+### Permanent Fix (still needed on Render dashboard)
+Go to Render → reparations-platform → Environment → find `S3_REGION` → change `us-east-1` → `us-east-2`
+This eliminates the startup probe cost and makes the config permanently correct.
+
+### Known Remaining Issue
+- 2903 of 7099 person_documents rows have NULL s3_key (never uploaded to S3)
+- These show NO_S3_KEY verdict — not a code bug, need s3 backfill
+- Run `node scripts/backfill-freedmens-to-s3.js` to fill these
+
+---
+
+## Session 41 — S3 Region Bug Root Cause & Fix (May 8, 2026)
+
+### Root Cause (empirically confirmed in session 41)
+- Debug script `scripts/debug-doc-pipeline.js` ran 6-layer truth table
+- Layer 5 (Render `/access` API): ✓ HTTP 200 — API returns presigned URL
+- Layer 6 (fetch that URL): ✗ HTTP 301 — redirect to wrong region, signature invalid
+- Render presigned host showed: `reparations-them.s3.us-east-1.amazonaws.com`
+- Bucket is in `us-east-2`. Render had `S3_REGION=us-east-1` in env vars.
+- Presigned URLs signed for wrong endpoint → S3 returns 301 → signature can't follow redirect
+
+### Fix Applied (commit `2ba1fd8e9`) — self-heal via GetBucketLocation (partially worked)
+1. **`S3Service._verifyAndCorrectRegion()`** — called at startup via GetBucketLocationCommand. Silently failed on Render due to missing IAM permission (see Session 42 above for fix).
+2. **`/api/debug/s3-config`** — returns `configuredRegion`, `activeRegion`, `regionMismatch`. Live after `2ba1fd8e9`.
+3. **`/api/debug/s3-test/:key`** — generates live presigned URL for any S3 key for browser testing.
+4. **`DocOverlay/DocEmbed`** — now shows actual error string instead of silent "No access URL available".
+5. **`scripts/debug-doc-pipeline.js`** — 6-layer truth table diagnostic with redirect chain tracing.
+
+---
+
+---
+
+## Session 40c — LOG_DIR Mismatch Fix (May 8, 2026) ✅ COMPLETE (SCP deferred)
+
+### What was wrong
+`scripts/pi/launch-kiosk.sh` in the repo had:
+```
+LOG_DIR="${LOG_DIR:-/home/danyelicafish/reparations-kiosk}"
+```
+The Pi's actual kiosk directory is `/home/danyelicafish/kiosk/`. On reboot, logs would write to a non-existent `reparations-kiosk/` path. The Pi was working only because the script was SCP'd live in Session 40b — the repo copy still had the old path.
+
+### Fix applied
+- `LOG_DIR` variable corrected → `/home/danyelicafish/kiosk`
+- Autostart comment path corrected → `@/home/danyelicafish/kiosk/launch-kiosk.sh`
+- Committed as `fbed3a558` (`fix(pi): correct LOG_DIR path reparations-kiosk → kiosk`)
+
+### SCP deferred
+Pi was unreachable at time of fix (100% packet loss on Tailscale `100.68.207.72`). Likely off or Tailscale dropped.
+
+**When Pi is back online, run these two commands:**
+```bash
+scp scripts/pi/launch-kiosk.sh pi-ts:/home/danyelicafish/kiosk/launch-kiosk.sh
+ssh pi-ts sudo systemctl restart reparations-kiosk
+```
+
+The Pi will continue working on reboot using the correctly-patched script once those two commands run. The systemd service and Chrome process were confirmed working in Session 40b.
+
+---
+
+## Session 40b — Pi Live Debug + GitHub Pages Deploy (May 7, 2026) ✅ COMPLETE
+
+### Pi actual filesystem state (discovered via SSH over Tailscale `100.68.207.72`)
+
+The Pi's actual kiosk infrastructure is at `/home/danyelicafish/kiosk/` (NOT `/home/danyelicafish/reparations-kiosk/` as assumed from memory bank).
+
+| Path | Status |
+|------|--------|
+| `/home/danyelicafish/kiosk/launch-kiosk.sh` | **Live launch script** (updated this session) |
+| `/home/danyelicafish/kiosk/kiosk.log` | Chrome stdout log |
+| `/etc/systemd/system/reparations-kiosk.service` | Systemd unit, enabled, pointing to `/home/danyelicafish/kiosk/launch-kiosk.sh` |
+| `/home/danyelicafish/reparations-watchdog/` | Health watchdog (separate, still running) |
+
+### What was wrong before this session
+- Pi's old `launch-kiosk.sh` (at `/home/danyelicafish/kiosk/`) was pointing to `http://192.168.1.160:3000/kiosk.html` — the Mac Mini's Express server serving the now-deleted `kiosk.html`
+- Pi had been showing a blank/broken page since `kiosk.html` was deleted from the repo
+- Our new `scripts/pi/launch-kiosk.sh` assumed install dir `~/reparations-kiosk/` — wrong directory
+
+### Deployed fix
+Used `scp scripts/pi/launch-kiosk.sh pi-ts:/home/danyelicafish/kiosk/launch-kiosk.sh` to overwrite the Pi's live script with the repo version. Then:
+- `sudo systemctl restart reparations-kiosk`
+- Verified Chrome process running: `https://danyelajunebrown.github.io/Reparations-is-a-real-number/?mode=kiosk` ✅
+- Deployed to GitHub Pages: `cd frontend && npm run deploy:gh-pages` ✅
+- Confirmed deployed JS bundle contains "REQUEST INTAKE" string: `curl ... | grep -c 'REQUEST INTAKE'` → 1 ✅
+
+### Pi network / access info
+- **Tailscale IP:** `100.68.207.72` (alias `pi-ts` in SSH config)
+- **LAN IP:** `192.168.1.157`
+- **User:** `danyelicafish`
+- **OS:** Debian GNU/Linux 13 (trixie), kernel 6.12.62+rpt-rpi-v8
+- **Chromium:** `/usr/bin/chromium`, version 146.0.7680.80
+- **Kiosk dir:** `/home/danyelicafish/kiosk/`
+- **Watchdog dir:** `/home/danyelicafish/reparations-watchdog/`
+
+### Screenshot note
+`scrot` via SSH over Tailscale captures an X11 framebuffer — not the physical monitor. When Chrome is running in kiosk mode on HDMI, SSH sessions don't have compositor access and get a black frame. This is **not a rendering error** — Chrome confirmed running from `ps aux` output.
+
+### Update needed to repo
+`scripts/pi/launch-kiosk.sh` uses `LOG_DIR="${LOG_DIR:-/home/danyelicafish/reparations-kiosk}"` — should be `/home/danyelicafish/kiosk` to match the Pi's actual directory. However, since the script was `scp`'d live, the Pi is working. The repo copy has a mismatch. This should be corrected.
+
+---
+
+## Session 40 — Raspberry Pi Kiosk Reintegration: Intake Form Kiosk (May 7, 2026) ✅ COMPLETE
+
+### What was asked
+The Raspberry Pi was poorly integrated: it ran a dead ancestor-climb kiosk (kiosk.html, js/kiosk.js) that had been silently broken since the climb workload moved to the Mac Mini in Session 23 (March 2026). The Pi needed to be reworked to present the standard React frontend with a REQUEST INTAKE button below the search bar, opening the Google Intake Form and returning to the platform upon submission.
+
+A secondary concern was raised about `launch-kiosk.sh` existing only on the Pi's filesystem and not in the repo. Requested: audit the entire codebase for similar off-repo mission-critical scripts, file a GitHub issue, and delete the old kiosk code.
+
+### Delivered
+
+#### New files created in the repo
+
+| File | Purpose |
+|------|---------|
+| `scripts/pi/launch-kiosk.sh` | Chromium kiosk launcher — retry loop, proper Chrome flags, runs on `/home/danyelicafish/reparations-kiosk/` |
+| `scripts/pi/reparations-kiosk.service` | systemd unit for auto-start on Pi boot |
+| `frontend/src/components/Intake/IntakeButton.jsx` | REQUEST INTAKE button + full-screen iframe overlay for Google Form + post-submit confirmation UI |
+
+#### Files modified
+
+| File | Changes |
+|------|---------|
+| `frontend/src/pages/HomePage.jsx` | Added `?mode=kiosk` detection via `useSearchParams()`. Renders `<IntakeButton />` only in kiosk mode, below the search bar, when no search results are showing. |
+| `frontend/src/styles/global.css` | Added `.intake-button`, `.intake-overlay`, `.intake-iframe`, `.intake-confirmation`, `.intake-return-btn` CSS classes |
+
+#### Files deleted
+- `kiosk.html` — obsolete ancestor-climb kiosk
+- `js/kiosk.js` — obsolete kiosk JS (virtual keyboard, tree view, match review)
+- `styles/kiosk.css` — obsolete kiosk styles (now redundant with global.css)
+
+#### GitHub issue filed
+- **Issue #47** — "Audit off-repo scripts — mission-critical files exist only on machine-specific paths"
+  - Documents 6 shell scripts hardcoding `$HOME/Desktop/Reparations-is-a-real-number` (Mac Mini path)
+  - 3 files referencing `/home/danyelicafish` (Pi path)
+  - Hardcoded GCP key path in `document-ai-extractor.js`
+
+### How the kiosk works
+1. Pi boots → systemd `reparations-kiosk.service` launches `launch-kiosk.sh`
+2. Chromium opens in full-screen kiosk mode at `https://danyelajunebrown.github.io/Reparations-is-a-real-number/?mode=kiosk`
+3. React frontend detects `mode=kiosk` query param → renders `IntakeButton` component below the search bar
+4. User taps REQUEST INTAKE → full-screen iframe overlay opens with Google Form
+5. After submission, Google Form redirects to `/formResponse` → overlaid detects this (or 5-min safety timeout) → shows confirmation screen with "Return to Platform" button
+6. User taps Return → overlay closes, back to front page
+7. If Chrome crashes, `launch-kiosk.sh` restarts it after 10s
+
+### Off-repo audit findings
+The audit revealed a systematic pattern: **6 shell scripts** in the repo reference `$HOME/Desktop/Reparations-is-a-real-number` — the Mac Mini's repo path. These scripts work fine on the Mini but would fail silently on any other machine. The issue documents all findings with line numbers and suggested fixes (env vars or `$(dirname "$0")/..` relative-path resolution).
+
+---
+
+## Session 38: Ann Maria Biscoe Person Page Fix (May 6, 2026) ✅ COMPLETE
+
+### Problem Summary
+Ann Maria Biscoe (canonical_person_id=141016) had three bugs on the live person detail page:
+1. **Name displayed as "Ann Maria Biscoe and Emma Biscoe"** — two people merged into one canonical record name
+2. **No primary source documents** — 3 DC Compensated Emancipation Act petition images existed in S3 but were not loading
+3. **No identity data** — sex, first/last name, verification_status all NULL
+
+### Root Cause
+The `/api/contribute/person/:id` endpoint only queried the `documents` table by `owner_name ILIKE` — it never queried `person_documents` by `canonical_person_id`. The `DocumentService.getDocumentById()` method also only checked the `documents` table, so the DocOverlay presigned URL flow would fail for person_documents rows.
+
+### DB Fixes Applied (direct psql, already in Neon production)
+- `canonical_name` → `'Ann Maria Biscoe'` (was "Ann Maria Biscoe and Emma Biscoe")
+- `first_name='Ann'`, `middle_name='Maria'`, `last_name='Biscoe'`, `sex='F'`, `person_type='enslaver'`, `primary_state='District'`, `verification_status='civilwardc_primary_source'`
+- 3 rows inserted into `person_documents` (IDs 11092, 11093, 11094):
+  - `civilwardc/petitions/cww.00430/cww.00430.001.jpg` (image_number=1)
+  - `civilwardc/petitions/cww.00430/cww.00430.002.jpg` (image_number=2)
+  - `civilwardc/petitions/cww.00430/cww.00430.003.jpg` (image_number=3)
+
+### Backend Code Fixes (commit 1e7f3153e — pushed to main)
+
+**`src/services/DocumentService.js`:**
+- `getDocumentById()` now falls back to `person_documents` table when not found in `documents` table
+- Returns `s3_key` as `file_path` so `/api/documents/:id/access` generates presigned URLs automatically
+
+**`src/api/routes/contribute.js`:**
+- `/person/:id` handler now queries `person_documents WHERE canonical_person_id = $1` after the `documents` table query
+- Results prepended to `ownerDocuments` array (petition images appear first)
+- Wrapped in try/catch (non-fatal, won't break other data if person_documents has issues)
+
+### Verification Results
+- API `curl https://reparations-platform.onrender.com/api/contribute/person/141016?table=canonical_persons`:
+  - `full_name: "Ann Maria Biscoe"` ✅
+  - `gender: "F"` ✅
+  - `verification_status: "civilwardc_primary_source"` ✅
+  - `ownerDocuments: [3 rows with correct s3_keys]` ✅
+- Live site at https://danyelajunebrown.github.io/Reparations-is-a-real-number/:
+  - Person detail page shows "Ann Maria Biscoe" header ✅
+  - Badge "CIVILWARDC PRIMARY SOURCE" visible ✅
+  - IDENTITY section: Gender=F, Source Table=canonical_persons ✅
+  - ENSLAVED PERSONS (11) section ✅
+  - PersonProfile.jsx renders ownerDocuments in "Primary source documents" section ✅
+
+### Pattern to Apply to Other canonical_persons
+Any canonical_person with petition images in S3 needs:
+1. Rows in `person_documents` with correct `canonical_person_id` and `s3_key`
+2. The backend fix already handles them — no more code changes needed
+
+---
+
+## Session 37: 1860 Pipeline Debugging + ntfy Wiring (May 6, 2026) ✅ COMPLETE
+
+### Commits Pushed
+| Commit | Contents |
+|--------|---------|
+| `9e9be89fa` | Bug 1 (1860 headless) + Bug 2 (DocAI neon crash) |
+| `3fc53a257` | ntfy wired into finish-1860-remaining.sh + memory bank update |
 
 ### Two Bugs Fixed and Pushed (commit 9e9be89fa)
 
@@ -51,17 +402,39 @@ Added fire-and-forget `ntfy_post()` helper (curl to `$OPS_NOTIFY_WEBHOOK`) with 
 
 ### Mac Mini Run Instructions
 ```bash
+# Pull both commits:
+git pull   # picks up 9e9be89fa + 3fc53a257
+
 # Kill stale process if needed:
 pkill -f "extract-census-ocr"
 
-# Re-run 1860 (already doing this as of 3pm ET):
-git pull && bash finish-1860-remaining.sh
+# Re-run 1860 (ntfy will notify at each state boundary):
+bash finish-1860-remaining.sh
 
 # Optional: run in tmux so it survives terminal close:
 tmux new -s scrape1860
 bash finish-1860-remaining.sh
 # Ctrl+B, D to detach
 ```
+
+### After 1860 completes — DocAI pilot
+```bash
+# 1. Launch Chrome with remote debugging
+open -na "Google Chrome" --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/familysearch-docai
+
+# 2. Sign into FamilySearch in that Chrome window
+#    (username/password, NOT Google OAuth)
+
+# 3. Run Washington DC pilot (500 records)
+node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500
+
+# 4. Check parse_failure_queue for FP/low-conf records
+# 5. Expand to other branches: Richmond VA, Charleston SC, New Orleans LA, Memphis TN
+```
+
+> **Do NOT run DocAI and 1860 concurrently — both need FS access.**
 
 
 ---

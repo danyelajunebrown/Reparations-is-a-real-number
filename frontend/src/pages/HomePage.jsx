@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatClass } from '../api/format.js';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
 import { StatsRibbon } from '../components/Layout/StatsRibbon.jsx';
+import IntakeButton from '../components/Intake/IntakeButton.jsx';
 
 // Home page.
-// Pre-search: mission statement + live stats + section navigation + search bar.
+// Pre-search: mission statement + live stats + provenance + section navigation + search bar.
 // Post-search: collapses to search + inline results (Google-minimal behaviour preserved).
 
 const SECTIONS = [
@@ -48,8 +49,20 @@ const SECTIONS = [
   },
 ];
 
+// Example searches shown below the search bar pre-search.
+// These help the primary audience (Black folks searching ancestors) understand
+// what kind of queries this database answers.
+const EXAMPLE_SEARCHES = [
+  'Ann Maria Biscoe',
+  'James Hopewell',
+  'freedmen Richmond Virginia',
+  'Biscoe District of Columbia',
+];
+
 export default function HomePage() {
   const [submitted, setSubmitted] = useState('');
+  const [searchParams] = useSearchParams();
+  const isKiosk = searchParams.get('mode') === 'kiosk';
 
   const personsState = useApi(
     signal => submitted ? api.searchPersons(submitted, signal) : Promise.resolve({ results: [] }),
@@ -114,6 +127,47 @@ export default function HomePage() {
         <SearchBar autoFocus onSearch={q => setSubmitted(q)} />
       </div>
 
+      {/* ── Example searches — pre-search only ────────────────── */}
+      {!hasResults && (
+        <div style={{
+          width: '100%',
+          maxWidth: 540,
+          marginTop: 10,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '4px 16px',
+        }}>
+          <span style={{ color: 'var(--dimmer)', fontSize: 11 }}>try:</span>
+          {EXAMPLE_SEARCHES.map(q => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => setSubmitted(q)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--dim)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                cursor: 'pointer',
+                padding: 0,
+                textDecoration: 'underline',
+                textDecorationStyle: 'dotted',
+              }}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── REQUEST INTAKE button — kiosk mode only (Pi) ──────── */}
+      {!hasResults && isKiosk && (
+        <div style={{ width: '100%', maxWidth: 540, marginTop: 20, textAlign: 'center' }}>
+          <IntakeButton />
+        </div>
+      )}
+
       {/* ── Live stats — pre-search only ──────────────────────── */}
       {!hasResults && (
         <div style={{ width: '100%', maxWidth: 800, marginTop: 40 }}>
@@ -121,9 +175,29 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ── What's in this ledger — pre-search only ───────────── */}
+      {!hasResults && (
+        <div style={{ width: '100%', maxWidth: 800, marginTop: 28 }}>
+          <div
+            className="upper"
+            style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 10 }}
+          >
+            What's in this ledger
+          </div>
+          <div className="box" style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 2 }}>
+            61,000+ Freedmen's Bank account holders (1865–1874)
+            {' · '}1,041 DC Compensated Emancipation Act petitions (1862)
+            {' · '}1.7M+ verified enslaved persons
+            {' · '}Slave schedules, wills, deeds, ship manifests, runaway ads
+            {' · '}11 institutional corporate slavery disclosures (Aetna, JPMorgan Chase, Wells Fargo…)
+            {' · '}Base blockchain escrow (ReparationsEscrow.sol)
+          </div>
+        </div>
+      )}
+
       {/* ── Section cards — pre-search only ──────────────────── */}
       {!hasResults && (
-        <div style={{ width: '100%', maxWidth: 800, marginTop: 40 }}>
+        <div style={{ width: '100%', maxWidth: 800, marginTop: 32 }}>
           <div
             className="upper"
             style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 12 }}

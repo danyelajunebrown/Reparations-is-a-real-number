@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-export function SearchBar({ autoFocus = false }) {
+// onSearch: optional callback. When provided, calls onSearch(query) instead of navigating.
+// Used by HomePage for inline results. SearchPage and header omit it (defaults to navigate).
+export function SearchBar({ autoFocus = false, onSearch = null }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [query, setQuery] = useState(params.get('q') || '');
@@ -10,7 +12,11 @@ export function SearchBar({ autoFocus = false }) {
     e.preventDefault();
     const q = query.trim();
     if (!q) return;
-    navigate(`/search?q=${encodeURIComponent(q)}`);
+    if (onSearch) {
+      onSearch(q);
+    } else {
+      navigate(`/search?q=${encodeURIComponent(q)}`);
+    }
   }
 
   return (

@@ -1,12 +1,61 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** 1860 slave schedule ACTIVELY RUNNING on Mac Mini. DocAI pilot ready pending Chrome on port 9222.
-**Last Updated:** May 6, 2026 (Session 37)
+**Current Phase:** 1860 slave schedule RUNNING on Mac Mini (GA→MD→MS→LA→TX→VA queued). DocAI pilot ready — run after 1860 finishes.
+**Last Updated:** May 7, 2026 (Session 40 — COMPLETE)
+
+---
+
+## Session 40 — Raspberry Pi Kiosk Reintegration: Intake Form Kiosk (May 7, 2026) ✅ COMPLETE
+
+### What was asked
+The Raspberry Pi was poorly integrated — it ran a dead ancestor-climb kiosk that had been silently broken since the climb workload moved to the Mac Mini (Session 23, March 2026). The Pi needed to be reworked to present the standard React frontend with a REQUEST INTAKE button below the search bar, opening the Google Intake Form and returning to the platform upon submission.
+
+A secondary concern: `launch-kiosk.sh` existed only on the Pi's filesystem (not in the repo). Requested: audit the codebase for similar off-repo mission-critical scripts, file a GitHub issue, and delete the old kiosk code.
+
+### New files
+| File | Purpose |
+|------|---------|
+| `scripts/pi/launch-kiosk.sh` | Chromium kiosk launcher with retry loop, proper Chrome flags |
+| `scripts/pi/reparations-kiosk.service` | systemd unit for auto-start on Pi boot |
+| `frontend/src/components/Intake/IntakeButton.jsx` | REQUEST INTAKE button + full-screen iframe overlay for Google Form + post-submit confirmation |
+
+### Files modified
+| File | Changes |
+|------|---------|
+| `frontend/src/pages/HomePage.jsx` | Added `?mode=kiosk` detection; renders IntakeButton only in kiosk mode |
+| `frontend/src/styles/global.css` | Added intake button, overlay, iframe, confirmation CSS classes |
+
+### Files deleted
+- `kiosk.html`, `js/kiosk.js`, `styles/kiosk.css` — obsolete ancestor-climb kiosk
+
+### GitHub issue filed
+- **Issue #47** — "Audit off-repo scripts — mission-critical files exist only on machine-specific paths"
+  - 6 shell scripts hardcoding Mac Mini path `$HOME/Desktop/Reparations-is-a-real-number`
+  - 3 files referencing Pi path `/home/danyelicafish`
+  - Hardcoded GCP key path in `document-ai-extractor.js`
+
+### How the kiosk works
+1. Pi boots → systemd launches `launch-kiosk.sh`
+2. Chromium opens in kiosk mode at `https://danyelajunebrown.github.io/Reparations-is-a-real-number/?mode=kiosk`
+3. React detects `mode=kiosk` → shows REQUEST INTAKE button below search bar
+4. User taps REQUEST INTAKE → full-screen iframe overlay opens Google Form
+5. After submission, overlay detects redirect (or 5-min safety timeout) → confirmation screen with "Return to Platform"
+6. User taps Return → back to front page
+7. If Chrome crashes, `launch-kiosk.sh` restarts it after 10s
+
+### Frontend build
+- `cd frontend && npm run build` — 0 errors, successful
 
 ---
 
 ## Session 37 — 1860 Pipeline Debugging + ntfy Wiring (May 6, 2026) ✅ COMPLETE
+
+### Commits pushed
+| Commit | Contents |
+|--------|---------|
+| `9e9be89fa` | Bug 1 (1860 headless) + Bug 2 (DocAI neon crash) |
+| `3fc53a257` | ntfy wired into finish-1860-remaining.sh; memory bank update |
 
 ### What was fixed
 
@@ -44,6 +93,21 @@ Cookie behavior **CONFIRMED WORKING**: `fs-cookies.json` auto-logs in for every 
 - Neon crash fixed. 500 Washington DC records in queue.
 - **REQUIRES** Chrome on port 9222 + FS login before running.
 - Run AFTER 1860 completes (one FS scraper at a time).
+
+### After 1860 — DocAI pilot sequence
+```bash
+# 1. Launch Chrome with remote debugging
+open -na "Google Chrome" --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/familysearch-docai
+
+# 2. Sign into FamilySearch (username/password, NOT Google OAuth)
+
+# 3. Washington DC pilot
+node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500
+
+# 4. Then expand: Richmond VA → Charleston SC → New Orleans LA → Memphis TN
+```
 
 ---
 

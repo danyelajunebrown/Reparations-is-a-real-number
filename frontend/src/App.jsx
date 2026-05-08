@@ -1,6 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route, NavLink, Link } from 'react-router-dom';
-import { StatsRibbon } from './components/Layout/StatsRibbon.jsx';
+import { Routes, Route, NavLink, Link, useLocation } from 'react-router-dom';
 
 // Lazy load heavy panels so the initial bundle stays small.
 const HomePage = lazy(() => import('./pages/HomePage.jsx'));
@@ -15,16 +14,23 @@ const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
 const DepositorsPage = lazy(() => import('./pages/DepositorsPage.jsx'));
 
 export default function App() {
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+
   return (
     <div className="app">
       <header className="app-header">
-        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <h1 className="app-title">Reparations ∈ ℝ</h1>
-          <div className="app-subtitle">
-            A global slavery accountability infrastructure.
-            Every person displayed here is verified against primary sources.
-          </div>
-        </Link>
+        {/* On the home page, the title lives in the page body (Google-style).
+            On all other pages, show the full title + subtitle in the header. */}
+        {!isHome && (
+          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <h1 className="app-title">Reparations ∈ ℝ</h1>
+            <div className="app-subtitle">
+              A global slavery accountability infrastructure.
+              Every person displayed here is verified against primary sources.
+            </div>
+          </Link>
+        )}
         <nav className="app-nav">
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/search">Search</NavLink>
@@ -36,7 +42,6 @@ export default function App() {
           <NavLink to="/pay">Payment</NavLink>
           <NavLink to="/admin">Admin</NavLink>
         </nav>
-        <StatsRibbon />
       </header>
 
       <main>
@@ -63,7 +68,14 @@ export default function App() {
 
       <footer className="app-footer">
         <div>
-          Source on GitHub. Every line open for collaboration.
+          <a
+            href="https://github.com/danyelajunebrown/Reparations-is-a-real-number"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Source on GitHub
+          </a>
+          {' — '}Every line open for collaboration.
         </div>
       </footer>
     </div>

@@ -1,0 +1,19 @@
+[Unit]
+Description=Reparations Intake Kiosk (Chromium full-screen)
+After=network-online.target
+Wants=network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+User=danyelicafish
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/danyelicafish/.Xauthority
+ExecStart=/home/danyelicafish/reparations-kiosk/launch-kiosk.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/danyelicafish/reparations-kiosk/kiosk-service.log
+StandardError=append:/home/danyelicafish/reparations-kiosk/kiosk-service.log
+
+[Install]
+WantedBy=graphical-session.target
