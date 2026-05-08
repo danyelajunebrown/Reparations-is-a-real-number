@@ -1,7 +1,143 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** 1860 slave schedule RUNNING on Mac Mini (GA→MD→MS→LA→TX→VA queued). DocAI pilot ready — run after 1860 finishes.
+**Current Phase:** Person modal metadata enrichment complete. Backend enriched (W1–W8), frontend YearDisplay component with (est.) badges live, 142 canonical_persons backfilled from climb data, Ann Maria Biscoe fully repaired in DB.
+**Last Updated:** May 8, 2026 (Session 43 — COMPLETE)
+
+---
+
+## Session 43 — Person Modal Metadata Enrichment (May 8, 2026) ✅ COMPLETE
+
+### What Was Asked
+User audited person modals across the platform for "visible blocks" — empty UI fields not connected to available ground-truth data. Ann Maria Biscoe was provided as the primary example: no birth year despite FamilySearch climb data, no location despite DC compensated emancipation petition, and 404 errors on enslaved person links. User asked for: (1) 15-20 additional examples identified across diverse datasets/locations/time periods, (2) a robust plan to resolve all inferable metadata disconnections, (3) estimated values clearly labeled with hover tooltip showing calculation methodology.
+
+### Audit Findings (before fixes)
+- **Enslaved person links → 404 universally:** `enslaved_id` field never used to build URLs → all links resolved to `/person/enslaved_individuals/undefined`
+- **Birth years blank for 142+ canonical persons** despite `ancestor_climb_matches` containing `slaveholder_birth_year` data
+- **Location blank for Ann Maria Biscoe** despite DC petition in Georgetown (`primary_state` truncated to `'District'`)
+- **Freedmen's Bank owner blank** because backend looked for `owner` field; actual JSONB keys were `last_master`/`last_mistress`
+- **Schema mismatches:** `canonical_persons` uses `canonical_name`, `birth_year_estimate`, `sex` — not `full_name`, `birth_year`, `gender`. `ancestor_climb_matches` uses direct columns, not a `match_data` JSONB.
+- **Ann Maria Biscoe petition:** `claimant_canonical_id` was NULL in `historical_reparations_petitions` cww.00430; `slaveholder_id` was NULL in her `ancestor_climb_matches` row (id=138)
+
+### Delivered — Work Items W1–W8
+
+#### Backend (`src/api/routes/contribute.js`) — Commits `f25151249`
+| Item | Change |
+|------|--------|
+| W1 | Normalize enslaved persons: `id = ep.enslaved_id \|\| ep.id`, add `table_source` field |
+| W1b | Normalize descendants: `descendant_name → full_name` |
+| W2 | Infer `birth_year` from notes text (age + document year) with `birth_year_source`, `birth_year_confidence`, `birth_year_formula` fields |
+| W3 | Assemble location from `primary_plantation + primary_county + primary_state` |
+| W4 | Freedmen's Bank: expose `last_master`/`last_mistress` + `branch` location + `account_number`/`plantation` |
+| W6 | Query `person_external_ids` for FamilySearch/WikiTree/Ancestry links |
+| W7 | Query `historical_reparations_petitions` for DC petition data |
+| W7b | Query `person_relationships_verified` for inheritance chain (inherited/bequeathed/transferred) |
+
+#### Frontend (`frontend/src/api/format.js`) — COMPLETED
+Added `formatYearWithEstimation(year, source, confidence, formula)` returning either a plain year string or `{ yearStr, isEstimate: true, tooltip }`.
+
+#### Frontend (`frontend/src/components/PersonModal/PersonProfile.jsx`) — COMPLETED
+- New `YearDisplay` component: dashed underline + `(est.)` badge + native `title` tooltip
+- Enslaved person links: `to={/person/${ep.table_source || 'enslaved_individuals'}/${ep.id}}` (fixes 404s)
+- Identity grid adds `freedom_year` and `primary_plantation` fields (conditional)
+- New Family section (parents/children from `data.familyMembers`)
+- DC petition block under "Enslaved by"
+- Inheritance/provenance chain under "Enslaved by"
+- Ancestry link in External references
+
+#### Frontend (`frontend/src/styles/global.css`) — COMPLETED
+- `.estimate-badge`, `.estimate-badge-year` (dashed underline, cursor:help), `.estimate-badge-label`
+- `.provenance-chain` (left border, padding), `.provenance-step`
+
+#### New Scripts
+| Script | Description |
+|--------|-------------|
+| `scripts/backfill-climb-data-to-canonical.js` | Reads `ancestor_climb_matches` (direct columns), updates NULL `birth_year_estimate`/`primary_state`/`primary_county` on `canonical_persons`. `--dry-run` mode. **Ran live: 142 records updated.** |
+| `scripts/backfill-biscoe-dc-petition.js` | Targeted Ann Maria Biscoe repair: documents lookup logic, links petition `claimant_canonical_id`, fixes `slaveholder_id` on climb match. |
+
+#### Direct DB Repairs Applied (Ann Maria Biscoe)
+- `canonical_name` corrected: `'Ann M. Biscoe'` → `'Ann Maria Biscoe'`
+- `primary_state` fixed: `'District'` → `'DC'`; `primary_county` set: `'Georgetown'`
+- `historical_reparations_petitions` cww.00430: `claimant_canonical_id` set to `141015`
+- `ancestor_climb_matches` id=138: `slaveholder_id` set to `141015`
+
+### Commits
+| Commit | Contents |
+|--------|---------|
+| `f25151249` | W1–W8 backend enrichment, frontend YearDisplay + provenance CSS, format.js |
+| `9b36d9d64` | backfill-climb-data-to-canonical.js, backfill-biscoe-dc-petition.js, DB backfill applied (142 records) |
+
+### Schema Notes Verified Live This Session
+| Table | Key columns |
+|-------|-------------|
+| `canonical_persons` | `canonical_name`, `birth_year_estimate`, `death_year_estimate`, `sex`, `primary_state`, `primary_county`, `primary_plantation` |
+| `ancestor_climb_matches` | `slaveholder_id` (FK→canonical_persons), `slaveholder_birth_year`, `slaveholder_location` — **direct columns, no match_data JSONB** |
+| `historical_reparations_petitions` | `claimant_name`, `claimant_canonical_id` — **not `petitioner_name`** |
+| `unconfirmed_persons` | `full_name`, `lead_id` — **not `id`** |
+
+---
+
+## Session 41 — MSA SC 2908 S3 Preservation Archive (May 8, 2026) ✅ COMPLETE
+
+### What Was Asked
+Otho Brown's profile linked to an external MSA URL (am812--97.pdf) instead of S3. User asked to survey the entire DB for URL-only records and preserve all downloadable PDFs in S3.
+
+### Survey (start of session)
+| Table | Finding |
+|-------|---------|
+| person_documents | 7,099 rows; 4,196 S3-backed; 2,891 FamilySearch HTML (URL-only, correct); 10 other URL-only |
+| enslaved_individuals.notes | 18,203 rows with Source: URLs; 132 unique MSA PDFs; 0 in S3 |
+| documents (slaveholder) | 1 row, in S3 |
+
+### Delivered
+
+**Migration 063 applied to Neon:**
+- person_documents.enslaved_individual_id VARCHAR(50) — direct FK to enslaved_individuals
+- person_documents.title TEXT
+- Index: idx_person_documents_enslaved_individual_id
+
+**132 MSA SC 2908 PDFs → S3 (reparations-them/msa/sc2908/):**
+- Collection: Certificates of Freedom for Blacks, 1806-1864 (Maryland State Archives, AM 812)
+- 132/132 uploaded, 0 failed, avg ~1.5 MB each
+- Script: scripts/archive-msa-sc2908-to-s3.js
+
+**17,876 person_documents rows created:**
+- One row per enslaved_individual pointing to S3 PDF
+- Bulk INSERT via single SQL INSERT ... SELECT (one DB round-trip)
+- document_type = certificate_of_freedom
+- Script: scripts/insert-msa-person-documents.js
+
+**4 other PDFs → S3:**
+- CA DOI Slavery Era Insurance Registry (x2 rows) — 118 KB
+- JPMorgan Chase Philadelphia CTO Disclosure 2024 — 1366 KB
+- Brattle Group Quantification of Reparations 2023 — 2303 KB
+
+### Final DB State (person_documents)
+| | Count |
+|-|-------|
+| Total rows | 24,975 |
+| S3-backed | 22,076 |
+| URL-only (FamilySearch HTML) | 2,891 |
+| URL-only (non-downloadable datasets/portals) | 8 |
+| MSA SC 2908 rows | 17,876 |
+
+### Otho Brown Confirmed
+- s3_key: msa/sc2908/am812--97.pdf
+- s3_url: https://reparations-them.s3.amazonaws.com/msa/sc2908/am812--97.pdf
+
+### New Scripts
+- scripts/archive-msa-sc2908-to-s3.js — Phase 1: download 132 MSA PDFs to S3 (idempotent, --dry-run, --skip-download, --limit, --concurrency)
+- scripts/insert-msa-person-documents.js — Phase 2: bulk INSERT 17,876 person_documents via single SQL query
+
+### Bug Found in backfill-source-url-docs-to-s3.js
+CONCURRENCY silently becomes NaN when --concurrency not passed (indexOf=-1 reads process.argv[0]=node path). Fix: always pass --concurrency N AND AWS_S3_BUCKET=reparations-them AWS_REGION=us-east-2 explicitly.
+
+---
+
+## Session 40 — Raspberry Pi Kiosk Reintegration: Intake Form Kiosk (May 7, 2026) ✅ COMPLETE
+
+### What was asked
+The Raspberry Pi was poorly integrated (GA→MD→MS→LA→TX→VA queued). DocAI pilot ready — run after 1860 finishes.
 **Last Updated:** May 7, 2026 (Session 40 — COMPLETE)
 
 ---
