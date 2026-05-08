@@ -8,6 +8,28 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- GitHub Pages SPA redirect restore.
+         Runs before React initialises so Router sees the correct path.
+         Companion to public/404.html. -->
+    <script>
+      (function () {
+        var sp = window.location.search;
+        if (sp.indexOf('p=') === -1) return;
+        var params = {};
+        sp.slice(1).split('&').forEach(function (part) {
+          var eq = part.indexOf('=');
+          if (eq > -1) params[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1));
+        });
+        if (params.p !== undefined) {
+          // Re-attach to the repo base (everything before the /?p= we just decoded).
+          var base = window.location.pathname.replace(/\/$/, '');
+          var path   = params.p   || '/';
+          var search = params.q    ? ('?' + params.q)    : '';
+          var hash   = params.hash ? ('#' + params.hash) : '';
+          window.history.replaceState(null, null, base + path + search + hash);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

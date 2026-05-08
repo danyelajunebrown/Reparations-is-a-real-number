@@ -90,9 +90,11 @@ function detectMethods(breakdown) {
   if (breakdown.banking) methods.push({ key: 'banking', label: 'Banking (Farmer-Paellmann)' });
   if (breakdown.railroad) methods.push({ key: 'railroad', label: 'Railroad (Kornweibel)' });
 
-  // If none of the structured fields are present, fall back to generic
-  // breakdown display but clearly label it as "uncited calculator".
-  if (methods.length === 0 && (breakdown.total || breakdown.breakdown)) {
+  // If none of the structured fields are present AND total > 0, fall back
+  // to generic breakdown display clearly labelled as "uncited calculator".
+  // If total === 0 we skip this — returning [] triggers the "not available"
+  // state, which is more honest than showing a page of $0.00 figures.
+  if (methods.length === 0 && breakdown.total > 0) {
     methods.push({ key: 'legacy', label: 'Legacy (uncited — shown for audit only)' });
   }
 

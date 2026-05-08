@@ -199,8 +199,20 @@ export function DocOverlay({ docId, onClose }) {
   );
 }
 
-/** Shared embed logic for PDF / image / fallback. */
-function DocEmbed({ viewUrl, downloadUrl, filename, isPdf, isImage, fullscreen = false, accessError, accessData }) {
+/** Shared embed logic for PDF / image / fallback.
+ *
+ * Extension detection uses two layers:
+ *   1. The filename/file_path from document metadata (passed as props).
+ *   2. The viewUrl itself — strip the query string and read the extension.
+ * Layer 2 handles person_documents rows where the metadata field name
+ * doesn't match what DocEmbed expects (e.g. s3_key instead of file_path).
+ */
+function DocEmbed({ viewUrl, downloadUrl, filename, isPdf: isPdfHint, isImage: isImageHint, fullscreen = false, accessError, accessData }) {
+  const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'tiff', 'gif', 'webp'];
+  // Strip the S3 query string before checking the URL extension.
+  const urlExt = viewUrl ? viewUrl.split('?')[0].toLowerCase().split('.').pop() : '';
+  const isImage = isImageHint || IMAGE_EXTS.includes(urlExt);
+  const isPdf   = isPdfHint   || urlExt === 'pdf';
   if (!viewUrl) {
     // Build a useful diagnostic message from whatever the API returned
     let errMsg = 'No access URL available for this document.';
