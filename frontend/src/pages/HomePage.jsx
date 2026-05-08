@@ -4,7 +4,7 @@ import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatClass } from '../api/format.js';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
-import { StatsRibbon } from '../components/Layout/StatsRibbon.jsx';
+import { LedgerSection } from '../components/Layout/LedgerSection.jsx';
 import IntakeButton from '../components/Intake/IntakeButton.jsx';
 
 // Home page.
@@ -20,12 +20,12 @@ const SECTIONS = [
   {
     to: '/depositors',
     label: 'Depositors',
-    desc: "Freedmen's Bank account holders, 1865–1874. 61,000+ entries indexed.",
+    desc: "Freedmen's Bank account holders, 1865-1874. 61,000+ entries indexed.",
   },
   {
     to: '/lineage',
     label: 'Lineages',
-    desc: 'Ancestor climb sessions — FamilySearch-verified kinship chains.',
+    desc: 'Ancestor climb sessions -- FamilySearch-verified kinship chains.',
   },
   {
     to: '/documents',
@@ -90,19 +90,19 @@ export default function HomePage() {
       width: '100%',
     }}>
 
-      {/* ── Title ─────────────────────────────────────────────── */}
+      {/* Title */}
       <div style={{
         fontSize: hasResults ? 18 : 42,
         fontWeight: 600,
         letterSpacing: hasResults ? 0 : 3,
-        marginBottom: hasResults ? 12 : 12,
+        marginBottom: 12,
         textAlign: 'center',
         transition: 'all 0.2s ease',
       }}>
-        Reparations ∈ ℝ
+        Reparations &#x2208; &#x211d;
       </div>
 
-      {/* ── Mission statement — pre-search only ───────────────── */}
+      {/* Mission statement -- pre-search only */}
       {!hasResults && (
         <div style={{
           color: 'var(--dim)',
@@ -118,7 +118,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ── Search bar ────────────────────────────────────────── */}
+      {/* Search bar */}
       <div style={{
         width: '100%',
         maxWidth: hasResults ? '100%' : 540,
@@ -127,7 +127,7 @@ export default function HomePage() {
         <SearchBar autoFocus onSearch={q => setSubmitted(q)} />
       </div>
 
-      {/* ── Example searches — pre-search only ────────────────── */}
+      {/* Example searches -- pre-search only */}
       {!hasResults && (
         <div style={{
           width: '100%',
@@ -161,41 +161,23 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ── REQUEST INTAKE button — kiosk mode only (Pi) ──────── */}
+      {/* REQUEST INTAKE button -- kiosk mode only (Pi) */}
       {!hasResults && isKiosk && (
         <div style={{ width: '100%', maxWidth: 540, marginTop: 20, textAlign: 'center' }}>
           <IntakeButton />
         </div>
       )}
 
-      {/* ── Live stats — pre-search only ──────────────────────── */}
+      {/* Ledger: live stats + collections -- pre-search only
+          Replaces the old separate StatsRibbon + hardcoded "What's in this ledger" box.
+          LedgerSection makes one api.stats() call and renders both. */}
       {!hasResults && (
-        <div style={{ width: '100%', maxWidth: 800, marginTop: 40 }}>
-          <StatsRibbon />
+        <div style={{ width: '100%', maxWidth: 800 }}>
+          <LedgerSection />
         </div>
       )}
 
-      {/* ── What's in this ledger — pre-search only ───────────── */}
-      {!hasResults && (
-        <div style={{ width: '100%', maxWidth: 800, marginTop: 28 }}>
-          <div
-            className="upper"
-            style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 10 }}
-          >
-            What's in this ledger
-          </div>
-          <div className="box" style={{ fontSize: 12, color: 'var(--dim)', lineHeight: 2 }}>
-            61,000+ Freedmen's Bank account holders (1865–1874)
-            {' · '}1,041 DC Compensated Emancipation Act petitions (1862)
-            {' · '}1.7M+ verified enslaved persons
-            {' · '}Slave schedules, wills, deeds, ship manifests, runaway ads
-            {' · '}11 institutional corporate slavery disclosures (Aetna, JPMorgan Chase, Wells Fargo…)
-            {' · '}Base blockchain escrow (ReparationsEscrow.sol)
-          </div>
-        </div>
-      )}
-
-      {/* ── Section cards — pre-search only ──────────────────── */}
+      {/* Section cards -- pre-search only */}
       {!hasResults && (
         <div style={{ width: '100%', maxWidth: 800, marginTop: 32 }}>
           <div
@@ -218,7 +200,7 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ── Inline results — post-search ──────────────────────── */}
+      {/* Inline results -- post-search */}
       {hasResults && (
         <div style={{ width: '100%', marginTop: 32 }} className="stack-xl">
 
@@ -228,7 +210,7 @@ export default function HomePage() {
               to={`/search?q=${encodeURIComponent(submitted)}`}
               style={{ fontSize: 12, color: 'var(--dim)' }}
             >
-              View full search results →
+              View full search results &rarr;
             </Link>
           </div>
 
@@ -236,8 +218,8 @@ export default function HomePage() {
           <section>
             <h2 className="upper" style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 8 }}>
               {personsState.loading
-                ? 'Persons — loading…'
-                : `Persons — ${persons.length} verified${allPersons.length > persons.length
+                ? 'Persons -- loading...'
+                : `Persons -- ${persons.length} verified${allPersons.length > persons.length
                     ? ` of ${allPersons.length} total`
                     : ''
                   }`
@@ -250,7 +232,7 @@ export default function HomePage() {
               <div className="state err">Error: {personsState.error.message}</div>
             )}
             {!personsState.loading && !personsState.error && persons.length === 0 && (
-              <div className="state dim">No verified persons match "{submitted}".</div>
+              <div className="state dim">No verified persons match &ldquo;{submitted}&rdquo;.</div>
             )}
             <div className="stack">
               {persons.map((p, i) => (
@@ -263,8 +245,8 @@ export default function HomePage() {
           <section>
             <h2 className="upper" style={{ fontSize: 11, color: 'var(--dim)', marginBottom: 8 }}>
               {docsState.loading
-                ? 'Documents — loading…'
-                : `Documents — ${documents.length}`
+                ? 'Documents -- loading...'
+                : `Documents -- ${documents.length}`
               }
             </h2>
             {docsState.loading && (
@@ -274,7 +256,7 @@ export default function HomePage() {
               <div className="state err">Error: {docsState.error.message}</div>
             )}
             {!docsState.loading && !docsState.error && documents.length === 0 && (
-              <div className="state dim">No documents match "{submitted}".</div>
+              <div className="state dim">No documents match &ldquo;{submitted}&rdquo;.</div>
             )}
             <div className="stack">
               {documents.map(d => (
@@ -286,7 +268,7 @@ export default function HomePage() {
                 >
                   <div>{d.title || d.filename || d.owner_name}</div>
                   <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-                    {d.doc_type} · {d.owner_name || 'unknown owner'}
+                    {d.doc_type} &middot; {d.owner_name || 'unknown owner'}
                   </div>
                 </Link>
               ))}
@@ -299,7 +281,7 @@ export default function HomePage() {
   );
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────────
+// Sub-components
 
 function SectionCard({ to, label, desc }) {
   return (
@@ -335,9 +317,9 @@ function PersonResult({ person }) {
       </div>
       <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
         {person.type || person.person_type}
-        {person.birth_year ? ` · b.${person.birth_year}` : ''}
-        {person.location ? ` · ${person.location}` : ''}
-        {person.source_url ? ` · ${safeHostname(person.source_url)}` : ''}
+        {person.birth_year ? ` \u00b7 b.${person.birth_year}` : ''}
+        {person.location ? ` \u00b7 ${person.location}` : ''}
+        {person.source_url ? ` \u00b7 ${safeHostname(person.source_url)}` : ''}
       </div>
     </Link>
   );
