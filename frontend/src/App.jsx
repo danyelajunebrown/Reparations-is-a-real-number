@@ -12,6 +12,7 @@ const LegalPage = lazy(() => import('./pages/LegalPage.jsx'));
 const BlockchainPage = lazy(() => import('./pages/BlockchainPage.jsx'));
 const AdminPage = lazy(() => import('./pages/AdminPage.jsx'));
 const DepositorsPage = lazy(() => import('./pages/DepositorsPage.jsx'));
+const SubmitWillPage = lazy(() => import('./components/Intake/SubmitWillPage.jsx'));
 
 export default function App() {
   const location = useLocation();
@@ -39,6 +40,7 @@ export default function App() {
           <NavLink to="/documents">Documents</NavLink>
           <NavLink to="/corporate">Corporate Debts</NavLink>
           <NavLink to="/legal">Legal Framework</NavLink>
+          <NavLink to="/contribute/will">Contribute</NavLink>
           <NavLink to="/pay">Payment</NavLink>
           <NavLink to="/admin">Admin</NavLink>
         </nav>
@@ -59,6 +61,7 @@ export default function App() {
             <Route path="/corporate/:entityId" element={<CorporatePage />} />
             <Route path="/legal" element={<LegalPage />} />
             <Route path="/legal/:topic" element={<LegalPage />} />
+            <Route path="/contribute/will" element={<SubmitWillPage />} />
             <Route path="/pay" element={<BlockchainPage />} />
             <Route path="/admin/*" element={<AdminPage />} />
             <Route path="*" element={<div className="state err">404 — path not found</div>} />
