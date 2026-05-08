@@ -5,11 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Reparations ∈ ℝ — a global slavery accountability infrastructure. Every person documented here is verified against primary sources." />
     <title>Reparations ∈ ℝ</title>
-    <script type="module" crossorigin src="/Reparations-is-a-real-number/assets/index-DD8VR-F2.js"></script>
+    <script type="module" crossorigin src="/Reparations-is-a-real-number/assets/index-BRTw69rN.js"></script>
     <link rel="modulepreload" crossorigin href="/Reparations-is-a-real-number/assets/react-vendor-bmayzkeZ.js">
     <link rel="stylesheet" crossorigin href="/Reparations-is-a-real-number/assets/index-B3cDE_DA.css">
   </head>
   <body>
     <div id="root"></div>
+    <!-- GitHub Pages SPA redirect restore.
+         Runs before React initialises so Router sees the correct path.
+         Companion to public/404.html. -->
+    <script>
+      (function () {
+        var sp = window.location.search;
+        if (sp.indexOf('p=') === -1) return;
+        var params = {};
+        sp.slice(1).split('&').forEach(function (part) {
+          var eq = part.indexOf('=');
+          if (eq > -1) params[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1));
+        });
+        if (params.p !== undefined) {
+          // Re-attach to the repo base (everything before the /?p= we just decoded).
+          var base = window.location.pathname.replace(/\/$/, '');
+          var path   = params.p   || '/';
+          var search = params.q    ? ('?' + params.q)    : '';
+          var hash   = params.hash ? ('#' + params.hash) : '';
+          window.history.replaceState(null, null, base + path + search + hash);
+        }
+      })();
+    </script>
   </body>
 </html>

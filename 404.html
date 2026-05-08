@@ -1,15 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Reparations ∈ ℝ — a global slavery accountability infrastructure. Every person documented here is verified against primary sources." />
-    <title>Reparations ∈ ℝ</title>
-    <script type="module" crossorigin src="/Reparations-is-a-real-number/assets/index-DD8VR-F2.js"></script>
-    <link rel="modulepreload" crossorigin href="/Reparations-is-a-real-number/assets/react-vendor-bmayzkeZ.js">
-    <link rel="stylesheet" crossorigin href="/Reparations-is-a-real-number/assets/index-B3cDE_DA.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <title>Reparations ∈ ℝ</title>
+  <script>
+    /**
+     * GitHub Pages SPA redirect — canonical solution from spa-github-pages.
+     *
+     * GitHub Pages serves this file on any path that has no matching file.
+     * We encode the current pathname + search + hash into a ?p= query string
+     * and redirect to the app root. The restore script in index.html then
+     * reads that param and calls history.replaceState so React Router sees
+     * the correct URL before it initialises.
+     *
+     * segmentCount = 1  →  /Reparations-is-a-real-number  (one repo-name segment)
+     *                       Change to 0 if you ever switch to a custom domain.
+     */
+    var segmentCount = 1;
+    var l = window.location;
+    var base = l.pathname.split('/').slice(0, 1 + segmentCount).join('/');
+    var path = l.pathname.slice(base.length) || '/';
+    var qs   = l.search ? '&q=' + encodeURIComponent(l.search.slice(1)) : '';
+    var hsh  = l.hash   ? '&hash=' + encodeURIComponent(l.hash.slice(1)) : '';
+    l.replace(
+      l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+      base + '/?p=' + encodeURIComponent(path) + qs + hsh
+    );
+  </script>
+</head>
+<body></body>
 </html>
