@@ -137,11 +137,20 @@ async function testPresignedUrl(url) {
       r.headers['content-type'].includes('image') ||
       r.headers['content-type'].includes('octet-stream')
     );
+
+    // Extract S3 error code from XML body for actionable diagnosis
+    let s3ErrorCode = null;
+    if (!r.ok && r.body) {
+      const codeMatch = r.body.match(/<Code>([^<]+)<\/Code>/);
+      const msgMatch  = r.body.match(/<Message>([^<]+)<\/Message>/);
+      if (codeMatch) s3ErrorCode = codeMatch[1] + (msgMatch ? ': ' + msgMatch[1] : '');
+    }
+
     return {
       ok: r.ok && isFile,
       status: r.status,
       contentType: r.headers?.['content-type'] || '?',
-      error: r.error || (r.ok && !isFile ? `got HTML/error body (${r.body?.slice(0,120)})` : null),
+      error: s3ErrorCode || r.error || (r.ok && !isFile ? `got HTML/error body (${r.body?.slice(0,120)})` : null),
       redirectChain: chain.length > 1 ? chain : null,
       finalUrl: currentUrl.slice(0, 160)
     };
