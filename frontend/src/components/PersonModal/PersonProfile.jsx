@@ -57,11 +57,17 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   const ownerDocuments = data.ownerDocuments || [];
   const descendants = data.descendants || [];
   const links = data.links || {};
-  const familyMembers = data.familyMembers || [];
 
-  // Separate parents and children from familyMembers
-  const parents = familyMembers.filter(m => m.relationship_type === 'parent' || m.role === 'parent');
-  const children = familyMembers.filter(m => m.relationship_type === 'child' || m.role === 'child');
+  // Backend returns familyMembers as { parents: [], children: [], spouse }
+  // NOT a flat array — guard against either shape for safety
+  const familyMembers = data.familyMembers || {};
+  const parents = Array.isArray(familyMembers.parents) ? familyMembers.parents
+    : Array.isArray(familyMembers) ? familyMembers.filter(m => m.relationship_type === 'parent' || m.role === 'parent')
+    : [];
+  const children = Array.isArray(familyMembers.children) ? familyMembers.children
+    : Array.isArray(familyMembers) ? familyMembers.filter(m => m.relationship_type === 'child' || m.role === 'child')
+    : [];
+  const spouseFromFamily = familyMembers.spouse || null;
 
   // Birth/death year formatted with estimation badge support
   const birthYearFormatted = formatYearWithEstimation(
