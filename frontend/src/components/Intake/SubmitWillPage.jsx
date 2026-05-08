@@ -10,6 +10,7 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import ErrorBoundary from './ErrorBoundary';
 
 const BACKEND = import.meta.env.VITE_API_URL || '';
 
@@ -74,154 +75,212 @@ export default function SubmitWillPage() {
 
   // ── Success screen ────────────────────────────────────────────────────────
   if (status === 'done' && result) {
+    const matched   = result.matchedPerson;    // { id, canonical_name } or null
+    const ambiguous = result.matchAmbiguous;   // true if >1 person matched
+
     return (
-      <div className="page">
-        <div className="state ok">✓ Document uploaded successfully</div>
+      <ErrorBoundary>
+        <div className="page">
+          <div className="state ok">✓ Document uploaded successfully</div>
 
-        <div className="contribute-result" style={{ marginTop: '1.5rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-          {result.s3Key && (
-            <div style={{ marginBottom: '0.5rem' }}>
-              <span style={{ color: '#888' }}>S3 key: </span>
-              <code style={{ color: '#e0e0e0' }}>{result.s3Key}</code>
+          {/* ── Linkage banner ── */}
+          {matched ? (
+            <div style={{
+              marginTop: '1.25rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(0,200,100,0.08)',
+              border: '1px solid rgba(0,200,100,0.25)',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+            }}>
+              <span style={{ color: '#4caf50' }}>✓ Auto-linked to </span>
+              <Link
+                to={`/?id=${matched.id}&table=canonical_persons`}
+                style={{ color: '#80cbc4', textDecoration: 'underline' }}
+              >
+                {matched.canonical_name}
+              </Link>
+              <span style={{ color: '#888' }}> — document now visible on their profile</span>
             </div>
-          )}
-          {result.personDocId && (
-            <div style={{ marginBottom: '0.5rem' }}>
-              <span style={{ color: '#888' }}>person_documents.id: </span>
-              <code style={{ color: '#e0e0e0' }}>{result.personDocId}</code>
+          ) : ambiguous ? (
+            <div style={{
+              marginTop: '1.25rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(245,166,35,0.08)',
+              border: '1px solid rgba(245,166,35,0.25)',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+              color: '#f5a623',
+            }}>
+              ⚠ Multiple persons named &ldquo;{testatorName}&rdquo; exist in the database.
+              Document stored — a researcher will link it manually.
             </div>
-          )}
-          {result.extractionId && (
-            <div style={{ marginBottom: '0.5rem' }}>
-              <span style={{ color: '#888' }}>will_extractions.id: </span>
-              <code style={{ color: '#e0e0e0' }}>{result.extractionId}</code>
+          ) : testatorName ? (
+            <div style={{
+              marginTop: '1.25rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+              color: '#888',
+            }}>
+              ℹ &ldquo;{testatorName}&rdquo; not yet in the database.
+              Document stored — will be linked when the person is added.
             </div>
-          )}
-          {result.warning && (
-            <div style={{ color: '#f5a623', marginTop: '0.75rem' }}>⚠ {result.warning}</div>
-          )}
-          {Array.isArray(result.nextSteps) && result.nextSteps.length > 0 && (
-            <ul style={{ marginTop: '1rem', paddingLeft: '1.2rem', color: '#aaa', lineHeight: 1.8 }}>
-              {result.nextSteps.map((s, i) => <li key={i}>{s}</li>)}
-            </ul>
-          )}
-        </div>
+          ) : null}
 
-        <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
-          <button className="btn" onClick={reset}>Submit another document</button>
-          <Link to="/" className="btn" style={{ textDecoration: 'none' }}>← Back to search</Link>
+          {/* ── Technical details ── */}
+          <div className="contribute-result" style={{ marginTop: '1.5rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+            {result.s3Key && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <span style={{ color: '#888' }}>S3 key: </span>
+                <code style={{ color: '#e0e0e0' }}>{result.s3Key}</code>
+              </div>
+            )}
+            {result.personDocId && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <span style={{ color: '#888' }}>person_documents.id: </span>
+                <code style={{ color: '#e0e0e0' }}>{result.personDocId}</code>
+              </div>
+            )}
+            {result.extractionId && (
+              <div style={{ marginBottom: '0.5rem' }}>
+                <span style={{ color: '#888' }}>will_extractions.id: </span>
+                <code style={{ color: '#e0e0e0' }}>{result.extractionId}</code>
+              </div>
+            )}
+            {result.warning && (
+              <div style={{ color: '#f5a623', marginTop: '0.75rem' }}>⚠ {result.warning}</div>
+            )}
+            {Array.isArray(result.nextSteps) && result.nextSteps.length > 0 && (
+              <ul style={{ marginTop: '1rem', paddingLeft: '1.2rem', color: '#aaa', lineHeight: 1.8 }}>
+                {result.nextSteps.map((s, i) => <li key={i}>{s}</li>)}
+              </ul>
+            )}
+          </div>
+
+          <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
+            <button className="btn" onClick={reset}>Submit another document</button>
+            <Link to="/" className="btn" style={{ textDecoration: 'none' }}>← Back to search</Link>
+          </div>
         </div>
-      </div>
+      </ErrorBoundary>
     );
   }
 
   // ── Form ──────────────────────────────────────────────────────────────────
   return (
-    <div className="page">
-      <h2 style={{ fontFamily: 'monospace', marginBottom: '0.5rem' }}>
-        Submit Archival Document
-      </h2>
-      <p style={{ color: '#888', fontFamily: 'monospace', fontSize: '0.85rem', marginBottom: '2rem', maxWidth: 520 }}>
-        Upload a will, probate record, estate inventory, or deed from an archive.
-        The PDF is stored in S3 and queued for OCR extraction — no account required.
-        Genealogical connections found during extraction will be reflected across
-        all public person profiles automatically.
-      </p>
+    <ErrorBoundary>
+      <div className="page">
+        <h2 style={{ fontFamily: 'monospace', marginBottom: '0.5rem' }}>
+          Submit Archival Document
+        </h2>
+        <p style={{ color: '#888', fontFamily: 'monospace', fontSize: '0.85rem', marginBottom: '2rem', maxWidth: 520 }}>
+          Upload a will, probate record, estate inventory, or deed from an archive.
+          The PDF is stored in S3 and queued for OCR extraction — no account required.
+          Genealogical connections found during extraction will be reflected across
+          all public person profiles automatically.
+        </p>
 
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 500 }}
-      >
-        {/* PDF file input */}
-        <div>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
-            PDF FILE *
-          </label>
-          <input
-            type="file"
-            accept=".pdf,application/pdf"
-            required
-            onChange={e => setFile(e.target.files[0] || null)}
-            style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#e0e0e0', width: '100%' }}
-          />
-          {file && (
-            <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#888', marginTop: 4 }}>
-              {file.name} — {(file.size / 1024).toFixed(0)} KB
-            </div>
-          )}
-        </div>
-
-        {/* Testator name */}
-        <div>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
-            TESTATOR NAME
-          </label>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="e.g. Henry Weaver"
-            value={testatorName}
-            onChange={e => setTestatorName(e.target.value)}
-          />
-        </div>
-
-        {/* Year */}
-        <div>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
-            YEAR OF WILL / PROBATE
-          </label>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="e.g. 1847"
-            value={testatorYear}
-            onChange={e => setTestatorYear(e.target.value)}
-          />
-        </div>
-
-        {/* Location */}
-        <div>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
-            LOCATION (county, state / territory)
-          </label>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="e.g. Washington DC"
-            value={testatorLocation}
-            onChange={e => setTestatorLocation(e.target.value)}
-          />
-        </div>
-
-        {/* Archive source */}
-        <div>
-          <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
-            ARCHIVE SOURCE
-          </label>
-          <input
-            type="text"
-            className="search-input"
-            placeholder="e.g. DC Archives, NARA RG 21, Maryland State Archives"
-            value={archiveSource}
-            onChange={e => setArchiveSource(e.target.value)}
-          />
-        </div>
-
-        {/* Error */}
-        {status === 'error' && error && (
-          <div className="state err">{error}</div>
-        )}
-
-        {/* Submit */}
-        <button
-          type="submit"
-          className="btn"
-          disabled={!file || status === 'uploading'}
-          style={{ alignSelf: 'flex-start', marginTop: '0.5rem' }}
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 500 }}
         >
-          {status === 'uploading' ? 'Uploading…' : 'Submit Document'}
-        </button>
-      </form>
-    </div>
+          {/* PDF file input */}
+          <div>
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
+              PDF FILE *
+            </label>
+            <input
+              type="file"
+              accept=".pdf,application/pdf"
+              required
+              onChange={e => setFile(e.target.files[0] || null)}
+              style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#e0e0e0', width: '100%' }}
+            />
+            {file && (
+              <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#888', marginTop: 4 }}>
+                {file.name} — {(file.size / 1024).toFixed(0)} KB
+              </div>
+            )}
+          </div>
+
+          {/* Testator name */}
+          <div>
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
+              TESTATOR NAME
+            </label>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="e.g. Henry Weaver"
+              value={testatorName}
+              onChange={e => setTestatorName(e.target.value)}
+            />
+          </div>
+
+          {/* Year */}
+          <div>
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
+              YEAR OF WILL / PROBATE
+            </label>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="e.g. 1847"
+              value={testatorYear}
+              onChange={e => setTestatorYear(e.target.value)}
+            />
+          </div>
+
+          {/* Location */}
+          <div>
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
+              LOCATION (county, state / territory)
+            </label>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="e.g. Washington DC"
+              value={testatorLocation}
+              onChange={e => setTestatorLocation(e.target.value)}
+            />
+          </div>
+
+          {/* Archive source */}
+          <div>
+            <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 6 }}>
+              ARCHIVE SOURCE
+            </label>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="e.g. DC Archives, NARA RG 21, Maryland State Archives"
+              value={archiveSource}
+              onChange={e => setArchiveSource(e.target.value)}
+            />
+          </div>
+
+          {/* Error */}
+          {status === 'error' && error && (
+            <div className="state err">{error}</div>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            className="btn"
+            disabled={!file || status === 'uploading'}
+            style={{ alignSelf: 'flex-start', marginTop: '0.5rem' }}
+          >
+            {status === 'uploading' ? 'Uploading…' : 'Submit Document'}
+          </button>
+        </form>
+      </div>
+    </ErrorBoundary>
   );
 }

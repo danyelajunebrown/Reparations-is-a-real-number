@@ -51,6 +51,69 @@ function slugify(name) {
     .slice(0, 60);
 }
 
+/**
+ * Look up a canonical_persons row by name.
+ *
+ * Strategy (in order):
+ *  1. Exact ILIKE match on canonical_name          — "Henry Weaver"
+ *  2. Split on first space → first_name + last_name match
+ *
+ * Returns:
+ *  { id, canonical_name }  — exactly 1 match → safe to auto-link
+ *  { ambiguous: true, count: N, name }  — multiple matches → skip, notify caller
+ *  null  — no match found
+ *
+ * Never throws — all errors return null so upload is never blocked.
+ */
+async function findCanonicalPersonByName(name) {
+  if (!name || !name.trim()) return null;
+  const trimmed = name.trim();
+
+  try {
+    // Step 1: exact canonical_name ILIKE
+    const exact = await db.query(
+      `SELECT id, canonical_name
+         FROM canonical_persons
+        WHERE canonical_name ILIKE $1
+        LIMIT 2`,
+      [trimmed]
+    );
+
+    if (exact.rows.length === 1) {
+      return { id: exact.rows[0].id, canonical_name: exact.rows[0].canonical_name };
+    }
+    if (exact.rows.length > 1) {
+      return { ambiguous: true, count: exact.rows.length, name: trimmed };
+    }
+
+    // Step 2: split into first + last name
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 2) return null;
+    const firstName = parts[0];
+    const lastName  = parts[parts.length - 1];
+
+    const split = await db.query(
+      `SELECT id, canonical_name
+         FROM canonical_persons
+        WHERE first_name ILIKE $1 AND last_name ILIKE $2
+        LIMIT 2`,
+      [firstName, lastName]
+    );
+
+    if (split.rows.length === 1) {
+      return { id: split.rows[0].id, canonical_name: split.rows[0].canonical_name };
+    }
+    if (split.rows.length > 1) {
+      return { ambiguous: true, count: split.rows.length, name: trimmed };
+    }
+
+    return null;
+  } catch (lookupErr) {
+    logger.warn('canonical_person lookup failed (non-fatal)', { error: lookupErr.message, name: trimmed });
+    return null;
+  }
+}
+
 // ── POST /api/wills/ingest ────────────────────────────────────────────────────
 router.post('/ingest', upload.single('willPdf'), async (req, res) => {
   try {
@@ -88,7 +151,36 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
 
     const s3Url = S3Service.getPublicUrl(s3Key);
 
-    // ── 2. Insert person_documents row ───────────────────────────────────────
+    // ── 2. Name-based canonical person lookup ────────────────────────────────
+    // If the caller didn't pass canonicalPersonId explicitly, try to find
+    // the person by testatorName. Result is one of:
+    //   { id, canonical_name }        → unique match, safe to auto-link
+    //   { ambiguous: true, count, name } → multiple matches, skip linking
+    //   null                           → no match found
+    let resolvedPersonId = canonicalPersonId ? parseInt(canonicalPersonId, 10) : null;
+    let matchedPerson    = null;
+    let matchAmbiguous   = false;
+
+    if (!resolvedPersonId && testatorName) {
+      const lookup = await findCanonicalPersonByName(testatorName);
+      if (lookup && !lookup.ambiguous) {
+        resolvedPersonId = lookup.id;
+        matchedPerson    = { id: lookup.id, canonical_name: lookup.canonical_name };
+        logger.info('Auto-linked will to canonical person', {
+          testatorName,
+          canonical_person_id: lookup.id,
+          canonical_name: lookup.canonical_name,
+        });
+      } else if (lookup && lookup.ambiguous) {
+        matchAmbiguous = true;
+        logger.info('Ambiguous name lookup — skipping auto-link', {
+          testatorName,
+          count: lookup.count,
+        });
+      }
+    }
+
+    // ── 3. Insert person_documents row ───────────────────────────────────────
     const titleText = testatorName
       ? `Will of ${testatorName}${testatorYear ? ` (${testatorYear})` : ''}${testatorLocation ? ` — ${testatorLocation}` : ''}`
       : file.originalname;
@@ -99,8 +191,8 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
         `INSERT INTO person_documents
            (s3_key, s3_url, document_type, filename, file_size, mime_type,
             title, source_type_label, collection_name,
-            name_as_appears, document_year, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            name_as_appears, document_year, created_by, canonical_person_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
           s3Key,                                               // $1  s3_key
@@ -115,6 +207,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
           testatorName || file.originalname,                   // $10 name_as_appears (NOT NULL)
           testatorYear ? parseInt(testatorYear, 10) : null,    // $11 document_year
           'public-ingestion',                                  // $12 created_by
+          resolvedPersonId || null,                            // $13 canonical_person_id
         ]
       );
       personDocId = pdResult.rows[0].id;
@@ -134,7 +227,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       });
     }
 
-    // ── 3. Insert will_extractions row (graceful — M048 may not be applied) ─
+    // ── 4. Insert will_extractions row (graceful — M048 may not be applied) ─
     let extractionId = null;
     try {
       const extResult = await db.query(
@@ -145,7 +238,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
          RETURNING id`,
         [
           personDocId,
-          canonicalPersonId || null,
+          resolvedPersonId || null,     // use the resolved id (auto-linked or explicit)
           participantId || null,
           JSON.stringify([{
             index: 0,
@@ -179,9 +272,17 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       personDocId,
       extractionId,
       s3Key,
+      // Linkage result — used by the frontend success screen
+      matchedPerson:   matchedPerson   || null,   // { id, canonical_name } or null
+      matchAmbiguous:  matchAmbiguous,             // true if >1 person matched
       message: 'Will uploaded and recorded successfully',
       nextSteps: [
         `Stored in S3: ${s3Key}`,
+        matchedPerson
+          ? `Auto-linked to ${matchedPerson.canonical_name} (id ${matchedPerson.id})`
+          : matchAmbiguous
+            ? `Multiple persons match "${testatorName}" — linked manually later`
+            : 'No matching person found in database yet',
         extractionId
           ? `Extraction record created — ID ${extractionId}`
           : 'Apply migration 048 to enable full extraction tracking',
