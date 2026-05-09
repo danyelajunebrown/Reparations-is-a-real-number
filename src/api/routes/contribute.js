@@ -970,24 +970,42 @@ router.get('/person/:id', async (req, res) => {
         } else if (tableSource === 'unconfirmed_persons') {
             // First check relationships JSON (used by census OCR extraction)
             if (person.relationships && typeof person.relationships === 'object') {
-                // Support census OCR 'owner' key AND Freedmen's Bank 'last_master'/'last_mistress' keys
+                // DocAI-enriched Freedmen's Bank records store extracted fields in docai_fields.
+                // The enrichment script pushes a JSONB element into the array:
+                //   relationships = [{ "docai_fields": { last_master: ..., ... } }, ...]
+                // OR directly sets relationships.docai_fields (object format).
+                const docaiFields = Array.isArray(person.relationships)
+                    ? person.relationships.find(r => r && r.docai_fields)?.docai_fields
+                    : person.relationships?.docai_fields;
+
+                // Expose docai_fields directly on person for the frontend
+                if (docaiFields) {
+                    person.docai_fields = docaiFields;
+                }
+
+                // Support census OCR 'owner' key AND Freedmen's Bank 'last_master'/'last_mistress' keys.
+                // Check both flat relationships AND nested docai_fields (DocAI-enriched records).
                 const rawOwner = person.relationships.owner
                     || person.relationships.last_master
-                    || person.relationships.last_mistress;
+                    || person.relationships.last_mistress
+                    || docaiFields?.last_master
+                    || docaiFields?.last_mistress;
                 if (rawOwner) {
                     ownerName = rawOwner;
                     owner = {
                         full_name: ownerName,
                         // Freedmen's Bank: master_location or county/state
                         location: person.relationships.master_location
+                            || docaiFields?.master_location
                             || (person.relationships.county && person.relationships.state
                                 ? `${person.relationships.county}, ${person.relationships.state}`
                                 : null),
-                        year: person.relationships.year,
+                        year: person.relationships.year || docaiFields?.date_of_entry,
                         // Freedmen's Bank-specific enrichment
                         branch: person.relationships.branch || null,
                         account_number: person.relationships.account_number || null,
-                        plantation: person.relationships.slave_residence || null,
+                        plantation: person.relationships.slave_residence
+                            || docaiFields?.slave_residence || null,
                     };
                     dataAvailability.hasOwnerData = true;
                     dataAvailability.hasStructuredOwner = true;
