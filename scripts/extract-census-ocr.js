@@ -356,6 +356,11 @@ async function fetchWaypointData(waypointUrl) {
 /**
  * Fetch image list by drilling down from county to districts
  * Our stored locations are at COUNTY level, images are at DISTRICT level
+ *
+ * Returns { fetchFailed: boolean, error: string|null, images: array }
+ * fetchFailed=true means the API/session is dead — caller should throw so the
+ * main loop can count consecutive failures and relaunch Chrome.
+ * fetchFailed=false with images=[] means a genuine empty waypoint.
  */
 async function fetchImageList(waypointUrl, collectionId) {
     const allImages = [];
@@ -365,8 +370,9 @@ async function fetchImageList(waypointUrl, collectionId) {
         const countyData = await fetchWaypointData(waypointUrl);
 
         if (countyData.error) {
+            // Session/network failure — signal upward so Chrome can be recovered
             console.log(`   ⚠️ API fetch failed: ${countyData.error}`);
-            return [];
+            return { fetchFailed: true, error: countyData.error, images: [] };
         }
 
         // Find districts (children of this county)
@@ -390,12 +396,13 @@ async function fetchImageList(waypointUrl, collectionId) {
                 });
             }
 
-            return allImages;
+            return { fetchFailed: false, error: null, images: allImages };
         }
 
         console.log(`   Found ${districts.length} districts, drilling down...`);
 
         // For each district, get its images (process ALL districts)
+        let districtFetchFailures = 0;
         for (const district of districts) {
             const districtName = district.titles?.[0]?.value || 'Unknown';
             console.log(`      📂 District: ${districtName}`);
@@ -404,6 +411,7 @@ async function fetchImageList(waypointUrl, collectionId) {
 
             if (districtData.error) {
                 console.log(`         ⚠️ Failed: ${districtData.error}`);
+                districtFetchFailures++;
                 continue;
             }
 
@@ -427,10 +435,18 @@ async function fetchImageList(waypointUrl, collectionId) {
             await new Promise(r => setTimeout(r, 500));
         }
 
-        return allImages;
+        // If every district fetch failed and we got nothing, signal a fetch failure
+        // so Chrome recovery is triggered — don't silently swallow it as "no images".
+        if (districtFetchFailures > 0 && allImages.length === 0) {
+            const msg = `All ${districtFetchFailures} district(s) returned fetch errors`;
+            console.log(`   ⚠️ ${msg} — treating as fetch failure`);
+            return { fetchFailed: true, error: msg, images: [] };
+        }
+
+        return { fetchFailed: false, error: null, images: allImages };
     } catch (error) {
         console.log(`   ⚠️ Image fetch failed: ${error.message}`);
-        return [];
+        return { fetchFailed: true, error: error.message, images: [] };
     }
 }
 
@@ -1104,10 +1120,31 @@ async function processLocation(location, dryRun = false) {
 
     // Fetch image list from waypoint
     console.log('   📚 Fetching image list...');
-    const images = await fetchImageList(location.waypoint_url, location.collection_id);
+    const imageResult = await fetchImageList(location.waypoint_url, location.collection_id);
+
+    // If the API/session failed, throw so the main loop increments consecutiveErrors
+    // and triggers Chrome recovery. DO NOT mark this location as scraped.
+    if (imageResult.fetchFailed) {
+        throw new Error(`FetchFailed: ${imageResult.error}`);
+    }
+
+    const images = imageResult.images;
 
     if (images.length === 0) {
-        console.log('   ⚠️ No images found at this waypoint');
+        console.log('   ⚠️ No images found at this waypoint (genuine empty — no data to extract)');
+        // Genuine empty waypoint: mark it scraped with image_count=0 so we don't
+        // keep hitting an empty location on every run.
+        if (sql && !dryRun) {
+            try {
+                await sql`
+                    UPDATE familysearch_locations
+                    SET scraped_at = CURRENT_TIMESTAMP,
+                        image_count = 0
+                    WHERE id = ${location.id}
+                `;
+            } catch (e) { /* ignore */ }
+        }
+        stats.locationsProcessed++;
         return;
     }
 
@@ -1462,21 +1499,30 @@ async function main() {
             stats.errors++;
             consecutiveErrors++;
 
-            // Try to recover from detached frame or connection errors
-            if (error.message.includes('detached Frame') || error.message.includes('Connection closed') || error.message.includes('Target closed')) {
-                console.log('   🔄 Attempting browser recovery...');
+            // FetchFailed means the FamilySearch session/API connection is dead.
+            // Detached Frame / Connection closed / Target closed mean Chrome is dead.
+            // All of these warrant a page/browser recovery attempt.
+            const isFetchFailure = error.message.startsWith('FetchFailed');
+            const isBrowserFailure = error.message.includes('detached Frame') ||
+                                     error.message.includes('Connection closed') ||
+                                     error.message.includes('Target closed');
+
+            if (isFetchFailure || isBrowserFailure) {
+                console.log('   🔄 Attempting browser/session recovery...');
                 await ensurePageValid();
             }
 
-            // If 5+ consecutive errors, the browser is likely toast — hard relaunch
-            if (consecutiveErrors >= 5) {
-                console.log(`   ⚠️ ${consecutiveErrors} consecutive errors — hard browser relaunch...`);
+            // After 3 consecutive fetch-or-browser failures, do a full hard relaunch
+            // and re-establish the FamilySearch session. Lowered from 5 to 3 so
+            // recovery kicks in before too many locations are skipped.
+            if (consecutiveErrors >= 3) {
+                console.log(`   ⚠️ ${consecutiveErrors} consecutive failures — hard browser relaunch to recover session...`);
                 try { await browser.close().catch(() => {}); } catch (_) {}
                 await new Promise(r => setTimeout(r, 5000));
                 page = await initBrowser();
                 await ensureLoggedIn();
                 consecutiveErrors = 0;
-                console.log('   ✅ Hard relaunch complete');
+                console.log('   ✅ Hard relaunch complete — session restored');
             }
         }
 
