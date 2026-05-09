@@ -4277,7 +4277,7 @@ router.get('/depositors/search', async (req, res) => {
         const countResult = await pool.query(`
             SELECT COUNT(*)::int AS total
             FROM unconfirmed_persons
-            WHERE ${conditions.slice(0, -0).join(' AND ')}
+            WHERE ${conditions.join(' AND ')}
         `, params.slice(0, -2));
 
         res.json({
