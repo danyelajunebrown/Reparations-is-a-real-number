@@ -273,14 +273,22 @@ router.get('/person-doc/:pdId/access',
     }
 
     if (!s3Key) {
-      // Fall back to source_url (external link — no presigning needed)
-      const fallback = pd.source_url || pd.s3_url;
-      return res.json({
-        success: true,
-        viewUrl: fallback,
-        downloadUrl: fallback,
-        filename: pd.filename,
-        presigned: false,
+      // If there is a source_url (external non-S3 link), return it — it's safe to use directly.
+      if (pd.source_url) {
+        return res.json({
+          success: true,
+          viewUrl: pd.source_url,
+          downloadUrl: pd.source_url,
+          filename: pd.filename,
+          presigned: false,
+        });
+      }
+      // Do NOT return a raw s3_url as viewUrl — the bucket is private and direct access
+      // will result in a 403. Instead tell the frontend no presignable key was found.
+      return res.status(422).json({
+        success: false,
+        error: 'Document not presignable: no s3_key stored and s3_url could not be normalized to a key.',
+        debugInfo: { id: pd.id, has_s3_url: !!pd.s3_url },
       });
     }
 

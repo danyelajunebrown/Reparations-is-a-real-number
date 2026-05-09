@@ -1630,6 +1630,47 @@ router.get('/person/:id', async (req, res) => {
             || person.location   // may have been set from Freedmen's Bank branch (W4)
             || null;
 
+        // ── Coverage summary — tells the frontend exactly what data is and isn't available
+        // so it can render helpful empty states rather than invisible blank sections.
+        const extractionMethod = person.extraction_method || person.source_type || '';
+        const notesStr = (person.notes || '').toLowerCase();
+        let sourceLabel = null;
+        if (extractionMethod.includes('freedmens_bank') || notesStr.includes('freedmen')) {
+            sourceLabel = 'Freedmen\'s Bank Index';
+        } else if (extractionMethod.includes('1860') || notesStr.includes('1860 slave schedule')) {
+            const stateStr = person.primary_state ? ` · ${person.primary_state}` : '';
+            sourceLabel = `1860 U.S. Slave Schedule${stateStr}`;
+        } else if (extractionMethod.includes('civilwardc') || notesStr.includes('civilwardc')) {
+            sourceLabel = 'CivilWarDC Petition Database';
+        } else if (extractionMethod.includes('msa') || notesStr.includes('msa sc')) {
+            sourceLabel = 'Maryland State Archives';
+        } else if (extractionMethod.includes('rootsweb') || notesStr.includes('rootsweb')) {
+            sourceLabel = 'Rootsweb Genealogy';
+        } else if (tableSource === 'canonical_persons') {
+            const stateStr = person.primary_state ? ` · ${person.primary_state}` : '';
+            sourceLabel = `Historical records${stateStr}`;
+        } else if (tableSource === 'enslaved_individuals') {
+            sourceLabel = 'Enslaved individuals index';
+        } else if (tableSource === 'unconfirmed_persons') {
+            sourceLabel = extractionMethod || 'Unconfirmed record';
+        }
+
+        const coverage = {
+            hasDocuments: (documents.length + ownerDocuments.length + documentCollections.length) > 0,
+            hasClimbData: dataAvailability.hasBirthYear || false,
+            hasFamilyMembers: (
+                (Array.isArray(familyMembers?.parents) && familyMembers.parents.length > 0) ||
+                (Array.isArray(familyMembers?.children) && familyMembers.children.length > 0) ||
+                !!familyMembers?.spouse
+            ),
+            hasPetitions: dataAvailability.hasPetitionRecord || false,
+            hasExternalIds: !!(
+                externalLinks.familySearch || externalLinks.wikiTree || externalLinks.ancestry
+            ),
+            source_label: sourceLabel,
+            extraction_method: extractionMethod || null,
+        };
+
         res.json({
             success: true,
             person: {
@@ -1661,6 +1702,7 @@ router.get('/person/:id', async (req, res) => {
                 notes: person.notes || null
             },
             links: externalLinks,
+            coverage,
         });
 
     } catch (error) {

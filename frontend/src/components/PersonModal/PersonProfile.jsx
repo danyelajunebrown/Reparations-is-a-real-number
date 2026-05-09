@@ -59,6 +59,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   const documentCollections = data.documentCollections || [];
   const descendants = data.descendants || [];
   const links = data.links || {};
+  const coverage = data.coverage || {};
 
   // Backend returns familyMembers as { parents: [], children: [], spouse }
   // NOT a flat array — guard against either shape for safety
@@ -70,6 +71,13 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
     : Array.isArray(familyMembers) ? familyMembers.filter(m => m.relationship_type === 'child' || m.role === 'child')
     : [];
   const spouseFromFamily = familyMembers.spouse || null;
+
+  // Names to highlight in document viewer — built from all related persons on this profile
+  const namesToHighlight = [
+    { name: p.full_name || p.name, category: 'primary' },
+    ...(owner ? [{ name: owner.full_name, category: 'owner' }] : []),
+    ...enslavedPersons.slice(0, 10).map(ep => ({ name: ep.full_name, category: 'enslaved' })),
+  ].filter(n => n.name && n.name.length > 1);
 
   // Birth/death year formatted with estimation badge support
   const birthYearFormatted = formatYearWithEstimation(
@@ -94,6 +102,11 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
               {p.death_year && `–${formatYear(p.death_year)}`}
               {p.location && ` · ${p.location}`}
             </div>
+            {coverage.source_label && (
+              <div style={{ marginTop: 6 }}>
+                <span className="source-badge">{coverage.source_label}</span>
+              </div>
+            )}
           </div>
           {p.verification_status && (
             <div style={{ textAlign: 'right' }}>
@@ -295,6 +308,22 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         </Section>
       )}
 
+      {/* ── No-documents banner: shown when coverage says no docs exist ─── */}
+      {!coverage.hasDocuments && (
+        <Section title="Primary source documents">
+          <div className="box" style={{ color: 'var(--dim)', fontSize: 13 }}>
+            <div style={{ marginBottom: 4 }}>No primary source documents linked yet.</div>
+            {coverage.source_label && (
+              <div style={{ fontSize: 11 }}>
+                This record was extracted from the{' '}
+                <strong>{coverage.source_label}</strong>.
+                Source images may not yet be digitized or linked in this database.
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* ── Primary source documents ─────────────────────────────────────
            If backend returned documentCollections (grouped by source), render
            collection cards with multi-page viewer support. Otherwise fall back
@@ -305,7 +334,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
           <div className="stack">
             {/* Collection cards — each card opens the full multi-page viewer */}
             {documentCollections.map((col, idx) => {
-              const hasPages = col.pages && col.pages.some(p => p.s3_url || p.source_url);
+              const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
               if (!hasPages) {
                 // No viewable URL in any page — show metadata-only card
                 return (
@@ -398,7 +427,11 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />
       )}
       {viewCollection && (
-        <DocCollectionOverlay collection={viewCollection} onClose={() => setViewCollection(null)} />
+        <DocCollectionOverlay
+          collection={viewCollection}
+          onClose={() => setViewCollection(null)}
+          namesToHighlight={namesToHighlight}
+        />
       )}
 
       {descendants.length > 0 && (

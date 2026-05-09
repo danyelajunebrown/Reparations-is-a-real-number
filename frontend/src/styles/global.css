@@ -452,3 +452,15 @@ hr {
 .provenance-step strong {
   color: var(--fg);
 }
+
+/* ── Source badge (e.g. "1860 U.S. Slave Schedule · TX") ─── */
+.source-badge {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dimmer);
+  border: 1px solid var(--border);
+  padding: 1px 7px;
+  border-radius: 2px;
+}

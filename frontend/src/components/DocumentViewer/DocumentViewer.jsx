@@ -286,15 +286,14 @@ function DocEmbed({ viewUrl, downloadUrl, filename, isPdf: isPdfHint, isImage: i
  * DocCollectionOverlay — fullscreen fixed overlay for multi-page document collections.
  * Accepts a `collection` object: { collection_name, source_type_label, doc_type, pages[] }
  * where each page has { id, s3_url, source_url, title, filename, ocr_text, ... }.
- * ← / → arrow keys navigate pages. Escape closes.
+ * ← / → arrow keys navigate pages. Escape closes. H toggles name highlights.
  *
- * Presigned URL flow:
- *   Each page's s3_url is a raw S3 URL (bucket not public).
- *   We call GET /api/documents/person-doc/:id/access per page to get a presigned URL.
- *   Falls back to page.s3_url / page.source_url if presign fails or page has no id.
+ * namesToHighlight: [{ name, category }] — names to highlight in OCR text strip.
+ * Categories: 'primary' (amber), 'owner' (red), 'enslaved' (blue), 'family' (green).
  */
-export function DocCollectionOverlay({ collection, onClose }) {
+export function DocCollectionOverlay({ collection, onClose, namesToHighlight = [] }) {
   const [pageIdx, setPageIdx] = useState(0);
+  const [highlightsOn, setHighlightsOn] = useState(true);
   const pages = collection.pages || [];
   const page = pages[pageIdx];
   const total = pages.length;
@@ -302,24 +301,28 @@ export function DocCollectionOverlay({ collection, onClose }) {
   // Presigned URL state — refetched whenever the current page changes
   const [accessData, setAccessData] = useState(null);
   const [accessLoading, setAccessLoading] = useState(false);
+  const [accessError, setAccessError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (!page?.id) return;
     setAccessLoading(true);
     setAccessData(null);
+    setAccessError(null);
     const controller = new AbortController();
     api.getPersonDocAccess(page.id, controller.signal)
       .then(data => { if (!controller.signal.aborted) setAccessData(data); })
       .catch(err => {
         if (!controller.signal.aborted) {
           console.warn('[DocCollectionOverlay] presign error:', err.message);
+          setAccessError(err.message || 'Presign failed');
         }
       })
       .finally(() => { if (!controller.signal.aborted) setAccessLoading(false); });
     return () => controller.abort();
-  }, [page?.id]);
+  }, [page?.id, retryCount]);
 
-  // Keyboard navigation
+  // Keyboard navigation — H toggles highlights
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') onClose();
@@ -327,6 +330,8 @@ export function DocCollectionOverlay({ collection, onClose }) {
         setPageIdx(i => Math.min(i + 1, total - 1));
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
         setPageIdx(i => Math.max(i - 1, 0));
+      if (e.key === 'h' || e.key === 'H')
+        setHighlightsOn(v => !v);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -341,7 +346,7 @@ export function DocCollectionOverlay({ collection, onClose }) {
 
   if (!page) return null;
 
-  // Prefer backend presigned URL; fall back to raw s3_url / source_url
+  // Prefer backend presigned URL; fall back to source_url (NOT raw s3_url — bucket is private)
   const access = accessData || {};
   const viewUrl = access.viewUrl || access.view_url || page.source_url;
   const downloadUrl = access.downloadUrl || access.download_url || viewUrl;
@@ -351,6 +356,14 @@ export function DocCollectionOverlay({ collection, onClose }) {
   const isImage = IMAGE_EXTS.includes(urlExt);
   const isPdf   = urlExt === 'pdf';
 
+  const CATEGORY_COLORS = { primary: '#f59e0b', owner: '#ef4444', enslaved: '#3b82f6', family: '#22c55e' };
+  const ocrText = page.ocr_text || '';
+
+  // Which names appear in this page's OCR text?
+  const pageMatches = namesToHighlight.filter(({ name }) =>
+    name && ocrText.toLowerCase().includes(name.toLowerCase())
+  );
+
   return (
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 999, background: '#000', display: 'flex', flexDirection: 'column' }}
@@ -358,15 +371,36 @@ export function DocCollectionOverlay({ collection, onClose }) {
     >
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', borderBottom: '1px solid #333', flexShrink: 0, gap: 12 }}>
-        <div style={{ color: '#ccc', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-          {collection.collection_name}
-          {collection.source_type_label && (
-            <span style={{ color: '#555', marginLeft: 8, fontSize: 11 }}>· {collection.source_type_label}</span>
+        {/* Title + name-found badges */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <div style={{ color: '#ccc', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {collection.collection_name}
+            {collection.source_type_label && (
+              <span style={{ color: '#555', marginLeft: 8, fontSize: 11 }}>· {collection.source_type_label}</span>
+            )}
+          </div>
+          {highlightsOn && pageMatches.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+              {pageMatches.map(({ name, category }) => (
+                <span key={name} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: CATEGORY_COLORS[category] || '#f59e0b', color: '#000', fontWeight: 600 }}>
+                  🔍 {name}
+                </span>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Page navigation */}
+        {/* Controls: highlight toggle + page nav */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {namesToHighlight.length > 0 && ocrText && (
+            <button
+              onClick={() => setHighlightsOn(v => !v)}
+              title="Toggle name highlights (H key)"
+              style={{ background: highlightsOn ? '#f59e0b22' : 'none', border: `1px solid ${highlightsOn ? '#f59e0b' : '#444'}`, color: highlightsOn ? '#f59e0b' : '#666', cursor: 'pointer', padding: '4px 8px', fontSize: 11, borderRadius: 3 }}
+            >
+              H {highlightsOn ? '✓' : '○'}
+            </button>
+          )}
           <button
             onClick={() => setPageIdx(i => Math.max(i - 1, 0))}
             disabled={pageIdx === 0}
@@ -383,20 +417,14 @@ export function DocCollectionOverlay({ collection, onClose }) {
             aria-label="Next page"
           >→</button>
           {viewUrl && (
-            <a
-              href={viewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: '#aaa', fontSize: 12, textDecoration: 'none', padding: '4px 8px', border: '1px solid #444' }}
-            >
+            <a href={viewUrl} target="_blank" rel="noopener noreferrer"
+              style={{ color: '#aaa', fontSize: 12, textDecoration: 'none', padding: '4px 8px', border: '1px solid #444' }}>
               ↓ download
             </a>
           )}
-          <button
-            onClick={onClose}
+          <button onClick={onClose}
             style={{ background: 'none', border: '1px solid #444', color: '#ccc', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 10px' }}
-            aria-label="Close document viewer"
-          >×</button>
+            aria-label="Close document viewer">×</button>
         </div>
       </div>
 
@@ -406,21 +434,29 @@ export function DocCollectionOverlay({ collection, onClose }) {
           <div style={{ color: '#aaa', padding: 40 }}>Loading<span className="blink">_</span></div>
         )}
         {!accessLoading && !viewUrl && (
-          <div style={{ color: '#f66', padding: 40 }}>No document URL available for page {pageIdx + 1}.</div>
+          <div style={{ color: '#f66', padding: 40, textAlign: 'center' }}>
+            <div style={{ marginBottom: 12 }}>
+              {accessError
+                ? `Could not load document: ${accessError}`
+                : `No document URL available for page ${pageIdx + 1}.`}
+            </div>
+            {page?.id && (
+              <button
+                onClick={() => setRetryCount(c => c + 1)}
+                style={{ background: 'none', border: '1px solid #f66', color: '#f66', cursor: 'pointer', padding: '6px 16px', fontSize: 12 }}
+              >
+                ↺ Retry
+              </button>
+            )}
+          </div>
         )}
         {!accessLoading && viewUrl && isImage && (
-          <img
-            src={viewUrl}
-            alt={page.title || page.filename || `Page ${pageIdx + 1}`}
-            style={{ maxWidth: '100%', display: 'block' }}
-          />
+          <img src={viewUrl} alt={page.title || page.filename || `Page ${pageIdx + 1}`}
+            style={{ maxWidth: '100%', display: 'block' }} />
         )}
         {!accessLoading && viewUrl && isPdf && (
-          <iframe
-            src={viewUrl}
-            title={page.title || `Page ${pageIdx + 1}`}
-            style={{ width: '100%', flex: 1, border: 'none', alignSelf: 'stretch', minHeight: '80vh' }}
-          />
+          <iframe src={viewUrl} title={page.title || `Page ${pageIdx + 1}`}
+            style={{ width: '100%', flex: 1, border: 'none', alignSelf: 'stretch', minHeight: '80vh' }} />
         )}
         {!accessLoading && viewUrl && !isImage && !isPdf && (
           <div style={{ color: '#aaa', padding: 40 }}>
@@ -430,15 +466,38 @@ export function DocCollectionOverlay({ collection, onClose }) {
         )}
       </div>
 
-      {/* OCR text strip */}
-      {page.ocr_text && (
+      {/* OCR text strip — with name highlighting when enabled */}
+      {ocrText && (
         <div style={{ maxHeight: 120, overflow: 'auto', borderTop: '1px solid #333', padding: '8px 16px', fontSize: 11, color: '#777', whiteSpace: 'pre-wrap', flexShrink: 0 }}>
           <span style={{ color: '#555', marginRight: 8 }}>OCR:</span>
-          {page.ocr_text}
+          {highlightsOn && namesToHighlight.length > 0
+            ? <span dangerouslySetInnerHTML={{ __html: buildHighlightedOcr(ocrText, namesToHighlight, CATEGORY_COLORS) }} />
+            : ocrText}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * buildHighlightedOcr — HTML-escapes OCR text then wraps matched names in
+ * <mark> spans coloured by category.  Sorted by name length descending so
+ * "Ann Maria" matches before "Ann".
+ */
+function buildHighlightedOcr(text, namesToHighlight, colors) {
+  let safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const sorted = [...namesToHighlight]
+    .filter(n => n.name && n.name.length > 1)
+    .sort((a, b) => b.name.length - a.name.length);
+  for (const { name, category } of sorted) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const color = colors[category] || '#f59e0b';
+    safe = safe.replace(
+      new RegExp(`(${esc})`, 'gi'),
+      `<mark style="background:${color};color:#000;padding:0 2px;border-radius:2px">$1</mark>`
+    );
+  }
+  return safe;
 }
 
 function Field({ label, value, mono }) {
