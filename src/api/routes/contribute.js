@@ -1283,6 +1283,39 @@ router.get('/person/:id', async (req, res) => {
                     }));
                 }
             }
+        } else if (tableSource === 'unconfirmed_persons') {
+            // ── Fix: Freedman's Bank depositors + 1860 slave schedule persons live in
+            //    unconfirmed_persons. Their source images are linked via unconfirmed_person_id,
+            //    NOT canonical_person_id. Without this block the primary source viewer never loads.
+            try {
+                const upDocsResult = await pool.query(`
+                    SELECT
+                        pd.id,
+                        COALESCE(pd.title, pd.collection_name, pd.document_type) AS title,
+                        pd.name_as_appears AS filename,
+                        pd.document_type AS doc_type,
+                        pd.collection_name,
+                        pd.collection_key,
+                        pd.collection_page_number,
+                        pd.collection_page_count,
+                        pd.source_type_label,
+                        pd.page_reference,
+                        pd.s3_key,
+                        pd.s3_url,
+                        pd.source_url,
+                        pd.document_date,
+                        pd.document_year
+                    FROM person_documents pd
+                    WHERE pd.unconfirmed_person_id = $1
+                    ORDER BY pd.image_number ASC NULLS LAST, pd.id ASC
+                    LIMIT 20
+                `, [parseInt(id, 10)]);
+                if (upDocsResult.rows.length > 0) {
+                    documents = upDocsResult.rows.map(d => ({ ...d, document_id: String(d.id) }));
+                }
+            } catch (e) {
+                console.log('person_documents unconfirmed_persons query (non-fatal):', e.message);
+            }
         }
 
         // For slaveholders, get their documents from documents table
@@ -1290,7 +1323,26 @@ router.get('/person/:id', async (req, res) => {
         let documentCollections = [];
         let enslavedPersons = [];
         let descendants = [];
-        if (person.person_type === 'slaveholder' || person.person_type === 'owner' || tableSource === 'canonical_persons' || tableSource === 'documents') {
+
+        // ── Fix: Guard against freedpersons being shown as slaveholders.
+        //    unconfirmed_persons are ALWAYS depositors/freedpeople — never run enslaved lookup.
+        //    canonical_persons records whose person_type is a freedperson type are also excluded.
+        //    Without this guard, a freed person named "William Davis" would show all enslaved
+        //    people owned by every other William Davis in the database (fuzzy name fallbacks).
+        const FREEDPERSON_TYPES = new Set([
+            'freedperson', 'depositor', 'enslaved', 'enslaved_ancestor',
+            'confirmed_enslaved', 'free_poc', 'free_person_of_color', 'suspected_enslaved'
+        ]);
+        const isConfirmedSlaveholder = ['slaveholder', 'owner', 'enslaver',
+            'confirmed_owner', 'suspected_owner', 'free_poc_slaveholder']
+            .includes(person.person_type);
+        const isFreedpersonType = FREEDPERSON_TYPES.has(person.person_type);
+
+        if (!isFreedpersonType && tableSource !== 'unconfirmed_persons' && (
+            isConfirmedSlaveholder ||
+            tableSource === 'canonical_persons' ||
+            tableSource === 'documents'
+        )) {
             // Get documents for this owner
             const ownerDocsResult = await pool.query(`
                 SELECT
@@ -1381,7 +1433,8 @@ router.get('/person/:id', async (req, res) => {
                     const censusLinked = await pool.query(`
                         SELECT DISTINCT
                             full_name as enslaved_name,
-                            lead_id as enslaved_id,
+                            lead_id as lead_id,
+                            'unconfirmed_persons' AS table_source,
                             source_url,
                             gender,
                             relationships->>'year' as year,
@@ -1416,7 +1469,8 @@ router.get('/person/:id', async (req, res) => {
                     const altResult = await pool.query(`
                         SELECT DISTINCT
                             e.full_name as enslaved_name,
-                            e.lead_id as enslaved_id,
+                            e.lead_id as lead_id,
+                            'unconfirmed_persons' AS table_source,
                             e.source_url
                         FROM unconfirmed_persons e
                         JOIN unconfirmed_persons o ON e.source_url = o.source_url
@@ -1558,7 +1612,7 @@ router.get('/person/:id', async (req, res) => {
             ...ep,
             id: ep.enslaved_id || ep.id || ep.lead_id,
             full_name: ep.full_name || ep.enslaved_name || 'Unknown',
-            table_source: (ep.enslaved_id && !ep.lead_id) ? 'enslaved_individuals' : 'unconfirmed_persons',
+            table_source: ep.table_source || ((ep.enslaved_id && !ep.lead_id) ? 'enslaved_individuals' : 'unconfirmed_persons'),
         })).filter(ep => ep.id); // drop any that still have no id (safety guard)
 
         // ── W1b: Normalize descendants — slave_owner_descendants_suspected uses
