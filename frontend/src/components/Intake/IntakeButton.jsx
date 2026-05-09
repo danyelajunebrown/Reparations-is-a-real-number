@@ -16,8 +16,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
  * @param {boolean} props.disabled — disable the button (e.g. while submitting)
  * @param {Function} props.onSubmitComplete — callback after form submission
  */
+// ?embedded=true is the official Google Forms cross-origin iframe embed URL.
+// The previous ?usp=dialog variant is Google's internal dialog mode and carries
+// X-Frame-Options: SAMEORIGIN, which blocks embedding from any foreign origin —
+// causing the iframe to fail and Chromium kiosk to reset back to the home page.
+// ?embedded=true is what Google generates in Forms → Send → Embed and is
+// explicitly permitted for cross-origin iframing.
 const GOOGLE_FORM_URL =
-  'https://docs.google.com/forms/d/e/1FAIpQLScIek-qQmGj7esA3spu6zclP2VvU8cZwWbLmDMJ0GJjSCX_BA/viewform?usp=dialog';
+  'https://docs.google.com/forms/d/e/1FAIpQLScIek-qQmGj7esA3spu6zclP2VvU8cZwWbLmDMJ0GJjSCX_BA/viewform?embedded=true';
 
 export default function IntakeButton({ formUrl = GOOGLE_FORM_URL, disabled = false, onSubmitComplete }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -129,7 +135,10 @@ export default function IntakeButton({ formUrl = GOOGLE_FORM_URL, disabled = fal
                   src={formUrl}
                   className="intake-iframe"
                   title="Reparations Intake Form"
-                  sandbox="allow-forms allow-scripts allow-same-origin allow-popups"
+                  // allow-popups-to-escape-sandbox: lets Google Forms' post-submit
+                  // confirmation page navigate correctly without being trapped inside
+                  // the sandboxed frame (which would cause a blank/error result).
+                  sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                 />
                 <div className="intake-footer">
                   Complete the form above. You'll be able to return here after submission.

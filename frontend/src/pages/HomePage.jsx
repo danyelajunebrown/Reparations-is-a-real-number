@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatClass } from '../api/format.js';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
 import { LedgerSection } from '../components/Layout/LedgerSection.jsx';
 import IntakeButton from '../components/Intake/IntakeButton.jsx';
+import { useKioskMode } from '../hooks/useKioskMode.js';
 
 // Home page.
 // Pre-search: mission statement + live stats + provenance + section navigation + search bar.
@@ -61,8 +62,9 @@ const EXAMPLE_SEARCHES = [
 
 export default function HomePage() {
   const [submitted, setSubmitted] = useState('');
-  const [searchParams] = useSearchParams();
-  const isKiosk = searchParams.get('mode') === 'kiosk';
+  // useKioskMode persists the ?mode=kiosk flag in sessionStorage so it
+  // survives React Router navigation (pushState strips the query param).
+  const isKiosk = useKioskMode();
 
   const personsState = useApi(
     signal => submitted ? api.searchPersons(submitted, signal) : Promise.resolve({ results: [] }),
