@@ -4,6 +4,95 @@ _This machine (MacBook) is **code + deploy only**. All active scraping runs on M
 
 ---
 
+## HOW TO GET INTO MAC MINI VIA TAILSCALE (SSH)
+
+### Step 1 — Find Mac Mini's Tailscale address
+You need one of these. Check whichever is easiest:
+
+**Option A — Tailscale admin console (from any browser):**
+```
+https://login.tailscale.com/admin/machines
+```
+Look for the Mac Mini entry. Copy its IP (looks like `100.x.x.x`) or hostname (looks like `mac-mini.tailnet-name.ts.net`).
+
+**Option B — If you're physically at Mac Mini right now, run in its Terminal:**
+```bash
+tailscale ip
+```
+That prints the `100.x.x.x` address. Use that.
+
+---
+
+### Step 2 — Ensure SSH (Remote Login) is on for Mac Mini
+On Mac Mini: **System Settings → General → Sharing → Remote Login → ON**  
+Allow access for: `danyelica` (or "All users")
+
+If it was already on, skip this.
+
+---
+
+### Step 3 — SSH in from your MacBook Terminal
+```bash
+ssh danyelica@<MAC-MINI-TAILSCALE-IP>
+```
+Example: `ssh danyelica@100.71.42.88`  
+Type `yes` on first connect. Enter danyelica's password when prompted.
+
+---
+
+### Step 4 — Launch Chrome on Mac Mini's display (from SSH)
+The enrichment script needs Chrome running on the Mac Mini with remote debugging on port 9222.  
+This command launches Chrome on Mac Mini's **local GUI display** even though you're SSH'd in:
+
+```bash
+launchctl asuser $(id -u danyelica) /usr/bin/open \
+  -na "Google Chrome" \
+  --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/familysearch-ancestor-climber
+```
+
+Wait 5 seconds for Chrome to open on Mac Mini.
+
+---
+
+### Step 5 — Verify Chrome is reachable on port 9222
+Still in your SSH session:
+```bash
+curl -s http://localhost:9222/json/version | head -3
+```
+You should see JSON with Chrome version info. If you get "Connection refused", Chrome didn't start — retry Step 4.
+
+---
+
+### Step 6 — Check/restore FamilySearch session
+The DocAI enricher navigates FamilySearch ARK URLs and screenshots them. If FamilySearch isn't logged in, screenshots will show a login page → conf=0.00 on everything.
+
+**Option A — If you have Screen Sharing enabled on Mac Mini:**
+From your MacBook:
+```bash
+open vnc://danyelica@<MAC-MINI-TAILSCALE-IP>
+```
+This opens Screen Sharing. You'll see Mac Mini's desktop. Switch to the Chrome window (it opened in Step 4), navigate to `familysearch.org`, and log in if needed.
+
+**Option B — If fs-cookies.json is still valid from a prior session:**
+The enricher does NOT use fs-cookies.json (that's the 1860 scraper). The enricher uses the Chrome session on port 9222 directly. So you just need FamilySearch to be logged in in that Chrome window.
+
+To check quickly from SSH — run a quick 1-record dry-run and watch for conf > 0:
+```bash
+cd /Users/danyelica/Desktop/Reparations-is-a-real-number
+node scripts/enrich-freedmens-docai.js \
+  --branch-like "Washington" \
+  --limit 1 \
+  --dry-run
+```
+If output shows `conf=0.00` → FamilySearch not logged in. Need Screen Sharing to log in.  
+If output shows `conf=0.XX` (any value > 0) → session is good, proceed.
+
+---
+
+---
+
 ## AUDIT SNAPSHOT  (2026-05-11T16:12Z)
 
 ### 1860 Slave Schedule
