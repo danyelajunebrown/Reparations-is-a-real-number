@@ -32,6 +32,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$REPO_DIR"
 
+# Ensure node/npm are on PATH when launched from non-interactive SSH/screen session
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
 # Load OPS_NOTIFY_WEBHOOK from .env if present
 # shellcheck disable=SC2046
 [ -f .env ] && export $(grep -E '^OPS_NOTIFY_WEBHOOK=' .env | xargs) 2>/dev/null || true
