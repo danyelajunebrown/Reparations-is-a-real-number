@@ -42,6 +42,26 @@ async function run() {
 
         // 1. Fetch all canonical_persons with a spouse_name that isn't already
         //    covered by a canonical_family_edges spouse edge.
+        //
+        // NOTE: canonical_persons does NOT have a spouse_name column.
+        // The spouse_name column exists on enslaved_individuals (which uses
+        // spouse_ids FK array for canonical edges). For canonical_persons,
+        // spouse data lives entirely in canonical_family_edges (M066).
+        // This script exits gracefully with 0 candidates for canonical_persons.
+        //
+        // Check if spouse_name column exists before querying
+        const colCheck = await client.query(`
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'canonical_persons' AND column_name = 'spouse_name'
+        `);
+        if (colCheck.rows.length === 0) {
+            console.log('[backfill-family-edges] canonical_persons.spouse_name column does not exist.');
+            console.log('[backfill-family-edges] Spouse data for canonical_persons lives in canonical_family_edges (M066).');
+            console.log('[backfill-family-edges] Use direct INSERT into canonical_family_edges for canonical_persons spouses.');
+            console.log('[backfill-family-edges] Done — 0 candidates processed.');
+            return;
+        }
+
         const sourceResult = await client.query(`
             SELECT cp.id, cp.canonical_name, cp.spouse_name
             FROM canonical_persons cp
