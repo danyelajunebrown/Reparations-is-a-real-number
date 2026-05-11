@@ -1,8 +1,166 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Document collection grouping complete. Multi-page primary source viewer live with presigned S3 URLs. 500 errors on person search fixed.
-**Last Updated:** May 8, 2026 (Session 44 — COMPLETE)
+**Current Phase:** Pipeline audited. 1860 scrape ~done (139,995 pages). Freedman's Bank DocAI 0.61% complete — Mac Mini must run all 29 branches. MacBook is code+deploy only.
+**Last Updated:** May 11, 2026 (Session 48 — COMPLETE)
+
+---
+
+## Session 48 — Pipeline State Audit + Mac Mini Runbook (May 11, 2026) ✅ COMPLETE
+
+### What Was Asked
+Clean up the process, verify what data exists, understand remaining work. All future scraping on Mac Mini only.
+
+### New Files
+| File | Purpose |
+|------|---------|
+| `scripts/audit-pipeline-state.js` | Read-only Neon audit — 1860 counts, DocAI enrichment %, person_documents S3 coverage |
+| `MAC-MINI-RUNBOOK.md` | Exact Mac Mini commands for all remaining scraping work, with real row counts |
+
+### Verified Data State (2026-05-11T16:12Z)
+
+**1860 Slave Schedule:**
+| Metric | Count |
+|--------|-------|
+| person_documents (census_slave_schedule) | **139,995** |
+| person_documents with s3_key | 139,995 (all backed) |
+| unconfirmed_persons 1860 rows (garbled ML artifacts) | 696 (not actionable — cleanup only) |
+| person_documents joined via unconfirmed_person_id | 0 (backfill needed post-Mac Mini confirmation) |
+
+**Freedman's Bank DocAI:**
+| Metric | Count |
+|--------|-------|
+| Total depositors | **416,136** |
+| Enriched | **2,550** (0.61%) |
+| Remaining | **413,586** |
+| Branches with partial work | 3 (DC 814, Charleston 1247, Richmond 489) |
+| Branches at 0% | 26 |
+| S3 screenshots in person_documents | **0** |
+
+### Key Decisions
+- **MacBook = code + deploy only.** No scraping here.
+- `MAC-MINI-RUNBOOK.md` is the single source of truth for what to run on Mac Mini.
+- `scripts/audit-pipeline-state.js` is safe to run anywhere — re-run after each Mac Mini branch to track progress.
+
+### Known Issues Found
+- `parse_failure_queue` has no `source_table` column (migration 044 schema mismatch)
+- 696 `unconfirmed_persons` rows have garbled `locations[1]` from old ML pass — data cleanup, not scraping
+- Freedman's Bank has 0 `person_documents` rows — enricher only writes to `relationships` JSONB; need `backfill-freedmens-to-person-documents.js` post-enrichment
+
+---
+
+## Session 47 — Document Coverage Survey + Gap Remediation (May 11, 2026) ✅ COMPLETE
+
+### What Was Asked
+1. Survey the entire database for S3 document inconsistencies and inaccessible person profiles.
+2. Complete all medium-to-critical priority gaps found in the survey.
+
+### Survey Results — 5 Gaps Identified
+
+| Gap | Description | Severity | Action |
+|-----|-------------|----------|--------|
+| 1 | `unconfirmed_persons` confirmed to a canonical person but `person_documents` still points only to `unconfirmed_person_id` — canonical profile shows no docs | High | SQL UPDATE with `::integer` cast; 33,804 rows backfilled |
+| 2 | MSA SC 2908 certificates of freedom (17,876 rows) stored via `enslaved_individual_id` FK only — enslaved person profiles showed no docs | High | New query block 2b added to `contribute.js` — dedup-merged into `documents[]` |
+| 3 | Orphan `person_documents` rows where both `canonical_person_id` AND `unconfirmed_person_id` are NULL (enslaved_individual_id only) | Low/Design | Documented as "by design" — MSA certs link via enslaved_individual_id, not person |
+| 4 | `audit-document-coverage.js` reported 2,899 "needs_backfill" rows — audit script was counting `tree_profile` and `freedmens_bank` types which are intentionally URL-only | Medium | Fixed audit script: added `AND document_type NOT IN ('tree_profile','freedmens_bank')` — real gap = ~8 rows |
+| 5 | 27 stale `confirming_documents` rows with `document_url ILIKE '%beyondkin%'` — Beyond Kin shut down; dead links | Medium | Deleted via `DELETE … RETURNING id` |
+
+### Post-Fix FK Coverage (person_documents)
+
+| FK Bucket | Before | After |
+|-----------|--------|-------|
+| `canonical_person_id` set | baseline | +33,804 rows promoted |
+| `unconfirmed_only` (no canonical_id) | 139,995 | 106,191 |
+| Real actionable backfill gap | ~2,899 (inflated) | ~8 rows |
+| Dead beyondkin links | 27 | 0 (deleted) |
+
+### Files Changed (Session 47)
+
+| File | Change |
+|------|--------|
+| `scripts/audit-document-coverage.js` | Fixed `needs_backfill` metric — excludes `tree_profile` and `freedmens_bank` |
+| `src/api/routes/contribute.js` | Added query block 2b: `person_documents` via `enslaved_individual_id` for enslaved person profiles |
+| `scripts/fix-document-coverage-gaps.js` | NEW — rerunnable script with `--dry-run` for Gaps 1, 3, and 5 |
+
+### Key Technical Notes
+
+**Neon HTTP driver DML quirk (permanent note):**
+`rowCount` always reports 0 for UPDATE/DELETE via `@neondatabase/serverless` HTTP adapter.
+Use `RETURNING id` + `result.rows.length` for accurate affected-row counts.
+Confirmed: `unconfirmed_only` bucket dropped 139,995→106,191 (33,804 rows updated) despite `rowCount=0`.
+
+**Type mismatch resolved:**
+`unconfirmed_persons.confirmed_individual_id` is `VARCHAR` — requires `::integer` cast when writing to `person_documents.canonical_person_id` (integer).
+
+---
+
+## Session 45 — Freedmen's Bank Integration Audit + DocAI Enrichment (May 8, 2026) 🔄 IN PROGRESS
+
+### What Was Asked
+1. Analyze how well Freedmen's Bank depositors are integrated across the system.
+2. Run `scripts/enrich-freedmens-docai.js` on this machine while 1860 scrape runs on Mac Mini.
+
+### Findings (Freedmen's Bank Integration Audit)
+
+| Metric | Count |
+|--------|-------|
+| Total depositors in `unconfirmed_persons` | 416,136 |
+| All status = 'pending' | 416,136 |
+| With `confirmed_individual_id` set | 89,459 |
+| Marked as duplicates | **0** — deduplication has NOT been run |
+| person_documents with freedmens-bank S3 key | **0** — DocAI has never run |
+| canonical_persons with "freedmen" in notes | 78,212 |
+
+### Actions Taken (Session 45)
+- Backfill applied: `node scripts/backfill-document-collections.js --apply`
+  - 17,876 rows received correct `collection_page_count`; 100% `collection_name` coverage
+- DocAI dry-run verified (3 records, 0 nav errors, 116KB/116KB/52KB screenshots)
+- First live attempt (PID 92727): Chrome was on Google sign-in page → conf=0.00 on all records
+  → Killed immediately; 4 contaminated records cleaned (review_notes + relationships.docai_fields)
+- Backend deployed: commit `dcddc2f4e` pushed to main → Render auto-deploy
+- Frontend deployed: published to `gh-pages-react`
+- **Washington DC live run started (PID 94253)** — 2:05 PM May 8, 2026
+  - FamilySearch session verified active: tab on `familysearch.org/en/tree/pedigree/portrait/G21N-HD2`
+  - Screenshots 288-300 KB (real ledger content)
+  - conf=0.95-1.00 across all records processed ✅
+  - Data writing correctly to `unconfirmed_persons.relationships` as array with `docai_fields` object
+  - "(no critical fields)" on DC records is historically expected — large free Black population in DC pre-war
+  - Log: `/tmp/freedmens-docai-washington.log`
+
+### DB Data Structure (confirmed live)
+`relationships` column is a JSONB **array**:
+```json
+[
+  { "docai_fields": {} },   ← old contaminated run (cleaned, empty)
+  { "docai_fields": {       ← current live enrichment
+    "residence": "District of Columbia, United States",
+    "account_number": "10",
+    "depositor_name": "Maria Louisa",
+    "residence_confidence": 1,
+    "account_number_confidence": 1,
+    "depositor_name_confidence": 0.96
+  }}
+]
+```
+Query pattern: use `relationships->1->'docai_fields'` or unnest/array indexing.
+
+### Pending
+- Washington DC run: ~500 records, ~70-80 min total, running in background (PID 94253)
+- After DC completes:
+  ```bash
+  nohup node scripts/enrich-freedmens-docai.js --branch-like "Richmond" --limit 500 > /tmp/freedmens-docai-richmond.log 2>&1 &
+  nohup node scripts/enrich-freedmens-docai.js --branch-like "Charleston" --limit 500 > /tmp/freedmens-docai-charleston.log 2>&1 &
+  nohup node scripts/enrich-freedmens-docai.js --branch-like "New Orleans" --limit 500 > /tmp/freedmens-docai-neworleans.log 2>&1 &
+  nohup node scripts/enrich-freedmens-docai.js --branch-like "Memphis" --limit 500 > /tmp/freedmens-docai-memphis.log 2>&1 &
+  ```
+- Richmond/Charleston/Memphis expected to have more `last_master` fields (enslaved communities)
+- After batches complete: run `crossref-freedmens-to-canonical.mjs` for deduplication
+
+### Monitor command
+```bash
+tail -20 /tmp/freedmens-docai-washington.log
+grep -c "conf=" /tmp/freedmens-docai-washington.log   # records processed so far
+```
 
 ---
 

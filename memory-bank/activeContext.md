@@ -1,387 +1,347 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-08 (Session 44)_
+_Last updated: 2026-05-11 (Session 48 — Pipeline Audit + MAC-MINI-RUNBOOK.md generated)_
 
-## Current Focus: Document Collection Grouping + Presigned URL Fix — COMPLETED (Session 44)
+## Current Focus: Pipeline State Audit + Mac Mini Runbook — COMPLETED (Session 48)
+
+### What Was Done (Session 48)
+
+Ran a live read-only audit (`scripts/audit-pipeline-state.js`) against Neon DB to get
+exact current counts for both active scraping pipelines. Generated `MAC-MINI-RUNBOOK.md`
+with all exact commands and real numbers. Established rule: **this MacBook is code+deploy
+only — all scraping runs exclusively on Mac Mini.**
+
+#### Live Audit Results (2026-05-11T16:12Z)
+
+**1860 Slave Schedule:**
+- `person_documents` has **139,995** rows with `document_type = 'census_slave_schedule'`
+  — this IS the scraped 1860 output. S3-backed (162,074/164,973 rows have s3_key).
+- 696 rows in `unconfirmed_persons` matched 1860 context filters, but these have garbled
+  `locations[1]` values (word fragments like "County", "Dallas", etc.) from an old ML pass
+  (`extraction_method = 'ml'`). These are **not additional scraping work** — data cleanup only.
+- `person_documents.unconfirmed_person_id` → 1860 join returns 0 rows (FK not linked).
+  Real backfill needed after Mac Mini run is confirmed complete.
+- **Action:** Run `node check-state-progress.js` on Mac Mini to confirm which states remain;
+  then run `bash finish-1860-remaining.sh` for any incomplete states.
+
+**Freedman's Bank DocAI:**
+- 416,136 total depositors; only **2,550 enriched (0.61%)** — 413,586 remain.
+- 3 branches partially enriched: Washington D.C. (814), Charleston SC (1,247), Richmond VA (489).
+- 26 branches at 0% — largest: Augusta GA (45,493), Savannah GA (45,394), Atlanta GA (44,213).
+- S3 screenshots: **0 rows** in `person_documents` with `s3_key LIKE 'freedmens-bank/%'`.
+  The DocAI enricher writes to `unconfirmed_persons.relationships` JSONB only; a
+  `backfill-freedmens-to-person-documents.js` script is needed post-enrichment.
+- **Action:** Mac Mini runs all branches per `MAC-MINI-RUNBOOK.md` (finish partials first).
+
+**person_documents overall (164,973 rows):**
+| document_type | count |
+|---|---|
+| census_slave_schedule | 139,995 |
+| certificate_of_freedom | 17,876 |
+| compensated_emancipation_petition | 4,177 |
+| tree_profile | 2,891 |
+| freedmens_bank | 2 |
+
+#### New Files (Session 48)
+- `scripts/audit-pipeline-state.js` — read-only Neon audit, safe to run anywhere
+- `MAC-MINI-RUNBOOK.md` — exact Mac Mini commands for all remaining scraping work
+
+#### Known Issues Discovered
+- `parse_failure_queue` does not have a `source_table` column (migration 044 schema mismatch)
+- `unconfirmed_persons` 1860 rows have garbled `locations` (ML extraction artifact, not scraper)
+- Freedman's Bank `person_documents` link is missing — needs post-enrichment backfill script
+
+---
+
+## Previous Focus: Document Coverage Audit + Remediation — COMPLETED (Session 47)
+
+### What Was Done (Session 47)
+
+Full database survey of `person_documents` (164,973 rows) and all connected tables.
+All medium-to-critical gaps identified and fixed. S3 coverage was already strong (98.2%);
+the real problem was FK link coverage: large populations of rows were invisible on every
+profile page because the API never queried the relevant FK column.
+
+#### Gap 4 — `scripts/audit-document-coverage.js` fix
+- `needs_backfill` metric now excludes `tree_profile` and `freedmens_bank` document types
+  (intentionally not in S3 — collection-level pages). Real actionable gap: ~8 rows.
+
+#### Gap 2 — `src/api/routes/contribute.js` code fix (enslaved_individual_id path)
+- Added query block "2b" in the `enslaved_individuals` profile branch:
+  `SELECT ... FROM person_documents pd WHERE pd.enslaved_individual_id = $1`
+- Merges results with existing docs, deduplicating by id.
+- Surfaces 996 MSA certificate_of_freedom rows that were previously invisible on every
+  enslaved person profile because the API only queried `canonical_person_id`.
+
+#### Gap 1 — SQL backfill: 33,804 census rows → canonical_person_id
+- `scripts/fix-document-coverage-gaps.js` (new) ran:
+  ```sql
+  UPDATE person_documents
+  SET canonical_person_id = up.confirmed_individual_id::integer
+  FROM unconfirmed_persons up
+  WHERE person_documents.unconfirmed_person_id = up.lead_id
+    AND up.confirmed_individual_id IS NOT NULL
+    AND person_documents.canonical_person_id IS NULL
+  ```
+- `unconfirmed_only` FK bucket: 139,995 → 106,191 (33,804 rows backfilled) ✅
+
+#### Gap 5 — Deleted 27 beyondkin.org stub rows from confirming_documents
+- `confirming_documents` had 27 rows pointing to BeyondKin site header image (NOT a document).
+- `document_url` has NOT NULL constraint — rows deleted (not nulled).
+- Count confirmed 0 after deletion. ✅
+
+#### Gap 3 — 31 true orphan rows documented as "by design"
+- Confirmed 31 rows (plantation_record=18, government_disclosure=2, insurance_register=2, etc.)
+- These are collection-level reference documents, intentionally not linked to any individual.
+- Future: surface as browsable reference collection in UI.
+
+### Post-Fix FK Coverage (verified in production Neon DB)
+| Bucket | Count |
+|--------|-------|
+| Both canonical + enslaved_individual | 16,880 |
+| canonical_person_id only | 7,071 |
+| enslaved_individual_id only | 996 |
+| unconfirmed_person_id only | 106,191 (was 139,995) |
+| No FK / true orphans (by design) | 31 |
+
+### New Files
+- `scripts/fix-document-coverage-gaps.js` — rerunnable gap-fix script (dry-run supported)
+- `scripts/audit-document-coverage.js` — updated needs_backfill metric
+
+### Important: Neon HTTP Driver DML rowCount Quirk
+`UPDATE`/`DELETE` via the Neon serverless HTTP driver returns `rowCount: 0` in debug output
+even when rows ARE affected. To get accurate affected-row counts, use `RETURNING id` and
+check `result.rows.length`. Verify DML success by re-running a SELECT after.
+
+---
+
+## Previous Focus: Public Will Ingestion Pipeline — COMPLETED (Session 46)
+
+_Last updated: 2026-05-08 (Session 46 — Public Will Ingestion Pipeline COMPLETE)_
+
+## Previous Focus: DocAI Enrichment — Washington DC Run (Session 45)
+
+> **Status:** DocAI run was launched but Chrome session required manual FamilySearch login.
+> Resume with: `node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500`
+> Ensure Chrome at `localhost:9222` is logged into FamilySearch before running.
+> If conf=0.00 on all records → session expired again.
+
+## Current Focus: Public Will Ingestion Pipeline — COMPLETED (Session 46)
+
+### What Was Done (Session 46)
+
+The will/document ingestion feature was moved from behind the admin password wall to the
+public-facing frontend. End-to-end pipeline verified: upload → S3 → DB → profile page.
+
+#### Migration 065 — APPLIED TO NEON
+File: `migrations/065-person-documents-filename-columns.sql`
+Added columns to `person_documents`:
+- `filename TEXT`, `file_size BIGINT`, `mime_type TEXT`, `s3_url TEXT`
+- Index on `s3_url`
+
+#### Backend — `src/api/routes/wills.js`
+Fixed the INSERT to include all required fields:
+- Added `filename`, `file_size`, `mime_type`, `s3_url` to column list
+- Added `name_as_appears` (NOT NULL, no default) — uses `testatorName || file.originalname` fallback
+- Removed duplicate `document_type` column that caused a DB error
+- Route is mounted with NO auth middleware → fully public
+
+#### No Frontend Changes Needed
+- `frontend/src/components/Intake/SubmitWillPage.jsx` already existed as a public form
+- `frontend/src/App.jsx` already had public route `/contribute/will`
+- "Contribute" nav link already present — no auth guard
+
+#### Henry Weaver Will — Manually Backfilled
+Real will PDF: `wills/henry-weaver/Henry Weaver 1893.pdf` → `person_documents` id=44165
+```sql
+UPDATE person_documents
+SET canonical_person_id = 196747
+WHERE s3_key LIKE 'wills/henry-weaver/%' AND canonical_person_id IS NULL;
+-- Linked 3 rows; test duplicates (ids 44163, 44164) then deleted
+```
+
+#### Verified Final State via API
+```
+GET /api/contribute/person/196747?table=canonical_persons
+ownerDocuments: 4
+  id=5871 type=compensated_emancipation_petition — DC Emancipation Petition (p.001)
+  id=5872 type=compensated_emancipation_petition — DC Emancipation Petition (p.002)
+  id=5873 type=compensated_emancipation_petition — DC Emancipation Petition (p.003)
+  id=44165 type=will — Will of Henry Weaver (1847) — Washington DC
+documentCollections: 2
+  key=cww.00786  DC Emancipation Petition  3 pages
+  key=None       Will of Henry Weaver      1 page
+```
+
+#### GitHub Issue Filed
+Issue #50: https://github.com/danyelajunebrown/Reparations-is-a-real-number/issues/50
+Documents what's built and what's next (OCR pipeline, auto-link by name, status tracking page).
+
+#### Known Gap — Future Work (Issue #50)
+- `canonicalPersonId` must be passed manually in the form OR looked up by name in `wills.js`
+  (currently uploads have `canonical_person_id = NULL` until manually backfilled)
+- Build `src/services/probate/WillPipeline.js` — Google Vision OCR → structured extraction → fanout
+- Add `/contribute/status/:extractionId` tracking page
+- Add name-based auto-lookup: match `testatorName` → `canonical_persons.canonical_name`
+
+---
+
+## Previous Focus: DocAI Enrichment — Washington DC Run (Session 45)
+
+### Freedmen's Bank Integration Audit Results
+
+**416,136 depositors** exist in `unconfirmed_persons` with `extraction_method = 'freedmens_bank_index'`.
+
+| Metric | Count |
+|--------|-------|
+| Total depositors | 416,136 |
+| Status = 'pending' (all of them) | 416,136 |
+| With `confirmed_individual_id` set (linked to canonical) | 89,459 |
+| Marked as duplicates (`duplicate_of_lead_id` set) | **0** |
+| person_documents with freedmens-bank S3 key | **0** |
+| canonical_persons with "freedmen" in notes | 78,212 |
+
+**Key finding:** 89,459 depositors have been linked to `canonical_persons` via `confirmed_individual_id`,
+but ALL remain status='pending' and ZERO have been deduplicated. ZERO ledger page screenshots exist
+in `person_documents` — the DocAI enrichment has never been run on this machine or the Mac Mini.
+
+The user had anticipated: "i would anticipate that a good deal of those persons should have been
+deduplicated and if that hasn't happened pending the doc ai enrichment we should just go ahead
+and run that script on this computer."  → Confirmed: deduplication hasn't happened; DocAI launched.
+
+### DocAI Enrichment Launch (Session 45)
+
+**Dry-run verified:** 3 records processed, 0 nav errors, screenshots captured (116KB, 116KB, 52KB).
+Chrome 147 is running on port 9222.
+
+**First live attempt (PID 92727):** Chrome was on `accounts.google.com` Google sign-in page.
+All 4 records processed got conf=0.00 because DocAI was seeing login-page screenshots, not ledgers.
+→ Immediately killed. 4 contaminated records (Maria Louisa, Thomas Ball, Hannah Carr, Betsey) cleaned:
+  - `review_notes` docai_enrichment tag removed
+  - `relationships.docai_fields` removed
+
+**FamilySearch session requirement:** Chrome at `localhost:9222` must be logged into FamilySearch.
+After user logs in manually, re-run:
+```bash
+# In a terminal (foreground so you can see progress):
+cd /Users/danyelabrown/Desktop/danyelajunebrown\ GITHUB/Reparations-is-a-real-number-main
+node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500
+
+# Or background with log:
+nohup node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500 \
+  > /tmp/freedmens-docai-washington.log 2>&1 &
+```
+
+**After Washington DC completes, expand to:**
+```bash
+node scripts/enrich-freedmens-docai.js --branch-like "Richmond" --limit 500
+node scripts/enrich-freedmens-docai.js --branch-like "Charleston" --limit 500
+node scripts/enrich-freedmens-docai.js --branch-like "New Orleans" --limit 500
+node scripts/enrich-freedmens-docai.js --branch-like "Memphis" --limit 500
+```
+
+**What to watch for in logs (healthy run):**
+- `conf=0.XX` where XX > 0.00 — DocAI is reading actual ledger content
+- `last_master="..."` appearing in the output — critical fields being extracted
+- FP warnings are normal and expected (validator cleaning bad OCR)
+- If ALL records show `conf=0.00 (no critical fields)` → session has expired again
+
+**Note on `DOCUMENT_AI_FREEDMENS_PROCESSOR_ID`:** The .env has two processor IDs:
+- `DOCUMENT_AI_PROCESSOR_ID` — used by `enrich-freedmens-docai.js`
+- `DOCUMENT_AI_FREEDMENS_PROCESSOR_ID` — may be a dedicated Freedmen's processor
+If results are all conf=0.00 even with a good session, try overriding:
+```bash
+DOCUMENT_AI_PROCESSOR_ID=$DOCUMENT_AI_FREEDMENS_PROCESSOR_ID \
+  node scripts/enrich-freedmens-docai.js --dry-run --limit 3
+```
+
+### Deduplication Next Steps
+
+After DocAI enrichment populates `relationships.docai_fields.last_master` etc., run:
+```bash
+node scripts/crossref-freedmens-to-canonical.mjs   # cross-reference with canonical enslaver names
+node scripts/crossref-freedmens-enslavers.js        # enslaver crossref
+```
+
+Then promote well-linked depositors by setting `status = 'confirmed'` and using confirmed IDs.
+
+---
+
+## Previous Focus: Document Collection Grouping + Presigned URL Fix (Session 44) — COMPLETED
 
 ### What Was Done (Session 44)
 
 Multi-page primary source documents (e.g., Ann Maria Biscoe's 12-page DC Emancipation Petition)
-were showing as anonymous flat pages with no grouping. Fixed by adding collection grouping to
-`person_documents`, a new multi-page viewer component, and S3 presigned URL wiring.
+were showing as anonymous flat pages with no grouping. Fixed end-to-end:
 
-#### Migration 064 — `migrations/064-person-documents-collection-grouping.sql` (APPLIED TO NEON)
+#### Migration 064 — APPLIED TO NEON (backfill also complete)
 Added columns to `person_documents`:
-- `collection_name TEXT` — human-readable collection name (e.g., "DC Emancipation Petition cww.00429")
-- `collection_key TEXT` — grouping key (e.g., "cww.00429")
-- `collection_page_number INTEGER` — page index within collection
-- `collection_page_count INTEGER` — total pages in collection
-- `source_type_label TEXT` — display label (e.g., "CivilWarDC Petition")
+- `collection_name TEXT`, `collection_key TEXT`, `collection_page_number INTEGER`
+- `collection_page_count INTEGER`, `source_type_label TEXT`
 
-#### Script: `scripts/backfill-document-collections.js`
-Backfills `collection_key`, `collection_name`, `collection_page_number`, `collection_page_count`,
-`source_type_label` for CivilWarDC (cww.NNNNN pattern), MSA SC 2908 (am812--N pattern), and
-Freedmen's Bank (freedmens-bank/{branch}/docai/{id}.png) rows.
+**Backfill result:** 17,876 rows received correct `collection_page_count`; 24,974/24,975 rows (100%)
+have `collection_name` populated. 22,053 rows are part of multi-page collections.
 
 #### Backend — `src/api/routes/contribute.js`
-1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside it in `res.json()`. For enslaved/unconfirmed persons this was a `ReferenceError`. Moved declaration to outer scope alongside `ownerDocuments`.
-2. **Document grouping query:** Collection-expanded UNION query — fetches all pages belonging to the same `collection_key` as any doc linked to this person:
-   ```sql
-   SELECT ... FROM person_documents pd
-   WHERE pd.collection_key IN (
-     SELECT DISTINCT collection_key FROM person_documents
-     WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
-   )
-   UNION
-   SELECT ... FROM person_documents pd2
-   WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
-   ORDER BY collection_key NULLS LAST, collection_page_number ASC
-   ```
-3. **Inline grouping logic** builds `documentCollections` array:
-   `{ collection_key, collection_name, source_type_label, doc_type, page_count, pages[] }`
-4. **`documentCollections` added to `res.json()` response** alongside `ownerDocuments`.
+1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside. Moved to outer scope.
+2. **Collection UNION query** + inline grouping → `documentCollections` array in response.
 
 #### Backend — `src/api/routes/documents.js`
-New endpoint: `GET /api/documents/person-doc/:pdId/access`
-- Queries `person_documents` by `id`
-- Derives `s3_key` from stored value or by normalizing `s3_url`
-- Falls back to `source_url` / `s3_url` for external links (no presigning needed)
-- Returns `{ success, viewUrl, downloadUrl, filename, presigned }` — same shape as existing `/access` endpoint
-- Added `const db = require('../../database/connection')` import
-- Inserted BEFORE `/:documentId/access` to avoid route shadowing
+New `GET /api/documents/person-doc/:pdId/access` endpoint — presigns S3 key from `person_documents`.
 
 #### Frontend — `frontend/src/api/client.js`
-Added: `getPersonDocAccess: (pdId, signal) => request('/api/documents/person-doc/${pdId}/access', { signal })`
+`getPersonDocAccess: (pdId, signal) => ...`
 
 #### Frontend — `frontend/src/components/DocumentViewer/DocumentViewer.jsx`
-New component: `DocCollectionOverlay` (exported)
-- Multi-page viewer with ←/→ navigation, keyboard arrows, "Page N of M" indicator
-- **Presigned URL fetching per page:** `useEffect` calls `api.getPersonDocAccess(page.id)` on each page change via `AbortController`
-- Loading state shown while presigning (prevents S3 403 "no permission" flash)
-- Falls back to `page.source_url` if presign fails or S3 not enabled
-- Escape to close, body scroll locked while open
+`DocCollectionOverlay` — multi-page viewer, per-page presigned URL via `useEffect`, keyboard nav.
 
 #### Frontend — `frontend/src/components/PersonModal/PersonProfile.jsx`
-- Added `const [viewCollection, setViewCollection] = useState(null)`
-- Added `const documentCollections = data.documentCollections || []`
-- Replaced flat document list with collection cards: each card shows `collection_name`, `doc_type · N pages`, source label, and "↗ view" button
-- `onClick={() => setViewCollection(col)}` opens `DocCollectionOverlay`
-- Solo docs (no `collection_key`) continue to render as flat cards
-- `{viewCollection && <DocCollectionOverlay collection={viewCollection} onClose={() => setViewCollection(null)} />}`
+Collection cards + `viewCollection` state + `DocCollectionOverlay` mounted.
 
-### S3 Presigned URL Architecture (FINAL)
-```
-User clicks collection card
-  → setViewCollection(col)
-  → DocCollectionOverlay opens with page 0
-  → useEffect fires: api.getPersonDocAccess(page.id)
-  → GET /api/documents/person-doc/:pdId/access
-  → db.query person_documents for s3_key
-  → S3Service.getViewUrl(s3Key, 3600) → presigned URL (1hr TTL)
-  → setAccessData({ viewUrl, downloadUrl, presigned: true })
-  → image/PDF renders with presigned URL
-User presses → (next page)
-  → pageIdx++ → page.id changes
-  → useEffect refires for new page.id
-  → new presigned URL fetched
-```
+### Commit + Deployment (Session 44/45)
+- Commit: `dcddc2f4e` — "feat: document collection grouping + presigned URL endpoint" (9 files, 1136 insertions)
+- Backend pushed to `main` → Render auto-deploy triggered
+- Frontend built (779 modules, 1.96s) + published to `gh-pages-react`
 
-### Key Facts for Future Sessions
-- `documentCollections` field now always present in `/api/contribute/person/:id` response (empty array for persons with no grouped docs)
-- All presigned URL fetching for `person_documents` rows goes through `/api/documents/person-doc/:pdId/access`
-- S3 bucket `reparations-them` is NOT public — always need presigned URLs for S3-backed docs
-- CivilWarDC image S3 key pattern: `civilwardc/petitions/cww.NNNNN/cww.NNNNN.NNN.jpg`
-- MSA SC 2908 S3 key pattern: `msa/sc2908/am812--N.pdf`
-- Freedmen's Bank S3 key pattern: `freedmens-bank/{branch-slug}/docai/{id}.png`
-
-### Files Modified (Session 44)
-| File | Change |
-|------|--------|
-| `migrations/064-person-documents-collection-grouping.sql` | NEW — applied to Neon |
-| `scripts/backfill-document-collections.js` | NEW — backfill script |
-| `src/api/routes/contribute.js` | 500 fix + collection grouping query + documentCollections in response |
-| `src/api/routes/documents.js` | NEW endpoint `/person-doc/:pdId/access` + `db` import |
-| `frontend/src/api/client.js` | Added `getPersonDocAccess` |
-| `frontend/src/components/DocumentViewer/DocumentViewer.jsx` | NEW `DocCollectionOverlay` with presigned URL wiring |
-| `frontend/src/components/PersonModal/PersonProfile.jsx` | Collection card rendering + `viewCollection` state |
-
-### Known Remaining Work
-1. Run `scripts/backfill-document-collections.js` against production Neon DB to populate `collection_key` etc. on existing `person_documents` rows
-2. Build+deploy frontend to `gh-pages-react` branch
-3. Push backend changes to `main` → Render auto-deploy
-
-## Previous Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
-# Active Context — Reparations Platform
-
-_Last updated: 2026-05-08 (Session 44)_
-
-## Current Focus: Document Collection Grouping + Presigned URL Fix — COMPLETED (Session 44)
-
-### What Was Done (Session 44)
-
-Multi-page primary source documents (e.g., Ann Maria Biscoe's 12-page DC Emancipation Petition)
-were showing as anonymous flat pages with no grouping. Fixed by adding collection grouping to
-`person_documents`, a new multi-page viewer component, and S3 presigned URL wiring.
-
-#### Migration 064 — `migrations/064-person-documents-collection-grouping.sql` (APPLIED TO NEON)
-Added columns to `person_documents`:
-- `collection_name TEXT` — human-readable collection name (e.g., "DC Emancipation Petition cww.00429")
-- `collection_key TEXT` — grouping key (e.g., "cww.00429")
-- `collection_page_number INTEGER` — page index within collection
-- `collection_page_count INTEGER` — total pages in collection
-- `source_type_label TEXT` — display label (e.g., "CivilWarDC Petition")
-
-#### Script: `scripts/backfill-document-collections.js`
-Backfills `collection_key`, `collection_name`, `collection_page_number`, `collection_page_count`,
-`source_type_label` for CivilWarDC (cww.NNNNN pattern), MSA SC 2908 (am812--N pattern), and
-Freedmen's Bank (freedmens-bank/{branch}/docai/{id}.png) rows.
-
-#### Backend — `src/api/routes/contribute.js`
-1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside it in `res.json()`. For enslaved/unconfirmed persons this was a `ReferenceError`. Moved declaration to outer scope alongside `ownerDocuments`.
-2. **Document grouping query + inline grouping** builds `documentCollections` array in response.
-3. `documentCollections` added to `res.json()` response.
-
-#### Backend — `src/api/routes/documents.js`
-New endpoint: `GET /api/documents/person-doc/:pdId/access`
-- Queries `person_documents` by `id`, presigns via `S3Service.getViewUrl`
-- Falls back to `source_url` for external links
-- Returns `{ viewUrl, downloadUrl, filename, presigned }`
-- Added before `/:documentId/access` (route order matters)
-
-#### Frontend — `frontend/src/api/client.js`
-`getPersonDocAccess: (pdId, signal) => request('/api/documents/person-doc/${pdId}/access', { signal })`
-
-#### Frontend — `frontend/src/components/DocumentViewer/DocumentViewer.jsx`
-New `DocCollectionOverlay` component: multi-page viewer, presigned URL per page via `useEffect`+`api.getPersonDocAccess`, loading state, keyboard nav, escape-to-close.
-
-#### Frontend — `frontend/src/components/PersonModal/PersonProfile.jsx`
-Collection cards rendering `documentCollections`, `viewCollection` state, `DocCollectionOverlay` mounted.
-
-### Known Remaining Work
-1. Run `scripts/backfill-document-collections.js` against Neon to populate `collection_key` etc.
-2. Build+deploy frontend: `cd frontend && npm run deploy:gh-pages`
-3. Push backend to `main` → Render auto-deploy
+---
 
 ## Previous Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
 
-### What Was Done (Session 43)
+(See prior session entries for full details.)
 
-Full audit and repair of all "visible blocks" (empty UI fields) on person modals that had
-available ground-truth data but were not connected to it. Diagnosed by category, not just
-spot-checked. 26 specific canonical_persons examined/updated, 142 updated via backfill.
-
-#### Backend — `src/api/routes/contribute.js`
-- **W1:** Enslaved person cards now carry correct `id` (uses `enslaved_id` fallback) and
-  `table_source` field — was root cause of every 404 on enslaved person links
-- **W1b:** Descendants normalized (`descendant_name` → `full_name`)
-- **W2:** Birth year inferred from notes text (age + document year) for `enslaved_individuals`;
-  returns `birth_year_source`, `birth_year_confidence`, `birth_year_formula`
-- **W3:** Location assembled from `primary_plantation + primary_county + primary_state`
-- **W4:** Freedmen's Bank owner resolved via `last_master`/`last_mistress` JSONB keys;
-  `branch` → location; `account_number` and `plantation` surfaced
-- **W6:** `person_external_ids` queried for FamilySearch, WikiTree, Ancestry links
-- **W7:** `historical_reparations_petitions` queried via `petitioner_canonical_id`;
-  DC petition data (claimant_name, petition_date, enslaved_claimed, compensation, source_url)
-  surfaced on enslaved person modals under "Enslaved by"
-- **W7b:** `person_relationships_verified` queried for inherited/bequeathed/transferred chain
-
-#### Frontend
-- **`frontend/src/api/format.js`:** Added `formatYearWithEstimation(year, source, confidence, formula)` —
-  returns plain string for primary-source years, `{yearStr, isEstimate, tooltip}` for estimated
-- **`frontend/src/components/PersonModal/PersonProfile.jsx`:**
-  - New `YearDisplay` component: dashed-underline year with `(est.)` badge + native title tooltip
-  - Enslaved person links now use `ep.table_source` (was hardcoded `enslaved_individuals`)
-  - Identity grid: Freedom year + Plantation fields added
-  - New Family section: parents + children from `data.familyMembers`
-  - DC petition block rendered under "Enslaved by"
-  - Inheritance/provenance chain rendered under "Enslaved by"
-  - Ancestry link added to External references
-- **`frontend/src/styles/global.css`:** Added `.estimate-badge`, `.estimate-badge-year`,
-  `.estimate-badge-label`, `.provenance-chain`, `.provenance-step` classes
-
-#### DB backfills applied directly
-- **Ann Maria Biscoe** (`canonical_persons id=141015`):
-  - `canonical_name = 'Ann Maria Biscoe'` (was "Ann M. Biscoe")
-  - `first_name = 'Ann'`, `middle_name = 'Maria'`, `last_name = 'Biscoe'`
-  - `sex = 'Female'`, `primary_state = 'DC'` (was "District"), `primary_county = 'Georgetown'`
-  - `ancestor_climb_matches id=138`: `slaveholder_id = 141015` (was null)
-  - `historical_reparations_petitions cww.00430`: `claimant_canonical_id = 141015` (was null)
-- **8 other Biscoe family members:** `primary_state = 'Maryland'`, `primary_county = 'Charles County'`
-- **142 canonical_persons** via `backfill-climb-data-to-canonical.js`:
-  `birth_year_estimate` and/or `primary_state`/`primary_county` from `ancestor_climb_matches`
-
-#### New scripts
-- `scripts/backfill-climb-data-to-canonical.js` — reads `ancestor_climb_matches` direct columns
-  (`slaveholder_birth_year`, `slaveholder_location`), backfills canonical_persons. `--dry-run` safe.
-- `scripts/backfill-biscoe-dc-petition.js` — targeted Biscoe repair script (documents the
-  lookup logic; actual fixes were applied inline this session)
-
-#### Commits
-- `f25151249` — W1-W8: Fix person modal data disconnections (4 files)
-- `9b36d9d64` — W5a/W5b: Backfill climb data + Ann Maria Biscoe DC petition (2 scripts)
-
-### Actual schema notes (discovered this session — IMPORTANT for future code)
+### Actual schema notes (IMPORTANT for future code)
 ```
 canonical_persons:
   id, canonical_name, first_name, middle_name, last_name,
   birth_year_estimate, death_year_estimate,   ← NOT birth_year / death_year
   sex,                                         ← NOT gender
   primary_state, primary_county, primary_plantation,
-  person_type, verification_status, confidence_score
+  person_type, verification_status, confidence_score, notes
 
-ancestor_climb_matches:
-  slaveholder_id,       ← FK to canonical_persons.id (was often null)
-  slaveholder_name,
-  slaveholder_birth_year,  ← direct integer column (NO match_data JSONB)
-  slaveholder_location,    ← text, parse with comma-split
-  verification_status, classification
-
-historical_reparations_petitions:
-  petition_id, petition_type, jurisdiction,
-  claimant_name, claimant_canonical_id, claimant_residence,
-  enslaved_persons_claimed (JSONB array),
-  total_claimed_usd, total_approved_usd,
-  source_document_url, docket_number
-
-unconfirmed_persons:
+unconfirmed_persons columns (confirmed Session 45):
   lead_id, full_name, person_type, birth_year, death_year,
-  gender, locations (array), relationships (JSONB), status
+  gender, locations (text[]), source_url, source_page_title,
+  extraction_method, scraped_at, context_text, confidence_score,
+  relationships (JSONB), status, reviewed_by, reviewed_at,
+  rejection_reason, confirmed_enslaved_id, confirmed_individual_id,
+  duplicate_of_lead_id, created_at, updated_at, source_type,
+  review_notes, data_quality_flags
+  ← NOTE: NO branch_name column; branch is in locations[0]
+  ← NOTE: NO docai_data column; enrichment goes in relationships.docai_fields
+  ← NOTE: NO canonical_person_id; use confirmed_individual_id
 ```
-
-### Ann Maria Biscoe DC petition data (for reference)
-- Petition cww.00429 (Ann M. Biscoe) — 33 enslaved persons, $15,275 claimed,
-  verified `tei_thorough`, confidence 0.95, `claimant_canonical_id = 141015`
-- Petition cww.00430 (Ann Maria Biscoe) — 14 enslaved persons (Jenifer family),
-  NOW linked `claimant_canonical_id = 141015`
-- Source: civilwardc.org, National Archives RG 217.6.5, Microcopy 520, Reel 4
-
-## Previous Focus: Front Page — LedgerSection deployed (Session 42) — COMPLETED
-
-### What Was Done (Session 42)
-- **LedgerSection.jsx** created: unified component replacing the old `StatsRibbon` + hardcoded
-  "What's in this ledger" box. Makes ONE `api.stats()` call; renders:
-  - Live stats grid: enslaved persons, slaveholders, DC petitions (civilwardc_records),
-    MSA Certificates of Freedom (msa_records), unique sources
-  - Collections list: Freedmen's Bank 61K+ (static, links /depositors),
-    doc types (links /documents), 11 corporate disclosures (links /corporate),
-    blockchain (links /pay)
-  - Cold-start UX: after 8s loading → yellow advisory "database waking up (Render free tier)";
-    on error → red "database unavailable — live counts not loaded"
-- **HomePage.jsx** updated: imports LedgerSection, removes StatsRibbon + hardcoded box
-- Built clean (779 modules, 0 errors), committed to main (`3e507d801`),
-  deployed to gh-pages-react
-
-### Previous: S3 Preservation Archival — COMPLETED
-## Current Focus: S3 Preservation Archival — COMPLETED
-
-### What Was Asked
-Otho Brown's profile was linking to an external MSA URL instead of serving the PDF from S3.
-User asked: (1) survey the entire DB for URL-only records, (2) download and preserve all
-MSA PDFs in S3 so original-site outages don't break document access.
-
-### What Was Done (this session)
-
-**Migration 063 applied (`person_documents.enslaved_individual_id` + `title` columns):**
-- `enslaved_individual_id VARCHAR(50)` — direct FK from person_documents to enslaved_individuals
-- `title TEXT` — human-readable document title
-- Index: `idx_person_documents_enslaved_individual_id`
-- Applied automatically by `scripts/archive-msa-sc2908-to-s3.js` on first run
-
-**132 MSA SC 2908 PDFs archived to S3:**
-- Collection: "Certificates of Freedom for Blacks, 1806–1864" (Maryland State Archives)
-- URL pattern: `https://msa.maryland.gov/megafile/msa/speccol/sc2900/sc2908/000001/000812/pdf/am812--{N}.pdf`
-- S3 prefix: `s3://reparations-them/msa/sc2908/am812--{N}.pdf`
-- Result: 132/132 uploaded, 0 failed. Average ~1.5 MB each.
-- Script: `scripts/archive-msa-sc2908-to-s3.js` (Phase 1)
-
-**17,876 person_documents rows created linking enslaved_individuals to S3 PDFs:**
-- Each `enslaved_individuals` row with an MSA URL in `notes` now has a corresponding
-  `person_documents` row with `s3_key`, `s3_url`, `enslaved_individual_id`, and `title`
-- Bulk INSERT via single SQL `INSERT INTO ... SELECT` query (one DB round-trip)
-- Script: `scripts/insert-msa-person-documents.js`
-- Document type: `certificate_of_freedom`
-
-**4 other downloadable PDFs archived to S3:**
-- CA DOI Slavery Era Insurance Registry (×2 rows, same PDF) → `person-documents/backfill/25-Slavery-Report.pdf` / `26-...` (118 KB)
-- JPMorgan Chase Philadelphia CTO Disclosure 2024 → `person-documents/backfill/27-cto-slavery-era-disclosure-jp-morgan-2024.pdf` (1366 KB)
-- Brattle Group Quantification of Reparations 2023 → `person-documents/backfill/28-Quantification-of-Reparations-for-Transatlantic-Chattel-Slavery.pdf` (2303 KB)
-
-**Otho Brown confirmed:**
-```
-name_as_appears: "Otho Brown"
-s3_key:   msa/sc2908/am812--97.pdf
-s3_url:   https://reparations-them.s3.amazonaws.com/msa/sc2908/am812--97.pdf
-source_url: https://msa.maryland.gov/megafile/msa/speccol/sc2900/sc2908/000001/000812/pdf/am812--97.pdf
-```
-
-### Final DB State (person_documents)
-
-| Category | Count |
-|----------|-------|
-| Total rows | 24,975 |
-| S3-backed (s3_key IS NOT NULL) | 22,076 |
-| URL-only total | 2,899 |
-| └ FamilySearch tree_profile HTML | 2,891 |
-| └ Non-downloadable external (datasets/portals) | 8 |
-| MSA SC 2908 rows | 17,876 |
-
-**8 remaining URL-only (non-FamilySearch) — legitimately non-downloadable:**
-| ID | Type | URL |
-|----|------|-----|
-| 22,23,24 | insurance_register(_index) | digihum.libs.uga.edu/items/show/42 (HTML embedded viewer) |
-| 30 | evacuation_roll | data.novascotia.ca/... Book of Negroes 1783 (data portal) |
-| 31 | enslaved_census_brazil | doi.org/10.7910/DVN/GBDHNC (Harvard Dataverse dataset) |
-| 32 | probate_enslaved_records | doi.org/10.7910/DVN/LSZJDQ (Harvard Dataverse dataset) |
-| 33,34 | freedmens_bank | familysearch.org/en/search/collection/1417695 (collection search page) |
-
-These render correctly as `<a target="_blank">` external links in PersonProfile.jsx.
-
-### Bug Fixed in backfill-source-url-docs-to-s3.js
-`CONCURRENCY = parseInt(process.argv[process.argv.indexOf('--concurrency') + 1] || 3)` —
-when `--concurrency` not passed, `indexOf` returns -1 so `process.argv[0]` = node path →
-`parseInt('node')` = `NaN` → `slice(0, NaN)` = empty batch → 0 uploads.
-**Fix:** Always pass `--concurrency 3` flag, OR set a proper default:
-```bash
-AWS_S3_BUCKET=reparations-them AWS_REGION=us-east-2 \
-  node scripts/backfill-source-url-docs-to-s3.js --limit 20 --concurrency 3
-```
-
-### New Scripts Created
-- `scripts/archive-msa-sc2908-to-s3.js` — Phase 1: download 132 MSA PDFs → S3 (idempotent, --dry-run support)
-- `scripts/insert-msa-person-documents.js` — Phase 2: bulk INSERT person_documents via single SQL query
-
-## Document Pipeline Architecture (Current State)
-
-**Backend (`src/api/routes/contribute.js`) — 3-tier lookup for enslaved_individuals:**
-1. `person_documents` WHERE `enslaved_individual_id = ei.enslaved_id` (NEW — direct FK, most precise)
-2. `person_documents` WHERE `canonical_person_id = enslaved_by_individual_id AND name_as_appears ILIKE full_name`
-3. Fallback: all `person_documents` for that enslaver
-4. Extract `Source: https://...` URL from `notes` field → primary_source doc (legacy)
-5. Legacy: `confirming_documents` (filters out beyondkin.org BK-Header images)
-
-**Frontend (`frontend/src/components/PersonModal/PersonProfile.jsx`) — 3-way rendering:**
-- S3 doc (s3_key set) → inline DocViewer with PDF rendering
-- External URL only (source_url, no S3) → `<a target="_blank">` with domain shown
-- No URL → greyed metadata-only box
-
-## Deployments
-- **Backend (Render):** `main` branch at `https://reparations-platform.onrender.com`
-  - Auto-deploys on push to main
-- **Frontend (GitHub Pages):** `gh-pages-react` branch
-  - URL: `https://danyelajunebrown.github.io/Reparations-is-a-real-number/`
-  - Deploy: `cd frontend && npm run deploy:gh-pages`
-- **DB (Neon):** serverless HTTP via `@neondatabase/serverless`
-- **S3:** `reparations-them` bucket, `us-east-2` region
 
 ## Key API Routes
 - `GET /api/contribute/person/:id?table=enslaved_individuals` — full person profile
 - `GET /api/contribute/person/:id?table=canonical_persons` — slaveholder profile
 - `GET /api/contribute/search/:query` — cross-table search
 - `GET /api/contribute/stats` — platform stats (cached 5min)
+- `GET /api/documents/person-doc/:pdId/access` — NEW presigned URL for person_documents row
 
-## Known Issues / Next Steps
-1. `confirming_documents` table (209 rows, all beyondkin.org header images) — consider deprecating
-2. FamilySearch tree_profile docs (2,891) — correctly render as external links, no action needed
-3. 8 non-downloadable URL-only records — correctly render as external links, no action needed
-4. `scripts/backfill-source-url-docs-to-s3.js` default bucket/region doesn't read `S3_BUCKET`/`S3_REGION` — minor bug, always pass env vars explicitly
-5. Backend not yet deployed to Render with migration 063 schema changes — auto-deploys on next push to main
+## Deployments
+- **Backend (Render):** `main` branch at `https://reparations-platform.onrender.com`
+- **Frontend (GitHub Pages):** `gh-pages-react` branch
+  - URL: `https://danyelajunebrown.github.io/Reparations-is-a-real-number/`
+  - Deploy: `cd frontend && npm run deploy:gh-pages`
+- **DB (Neon):** serverless HTTP via `@neondatabase/serverless`
+- **S3:** `reparations-them` bucket, `us-east-2` region (NOT public — always presign)
