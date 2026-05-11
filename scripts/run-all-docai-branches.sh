@@ -38,7 +38,8 @@ cd "$REPO_DIR"
 
 ntfy_post() {
     local msg="$1"
-    local title="${2:-Freedman's Bank DocAI}"
+    local _default="Freedmans Bank DocAI"
+    local title="${2:-$_default}"
     local priority="${3:-default}"
     if [ -n "${OPS_NOTIFY_WEBHOOK:-}" ]; then
         curl -s -o /dev/null \
