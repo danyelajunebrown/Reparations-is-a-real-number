@@ -20,10 +20,10 @@
 # Usage:
 #   bash scripts/run-all-docai-branches.sh
 #
-# Run inside tmux so it survives SSH disconnect:
-#   tmux new-session -s docai
+# Run inside screen so it survives SSH disconnect (Mac Mini has no tmux):
+#   screen -S docai
 #   bash scripts/run-all-docai-branches.sh 2>&1 | tee /tmp/docai-all-branches.log
-#   Ctrl-b d  (detach)
+#   Ctrl-a d  (detach)
 #
 # Resume after interruption: just re-run the same command. Already-enriched
 # records are skipped automatically.
