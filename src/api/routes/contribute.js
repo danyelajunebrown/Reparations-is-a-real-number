@@ -256,10 +256,14 @@ router.get('/search/:query', async (req, res) => {
         // Exclude records marked as 'duplicate' (already merged into canonical_persons)
         let unconfirmedWhere = `${whereClause} AND (status IS NULL OR status != 'duplicate')`;
         let enslavedWhere = whereClause;
-        // For canonical_persons, we search canonical_name instead of full_name
+        // For canonical_persons, we search canonical_name instead of full_name.
+        // Fix 3: Exclude climb-sourced descendant rows from public search results.
+        // person_type 'descendant'/'modern_person' are populated by ancestor_climb_sessions
+        // and must NEVER appear in public slavery records search.
+        const EXCLUDED_SEARCH_TYPES = `('descendant', 'modern_person', 'participant', 'merged')`;
         let canonicalWhere = hasTextSearch
-            ? `(${words.map((_, i) => `canonical_name ILIKE $${i + 1}`).join(' AND ')})`
-            : '1=1';
+            ? `(${words.map((_, i) => `canonical_name ILIKE $${i + 1}`).join(' AND ')}) AND person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`
+            : `person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`;
 
         // Handle source filter
         if (source) {
@@ -1256,6 +1260,43 @@ router.get('/person/:id', async (req, res) => {
                 }
             }
 
+            // 2b. person_documents linked directly via enslaved_individual_id.
+            //     MSA certificates of freedom (996 rows) are stored with this FK only.
+            //     These are invisible unless we query via the enslaved person's own ID.
+            try {
+                const directEnslavedDocs = await pool.query(`
+                    SELECT pd.id,
+                        COALESCE(pd.title, pd.collection_name, pd.document_type) AS title,
+                        pd.name_as_appears AS filename,
+                        pd.document_type AS doc_type,
+                        pd.collection_name,
+                        pd.collection_key,
+                        pd.collection_page_number,
+                        pd.collection_page_count,
+                        pd.source_type_label,
+                        pd.page_reference,
+                        pd.s3_key,
+                        pd.s3_url,
+                        pd.source_url,
+                        pd.document_date,
+                        pd.document_year
+                    FROM person_documents pd
+                    WHERE pd.enslaved_individual_id = $1
+                    ORDER BY pd.image_number ASC NULLS LAST, pd.id ASC
+                    LIMIT 20
+                `, [person.id]);
+                if (directEnslavedDocs.rows.length > 0) {
+                    const newDocs = directEnslavedDocs.rows.map(d => ({ ...d, document_id: String(d.id) }));
+                    // Merge, deduplicating by id
+                    const existingIds = new Set(documents.map(d => String(d.id)));
+                    for (const d of newDocs) {
+                        if (!existingIds.has(String(d.id))) documents.push(d);
+                    }
+                }
+            } catch (e) {
+                console.log('person_documents enslaved_individual_id query (non-fatal):', e.message);
+            }
+
             // 3. confirming_documents (legacy fallback — skip if document_url looks like
             //    a placeholder/broken image rather than an actual document)
             if (documents.length === 0) {
@@ -1375,6 +1416,11 @@ router.get('/person/:id', async (req, res) => {
                         SELECT DISTINCT collection_key FROM person_documents
                         WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
                     )
+                    -- Fix 1: Exclude climb-sourced FS/WikiTree profile URLs (no real document, just an external ID link)
+                    AND NOT (pd.s3_key IS NULL AND (
+                        pd.source_url ILIKE '%familysearch.org%'
+                        OR pd.source_url ILIKE '%wikitree.com%'
+                    ))
                     UNION
                     SELECT pd2.id, pd2.name_as_appears AS filename, pd2.document_type AS doc_type,
                         pd2.collection_name, pd2.collection_key, pd2.collection_page_number,
@@ -1384,6 +1430,11 @@ router.get('/person/:id', async (req, res) => {
                         pd2.document_date, pd2.document_year, pd2.ocr_text
                     FROM person_documents pd2
                     WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
+                    -- Fix 1: Exclude climb-sourced FS/WikiTree profile URLs from primary source documents
+                    AND NOT (pd2.s3_key IS NULL AND (
+                        pd2.source_url ILIKE '%familysearch.org%'
+                        OR pd2.source_url ILIKE '%wikitree.com%'
+                    ))
                     ORDER BY collection_key NULLS LAST, collection_page_number ASC
                 `, [parseInt(id, 10)]);
                 if (personDocsResult.rows.length > 0) {
@@ -1601,6 +1652,83 @@ router.get('/person/:id', async (req, res) => {
                         familyMembers.children.push(child);
                     }
                 }
+            }
+        } else if (tableSource === 'canonical_persons') {
+            // Fix 2: Query canonical_family_edges for navigable family relationships.
+            // The enslaved_individuals block above uses array columns (parent_ids/spouse_ids),
+            // but canonical_persons uses the canonical_family_edges graph table (M066).
+            try {
+                const canonicalId = parseInt(id, 10);
+                const edgesResult = await pool.query(`
+                    SELECT
+                        cfe.relationship_type,
+                        cfe.evidence_tier,
+                        cfe.verified,
+                        cfe.confidence,
+                        -- Resolve the "other" person in the edge
+                        CASE WHEN cfe.person_a_id = $1 THEN cfe.person_b_id
+                             ELSE cfe.person_a_id END AS related_id,
+                        CASE WHEN cfe.person_a_id = $1 THEN cpb.canonical_name
+                             ELSE cpa.canonical_name END AS related_name,
+                        CASE WHEN cfe.person_a_id = $1 THEN cpb.birth_year_estimate
+                             ELSE cpa.birth_year_estimate END AS related_birth_year,
+                        CASE WHEN cfe.person_a_id = $1 THEN cpb.death_year_estimate
+                             ELSE cpa.death_year_estimate END AS related_death_year,
+                        CASE WHEN cfe.person_a_id = $1 THEN cpb.sex
+                             ELSE cpa.sex END AS related_gender,
+                        CASE WHEN cfe.person_a_id = $1 THEN cpb.person_type
+                             ELSE cpa.person_type END AS related_person_type
+                    FROM canonical_family_edges cfe
+                    JOIN canonical_persons cpa ON cpa.id = cfe.person_a_id
+                    JOIN canonical_persons cpb ON cpb.id = cfe.person_b_id
+                    WHERE (cfe.person_a_id = $1 OR cfe.person_b_id = $1)
+                      AND cfe.relationship_type IN ('spouse', 'parent_of', 'child_of', 'sibling_of')
+                    ORDER BY cfe.evidence_tier ASC, cfe.confidence DESC NULLS LAST
+                    LIMIT 50
+                `, [canonicalId]);
+
+                for (const edge of edgesResult.rows) {
+                    const relatedPerson = {
+                        id: edge.related_id,
+                        full_name: edge.related_name,
+                        birth_year: edge.related_birth_year,
+                        death_year: edge.related_death_year,
+                        gender: edge.related_gender,
+                        person_type: edge.related_person_type,
+                        table_source: 'canonical_persons',
+                        evidence_tier: edge.evidence_tier,
+                        verified: edge.verified,
+                        linked: true,
+                    };
+
+                    // Normalize relationship_type → familyMembers bucket
+                    if (edge.relationship_type === 'spouse') {
+                        // Last spouse wins (multiple spouse edges allowed by schema)
+                        familyMembers.spouse = relatedPerson;
+                    } else if (edge.relationship_type === 'parent_of') {
+                        // This person is the parent; related is the child
+                        familyMembers.children.push(relatedPerson);
+                    } else if (edge.relationship_type === 'child_of') {
+                        // This person is the child; related is the parent
+                        familyMembers.parents.push(relatedPerson);
+                    }
+                    // sibling_of: not yet surfaced in UI — skip
+                }
+            } catch (familyEdgesErr) {
+                // canonical_family_edges may not exist yet — non-fatal, falls back to spouse_name text
+                console.log('canonical_family_edges query (non-fatal):', familyEdgesErr.message?.substring(0, 80));
+            }
+
+            // Fallback: if no spouse found via edges, use the spouse_name text column
+            // (evidence_tier=3 implied — unverified, just a name string)
+            if (!familyMembers.spouse && person.spouse_name) {
+                familyMembers.spouse = {
+                    full_name: person.spouse_name,
+                    linked: false,
+                    evidence_tier: 3,
+                    verified: false,
+                    source: 'spouse_name_text_column',
+                };
             }
         }
         // ── W1: Normalize enslavedPersons so every item has a stable `id` and
@@ -2976,7 +3104,9 @@ router.get('/search', async (req, res) => {
                     CONCAT_WS(', ', primary_county, primary_state) as locations,
                     notes as "contextText", created_at, 'canonical_persons' as table_source
                 FROM canonical_persons
+                -- Fix 3: Exclude climb-sourced descendant/modern rows from search
                 WHERE canonical_name ILIKE $1
+                  AND person_type NOT IN ('descendant', 'modern_person', 'participant', 'merged')
             ) combined
             ORDER BY confidence DESC NULLS LAST, created_at DESC
             LIMIT $3

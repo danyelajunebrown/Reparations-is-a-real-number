@@ -134,7 +134,13 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
             <Field label="Freedom year" value={<YearDisplay formatted={freedomYearFormatted} />} />
           )}
           <Field label="Occupation" value={p.occupation} />
-          <Field label="Spouse" value={p.spouse_name} />
+          <Field label="Spouse" value={
+            spouseFromFamily
+              ? (spouseFromFamily.id
+                  ? <Link to={`/person/${spouseFromFamily.table_source || 'canonical_persons'}/${spouseFromFamily.id}`}>{spouseFromFamily.full_name || spouseFromFamily.name}</Link>
+                  : (spouseFromFamily.full_name || spouseFromFamily.name))
+              : p.spouse_name
+          } />
           <Field label="Racial designation" value={p.racial_designation} />
           <Field label="Source table" value={tableSource} />
           <Field label="Status" value={p.status} />
