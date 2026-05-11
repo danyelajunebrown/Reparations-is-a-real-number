@@ -73,10 +73,12 @@ CREATE TABLE IF NOT EXISTS inheritance_edges (
     source_document_id INTEGER REFERENCES person_documents(id) ON DELETE SET NULL,
 
     -- The structured will extraction row (if OCR pipeline has processed it)
-    will_extraction_id INTEGER REFERENCES will_extractions(id) ON DELETE SET NULL,
+    -- NOTE: will_extractions.id is UUID, not INTEGER
+    will_extraction_id UUID REFERENCES will_extractions(id) ON DELETE SET NULL,
 
     -- FK to land_transfer_events if this edge traces a specific parcel
-    land_transfer_id INTEGER REFERENCES land_transfer_events(id) ON DELETE SET NULL,
+    -- NOTE: land_transfer_events PK is transfer_id UUID, not id
+    land_transfer_id UUID REFERENCES land_transfer_events(transfer_id) ON DELETE SET NULL,
 
     -- ── Document metadata ────────────────────────────────────────────────────
     document_year        INTEGER,
