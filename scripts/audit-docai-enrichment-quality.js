@@ -6,6 +6,18 @@
  * Safe to run from MacBook at any time — zero writes, zero impact on
  * the enrichment running on Mac Mini.
  *
+ * NOTE ON STORAGE FORMAT:
+ *   relationships is a JSONB column that can be either:
+ *     - OBJECT: {"docai_fields": {...}, ...}  (new records where relationships was NULL)
+ *     - ARRAY:  [{family_member}, ..., {"docai_fields": {...}}]
+ *               (records that had family members pre-populated by scraper)
+ *   All queries use:
+ *     COALESCE(
+ *       relationships->'docai_fields',
+ *       jsonb_path_query_first(relationships, '$[*].docai_fields')
+ *     ) AS df
+ *   to handle both formats transparently.
+ *
  * Reports:
  *   1. Overall enrichment progress + coverage by branch
  *   2. Per-field extraction rates (what % of enriched records have each field)
@@ -42,17 +54,6 @@ const pool = new Pool({
 });
 
 const CRITICAL_FIELDS = ['last_master', 'last_mistress', 'plantation', 'old_title'];
-const ALL_FIELDS = [
-    'account_number', 'date_of_entry',
-    'depositor_name', 'birthplace', 'where_brought_up', 'age', 'residence',
-    'complexion', 'occupation', 'employer',
-    'marital_status', 'spouse_name', 'spouse_residence', 'father_name',
-    'mother_name', 'siblings_names', 'children_names', 'family_residences',
-    'spouse_father', 'spouse_mother', 'spouse_siblings',
-    'last_master', 'last_mistress', 'plantation', 'slave_residence', 'old_title',
-    'union_lines', 'post_emancipation',
-    'signature', 'further_facts', 'remarks',
-];
 
 function sep(char = '─', len = 72) { return char.repeat(len); }
 function header(title) {
@@ -64,6 +65,23 @@ function sub(title) {
     console.log('\n' + sep('─'));
     console.log('  ' + title);
     console.log(sep('─'));
+}
+
+// ── Helper SQL fragment ────────────────────────────────────────────────────────
+// relationships can be JSONB object {"docai_fields":{...}} or JSONB array
+// [..., {"docai_fields":{...}}].  This expression handles both.
+const DF = `COALESCE(
+    relationships->'docai_fields',
+    jsonb_path_query_first(relationships, '$[*].docai_fields')
+)`;
+
+// Field value: (df)->>'fieldname'
+function dfField(f) {
+    return `(${DF})->>'${f}'`;
+}
+// Field non-null check: (df)->>'fieldname' IS NOT NULL AND ... <> ''
+function dfHas(f) {
+    return `(${DF})->>'${f}' IS NOT NULL AND (${DF})->>'${f}' <> ''`;
 }
 
 const branchClause = BRANCH_LIKE
@@ -87,6 +105,7 @@ async function run() {
                 WHERE review_notes ILIKE '%docai_enrichment%'
                 AND relationships IS NOT NULL
                 AND relationships::text ILIKE '%docai_fields%'
+                AND ${DF} IS NOT NULL
             )                                                                           AS has_docai_fields
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
@@ -113,7 +132,7 @@ async function run() {
             COUNT(*) FILTER (WHERE review_notes ILIKE '%docai_enrichment%') AS enriched,
             COUNT(*) FILTER (
                 WHERE review_notes ILIKE '%docai_enrichment%'
-                AND relationships::text ILIKE '%last_master%'
+                AND ${dfHas('last_master')}
             )                                       AS has_last_master
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
@@ -152,31 +171,30 @@ async function run() {
     // ── 3. Per-field extraction rates ─────────────────────────────────────────
     sub('3. PER-FIELD EXTRACTION RATES  (of enriched records with docai_fields)');
 
-    // Count how many enriched records have each field non-null
     const fieldStats = await pool.query(`
         SELECT
             COUNT(*) AS enriched_total,
             -- Critical fields
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'last_master'   IS NOT NULL AND relationships->'docai_fields'->>'last_master'   <> '') AS last_master,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'last_mistress' IS NOT NULL AND relationships->'docai_fields'->>'last_mistress' <> '') AS last_mistress,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'plantation'    IS NOT NULL AND relationships->'docai_fields'->>'plantation'    <> '') AS plantation,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'old_title'     IS NOT NULL AND relationships->'docai_fields'->>'old_title'     <> '') AS old_title,
+            COUNT(*) FILTER (WHERE ${dfHas('last_master')})    AS last_master,
+            COUNT(*) FILTER (WHERE ${dfHas('last_mistress')})  AS last_mistress,
+            COUNT(*) FILTER (WHERE ${dfHas('plantation')})     AS plantation,
+            COUNT(*) FILTER (WHERE ${dfHas('old_title')})      AS old_title,
             -- Biographical
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'depositor_name' IS NOT NULL AND relationships->'docai_fields'->>'depositor_name' <> '') AS depositor_name,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'birthplace'    IS NOT NULL AND relationships->'docai_fields'->>'birthplace'    <> '') AS birthplace,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'age'           IS NOT NULL AND relationships->'docai_fields'->>'age'           <> '') AS age,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'occupation'    IS NOT NULL AND relationships->'docai_fields'->>'occupation'    <> '') AS occupation,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'complexion'    IS NOT NULL AND relationships->'docai_fields'->>'complexion'    <> '') AS complexion,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'residence'     IS NOT NULL AND relationships->'docai_fields'->>'residence'     <> '') AS residence,
+            COUNT(*) FILTER (WHERE ${dfHas('depositor_name')}) AS depositor_name,
+            COUNT(*) FILTER (WHERE ${dfHas('birthplace')})     AS birthplace,
+            COUNT(*) FILTER (WHERE ${dfHas('age')})            AS age,
+            COUNT(*) FILTER (WHERE ${dfHas('occupation')})     AS occupation,
+            COUNT(*) FILTER (WHERE ${dfHas('complexion')})     AS complexion,
+            COUNT(*) FILTER (WHERE ${dfHas('residence')})      AS residence,
             -- Family
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'father_name'   IS NOT NULL AND relationships->'docai_fields'->>'father_name'   <> '') AS father_name,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'mother_name'   IS NOT NULL AND relationships->'docai_fields'->>'mother_name'   <> '') AS mother_name,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'spouse_name'   IS NOT NULL AND relationships->'docai_fields'->>'spouse_name'   <> '') AS spouse_name,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'children_names' IS NOT NULL AND relationships->'docai_fields'->>'children_names' <> '') AS children_names,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'siblings_names' IS NOT NULL AND relationships->'docai_fields'->>'siblings_names' <> '') AS siblings_names,
+            COUNT(*) FILTER (WHERE ${dfHas('father_name')})    AS father_name,
+            COUNT(*) FILTER (WHERE ${dfHas('mother_name')})    AS mother_name,
+            COUNT(*) FILTER (WHERE ${dfHas('spouse_name')})    AS spouse_name,
+            COUNT(*) FILTER (WHERE ${dfHas('children_names')}) AS children_names,
+            COUNT(*) FILTER (WHERE ${dfHas('siblings_names')}) AS siblings_names,
             -- Account
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'account_number' IS NOT NULL AND relationships->'docai_fields'->>'account_number' <> '') AS account_number,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'date_of_entry'  IS NOT NULL AND relationships->'docai_fields'->>'date_of_entry'  <> '') AS date_of_entry
+            COUNT(*) FILTER (WHERE ${dfHas('account_number')}) AS account_number,
+            COUNT(*) FILTER (WHERE ${dfHas('date_of_entry')})  AS date_of_entry
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
         AND review_notes ILIKE '%docai_enrichment%'
@@ -210,20 +228,18 @@ async function run() {
     }
 
     // ── 4. Confidence distribution ────────────────────────────────────────────
-    sub('4. CONFIDENCE DISTRIBUTION  (avg confidence per record)');
+    sub('4. CONFIDENCE DISTRIBUTION  (last_master_confidence as representative field)');
 
-    // We stored avg confidence inside _fp_warnings context — let's use a proxy:
-    // last_master_confidence as a representative critical field confidence
     const confDist = await pool.query(`
         SELECT
-            COUNT(*) FILTER (WHERE (relationships->'docai_fields'->>'last_master_confidence')::numeric >= 0.9)  AS conf_excellent,
-            COUNT(*) FILTER (WHERE (relationships->'docai_fields'->>'last_master_confidence')::numeric >= 0.7
-                                AND (relationships->'docai_fields'->>'last_master_confidence')::numeric < 0.9)  AS conf_good,
-            COUNT(*) FILTER (WHERE (relationships->'docai_fields'->>'last_master_confidence')::numeric >= 0.4
-                                AND (relationships->'docai_fields'->>'last_master_confidence')::numeric < 0.7)  AS conf_low,
-            COUNT(*) FILTER (WHERE (relationships->'docai_fields'->>'last_master_confidence')::numeric < 0.4)   AS conf_fail,
-            COUNT(*) FILTER (WHERE relationships->'docai_fields'->>'last_master_confidence' IS NULL
-                                AND relationships::text ILIKE '%docai_fields%')                                  AS conf_no_lm,
+            COUNT(*) FILTER (WHERE (${dfField('last_master_confidence')})::numeric >= 0.9)  AS conf_excellent,
+            COUNT(*) FILTER (WHERE (${dfField('last_master_confidence')})::numeric >= 0.7
+                                AND (${dfField('last_master_confidence')})::numeric < 0.9)   AS conf_good,
+            COUNT(*) FILTER (WHERE (${dfField('last_master_confidence')})::numeric >= 0.4
+                                AND (${dfField('last_master_confidence')})::numeric < 0.7)   AS conf_low,
+            COUNT(*) FILTER (WHERE (${dfField('last_master_confidence')})::numeric < 0.4)    AS conf_fail,
+            COUNT(*) FILTER (WHERE ${dfField('last_master_confidence')} IS NULL
+                                AND relationships::text ILIKE '%docai_fields%')              AS conf_no_lm,
             COUNT(*) AS total_enriched
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
@@ -235,7 +251,7 @@ async function run() {
     if (confDist.rows.length > 0) {
         const cd = confDist.rows[0];
         const ct = parseInt(cd.total_enriched) || 1;
-        console.log(`\n  last_master_confidence distribution (${ct.toLocaleString()} enriched records with data):`);
+        console.log(`\n  last_master_confidence distribution (${ct.toLocaleString()} enriched records):`);
         console.log(`  0.90–1.00 (excellent): ${String(cd.conf_excellent).padStart(7)}  (${(cd.conf_excellent/ct*100).toFixed(1)}%)`);
         console.log(`  0.70–0.89 (good):      ${String(cd.conf_good).padStart(7)}  (${(cd.conf_good/ct*100).toFixed(1)}%)`);
         console.log(`  0.40–0.69 (low):       ${String(cd.conf_low).padStart(7)}  (${(cd.conf_low/ct*100).toFixed(1)}%)`);
@@ -262,7 +278,7 @@ async function run() {
         `);
 
         if (pfq.rows.length === 0) {
-            console.log('\n  (no entries yet — parse_failure_queue may use different column names)');
+            console.log('\n  (no entries in parse_failure_queue)');
         } else {
             const pfqTotal = pfq.rows.reduce((s, r) => s + r.cnt, 0);
             console.log(`\n  Total flagged: ${pfqTotal.toLocaleString()}`);
@@ -278,7 +294,6 @@ async function run() {
         }
     } catch (e) {
         console.log(`\n  (parse_failure_queue query failed: ${e.message})`);
-        console.log('  This is expected if migration 044 used different column names.');
     }
 
     // ── 6. Top N last_master values ───────────────────────────────────────────
@@ -286,16 +301,15 @@ async function run() {
 
     const topMasters = await pool.query(`
         SELECT
-            relationships->'docai_fields'->>'last_master' AS last_master,
-            COUNT(*)::int                                  AS freq,
-            AVG((relationships->'docai_fields'->>'last_master_confidence')::numeric)::numeric(4,2) AS avg_conf
+            ${dfField('last_master')}                                                 AS last_master,
+            COUNT(*)::int                                                             AS freq,
+            AVG((${dfField('last_master_confidence')})::numeric)::numeric(4,2)       AS avg_conf
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
         AND review_notes ILIKE '%docai_enrichment%'
-        AND relationships->'docai_fields'->>'last_master' IS NOT NULL
-        AND relationships->'docai_fields'->>'last_master' <> ''
+        AND ${dfHas('last_master')}
         ${branchClause}
-        GROUP BY relationships->'docai_fields'->>'last_master'
+        GROUP BY ${dfField('last_master')}
         ORDER BY freq DESC
         LIMIT ${TOP_N}
     `);
@@ -319,15 +333,14 @@ async function run() {
 
     const topPlantations = await pool.query(`
         SELECT
-            relationships->'docai_fields'->>'plantation' AS plantation,
-            COUNT(*)::int                                 AS freq
+            ${dfField('plantation')}  AS plantation,
+            COUNT(*)::int             AS freq
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
         AND review_notes ILIKE '%docai_enrichment%'
-        AND relationships->'docai_fields'->>'plantation' IS NOT NULL
-        AND relationships->'docai_fields'->>'plantation' <> ''
+        AND ${dfHas('plantation')}
         ${branchClause}
-        GROUP BY relationships->'docai_fields'->>'plantation'
+        GROUP BY ${dfField('plantation')}
         ORDER BY freq DESC
         LIMIT ${TOP_N}
     `);
@@ -350,30 +363,19 @@ async function run() {
             COUNT(*) AS cnt,
             COUNT(*) FILTER (WHERE COALESCE(locations[1], '') ILIKE '%washington%') AS dc,
             COUNT(*) FILTER (WHERE COALESCE(locations[1], '') ILIKE '%charleston%') AS charleston,
-            COUNT(*) FILTER (WHERE COALESCE(locations[1], '') ILIKE '%richmond%')  AS richmond
+            COUNT(*) FILTER (WHERE COALESCE(locations[1], '') ILIKE '%richmond%')   AS richmond
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
         AND review_notes ILIKE '%docai_enrichment%'
         AND relationships IS NOT NULL
         AND relationships::text ILIKE '%docai_fields%'
-        -- last_master_confidence = 1.0 BUT last_master is null/empty
-        AND (relationships->'docai_fields'->>'last_master_confidence')::numeric = 1.0
-        AND (
-            relationships->'docai_fields'->>'last_master'   IS NULL OR
-            relationships->'docai_fields'->>'last_master'   = ''
-        )
-        AND (
-            relationships->'docai_fields'->>'plantation'    IS NULL OR
-            relationships->'docai_fields'->>'plantation'    = ''
-        )
-        AND (
-            relationships->'docai_fields'->>'last_mistress' IS NULL OR
-            relationships->'docai_fields'->>'last_mistress' = ''
-        )
+        AND (${dfField('last_master_confidence')})::numeric = 1.0
+        AND NOT ${dfHas('last_master')}
+        AND NOT ${dfHas('plantation')}
+        AND NOT ${dfHas('last_mistress')}
         ${branchClause}
     `);
 
-    // Also check: enriched records with ZERO fields extracted at all
     const zeroFields = await pool.query(`
         SELECT COUNT(*) AS cnt
         FROM unconfirmed_persons
@@ -381,30 +383,26 @@ async function run() {
         AND review_notes ILIKE '%docai_enrichment%'
         AND relationships IS NOT NULL
         AND (
-            relationships->'docai_fields' IS NULL
-            OR relationships->'docai_fields' = '{}'::jsonb
+            ${DF} IS NULL
+            OR (${DF}) = '{}'::jsonb
             OR (
-                relationships->'docai_fields'->>'last_master'   IS NULL OR relationships->'docai_fields'->>'last_master' = ''
-            ) AND (
-                relationships->'docai_fields'->>'last_mistress' IS NULL OR relationships->'docai_fields'->>'last_mistress' = ''
-            ) AND (
-                relationships->'docai_fields'->>'plantation'    IS NULL OR relationships->'docai_fields'->>'plantation' = ''
-            ) AND (
-                relationships->'docai_fields'->>'old_title'     IS NULL OR relationships->'docai_fields'->>'old_title' = ''
-            ) AND (
-                relationships->'docai_fields'->>'depositor_name' IS NULL OR relationships->'docai_fields'->>'depositor_name' = ''
+                NOT ${dfHas('last_master')}
+                AND NOT ${dfHas('last_mistress')}
+                AND NOT ${dfHas('plantation')}
+                AND NOT ${dfHas('old_title')}
+                AND NOT ${dfHas('depositor_name')}
             )
         )
         ${branchClause}
     `);
 
     const sr = suspicious.rows[0];
-    console.log(`\n  Records with conf=1.00 + no critical fields:  ${sr.cnt.toLocaleString()}`);
+    console.log(`\n  Records with conf=1.00 + no critical fields:   ${sr.cnt.toLocaleString()}`);
     if (parseInt(sr.cnt) > 0) {
         console.log(`    DC: ${sr.dc}   Charleston: ${sr.charleston}   Richmond: ${sr.richmond}`);
-        console.log(`  ⚠ These are candidates for --reprocess (FamilySearch session may have been logged out)`);
+        console.log(`  ⚠ These are candidates for --reprocess (FamilySearch session may have expired)`);
     }
-    console.log(`  Records enriched but all critical fields empty: ${parseInt(zeroFields.rows[0].cnt).toLocaleString()}`);
+    console.log(`  Records enriched but ALL fields empty:         ${parseInt(zeroFields.rows[0].cnt).toLocaleString()}`);
 
     // ── 9. False-positive rate ────────────────────────────────────────────────
     sub('9. FALSE-POSITIVE WARNINGS  (fields removed by validator)');
@@ -413,12 +411,12 @@ async function run() {
         SELECT
             COUNT(*) AS total_enriched,
             COUNT(*) FILTER (
-                WHERE relationships->'docai_fields'->'_fp_warnings' IS NOT NULL
-                AND jsonb_array_length(relationships->'docai_fields'->'_fp_warnings') > 0
+                WHERE (${DF})->'_fp_warnings' IS NOT NULL
+                AND jsonb_array_length((${DF})->'_fp_warnings') > 0
             )                                                              AS fp_warned,
             COUNT(*) FILTER (
-                WHERE relationships->'docai_fields'->'_fp_rejected_fields' IS NOT NULL
-                AND jsonb_array_length(relationships->'docai_fields'->'_fp_rejected_fields') > 0
+                WHERE (${DF})->'_fp_rejected_fields' IS NOT NULL
+                AND jsonb_array_length((${DF})->'_fp_rejected_fields') > 0
             )                                                              AS fp_rejected
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
@@ -434,22 +432,21 @@ async function run() {
         const warned   = parseInt(fp.fp_warned);
         const rejected = parseInt(fp.fp_rejected);
         console.log(`\n  Total enriched with docai_fields: ${ft.toLocaleString()}`);
-        console.log(`  Had ≥1 FP warning:   ${warned.toLocaleString()}  (${(warned/ft*100).toFixed(1)}%)`);
+        console.log(`  Had ≥1 FP warning:    ${warned.toLocaleString()}  (${(warned/ft*100).toFixed(1)}%)`);
         console.log(`  Had ≥1 field removed: ${rejected.toLocaleString()}  (${(rejected/ft*100).toFixed(1)}%)`);
 
-        // Most common FP warning messages
         const fpSamples = await pool.query(`
             SELECT
                 warning_text,
                 COUNT(*)::int AS cnt
             FROM (
                 SELECT jsonb_array_elements_text(
-                    relationships->'docai_fields'->'_fp_warnings'
+                    (${DF})->'_fp_warnings'
                 ) AS warning_text
                 FROM unconfirmed_persons
                 WHERE extraction_method = 'freedmens_bank_index'
                 AND review_notes ILIKE '%docai_enrichment%'
-                AND relationships->'docai_fields'->'_fp_warnings' IS NOT NULL
+                AND (${DF})->'_fp_warnings' IS NOT NULL
                 ${branchClause}
                 LIMIT 5000
             ) sub
@@ -474,9 +471,9 @@ async function run() {
             lead_id,
             full_name,
             COALESCE(locations[1], '(no branch)') AS branch,
-            relationships->'docai_fields'->>'last_master'            AS last_master,
-            relationships->'docai_fields'->>'last_master_confidence' AS lm_conf,
-            relationships->'docai_fields'->>'plantation'             AS plantation,
+            ${dfField('last_master')}            AS last_master,
+            ${dfField('last_master_confidence')} AS lm_conf,
+            ${dfField('plantation')}             AS plantation,
             source_url
         FROM unconfirmed_persons
         WHERE extraction_method = 'freedmens_bank_index'
@@ -484,11 +481,11 @@ async function run() {
         AND relationships IS NOT NULL
         AND relationships::text ILIKE '%docai_fields%'
         AND (
-            (relationships->'docai_fields'->>'last_master_confidence')::numeric < 0.5
-            OR relationships->'docai_fields'->>'last_master' IS NULL
+            (${dfField('last_master_confidence')})::numeric < 0.5
+            OR ${dfField('last_master')} IS NULL
         )
         ${branchClause}
-        ORDER BY (relationships->'docai_fields'->>'last_master_confidence')::numeric ASC NULLS FIRST
+        ORDER BY (${dfField('last_master_confidence')})::numeric ASC NULLS FIRST
         LIMIT 10
     `);
 
@@ -505,7 +502,80 @@ async function run() {
             );
         }
     } else {
-        console.log('\n  (no low-confidence records found — model performing well, or enrichment still in progress)');
+        console.log('\n  (no low-confidence records found)');
+    }
+
+    // ── 11. Sample records WITH critical fields ───────────────────────────────
+    sub('11. SAMPLE RECORDS WITH last_master EXTRACTED  (quality spot-check)');
+
+    const withMaster = await pool.query(`
+        SELECT
+            lead_id,
+            full_name,
+            COALESCE(locations[1], '(no branch)') AS branch,
+            ${dfField('last_master')}              AS last_master,
+            ${dfField('last_master_confidence')}   AS lm_conf,
+            ${dfField('plantation')}               AS plantation,
+            ${dfField('old_title')}                AS old_title
+        FROM unconfirmed_persons
+        WHERE extraction_method = 'freedmens_bank_index'
+        AND review_notes ILIKE '%docai_enrichment%'
+        AND ${dfHas('last_master')}
+        ${branchClause}
+        ORDER BY RANDOM()
+        LIMIT 10
+    `);
+
+    if (withMaster.rows.length === 0) {
+        console.log('\n  (no records with last_master extracted yet)');
+    } else {
+        console.log(`\n  ${'Name'.padEnd(28)} ${'Branch'.padEnd(26)} ${'last_master'.padEnd(28)} ${'plantation'.padEnd(22)} ${'conf'.padStart(6)}`);
+        console.log('  ' + sep('-', 112));
+        for (const r of withMaster.rows) {
+            console.log(
+                '  ' +
+                String(r.full_name || '').substring(0, 27).padEnd(28) +
+                String(r.branch || '').substring(0, 25).padEnd(26) +
+                String(r.last_master || '').substring(0, 27).padEnd(28) +
+                String(r.plantation || '').substring(0, 21).padEnd(22) +
+                String(r.lm_conf || '—').padStart(6)
+            );
+        }
+    }
+
+    // ── 12. Sample biographical fields ───────────────────────────────────────
+    sub('12. SAMPLE BIOGRAPHICAL DATA  (spot-check extraction quality)');
+
+    const bioSample = await pool.query(`
+        SELECT
+            lead_id,
+            full_name,
+            ${dfField('age')}           AS age,
+            ${dfField('birthplace')}    AS birthplace,
+            ${dfField('occupation')}    AS occupation,
+            ${dfField('father_name')}   AS father_name,
+            ${dfField('mother_name')}   AS mother_name,
+            ${dfField('account_number')} AS acct
+        FROM unconfirmed_persons
+        WHERE extraction_method = 'freedmens_bank_index'
+        AND review_notes ILIKE '%docai_enrichment%'
+        AND (${dfHas('age')} OR ${dfHas('birthplace')} OR ${dfHas('father_name')})
+        ${branchClause}
+        ORDER BY RANDOM()
+        LIMIT 8
+    `);
+
+    if (bioSample.rows.length === 0) {
+        console.log('\n  (no biographical data extracted yet)');
+    } else {
+        for (const r of bioSample.rows) {
+            console.log(`\n  id=${r.lead_id}  "${r.full_name}"  acct#${r.acct || '?'}`);
+            if (r.age)         console.log(`    age:         ${r.age}`);
+            if (r.birthplace)  console.log(`    birthplace:  ${r.birthplace}`);
+            if (r.occupation)  console.log(`    occupation:  ${r.occupation}`);
+            if (r.father_name) console.log(`    father:      ${r.father_name}`);
+            if (r.mother_name) console.log(`    mother:      ${r.mother_name}`);
+        }
     }
 
     // ── Summary ───────────────────────────────────────────────────────────────
