@@ -1,324 +1,126 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-11 (Session 48 — Pipeline Audit + MAC-MINI-RUNBOOK.md generated)_
-
-## Current Focus: Pipeline State Audit + Mac Mini Runbook — COMPLETED (Session 48)
-
-### What Was Done (Session 48)
-
-Ran a live read-only audit (`scripts/audit-pipeline-state.js`) against Neon DB to get
-exact current counts for both active scraping pipelines. Generated `MAC-MINI-RUNBOOK.md`
-with all exact commands and real numbers. Established rule: **this MacBook is code+deploy
-only — all scraping runs exclusively on Mac Mini.**
-
-#### Live Audit Results (2026-05-11T16:12Z)
-
-**1860 Slave Schedule:**
-- `person_documents` has **139,995** rows with `document_type = 'census_slave_schedule'`
-  — this IS the scraped 1860 output. S3-backed (162,074/164,973 rows have s3_key).
-- 696 rows in `unconfirmed_persons` matched 1860 context filters, but these have garbled
-  `locations[1]` values (word fragments like "County", "Dallas", etc.) from an old ML pass
-  (`extraction_method = 'ml'`). These are **not additional scraping work** — data cleanup only.
-- `person_documents.unconfirmed_person_id` → 1860 join returns 0 rows (FK not linked).
-  Real backfill needed after Mac Mini run is confirmed complete.
-- **Action:** Run `node check-state-progress.js` on Mac Mini to confirm which states remain;
-  then run `bash finish-1860-remaining.sh` for any incomplete states.
-
-**Freedman's Bank DocAI:**
-- 416,136 total depositors; only **2,550 enriched (0.61%)** — 413,586 remain.
-- 3 branches partially enriched: Washington D.C. (814), Charleston SC (1,247), Richmond VA (489).
-- 26 branches at 0% — largest: Augusta GA (45,493), Savannah GA (45,394), Atlanta GA (44,213).
-- S3 screenshots: **0 rows** in `person_documents` with `s3_key LIKE 'freedmens-bank/%'`.
-  The DocAI enricher writes to `unconfirmed_persons.relationships` JSONB only; a
-  `backfill-freedmens-to-person-documents.js` script is needed post-enrichment.
-- **Action:** Mac Mini runs all branches per `MAC-MINI-RUNBOOK.md` (finish partials first).
-
-**person_documents overall (164,973 rows):**
-| document_type | count |
-|---|---|
-| census_slave_schedule | 139,995 |
-| certificate_of_freedom | 17,876 |
-| compensated_emancipation_petition | 4,177 |
-| tree_profile | 2,891 |
-| freedmens_bank | 2 |
-
-#### New Files (Session 48)
-- `scripts/audit-pipeline-state.js` — read-only Neon audit, safe to run anywhere
-- `MAC-MINI-RUNBOOK.md` — exact Mac Mini commands for all remaining scraping work
-
-#### Known Issues Discovered
-- `parse_failure_queue` does not have a `source_table` column (migration 044 schema mismatch)
-- `unconfirmed_persons` 1860 rows have garbled `locations` (ML extraction artifact, not scraper)
-- Freedman's Bank `person_documents` link is missing — needs post-enrichment backfill script
+_Last updated: 2026-05-12 (Session 52 — Hopewell Physical Scan OCR + Will Ingestion Audit)_
 
 ---
 
-## Previous Focus: Document Coverage Audit + Remediation — COMPLETED (Session 47)
+## Session 52 — Hopewell Physical Scan OCR + Will Ingestion Audit — ✅ COMPLETE (2026-05-12)
 
-### What Was Done (Session 47)
+### What Was Done
 
-Full database survey of `person_documents` (164,973 rows) and all connected tables.
-All medium-to-critical gaps identified and fixed. S3 coverage was already strong (98.2%);
-the real problem was FK link coverage: large populations of rows were invisible on every
-profile page because the API never queried the relevant FK column.
+Ran `scripts/ocr-hopewell-physical-scans.mjs --apply` (Run 2, PID 40058) to OCR four St. Mary's County Register of Wills physical PDFs and write all evidence into the DB. APPLY COMPLETE confirmed at 1:37 AM UTC-4.
 
-#### Gap 4 — `scripts/audit-document-coverage.js` fix
-- `needs_backfill` metric now excludes `tree_profile` and `freedmens_bank` document types
-  (intentionally not in S3 — collection-level pages). Real actionable gap: ~8 rows.
+#### PDFs Processed (Run 2 confirmed)
+| Slug | File | Pages | Status |
+|------|------|-------|--------|
+| james-hopewell-1817 | saint mary's will 1.pdf (11.3MB) | 3 | Classification: CONFIRMED, MEDIUM, 6518 chars |
+| composite-1848 | saint mary's will 2.pdf (6.6MB) | 2 | Classification: UNKNOWN, MEDIUM, 6811 chars |
+| hugh-hopewell-v-1777 | saint mary's will 3.pdf (23.7MB) | 6 rendered | OCR FAILED — write EPIPE (27MB PNG > 10MB Vision limit) |
+| composite-1785 | saint mary's will 4.pdf (9.8MB) | 3 | Classification: UNKNOWN, MEDIUM, 7801 chars |
 
-#### Gap 2 — `src/api/routes/contribute.js` code fix (enslaved_individual_id path)
-- Added query block "2b" in the `enslaved_individuals` profile branch:
-  `SELECT ... FROM person_documents pd WHERE pd.enslaved_individual_id = $1`
-- Merges results with existing docs, deduplicating by id.
-- Surfaces 996 MSA certificate_of_freedom rows that were previously invisible on every
-  enslaved person profile because the API only queried `canonical_person_id`.
+#### Phase 0 DB Pre-flight Results (live Neon, 2026-05-12 00:46 UTC-4)
+- **Q1** — `person_relationships_verified` for cp 1070/140299/141015: 4 rows (ids 1788-1791). Spouse + parent edges confirmed.
+- **Q2** — `will_extractions` for doc_id=19: 0 rows before run → INSERT on --apply
+- **Q3** — `enslaver_evidence_compendium` cp=1070: 7 rows (person_documents + person_external_ids + 5x debt_acknowledgment_agreements)
+- **Q4** — `inheritance_edges` table: EXISTS ✓
+- **Q5** — `person_documents.will_extraction_id` column: MISSING ❌ (backfill script will fail)
+- **Q6** — Hugh Hopewell canonical_persons (any type): id=193376 "Hugh Hopewell IV" born=1725 died=1777 type=descendant → UPDATE to enslaver
+- **Q7** — cp=1070 James Hopewell: EXISTS ✓
+- **Q8** — 4 will rows in person_documents (ids 19, 44165, 184161, 184162)
+- **Q9** — 17 schema_migrations applied M040-M062; M063-M067 applied to Neon but NOT tracked
 
-#### Gap 1 — SQL backfill: 33,804 census rows → canonical_person_id
-- `scripts/fix-document-coverage-gaps.js` (new) ran:
-  ```sql
-  UPDATE person_documents
-  SET canonical_person_id = up.confirmed_individual_id::integer
-  FROM unconfirmed_persons up
-  WHERE person_documents.unconfirmed_person_id = up.lead_id
-    AND up.confirmed_individual_id IS NOT NULL
-    AND person_documents.canonical_person_id IS NULL
-  ```
-- `unconfirmed_only` FK bucket: 139,995 → 106,191 (33,804 rows backfilled) ✅
+#### Phase 1 State Verification (--apply run, correct)
+- James↔Angelica spouse edge: ✓ EXISTS
+- James→Ann Maria parent edge: ✓ EXISTS
+- will_extractions doc_id=19: ✗ MISSING — INSERT
+- **Hugh V (GX1Q-ZMD, d.1777): ✓ EXISTS id=193376** (Bug 4 fixed — was falsely matching id=193559 Agnes Hopewell)
+- Hugh VI (b.1758, d.1785): ✗ MISSING — INSERT
 
-#### Gap 5 — Deleted 27 beyondkin.org stub rows from confirming_documents
-- `confirming_documents` had 27 rows pointing to BeyondKin site header image (NOT a document).
-- `document_url` has NOT NULL constraint — rows deleted (not nulled).
-- Count confirmed 0 after deletion. ✅
+#### Bugs Fixed in Session 52 (all 5 in script)
+1. **Q6 person_type filter** — removed `AND person_type IN ('enslaver',...)`. id=193376 (type=descendant) now returned.
+2. **Q9 `migration_id` → `filename`** — schema_migrations uses `filename` column.
+3. **Hugh V Phase 4 UPDATE vs INSERT** — `else` branch UPDATEs id=193376 to `person_type='enslaver'` instead of INSERT.
+4. **verifyState false match** — id=193559 "Agnes Hopewell" has `mother_fs_id:GX1Q-ZMD` in notes (not a direct match). Fixed to check `"familysearch_id":"GX1Q-ZMD"` exactly → correctly finds id=193376.
+5. **`insertUnconfirmedPerson` missing `source_url`** — `unconfirmed_persons.source_url TEXT NOT NULL` violated. Added `source_url` as 10th column/value in both INSERT variants + all 3 call sites.
 
-#### Gap 3 — 31 true orphan rows documented as "by design"
-- Confirmed 31 rows (plantation_record=18, government_disclosure=2, insurance_register=2, etc.)
-- These are collection-level reference documents, intentionally not linked to any individual.
-- Future: surface as browsable reference collection in UI.
+#### DB Writes — Run 2 Actuals (confirmed 2026-05-12 01:37 UTC-4)
+- `will_extractions` UPDATE × 1 — id=`08a21999-7236-4525-b478-78ddbd71831e` (doc=19, cp=1070, Will 1)
+- `will_extractions` INSERT × 2 — id=`c40ee851-fd53-4518-9aa2-d0982de5d776` (doc=184163, cp=609495, Will 4); id=`9e6581f2-bf36-4446-8ba3-0f8fc203ab32` (doc=184164, cp=NULL, Will 2)
+- `person_documents` INSERT × 2 — id=184163 (Hugh VI, cp=609495); id=184164 (composite 1848, cp=NULL)
+- `person_documents` UPDATE × 1 — id=19 (collection metadata only, ocr_text preserved)
+- `canonical_persons` INSERT × 1 — cp=609495 "Hugh Hopewell" (Hugh VI, b.1758, d.1785)
+- `canonical_persons` UPDATE × 1 — cp=193376 person_type 'descendant' → 'enslaver'
+- `person_relationships_verified` INSERT × 2 — id=1796 sibling_of (609495→1070); id=1797 parent_of (193376→609495)
+- `unconfirmed_persons` INSERT × 36 — lead_ids 2790306–2790335 (30 × James 1817 enslaved); lead_ids 2790336–2790341 (6 × Burroughes enslaved)
+- `enslaver_evidence_compendium` INSERT × 1 — cp=609495, source=will_extractions/`c40ee851-fd53-4518-9aa2-d0982de5d776`
+- **Will 3 (Hugh V 1777) — 5 writes NOT performed** (EPIPE; see audit §4.8)
 
-### Post-Fix FK Coverage (verified in production Neon DB)
-| Bucket | Count |
-|--------|-------|
-| Both canonical + enslaved_individual | 16,880 |
-| canonical_person_id only | 7,071 |
-| enslaved_individual_id only | 996 |
-| unconfirmed_person_id only | 106,191 (was 139,995) |
-| No FK / true orphans (by design) | 31 |
+#### New Files (Session 52)
+- `scripts/ocr-hopewell-physical-scans.mjs` — 1610-line OCR + DB ingestion script (5 bugs fixed)
+- `docs/will-ingestion-audit-2026-05-12.md` — pipeline gap analysis + OCR quality findings + Run 2 confirmed IDs
 
-### New Files
-- `scripts/fix-document-coverage-gaps.js` — rerunnable gap-fix script (dry-run supported)
-- `scripts/audit-document-coverage.js` — updated needs_backfill metric
-
-### Important: Neon HTTP Driver DML rowCount Quirk
-`UPDATE`/`DELETE` via the Neon serverless HTTP driver returns `rowCount: 0` in debug output
-even when rows ARE affected. To get accurate affected-row counts, use `RETURNING id` and
-check `result.rows.length`. Verify DML success by re-running a SELECT after.
-
----
-
-## Previous Focus: Public Will Ingestion Pipeline — COMPLETED (Session 46)
-
-_Last updated: 2026-05-08 (Session 46 — Public Will Ingestion Pipeline COMPLETE)_
-
-## Previous Focus: DocAI Enrichment — Washington DC Run (Session 45)
-
-> **Status:** DocAI run was launched but Chrome session required manual FamilySearch login.
-> Resume with: `node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500`
-> Ensure Chrome at `localhost:9222` is logged into FamilySearch before running.
-> If conf=0.00 on all records → session expired again.
-
-## Current Focus: Public Will Ingestion Pipeline — COMPLETED (Session 46)
-
-### What Was Done (Session 46)
-
-The will/document ingestion feature was moved from behind the admin password wall to the
-public-facing frontend. End-to-end pipeline verified: upload → S3 → DB → profile page.
-
-#### Migration 065 — APPLIED TO NEON
-File: `migrations/065-person-documents-filename-columns.sql`
-Added columns to `person_documents`:
-- `filename TEXT`, `file_size BIGINT`, `mime_type TEXT`, `s3_url TEXT`
-- Index on `s3_url`
-
-#### Backend — `src/api/routes/wills.js`
-Fixed the INSERT to include all required fields:
-- Added `filename`, `file_size`, `mime_type`, `s3_url` to column list
-- Added `name_as_appears` (NOT NULL, no default) — uses `testatorName || file.originalname` fallback
-- Removed duplicate `document_type` column that caused a DB error
-- Route is mounted with NO auth middleware → fully public
-
-#### No Frontend Changes Needed
-- `frontend/src/components/Intake/SubmitWillPage.jsx` already existed as a public form
-- `frontend/src/App.jsx` already had public route `/contribute/will`
-- "Contribute" nav link already present — no auth guard
-
-#### Henry Weaver Will — Manually Backfilled
-Real will PDF: `wills/henry-weaver/Henry Weaver 1893.pdf` → `person_documents` id=44165
-```sql
-UPDATE person_documents
-SET canonical_person_id = 196747
-WHERE s3_key LIKE 'wills/henry-weaver/%' AND canonical_person_id IS NULL;
--- Linked 3 rows; test duplicates (ids 44163, 44164) then deleted
-```
-
-#### Verified Final State via API
-```
-GET /api/contribute/person/196747?table=canonical_persons
-ownerDocuments: 4
-  id=5871 type=compensated_emancipation_petition — DC Emancipation Petition (p.001)
-  id=5872 type=compensated_emancipation_petition — DC Emancipation Petition (p.002)
-  id=5873 type=compensated_emancipation_petition — DC Emancipation Petition (p.003)
-  id=44165 type=will — Will of Henry Weaver (1847) — Washington DC
-documentCollections: 2
-  key=cww.00786  DC Emancipation Petition  3 pages
-  key=None       Will of Henry Weaver      1 page
-```
-
-#### GitHub Issue Filed
-Issue #50: https://github.com/danyelajunebrown/Reparations-is-a-real-number/issues/50
-Documents what's built and what's next (OCR pipeline, auto-link by name, status tracking page).
-
-#### Known Gap — Future Work (Issue #50)
-- `canonicalPersonId` must be passed manually in the form OR looked up by name in `wills.js`
-  (currently uploads have `canonical_person_id = NULL` until manually backfilled)
-- Build `src/services/probate/WillPipeline.js` — Google Vision OCR → structured extraction → fanout
-- Add `/contribute/status/:extractionId` tracking page
-- Add name-based auto-lookup: match `testatorName` → `canonical_persons.canonical_name`
+### Remaining Next Steps (post-commit)
+1. Fix Will 3 EPIPE: change `-r 300` → `-r 150` in `ocrDocument()`, re-run `--apply` for Will 3 only
+2. Fix `test-daa-hopewell.js` Sarah/Such assignment error (audit §4.1)
+3. Fix `backfill-inheritance-edges-from-will-extractions.js` 3 schema bugs (audit §4.2)
+4. Backfill M063-M067 into `schema_migrations` table (audit §4.3)
 
 ---
 
-## Previous Focus: DocAI Enrichment — Washington DC Run (Session 45)
+## Session 51 — Weaver Family Edges + Full Deploy — COMPLETED (2026-05-11)
 
-### Freedmen's Bank Integration Audit Results
+### What Was Fixed
+1. **Mary Ann Weaver created** — `canonical_persons` id=609494. Washington DC, d.1883. person_type=enslaver, confidence=0.95, verification_status=verified.
+2. **Henry Weaver ↔ Mary Ann Weaver spouse edge** — `canonical_family_edges` id=2. tier=1, verified=true, confidence=1.0.
+3. **Frontend deployed to GitHub Pages** — `npm run deploy:gh-pages` (push to `gh-pages-react`). Deploy run 25687609071 succeeded.
 
-**416,136 depositors** exist in `unconfirmed_persons` with `extraction_method = 'freedmens_bank_index'`.
-
-| Metric | Count |
-|--------|-------|
-| Total depositors | 416,136 |
-| Status = 'pending' (all of them) | 416,136 |
-| With `confirmed_individual_id` set (linked to canonical) | 89,459 |
-| Marked as duplicates (`duplicate_of_lead_id` set) | **0** |
-| person_documents with freedmens-bank S3 key | **0** |
-| canonical_persons with "freedmen" in notes | 78,212 |
-
-**Key finding:** 89,459 depositors have been linked to `canonical_persons` via `confirmed_individual_id`,
-but ALL remain status='pending' and ZERO have been deduplicated. ZERO ledger page screenshots exist
-in `person_documents` — the DocAI enrichment has never been run on this machine or the Mac Mini.
-
-The user had anticipated: "i would anticipate that a good deal of those persons should have been
-deduplicated and if that hasn't happened pending the doc ai enrichment we should just go ahead
-and run that script on this computer."  → Confirmed: deduplication hasn't happened; DocAI launched.
-
-### DocAI Enrichment Launch (Session 45)
-
-**Dry-run verified:** 3 records processed, 0 nav errors, screenshots captured (116KB, 116KB, 52KB).
-Chrome 147 is running on port 9222.
-
-**First live attempt (PID 92727):** Chrome was on `accounts.google.com` Google sign-in page.
-All 4 records processed got conf=0.00 because DocAI was seeing login-page screenshots, not ledgers.
-→ Immediately killed. 4 contaminated records (Maria Louisa, Thomas Ball, Hannah Carr, Betsey) cleaned:
-  - `review_notes` docai_enrichment tag removed
-  - `relationships.docai_fields` removed
-
-**FamilySearch session requirement:** Chrome at `localhost:9222` must be logged into FamilySearch.
-After user logs in manually, re-run:
-```bash
-# In a terminal (foreground so you can see progress):
-cd /Users/danyelabrown/Desktop/danyelajunebrown\ GITHUB/Reparations-is-a-real-number-main
-node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500
-
-# Or background with log:
-nohup node scripts/enrich-freedmens-docai.js --branch-like "Washington" --limit 500 \
-  > /tmp/freedmens-docai-washington.log 2>&1 &
+### API Verification (live)
+```
+GET /api/contribute/person/196747?table=canonical_persons  (Henry Weaver)
+familyMembers.spouse = {"id":609494,"full_name":"Mary Ann Weaver","death_year":1883,"evidence_tier":1,"verified":true}
 ```
 
-**After Washington DC completes, expand to:**
-```bash
-node scripts/enrich-freedmens-docai.js --branch-like "Richmond" --limit 500
-node scripts/enrich-freedmens-docai.js --branch-like "Charleston" --limit 500
-node scripts/enrich-freedmens-docai.js --branch-like "New Orleans" --limit 500
-node scripts/enrich-freedmens-docai.js --branch-like "Memphis" --limit 500
-```
-
-**What to watch for in logs (healthy run):**
-- `conf=0.XX` where XX > 0.00 — DocAI is reading actual ledger content
-- `last_master="..."` appearing in the output — critical fields being extracted
-- FP warnings are normal and expected (validator cleaning bad OCR)
-- If ALL records show `conf=0.00 (no critical fields)` → session has expired again
-
-**Note on `DOCUMENT_AI_FREEDMENS_PROCESSOR_ID`:** The .env has two processor IDs:
-- `DOCUMENT_AI_PROCESSOR_ID` — used by `enrich-freedmens-docai.js`
-- `DOCUMENT_AI_FREEDMENS_PROCESSOR_ID` — may be a dedicated Freedmen's processor
-If results are all conf=0.00 even with a good session, try overriding:
-```bash
-DOCUMENT_AI_PROCESSOR_ID=$DOCUMENT_AI_FREEDMENS_PROCESSOR_ID \
-  node scripts/enrich-freedmens-docai.js --dry-run --limit 3
-```
-
-### Deduplication Next Steps
-
-After DocAI enrichment populates `relationships.docai_fields.last_master` etc., run:
-```bash
-node scripts/crossref-freedmens-to-canonical.mjs   # cross-reference with canonical enslaver names
-node scripts/crossref-freedmens-enslavers.js        # enslaver crossref
-```
-
-Then promote well-linked depositors by setting `status = 'confirmed'` and using confirmed IDs.
+### Commits
+- `4e9c8b8cc` — create Mary Ann Weaver (id=609494) + spouse edge to Henry Weaver (id=196747)
 
 ---
 
-## Previous Focus: Document Collection Grouping + Presigned URL Fix (Session 44) — COMPLETED
+## Session 50 — Spouse Field Fix + DB Deployment — COMPLETED (2026-05-11)
 
-### What Was Done (Session 44)
+### What Was Fixed
+1. **SPOUSE field showing "—"** — `PersonProfile.jsx` rendered `p.spouse_name` (nonexistent column). Fixed to `spouseFromFamily` from `data.familyMembers.spouse`.
+2. **FamilySearch URL filter deployed**
+3. **Descendant exclusion deployed**
 
-Multi-page primary source documents (e.g., Ann Maria Biscoe's 12-page DC Emancipation Petition)
-were showing as anonymous flat pages with no grouping. Fixed end-to-end:
+### DB Changes
+- M066 (`canonical_family_edges`) — applied to Neon ✅
+- M067 (`inheritance_edges`) — fixed UUID FK types, applied ✅
+- Spouse edge: Angelica Chew (141014) ↔ Frisby Freeland Chew I (193163), tier=1, verified=true
 
-#### Migration 064 — APPLIED TO NEON (backfill also complete)
-Added columns to `person_documents`:
-- `collection_name TEXT`, `collection_key TEXT`, `collection_page_number INTEGER`
-- `collection_page_count INTEGER`, `source_type_label TEXT`
+### Key DB Schema Facts
+- `canonical_persons` does NOT have `spouse_name`. Spouse data via `canonical_family_edges`.
+- `will_extractions.id` is UUID (not INTEGER)
+- `land_transfer_events` PK is `transfer_id UUID`
 
-**Backfill result:** 17,876 rows received correct `collection_page_count`; 24,974/24,975 rows (100%)
-have `collection_name` populated. 22,053 rows are part of multi-page collections.
-
-#### Backend — `src/api/routes/contribute.js`
-1. **500 error fix (CRITICAL):** `let documentCollections = []` was inside `if (person_type === 'slaveholder')` block but referenced outside. Moved to outer scope.
-2. **Collection UNION query** + inline grouping → `documentCollections` array in response.
-
-#### Backend — `src/api/routes/documents.js`
-New `GET /api/documents/person-doc/:pdId/access` endpoint — presigns S3 key from `person_documents`.
-
-#### Frontend — `frontend/src/api/client.js`
-`getPersonDocAccess: (pdId, signal) => ...`
-
-#### Frontend — `frontend/src/components/DocumentViewer/DocumentViewer.jsx`
-`DocCollectionOverlay` — multi-page viewer, per-page presigned URL via `useEffect`, keyboard nav.
-
-#### Frontend — `frontend/src/components/PersonModal/PersonProfile.jsx`
-Collection cards + `viewCollection` state + `DocCollectionOverlay` mounted.
-
-### Commit + Deployment (Session 44/45)
-- Commit: `dcddc2f4e` — "feat: document collection grouping + presigned URL endpoint" (9 files, 1136 insertions)
-- Backend pushed to `main` → Render auto-deploy triggered
-- Frontend built (779 modules, 1.96s) + published to `gh-pages-react`
+### Commits
+- `cf68b9b46` — PersonProfile.jsx spouse field + contribute.js 3 fixes + M066/M067 + scripts
+- `ed44c5d5b` — fix M067 UUID FK types
+- `d3a0a6a9d` — fix backfill script graceful exit for missing column
 
 ---
 
-## Previous Focus: Person Modal Data Disconnections — COMPLETED (Session 43)
+## Critical Schema Facts (always needed)
 
-(See prior session entries for full details.)
-
-### Actual schema notes (IMPORTANT for future code)
 ```
-canonical_persons:
+canonical_persons columns:
   id, canonical_name, first_name, middle_name, last_name,
   birth_year_estimate, death_year_estimate,   ← NOT birth_year / death_year
   sex,                                         ← NOT gender
   primary_state, primary_county, primary_plantation,
   person_type, verification_status, confidence_score, notes
+  ← NO spouse_name column (use canonical_family_edges)
 
-unconfirmed_persons columns (confirmed Session 45):
+unconfirmed_persons columns:
   lead_id, full_name, person_type, birth_year, death_year,
   gender, locations (text[]), source_url, source_page_title,
   extraction_method, scraped_at, context_text, confidence_score,
@@ -326,22 +128,54 @@ unconfirmed_persons columns (confirmed Session 45):
   rejection_reason, confirmed_enslaved_id, confirmed_individual_id,
   duplicate_of_lead_id, created_at, updated_at, source_type,
   review_notes, data_quality_flags
-  ← NOTE: NO branch_name column; branch is in locations[0]
-  ← NOTE: NO docai_data column; enrichment goes in relationships.docai_fields
-  ← NOTE: NO canonical_person_id; use confirmed_individual_id
+  ← NO branch_name column; branch is in locations[0]
+  ← NO docai_data column; enrichment in relationships.docai_fields
+  ← NO canonical_person_id; use confirmed_individual_id
+
+person_relationships_verified columns:
+  id, person_id, related_person_id, relationship_type,
+  evidence_source_ids (ARRAY), evidence_strength (INT),
+  has_conflicts (BOOL), verified_by, verified_at, created_at
+  ← NOT person1_id/person2_id
+
+will_extractions columns (M048):
+  id (UUID), document_id (INT), canonical_person_id (INT),
+  raw_pages_jsonb (JSONB), structured_extraction_jsonb (JSONB),
+  extractor_version (TEXT), status (TEXT),
+  review_sections_jsonb (JSONB), created_at, updated_at
+  ← NO enslaved_persons_count / document_date / document_year columns
+
+enslaver_evidence_compendium columns (M053):
+  id (UUID), canonical_person_id (INT), evidence_source_table (TEXT),
+  evidence_source_id (TEXT), evidence_strength (TEXT), claim_summary (TEXT),
+  methodology_id (UUID), ingested_at (TIMESTAMPTZ), ingested_by (TEXT)
+  ← ingested_at/ingested_by NOT created_at/created_by
+
+schema_migrations: uses 'filename' column (NOT migration_id / migration_name)
 ```
 
-## Key API Routes
-- `GET /api/contribute/person/:id?table=enslaved_individuals` — full person profile
-- `GET /api/contribute/person/:id?table=canonical_persons` — slaveholder profile
-- `GET /api/contribute/search/:query` — cross-table search
-- `GET /api/contribute/stats` — platform stats (cached 5min)
-- `GET /api/documents/person-doc/:pdId/access` — NEW presigned URL for person_documents row
+## Key Person IDs
+| Person | ID | Notes |
+|--------|-----|-------|
+| James Hopewell (enslaver, d.1817) | cp=1070 | FamilySearch MTRV-Z72 |
+| Angelica Chesley (wife) | cp=140299 | née Chesley; married name Hopewell |
+| Ann Maria Biscoe (daughter) | cp=141015 | née Hopewell |
+| Hugh Hopewell V (father, d.1777) | cp=193376 | FamilySearch GX1Q-ZMD; was type=descendant, updated to type=enslaver in Session 52 |
+| Hugh Hopewell VI (brother, d.1785) | cp=609495 | b.1758, wife Hannah; inserted Session 52; person_documents id=184163; will_extractions id=c40ee851 |
+| Henry Weaver | cp=196747 | Washington DC enslaver, d.1847 |
+| Mary Ann Weaver | cp=609494 | Henry's wife, d.1883 |
+| Angelica Chew | cp=141014 | DC Emancipation petition |
+| Frisby Freeland Chew I | cp=193163 | Angelica's husband, enslaver |
 
 ## Deployments
-- **Backend (Render):** `main` branch at `https://reparations-platform.onrender.com`
-- **Frontend (GitHub Pages):** `gh-pages-react` branch
-  - URL: `https://danyelajunebrown.github.io/Reparations-is-a-real-number/`
-  - Deploy: `cd frontend && npm run deploy:gh-pages`
-- **DB (Neon):** serverless HTTP via `@neondatabase/serverless`
-- **S3:** `reparations-them` bucket, `us-east-2` region (NOT public — always presign)
+- **Backend (Render):** `main` branch → `https://reparations-platform.onrender.com` (auto-deploy on push)
+- **Frontend (GitHub Pages):** `gh-pages-react` branch → `https://danyelajunebrown.github.io/Reparations-is-a-real-number/`
+  - Deploy: `cd frontend && npm run deploy:gh-pages` (MANUAL — does NOT auto-deploy on push to main)
+- **DB (Neon):** pg.Pool directly (`DATABASE_URL`) — NOT Neon serverless HTTP. rowCount works correctly.
+- **S3:** `reparations-them` bucket, `us-east-2` region (IAM: `reparations-app` user, missing s3:GetBucketLocation but non-blocking)
+
+## OCR / Probate Pipeline Facts
+- **Google Vision DOCUMENT_TEXT_DETECTION** via `pdftoppm -r 300 -png` → base64 → Vision API
+- **CONSTRAINT**: Do NOT overwrite `person_documents.ocr_text` for id=19 (FamilySearch transcription is higher quality)
+- **person_documents.will_extraction_id** column MISSING — `backfill-inheritance-edges-from-will-extractions.js` will fail
+- **WillPipeline.js** does NOT exist — `POST /api/wills/ingest` is a stub

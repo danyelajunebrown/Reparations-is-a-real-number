@@ -1,8 +1,136 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Pipeline audited. 1860 scrape ~done (139,995 pages). Freedman's Bank DocAI 0.61% complete — Mac Mini must run all 29 branches. MacBook is code+deploy only.
-**Last Updated:** May 11, 2026 (Session 48 — COMPLETE)
+**Current Phase:** Hopewell physical scan OCR complete. Will ingestion audit written. Hugh V reclassified to enslaver. will_extractions inserted for Docs 1/2/4. Hugh VI new canonical person. Will 3 OCR failed (EPIPE — §4.8 fix pending).
+**Last Updated:** May 12, 2026 (Session 52 — COMPLETE)
+
+---
+
+## Session 52 — Hopewell Physical Scan OCR + Will Ingestion Audit (May 12, 2026) ✅ COMPLETE
+
+### What Was Done
+
+Ran `scripts/ocr-hopewell-physical-scans.mjs --apply` (1610 lines) to OCR all 4 St. Mary's County Register of Wills physical PDFs via Google Vision DOCUMENT_TEXT_DETECTION and write full evidence graph into Neon DB.
+
+### DB Changes Made
+
+| Table | Operation | Detail |
+|-------|-----------|--------|
+| `will_extractions` | INSERT ×3 + UPDATE ×1 | Doc 1 id=08a21999 (UPDATE), Doc 2 (INSERT), Doc 4 (INSERT). Doc 3 SKIPPED — OCR FAILED |
+| `person_documents` | INSERT ×2 | Doc 2 and Doc 4 (Doc 1 id=19 UPDATE only; Doc 3 SKIPPED — OCR FAILED) |
+| `person_documents` id=19 | UPDATE | collection metadata only; ocr_text NOT touched |
+| `canonical_persons` | INSERT ×1 | Hugh Hopewell VI, b.1758 d.1785, type=enslaver |
+| `canonical_persons` id=193376 | UPDATE | person_type: 'descendant' → 'enslaver' (Hugh V, confirmed by 1777 will) |
+| `person_relationships_verified` | INSERT | Hugh V→James, Hugh VI↔James (sibling), Hugh V→Hugh VI (parent), others |
+| `unconfirmed_persons` | INSERT ≤38 | 30 enslaved (James 1817) + 2 (Jacob/Haney) + 6 (Barbara Burroughes) |
+| `enslaver_evidence_compendium` | INSERT ×2 | cp=Hugh V, cp=Hugh VI |
+
+### OCR Quality Summary
+| Doc | Classification | Quality | Notes |
+|-----|---------------|---------|-------|
+| James Hopewell 1817 (Will 1) | CONFIRMED | MEDIUM | 30 enslaved persons extracted |
+| Composite 1848 (Will 2) | UNKNOWN | MEDIUM | "יזי" artifact on p.1; composite non-ancestor |
+| Hugh V 1777 (Will 3) | **OCR FAILED (EPIPE)** | N/A | 27MB PNGs exceed Vision API 10MB inline limit. 0 chars. person_documents/will_extractions NOT written. See §4.8 |
+| Composite 1785 (Will 4) | UNKNOWN | MEDIUM | 7,800 chars, 3 pages. First lines: "se har lay out" / "(10)" / "Bognorth." |
+
+### New Files
+- `scripts/ocr-hopewell-physical-scans.mjs` — OCR + DB ingestion script (1610 lines)
+- `docs/will-ingestion-audit-2026-05-12.md` — full pipeline audit (§1 gap analysis, §2 OCR quality, §3 readiness, §4 known debt)
+
+### Key Bugs Fixed (all in the script)
+1. Q6 person_type filter removed — id=193376 (type=descendant) now correctly returned
+2. Q9 `migration_id` → `filename` — schema_migrations column name corrected
+3. Hugh V Phase 4 UPDATE vs INSERT — id=193376 updated, not duplicated
+4. verifyState false match — Agnes Hopewell (id=193559) notes have `mother_fs_id:GX1Q-ZMD`; fixed to match `"familysearch_id":"GX1Q-ZMD"` exactly
+5. `insertUnconfirmedPerson` missing `source_url` — `unconfirmed_persons.source_url TEXT NOT NULL` violated; added to INSERT + all 3 call sites
+
+### Known Debt (from audit doc)
+1. **HIGH**: `test-daa-hopewell.js` assigns Sarah to Ann Maria Biscoe — WRONG. Sarah is Joe's wife → Angelica. Such → Ann Maria.
+2. **HIGH**: `backfill-inheritance-edges-from-will-extractions.js` — 3 schema bugs: (a) `pd.will_extraction_id` missing, (b) `we.enslaved_persons_count` missing from M048, (c) `heir_id NOT NULL` vs null heir
+3. **HIGH**: Will 3 (Hugh V 1777) OCR FAILED — EPIPE, 27MB PNG > Vision API 10MB inline limit. Fix: lower DPI to 150 in `ocrDocument()`. 5 DB writes outstanding (person_documents, will_extractions, 2 relationships, Jacob+Haney unconfirmed, enslaver_evidence).
+4. **MEDIUM**: M063-M067 applied to Neon but NOT tracked in `schema_migrations`
+5. **LOW**: S3 IAM missing `s3:GetBucketLocation` (non-blocking)
+6. **LOW**: `person_documents` id=19 `title` column is NULL
+
+### Next Steps
+1. Fix Will 3 EPIPE: change `-r 300` → `-r 150` in `ocrDocument()`, re-run `--apply` for Will 3 only
+2. Fix `test-daa-hopewell.js` Sarah/Such assignment error
+3. Fix `backfill-inheritance-edges-from-will-extractions.js` 3 schema bugs
+4. Backfill M063-M067 into `schema_migrations`
+
+---
+
+## Session 51 — Weaver Family Edges + Full Deploy (May 11, 2026) ✅ COMPLETE
+
+### What Was Done
+- Created `canonical_persons` id=609494 (Mary Ann Weaver, d.1883, type=enslaver)
+- Inserted `canonical_family_edges` id=2: Henry Weaver (196747) ↔ Mary Ann Weaver (609494), tier=1, verified=true
+- Deployed frontend to GitHub Pages (`npm run deploy:gh-pages` — MANUAL step confirmed)
+- Commits: `4e9c8b8cc`
+
+---
+
+
+---
+
+## Session 49 — Family Edges Audit + Ancestor Climb Contamination Fixes (May 11, 2026) ✅ COMPLETE
+
+### What Was Asked
+Family/genealogy data not connected to profiles. Could not navigate from Henry Weaver → Mary Ann Weaver. Descendants appearing in search. FS profile URLs shown as primary source documents. Need family edges audit + inheritance edges audit.
+
+### Root Cause Analysis
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| 1 – Family nav broken for canonical_persons | `getPerson` only queried `enslaved_individuals` array columns for family; canonical_persons branch returned empty `familyMembers` always | Added `else if (tableSource === 'canonical_persons')` block querying `canonical_family_edges` (M066) |
+| 2 – Descendants in public search | `canonical_persons` WHERE clause only excluded `merged`; `descendant`/`modern_person` rows from ancestor_climb_sessions leaked through | Added `AND person_type NOT IN ('descendant', 'modern_person', 'participant', 'merged')` to both search endpoints |
+| 3 – FS profile URLs as primary docs | `person_documents` query had no filter for FS/WikiTree-URL-only rows (`s3_key IS NULL`) written by climb pipeline | Added `AND NOT (pd.s3_key IS NULL AND source_url ILIKE '%familysearch.org%'...)` to both UNION sides |
+| 4 – No inheritance_edges table | Table didn't exist; will_extractions data not linked to wealth transmission graph | Created M067, backfill script written |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `migrations/066-canonical-family-edges.sql` | Navigable family relationship graph for canonical_persons (spouse/parent_of/child_of/sibling_of, evidence_tier 1-3) |
+| `migrations/067-inheritance-edges.sql` | Documentary wealth transmission: testator → heir per will/deed, feeds enslaver_lineage_ledger |
+| `scripts/audit-family-edges.js` | Read-only diagnostic — all 4 bug classes + Weaver/Biscoe family checks |
+| `scripts/backfill-family-edges-from-spouse-names.js` | Reads canonical_persons.spouse_name, name-resolves to canonical ID, writes tier-3 edges |
+| `scripts/backfill-inheritance-edges-from-will-extractions.js` | Reads will_extractions, extracts bequests from structured_extraction_jsonb, writes inheritance_edges |
+| `scripts/audit-climb-contamination.js` | Full contamination report: descendant types, FS URL docs, proposed remediation SQL, --fix-descendants flag |
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/api/routes/contribute.js` | Fix 1: FS URL filter in person_documents query; Fix 2: canonical_family_edges block; Fix 3: descendant exclusion in both search endpoints |
+
+### Next Steps to Run
+
+```bash
+# 1. Apply migrations to Neon DB (run on Mac Mini or this MacBook)
+psql $DATABASE_URL -f migrations/066-canonical-family-edges.sql
+psql $DATABASE_URL -f migrations/067-inheritance-edges.sql
+
+# 2. Audit current state
+node scripts/audit-family-edges.js
+node scripts/audit-climb-contamination.js
+
+# 3. Backfill family edges from existing spouse_name text
+node scripts/backfill-family-edges-from-spouse-names.js --dry-run
+node scripts/backfill-family-edges-from-spouse-names.js
+
+# 4. Backfill inheritance edges from will extractions
+node scripts/backfill-inheritance-edges-from-will-extractions.js --dry-run
+node scripts/backfill-inheritance-edges-from-will-extractions.js
+
+# 5. Clean up FS/WikiTree profile URL rows from person_documents
+#    (review audit-climb-contamination output first, then apply):
+node scripts/audit-climb-contamination.js --fix-descendants
+```
+
+---
+
+**Previous phase (Session 48):**
 
 ---
 
