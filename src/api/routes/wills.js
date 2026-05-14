@@ -228,32 +228,27 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
 
     const s3Url = S3Service.getPublicUrl(s3Key);
 
-    // ── 3. Name-based canonical person lookup (wills only) ───────────────────
-    // For case registers the "subject" is the book, not a single person.
-    // We still allow an explicit canonicalPersonId to be passed for linking
-    // a register to a specific enslaver profile if known.
+    // ── 3. Canonical person resolution ──────────────────────────────────────
+    // We ONLY accept an explicit canonicalPersonId from the request body.
+    // Name-based auto-linking has been intentionally removed because:
+    //   - The same testator name (e.g. "Elizabeth Hughes") can appear across
+    //     multiple states, centuries, and contexts.
+    //   - A single ILIKE hit in canonical_persons does NOT imply the correct
+    //     person — it just means one row with that name happens to exist.
+    //   - False auto-links pollute canonical profiles with unrelated documents
+    //     and are hard to audit/repair at scale.
+    //
+    // Correct workflow for uploaded documents without an explicit person ID:
+    //   1. Upload succeeds; canonical_person_id = NULL in person_documents.
+    //   2. Document surfaces in GET /api/wills/unlinked with candidate matches.
+    //   3. A reviewer uses POST /api/wills/link to attach it to the right person
+    //      (or creates a new canonical_persons row if the testator isn't in the DB).
+    //
+    // findCanonicalPersonByName() is kept for the /candidates and /unlinked
+    // suggestion lists — it must NOT be called here.
     let resolvedPersonId = canonicalPersonId ? parseInt(canonicalPersonId, 10) : null;
     let matchedPerson    = null;
     let matchAmbiguous   = false;
-
-    if (docType === 'will' && !resolvedPersonId && displayName) {
-      const lookup = await findCanonicalPersonByName(displayName);
-      if (lookup && !lookup.ambiguous) {
-        resolvedPersonId = lookup.id;
-        matchedPerson    = { id: lookup.id, canonical_name: lookup.canonical_name };
-        logger.info('Auto-linked will to canonical person', {
-          displayName,
-          canonical_person_id: lookup.id,
-          canonical_name: lookup.canonical_name,
-        });
-      } else if (lookup && lookup.ambiguous) {
-        matchAmbiguous = true;
-        logger.info('Ambiguous name lookup — skipping auto-link', {
-          displayName,
-          count: lookup.count,
-        });
-      }
-    }
 
     // ── 4. Build title and collection name ───────────────────────────────────
     let titleText, collectionName;
