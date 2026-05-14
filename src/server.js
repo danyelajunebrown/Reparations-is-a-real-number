@@ -15,7 +15,7 @@ const db = require('./database/connection');
 
 // Middleware
 const { errorHandler } = require('../middleware/error-handler');
-const { generalLimiter } = require('../middleware/rate-limit');
+const { generalLimiter, statsLimiter } = require('../middleware/rate-limit');
 
 // Legacy processors (to be refactored)
 const EnhancedDocumentProcessor = require('./services/document/EnhancedDocumentProcessor');
@@ -177,6 +177,12 @@ app.get('/app/*', (req, res) => res.sendFile(path.join(__dirname, '..', 'fronten
 
 // Make database pool available to routes (for bibliography manager)
 app.set('pool', db);
+
+// Stats endpoint gets its own generous rate limiter (500/15min) because it is
+// hit on every page load and the backend already caches results for 5 minutes.
+// This must be registered BEFORE the contribute router so it overrides the
+// general limiter (100/15min) that is applied globally above.
+app.use('/api/contribute/stats', statsLimiter);
 
 // Initialize contribution service with database and mount routes
 const ExtractionWorker = require('./services/contribution/ExtractionWorker');

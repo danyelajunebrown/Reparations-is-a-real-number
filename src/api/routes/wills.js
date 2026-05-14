@@ -3,13 +3,13 @@
  *
  * POST /api/wills/ingest
  *   - Public-facing (no admin token required)
- *   - Accepts a PDF upload + optional metadata
+ *   - Accepts a PDF, JPEG, or PNG upload + optional metadata
  *   - Routes S3 key prefix by documentType:
- *       will           → wills/{slug}/{uuid}.pdf
- *       case_register  → case-registers/{slug}/{uuid}.pdf
- *       deed           → deeds/{slug}/{uuid}.pdf
- *       estate_inventory → estate-inventories/{slug}/{uuid}.pdf
- *       other          → archival-docs/{slug}/{uuid}.pdf
+ *       will           → wills/{slug}/{uuid}.{ext}
+ *       case_register  → case-registers/{slug}/{uuid}.{ext}
+ *       deed           → deeds/{slug}/{uuid}.{ext}
+ *       estate_inventory → estate-inventories/{slug}/{uuid}.{ext}
+ *       other          → archival-docs/{slug}/{uuid}.{ext}
  *   - Inserts a person_documents row with the correct document_type
  *   - For 'will' type only: also inserts a will_extractions stub
  *     (other types queue for post-upload OCR scripts)
@@ -47,6 +47,20 @@ const S3_PREFIX = {
   other:            'archival-docs',
 };
 
+// ── Accepted MIME types ────────────────────────────────────────────────────────
+const ACCEPTED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+]);
+
+// ── MIME → file extension map ──────────────────────────────────────────────────
+const MIME_TO_EXT = {
+  'application/pdf': 'pdf',
+  'image/jpeg':      'jpg',
+  'image/png':       'png',
+};
+
 // ── Multer config — 75MB to accommodate Heritage Books / MSA PDF scans ────────
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -55,10 +69,10 @@ const upload = multer({
     files: 1,
   },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    if (ACCEPTED_MIME_TYPES.has(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are accepted'), false);
+      cb(new Error('Only PDF, JPEG, and PNG files are accepted'), false);
     }
   },
 });
@@ -167,7 +181,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
 
     const file = req.file;
     if (!file) {
-      return res.status(400).json({ success: false, error: 'No PDF file uploaded' });
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
     // ── 1. Resolve display name and year for the document ────────────────────
@@ -191,10 +205,11 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     }
 
     // ── 2. Upload to S3 ──────────────────────────────────────────────────────
-    const prefix = S3_PREFIX[docType] || 'archival-docs';
-    const slug   = slugify(displayName || file.originalname);
-    const uuid   = crypto.randomUUID();
-    const s3Key  = `${prefix}/${slug}/${uuid}.pdf`;
+    const prefix   = S3_PREFIX[docType] || 'archival-docs';
+    const slug     = slugify(displayName || file.originalname);
+    const uuid     = crypto.randomUUID();
+    const fileExt  = MIME_TO_EXT[file.mimetype] || 'bin';
+    const s3Key    = `${prefix}/${slug}/${uuid}.${fileExt}`;
 
     if (!S3Service.isEnabled()) {
       return res.status(503).json({
@@ -203,7 +218,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       });
     }
 
-    await S3Service.upload(s3Key, file.buffer, 'application/pdf', {
+    await S3Service.upload(s3Key, file.buffer, file.mimetype, {
       'document-type':  docType,
       'display-name':   displayName || '',
       'archive-source': archiveSource || '',
@@ -279,7 +294,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
           docType,                                             // $3  document_type (not hardcoded 'will')
           file.originalname,                                   // $4  filename
           file.size,                                           // $5  file_size
-          'application/pdf',                                   // $6  mime_type
+          file.mimetype,                                       // $6  mime_type
           titleText,                                           // $7  title
           docType === 'will'            ? 'probate_record'
             : docType === 'case_register' ? 'court_record'

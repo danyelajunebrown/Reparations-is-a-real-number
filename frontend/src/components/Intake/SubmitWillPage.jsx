@@ -456,7 +456,7 @@ export default function SubmitWillPage() {
         </h2>
         <p style={{ color: '#888', fontFamily: 'monospace', fontSize: '0.85rem', marginBottom: '2rem', maxWidth: 540 }}>
           Upload a will, probate record, case register, deed, or estate inventory from an archive.
-          PDF stored in S3 and queued for OCR extraction — no account required.
+          PDF, JPEG, or PNG stored in S3 and queued for OCR extraction — no account required.
         </p>
 
         <form
@@ -505,11 +505,11 @@ export default function SubmitWillPage() {
             </div>
           </Field>
 
-          {/* ── PDF file input ── */}
-          <Field label="PDF FILE *" hint="Max 75 MB. PDFs only.">
+          {/* ── File input ── */}
+          <Field label="DOCUMENT FILE *" hint="PDF, JPEG, or PNG. Max 75 MB.">
             <input
               type="file"
-              accept=".pdf,application/pdf"
+              accept=".pdf,application/pdf,.jpg,.jpeg,image/jpeg,.png,image/png"
               required
               onChange={e => setFile(e.target.files[0] || null)}
               style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#e0e0e0', width: '100%' }}

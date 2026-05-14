@@ -240,6 +240,55 @@ function DocEmbed({ viewUrl, downloadUrl, filename, isPdf: isPdfHint, isImage: i
     );
   }
 
+  // ── External URL guard ────────────────────────────────────────────────────
+  // Presigned S3 URLs contain amazonaws.com or X-Amz-Signature.
+  // Relative paths are safe. Everything else (FamilySearch, etc.) blocks
+  // hotlinking/iframe embedding and must be opened in a new tab.
+  const isPresignedS3 = viewUrl.includes('amazonaws.com') || viewUrl.includes('X-Amz-Signature');
+  const isRelative = viewUrl.startsWith('/');
+  const isExternal = !isPresignedS3 && !isRelative;
+
+  if (isExternal) {
+    let hostLabel = viewUrl;
+    try { hostLabel = new URL(viewUrl).hostname.replace(/^www\./, ''); } catch (_) {}
+    return (
+      <div
+        className={fullscreen ? undefined : 'box'}
+        style={fullscreen
+          ? { color: '#aaa', padding: 40, textAlign: 'center' }
+          : { textAlign: 'center', padding: 24 }}
+      >
+        <div style={{ marginBottom: 12, fontSize: 13, color: fullscreen ? '#aaa' : undefined }}>
+          This document is hosted on <strong>{hostLabel}</strong> and cannot be embedded here.
+        </div>
+        <a
+          href={viewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: '#66aaff',
+            fontSize: 13,
+            textDecoration: 'none',
+            border: '1px solid #336',
+            padding: '6px 14px',
+            display: 'inline-block',
+          }}
+        >
+          Open on {hostLabel} ↗
+        </a>
+        {downloadUrl && downloadUrl !== viewUrl && (
+          <div style={{ marginTop: 8 }}>
+            <a href={downloadUrl} target="_blank" rel="noopener noreferrer"
+               style={{ color: fullscreen ? '#666' : 'var(--dim)', fontSize: 11 }}>
+              ↓ download
+            </a>
+          </div>
+        )}
+      </div>
+    );
+  }
+  // ── End external URL guard ─────────────────────────────────────────────────
+
   if (isPdf) {
     return (
       <iframe
@@ -450,20 +499,41 @@ export function DocCollectionOverlay({ collection, onClose, namesToHighlight = [
             )}
           </div>
         )}
-        {!accessLoading && viewUrl && isImage && (
-          <img src={viewUrl} alt={page.title || page.filename || `Page ${pageIdx + 1}`}
-            style={{ maxWidth: '100%', display: 'block' }} />
-        )}
-        {!accessLoading && viewUrl && isPdf && (
-          <iframe src={viewUrl} title={page.title || `Page ${pageIdx + 1}`}
-            style={{ width: '100%', flex: 1, border: 'none', alignSelf: 'stretch', minHeight: '80vh' }} />
-        )}
-        {!accessLoading && viewUrl && !isImage && !isPdf && (
-          <div style={{ color: '#aaa', padding: 40 }}>
-            <div>Unrecognized format — open directly:</div>
-            <a href={viewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#66aaff' }}>{viewUrl}</a>
-          </div>
-        )}
+        {!accessLoading && viewUrl && (() => {
+          // External URL guard — same logic as DocEmbed.
+          // FamilySearch and other external hosts block hotlinking; must open in new tab.
+          const isPresignedS3 = viewUrl.includes('amazonaws.com') || viewUrl.includes('X-Amz-Signature');
+          const isExternalUrl = !isPresignedS3 && !viewUrl.startsWith('/');
+          if (isExternalUrl) {
+            let hostLabel = viewUrl;
+            try { hostLabel = new URL(viewUrl).hostname.replace(/^www\./, ''); } catch (_) {}
+            return (
+              <div style={{ color: '#aaa', padding: 40, textAlign: 'center' }}>
+                <div style={{ marginBottom: 12, fontSize: 13 }}>
+                  This document is hosted on <strong style={{ color: '#ccc' }}>{hostLabel}</strong> and cannot be embedded here.
+                </div>
+                <a href={viewUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ color: '#66aaff', fontSize: 13, textDecoration: 'none', border: '1px solid #336', padding: '6px 14px', display: 'inline-block' }}>
+                  Open on {hostLabel} ↗
+                </a>
+              </div>
+            );
+          }
+          if (isImage) return (
+            <img src={viewUrl} alt={page.title || page.filename || `Page ${pageIdx + 1}`}
+              style={{ maxWidth: '100%', display: 'block' }} />
+          );
+          if (isPdf) return (
+            <iframe src={viewUrl} title={page.title || `Page ${pageIdx + 1}`}
+              style={{ width: '100%', flex: 1, border: 'none', alignSelf: 'stretch', minHeight: '80vh' }} />
+          );
+          return (
+            <div style={{ color: '#aaa', padding: 40 }}>
+              <div>Unrecognized format — open directly:</div>
+              <a href={viewUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#66aaff' }}>{viewUrl}</a>
+            </div>
+          );
+        })()}
       </div>
 
       {/* OCR text strip — with name highlighting when enabled */}

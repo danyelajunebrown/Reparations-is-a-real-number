@@ -1,8 +1,60 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Hopewell physical scan OCR complete. Will ingestion audit written. Hugh V reclassified to enslaver. will_extractions inserted for Docs 1/2/4. Hugh VI new canonical person. Will 3 OCR failed (EPIPE — §4.8 fix pending).
-**Last Updated:** May 12, 2026 (Session 52 — COMPLETE)
+**Current Phase:** Hynson DC case book pipeline Day 1 deployed. M068 compilation tracking live. Frontend 429 rate-limit bug fixed. Awaiting Hynson PDF uploads, then Day 2 OCR.
+**Last Updated:** May 14, 2026 (Session 54 — Frontend bug fix)
+
+---
+
+## Session 54 — Frontend 429 / Rate-Limit Bug Fix (May 14, 2026) ✅ COMPLETE
+
+### What Was Done
+
+Fixed three console errors caused by `GET /api/contribute/stats` being rate-limited by the global `generalLimiter` (100 req / 15 min). All GitHub Pages → Render traffic shares the same egress IP, so the limit was regularly exhausted.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `middleware/rate-limit.js` | Added `statsLimiter` (500 req/15 min, `skipFailedRequests: true`); added `skip: (req) => req.path === '/contribute/stats'` to `generalLimiter`; exported `statsLimiter` |
+| `src/server.js` | Imported `statsLimiter`; registered `app.use('/api/contribute/stats', statsLimiter)` before the contribute router |
+| `frontend/src/components/Layout/StatsRibbon.jsx` | Replaced raw `useApi` with `sessionStorage` cache (5-min TTL, key `reparations.stats_cache`). At most 1 network call per 5 min per browser session. |
+
+### Key Lesson
+`express-rate-limit` stacks additively — adding a second limiter does NOT replace the first. Must add `skip` to the general limiter AND register the path-specific limiter separately. `req.path` inside `app.use('/api', limiter)` is relative to the mount: `/contribute/stats` not `/api/contribute/stats`.
+
+---
+
+## Session 53 — Hynson Compilation Tracking + Multi-Doc Pipeline (May 14, 2026) ✅ DEPLOYED
+
+### What Was Done
+
+Day 1 of the Hynson DC Runaway/Fugitive Slave Case Books intake pipeline. Infrastructure layer complete; PDF upload + OCR + fanout scripts are Day 2–3.
+
+### Migrations Applied
+| Migration | Tables Affected | Result |
+|-----------|----------------|--------|
+| M068 `068-compilation-source-tracking.sql` | `regional_source_registry` (+4 cols), `enslaver_evidence_compendium` (+2 cols), `estimation_methodology_registry` (INSERT) | ✅ Applied to Neon |
+
+### Key Schema Additions (M068)
+- `regional_source_registry.is_compilation BOOLEAN` — flags compiled/transcribed sources
+- `regional_source_registry.max_evidence_tier TEXT` — ceiling on evidence strength from this source
+- `enslaver_evidence_compendium.verification_status TEXT` — tracks upgrade path: `unverified_compilation` → `original_located` → `original_verified`
+- Hynson 1848-1863 + 1862-1863: both registered as `is_compilation=TRUE`, `max_evidence_tier='secondary'`, `record_type='court_record'`
+- New methodology: `hynson_dc_runaway_fugitive_cases_compilation` (Tier C, v1.0.0, `relationship_type='possessed'`)
+
+### Code Changes Deployed
+| File | Change | Commit |
+|------|--------|--------|
+| `src/api/routes/wills.js` | 75MB cap, 5 doc types, S3 prefix routing, type-aware nextSteps | `9d47d0acc` |
+| `frontend/src/components/Intake/SubmitWillPage.jsx` | Radio doc-type selector, register fields, Tier C amber warning | `9d47d0acc` |
+
+### Pending (Day 2–4)
+- [ ] Upload Hynson PDFs at `/contribute/will` → select "Case Register" → note `person_documents.id`
+- [ ] Day 2: `scripts/ocr-register-document.mjs` — generalize Hopewell OCR script for any register
+- [ ] Day 3: `scripts/parse-hynson-case-entries.js` — parse claimant/enslaved/date/outcome
+- [ ] Day 3: `scripts/fanout-hynson-cases.js` — write `unconfirmed_persons` + `slaveholding_relationships` (type=possessed) + `enslaver_evidence_compendium` (strength=secondary)
+- [ ] Day 4: Cross-reference claimants vs `civilwardc_petitions` (Tier C → Tier B upgrade)
 
 ---
 

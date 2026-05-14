@@ -1,6 +1,12 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, NavLink, Link, useLocation } from 'react-router-dom';
 
+// Backend root (Render). Used for links to non-SPA pages (review.html, connect.html).
+// In dev: empty string → Vite proxy handles /api and /review paths on localhost:3000.
+const BACKEND_ROOT = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/api$/, '')
+  : '';
+
 // Lazy load heavy panels so the initial bundle stays small.
 const HomePage = lazy(() => import('./pages/HomePage.jsx'));
 const SearchPage = lazy(() => import('./pages/SearchPage.jsx'));
@@ -43,6 +49,13 @@ export default function App() {
           <NavLink to="/contribute/will">Contribute</NavLink>
           <NavLink to="/pay">Payment</NavLink>
           <NavLink to="/admin">Admin</NavLink>
+          <a
+            href={`${BACKEND_ROOT}/review?queue=wills`}
+            style={{ color: 'var(--dim)', fontFamily: 'var(--font-mono)', fontSize: 'inherit', textDecoration: 'none' }}
+            title="Review unlinked wills and ambiguous document filings"
+          >
+            Will Review
+          </a>
         </nav>
       </header>
 

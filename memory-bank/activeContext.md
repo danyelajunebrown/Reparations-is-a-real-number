@@ -1,6 +1,97 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-12 (Session 52 — Hopewell Physical Scan OCR + Will Ingestion Audit)_
+_Last updated: 2026-05-14 (Session 54 — Frontend 429 / Rate-Limit Bug Fix)_
+
+---
+
+## Session 54 — Frontend 429 / Rate-Limit Bug Fix — ✅ DEPLOYED (2026-05-14)
+
+### What Was Done
+
+Fixed three console errors (`429 × 2` + "You do not have permission") caused by the `GET /api/contribute/stats` endpoint being double-limited by the tight `generalLimiter` (100 req / 15 min). All users share the same upstream IP (GitHub Pages → Render reverse proxy), so the budget was regularly exhausted under normal page-load traffic.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `middleware/rate-limit.js` | Added `statsLimiter` (500 req/15 min, `skipFailedRequests: true`); added `skip: (req) => req.path === '/contribute/stats'` to `generalLimiter` so the two limiters don't stack; exported `statsLimiter` |
+| `src/server.js` | Imported `statsLimiter`; registered `app.use('/api/contribute/stats', statsLimiter)` before the contribute router mounts |
+| `frontend/src/components/Layout/StatsRibbon.jsx` | Replaced raw `useApi` call with `sessionStorage` cache (`CACHE_KEY='reparations.stats_cache'`, 5-min TTL matching server-side cache). Component reads from cache on remount / React StrictMode double-invocations — at most 1 network call per 5 min per browser session. Private-mode `sessionStorage` failures caught silently. |
+
+### Root Cause Summary
+
+- `app.use('/api', generalLimiter)` applied the 100 req/15 min limit to **all** API routes including stats.
+- Since the frontend (GitHub Pages) calls Render from a shared egress IP, all users were counted against a single IP bucket.
+- `express-rate-limit` stacks additively — adding a second limiter doesn't replace the first. The fix required both: (a) skip the stats path in `generalLimiter`, and (b) register `statsLimiter` for that path.
+- The third console error ("You do not have permission") was Render's infrastructure responding to blocked requests after the rate limit was exhausted.
+
+### Pattern to Remember
+- `req.path` inside `app.use('/api', limiter)` is relative to the mount point: `/contribute/stats`, NOT `/api/contribute/stats`.
+- Always add `skip` to the general limiter when exempting a path — don't just add a second limiter on top.
+
+---
+
+## Session 53 — Hynson Compilation Tracking + Multi-Doc Pipeline — ✅ DEPLOYED (2026-05-14)
+
+### What Was Done
+
+Full Day 1 of Hynson DC Runaway/Fugitive Slave Case Books intake pipeline. Three files written, M068 applied to Neon, all layers deployed (commit `9d47d0acc`).
+
+#### M068 — `migrations/068-compilation-source-tracking.sql`
+- Adds `is_compilation BOOLEAN`, `compiles_from_description TEXT`, `original_location_text TEXT`, `max_evidence_tier TEXT CHECK(IN 'direct_primary','indirect_primary','secondary','inferred')` to `regional_source_registry`
+- Adds `original_document_location TEXT`, `verification_status TEXT DEFAULT 'not_applicable' CHECK(IN 'not_applicable','unverified_compilation','original_sought_not_found','original_located','original_verified')` to `enslaver_evidence_compendium`
+- Updates Hynson 1848-1863 registry entry: `record_type='court_record'`, `is_compilation=TRUE`, `max_evidence_tier='secondary'`, originals at NARA RG 21
+- Inserts new Hynson 1862-1863 registry entry (same flags)
+- Updates MSA S1431 + Glover Park History / Carlton Fletcher to `is_compilation=TRUE`
+- Inserts `hynson_dc_runaway_fugitive_cases_compilation` methodology row (Tier C, v1.0.0) into `estimation_methodology_registry`
+- **Applied to Neon:** 4×ALTER TABLE, 2×UPDATE, 1×INSERT (registry), 1×INSERT (methodology)
+
+#### `src/api/routes/wills.js` — fully rewritten
+- File size cap: 25MB → **75MB** (Heritage Books PDFs can be 30-80MB)
+- 5 document types: `will`, `case_register`, `deed`, `estate_inventory`, `other`
+- S3 prefix routing by docType: `wills/`, `case-registers/`, `deeds/`, `estate-inventories/`, `archival-docs/`
+- `person_documents.document_type` uses passed docType (not hardcoded 'will')
+- Name resolution + `will_extractions` INSERT: **only for `docType === 'will'`**
+- Candidate auto-linking: **only for `docType === 'will'`**
+- `nextSteps` for `case_register` returns exact OCR + parse + fanout script commands with `person_documents.id`
+
+#### `frontend/src/components/Intake/SubmitWillPage.jsx` — fully rewritten
+- 5-option radio doc-type selector (will / case_register / deed / estate_inventory / other)
+- Context-aware fields by type: registers show `documentTitle`, `eraStart`, `eraEnd`, `compiledBy` + **amber Tier C warning box**
+- File size display: KB → MB
+- Success screen: register type shows "Evidence tier: Tier C (secondary compilation)" + NARA upgrade note
+- `result.nextSteps` rendered as `<code>` list
+
+#### Deploy status
+| Layer | Status |
+|-------|--------|
+| Neon DB (M068) | ✅ Applied (4 ALTERs, 2 UPDATEs, 1+1 INSERTs) |
+| Backend (Render) | ✅ Auto-deploying from `9d47d0acc` push |
+| Frontend (GitHub Pages) | ✅ Published `gh-pages-react` |
+
+### Evidence Tier Architecture (Hynson)
+- **Source ceiling**: Hynson 1999 Heritage Books = `max_evidence_tier='secondary'` (Tier C). Cannot be promoted to Tier A/B without locating NARA RG 21 originals.
+- **Relationship type**: Always `possessed` (not `owned`) — claimant retained custody claim against enslaved person's movement, not ownership title.
+- **verification_status upgrade path**: `unverified_compilation` → `original_located` → `original_verified` (update `enslaver_evidence_compendium.verification_status` when NARA originals are inspected)
+
+### Next Steps — Day 2+ (Hynson pipeline)
+1. **Upload Hynson PDFs** at `https://danyelajunebrown.github.io/Reparations-is-a-real-number/contribute/will`
+   - Select "Case Register (runaway / fugitive cases)"
+   - Fill: Document Title, Era Start, Era End, Compiled By = "Roger D. Hynson"
+   - **Copy the `person_documents.id` from the success screen** — needed for Day 2 OCR
+2. **Day 2 — OCR**: Generalize `scripts/ocr-hopewell-physical-scans.mjs` → `scripts/ocr-register-document.mjs` (accept `--doc-id`, page-chunked Vision API, write to `person_documents.ocr_text`)
+3. **Day 3 — Parse**: `scripts/parse-hynson-case-entries.js` — regex case entry parser (claimant name, enslaved name, date, case outcome)
+4. **Day 3 — Fanout**: `scripts/fanout-hynson-cases.js` — writes:
+   - `unconfirmed_persons` (enslaved individuals)
+   - `slaveholding_relationships` (`relationship_type='possessed'`, not 'owned')
+   - `enslaver_evidence_compendium` (`evidence_strength='secondary'`, `verification_status='unverified_compilation'`, `methodology_id` = hynson methodology UUID)
+5. **Day 4 — Cross-reference**: Hynson claimants ↔ `civilwardc_petitions` for dual-corroboration (upgrades Tier C → Tier B if matched)
+
+### Still Pending from Session 52
+1. Fix Will 3 EPIPE: change `-r 300` → `-r 150` in `ocrDocument()`, re-run `--apply` for Hugh Hopewell V only
+2. Fix `test-daa-hopewell.js` Sarah/Such assignment error (audit §4.1)
+3. Fix `backfill-inheritance-edges-from-will-extractions.js` 3 schema bugs (audit §4.2)
+4. Backfill M063-M067 into `schema_migrations` table (audit §4.3)
 
 ---
 

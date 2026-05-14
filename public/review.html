@@ -5,20 +5,27 @@
 <title>Review Queue — Reparations ∈ ℝ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  :root { --bg:#0b0f14; --card:#141a22; --border:#1f2937; --text:#d1d5db; --accent:#4ade80; --danger:#ef4444; --muted:#6b7280; }
+  :root { --bg:#0b0f14; --card:#141a22; --border:#1f2937; --text:#d1d5db; --accent:#4ade80; --amber:#f5a623; --danger:#ef4444; --muted:#6b7280; }
   * { box-sizing: border-box; }
   body { margin:0; padding:0; background:var(--bg); color:var(--text); font-family: ui-monospace, 'SF Mono', monospace; font-size:14px; }
-  header { padding:1rem 1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
-  header h1 { margin:0; font-size:1.1rem; font-weight:600; letter-spacing:.05em; }
+  header { padding:1rem 1.5rem; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+  header h1 { margin:0; font-size:1.1rem; font-weight:600; letter-spacing:.05em; flex-shrink:0; }
+  header .nav-links { display:flex; gap:1rem; font-size:12px; }
+  header .nav-links a { color:var(--muted); text-decoration:none; }
+  header .nav-links a:hover { color:var(--text); }
   main { display:grid; grid-template-columns: 280px 1fr; height: calc(100vh - 60px); }
   aside { border-right:1px solid var(--border); overflow-y:auto; padding:1rem 0; }
-  aside h2 { padding:0 1rem; font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+  aside h2 { padding:0 1rem; font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); margin-bottom:.5rem; }
   .queue-btn { display:block; width:100%; padding:.75rem 1rem; background:transparent; border:none; color:var(--text); text-align:left; cursor:pointer; font-family:inherit; font-size:13px; border-left:3px solid transparent; }
   .queue-btn:hover { background:var(--card); }
   .queue-btn.active { background:var(--card); border-left-color:var(--accent); }
+  .queue-btn.amber { }
+  .queue-btn.amber.active { border-left-color:var(--amber); }
   .queue-btn .count { float:right; background:var(--border); padding:.1rem .5rem; border-radius:.25rem; font-size:11px; }
+  .queue-btn .count.amber { background:rgba(245,166,35,0.2); color:var(--amber); }
   section#content { padding:1.5rem; overflow-y:auto; }
   .item { background:var(--card); border:1px solid var(--border); border-radius:.5rem; padding:1rem; margin-bottom:1rem; }
+  .item.will-item { border-color: rgba(245,166,35,0.2); }
   .item h3 { margin:0 0 .3rem 0; font-size:1rem; color:#f0fdf4; }
   .item .sub { color:var(--muted); font-size:12px; margin-bottom:.5rem; }
   .item .detail { white-space:pre-wrap; font-size:13px; background:#0b0f14; padding:.75rem; border-radius:.25rem; margin:.5rem 0; max-height:200px; overflow-y:auto; }
@@ -27,12 +34,16 @@
   .candidates { margin:.5rem 0; }
   .candidate-pill { display:inline-block; padding:.25rem .75rem; margin:.25rem .25rem .25rem 0; background:var(--border); border:1px solid #374151; border-radius:1rem; font-size:11px; cursor:pointer; }
   .candidate-pill.selected { background:var(--accent); color:#0b0f14; border-color:var(--accent); font-weight:600; }
-  .actions { margin-top:.75rem; display:flex; gap:.5rem; flex-wrap:wrap; }
+  .candidate-pill.amber-pill { background:rgba(245,166,35,0.12); border-color:rgba(245,166,35,0.3); color:var(--amber); }
+  .candidate-pill.amber-pill.selected { background:var(--amber); color:#0b0f14; border-color:var(--amber); }
+  .actions { margin-top:.75rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
   button.action { padding:.5rem 1rem; border:1px solid var(--border); background:var(--bg); color:var(--text); border-radius:.25rem; cursor:pointer; font-family:inherit; font-size:12px; }
   button.action.approve { background:#14532d; border-color:#166534; color:#d1fae5; }
+  button.action.amber-approve { background:rgba(245,166,35,0.15); border-color:rgba(245,166,35,0.4); color:var(--amber); }
   button.action.reject { background:#7f1d1d; border-color:#991b1b; color:#fee2e2; }
   button.action.skip { color:var(--muted); }
   button.action:hover { filter:brightness(1.2); }
+  button.action:disabled { opacity:.4; cursor:default; filter:none; }
   input.edit { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:.4rem .75rem; border-radius:.25rem; font-family:inherit; font-size:13px; width:100%; margin-bottom:.5rem; }
   #auth-modal { position:fixed; inset:0; background:rgba(0,0,0,.85); display:flex; align-items:center; justify-content:center; z-index:100; }
   #auth-modal .box { background:var(--card); padding:2rem; border-radius:.5rem; border:1px solid var(--border); min-width:360px; }
@@ -41,28 +52,48 @@
   .toast.show { opacity:1; transform:translateY(0); }
   .toast.error { background:var(--danger); color:white; }
   .empty { padding:3rem; text-align:center; color:var(--muted); }
+  .badge-amber { display:inline-block; padding:.1rem .4rem; background:rgba(245,166,35,0.15); color:var(--amber); border-radius:.2rem; font-size:10px; margin-left:.4rem; vertical-align:middle; }
+  .no-token-note { font-size:11px; color:var(--muted); margin-top:.4rem; }
+  .will-meta { display:flex; gap:1.5rem; flex-wrap:wrap; margin:.4rem 0 .75rem 0; font-size:11px; color:var(--muted); }
+  .will-meta span { display:inline-flex; align-items:center; gap:.3rem; }
+  .will-candidates-label { font-size:11px; color:var(--muted); margin-bottom:.3rem; }
 </style>
 </head>
 <body>
 
 <div id="auth-modal">
   <div class="box">
-    <h2>Admin token required</h2>
-    <p style="color:var(--muted); font-size:12px;">Enter your ADMIN_TOKEN to access the review queues.</p>
-    <input id="auth-input" class="edit" type="password" placeholder="X-Admin-Token">
-    <button class="action approve" onclick="submitAuth()">Unlock</button>
+    <h2>Admin token</h2>
+    <p style="color:var(--muted); font-size:12px;">Enter your ADMIN_TOKEN to access gated queues. Leave blank to access public queues (Unlinked Wills) without a token.</p>
+    <input id="auth-input" class="edit" type="password" placeholder="X-Admin-Token (optional for Will Review)">
+    <div style="display:flex; gap:.75rem; margin-top:.5rem;">
+      <button class="action approve" onclick="submitAuth()">Unlock with token</button>
+      <button class="action" style="color:var(--amber); border-color:rgba(245,166,35,0.3);" onclick="skipAuth()">Skip — open Will Review only</button>
+    </div>
   </div>
 </div>
 
 <header>
   <h1>▸ REVIEW QUEUE</h1>
+  <div class="nav-links">
+    <a href="/">← Home</a>
+    <a href="/contribute/will">Submit Will</a>
+  </div>
   <div style="font-size:12px; color:var(--muted);" id="reviewer-info">(no token)</div>
 </header>
 
 <main>
   <aside>
-    <h2>Queues</h2>
-    <div id="queue-list">loading…</div>
+    <h2>Public Queues</h2>
+    <div id="public-queue-list">
+      <button class="queue-btn amber" data-name="unlinked_wills" onclick="selectUnlinkedWills()">
+        Unlinked Wills
+        <span class="count amber" id="unlinked-count">…</span>
+      </button>
+    </div>
+
+    <h2 style="margin-top:1rem;">Admin Queues</h2>
+    <div id="queue-list"><span style="padding:0 1rem; font-size:12px; color:var(--muted);">token required</span></div>
   </aside>
   <section id="content">
     <div class="empty">← pick a queue</div>
@@ -76,22 +107,31 @@ let TOKEN = localStorage.getItem('adminToken');
 let currentQueue = null;
 let currentItems = [];
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
 function submitAuth() {
   const v = document.getElementById('auth-input').value.trim();
-  if (!v) return;
+  if (!v) { skipAuth(); return; }
   TOKEN = v;
   localStorage.setItem('adminToken', v);
   document.getElementById('auth-modal').style.display = 'none';
   document.getElementById('reviewer-info').textContent = '🔑 authenticated';
-  loadQueues();
+  loadAdminQueues();
+  loadUnlinkedCount();
 }
 
+function skipAuth() {
+  document.getElementById('auth-modal').style.display = 'none';
+  document.getElementById('reviewer-info').textContent = '(public access)';
+  loadUnlinkedCount();
+}
+
+// ── Generic API for admin routes ──────────────────────────────────────────────
 async function api(path, opts = {}) {
   const r = await fetch('/api/review' + path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      'X-Admin-Token': TOKEN,
+      'X-Admin-Token': TOKEN || '',
       'X-Reviewer': 'admin',
       ...(opts.headers || {}),
     },
@@ -104,6 +144,15 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
+// ── Generic fetch for public will routes ──────────────────────────────────────
+async function willApi(path, opts = {}) {
+  const r = await fetch('/api/wills' + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...(opts.headers || {}) },
+  });
+  return r.json();
+}
+
 function toast(msg, error = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -111,7 +160,9 @@ function toast(msg, error = false) {
   setTimeout(() => t.className = 'toast', 2500);
 }
 
-async function loadQueues() {
+// ── Admin queue loader ────────────────────────────────────────────────────────
+async function loadAdminQueues() {
+  if (!TOKEN) return;
   try {
     const r = await api('/queues');
     const el = document.getElementById('queue-list');
@@ -121,7 +172,7 @@ async function loadQueues() {
         <span class="count">${q.count}</span>
       </button>
     `).join('');
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { /* token invalid or admin routes down */ }
 }
 
 async function selectQueue(name) {
@@ -137,6 +188,137 @@ async function selectQueue(name) {
   } catch (e) { toast(e.message, true); }
 }
 
+// ── Unlinked Wills queue (public) ─────────────────────────────────────────────
+async function loadUnlinkedCount() {
+  try {
+    const r = await willApi('/unlinked?limit=1');
+    if (r.success) {
+      document.getElementById('unlinked-count').textContent = r.total;
+    }
+  } catch (_) {}
+}
+
+async function selectUnlinkedWills() {
+  currentQueue = 'unlinked_wills';
+  document.querySelectorAll('.queue-btn').forEach(b => b.classList.toggle('active', b.dataset.name === 'unlinked_wills'));
+  const c = document.getElementById('content');
+  c.innerHTML = '<div class="empty">loading…</div>';
+  try {
+    const r = await willApi('/unlinked?limit=50');
+    if (!r.success) throw new Error(r.error || 'fetch failed');
+    if (!r.items.length) {
+      c.innerHTML = '<div class="empty">✓ No unlinked wills — everything is filed.</div>';
+      return;
+    }
+    c.innerHTML = `
+      <div style="font-size:12px; color:var(--muted); margin-bottom:1rem;">
+        ${r.total} unlinked will${r.total === 1 ? '' : 's'} — select the correct canonical person for each and click Link.
+        No token required.
+      </div>
+      ${r.items.map(renderWillItem).join('')}
+    `;
+  } catch (e) { toast(e.message, true); c.innerHTML = `<div class="empty" style="color:var(--danger);">Error: ${e.message}</div>`; }
+}
+
+function renderWillItem(item) {
+  const id = `will-${item.person_doc_id}`;
+
+  // Build metadata line
+  const metaParts = [];
+  if (item.document_year) metaParts.push(`<span>📅 ${item.document_year}</span>`);
+  if (item.location) metaParts.push(`<span>📍 ${escapeHtml(item.location)}</span>`);
+  if (item.archiveSource) metaParts.push(`<span>🗄 ${escapeHtml(item.archiveSource)}</span>`);
+  if (item.s3_key) metaParts.push(`<span style="color:var(--muted);">S3: ${escapeHtml(item.s3_key)}</span>`);
+
+  // Candidate pills
+  const pillHtml = (item.candidates || []).map(c => {
+    const yearBits = [c.birth_year ? `b.${c.birth_year}` : null, c.death_year ? `d.${c.death_year}` : null].filter(Boolean);
+    const locBits  = [c.primary_plantation, c.primary_county, c.primary_state].filter(Boolean);
+    const label = [c.canonical_name, c.person_type, ...yearBits, ...locBits.join(', ')].filter(Boolean).join(' · ');
+    return `<span class="candidate-pill amber-pill" 
+      onclick="selectWillCandidate('${id}', ${c.id}, '${escapeAttr(c.canonical_name)}')" 
+      data-cp="${c.id}" 
+      title="id=${c.id}">${escapeHtml(label)}</span>`;
+  }).join('');
+
+  const s3Url = item.s3_url || '';
+  const pdfLink = s3Url ? `<a href="${escapeHtml(s3Url)}" target="_blank" rel="noopener" style="color:#60a5fa; font-size:12px;">📄 View PDF</a>` : '';
+
+  return `<div class="item will-item" id="${id}" data-pdid="${item.person_doc_id}" data-extid="${item.extraction_id || ''}">
+    <h3>${escapeHtml(item.title || item.name_as_appears || '(untitled)')}<span class="badge-amber">unlinked</span></h3>
+    <div class="sub">Testator: <strong>${escapeHtml(item.name_as_appears || '—')}</strong> · person_doc id=${item.person_doc_id}</div>
+    <div class="will-meta">${metaParts.join('')}</div>
+    ${pdfLink ? `<div class="evidence" style="margin-bottom:.5rem;">${pdfLink}</div>` : ''}
+    ${pillHtml ? `
+      <div class="candidates">
+        <div class="will-candidates-label">Candidate canonical persons — click to select:</div>
+        ${pillHtml}
+      </div>
+    ` : '<div style="font-size:11px; color:var(--muted); margin:.4rem 0;">No candidates found in canonical_persons — this name may need to be added first.</div>'}
+    <div class="actions">
+      <button class="action amber-approve" 
+        id="link-btn-${item.person_doc_id}"
+        onclick="linkWill('${id}', ${item.person_doc_id}, '${item.extraction_id || ''}')" 
+        disabled>
+        ✓ Link to selected
+      </button>
+      <span id="link-sel-label-${item.person_doc_id}" style="font-size:11px; color:var(--muted);">no person selected</span>
+      <button class="action skip" onclick="removeWillItem('${id}')">skip for now</button>
+    </div>
+    <div id="link-err-${item.person_doc_id}" style="color:var(--danger); font-size:11px; margin-top:.3rem; display:none;"></div>
+  </div>`;
+}
+
+function selectWillCandidate(itemId, cpId, cpName) {
+  const scope = document.getElementById(itemId);
+  const pdId  = scope.dataset.pdid;
+  scope.querySelectorAll('.candidate-pill').forEach(p => {
+    p.classList.toggle('selected', p.dataset.cp == cpId);
+  });
+  // Store selection on the item element
+  scope.dataset.selectedCp   = cpId;
+  scope.dataset.selectedName = cpName;
+  // Enable the link button and update label
+  const btn = document.getElementById(`link-btn-${pdId}`);
+  const lbl = document.getElementById(`link-sel-label-${pdId}`);
+  if (btn) btn.disabled = false;
+  if (lbl) lbl.textContent = `→ ${cpName} (id=${cpId})`;
+}
+
+async function linkWill(itemId, pdId, extId) {
+  const scope = document.getElementById(itemId);
+  const cpId = scope.dataset.selectedCp;
+  if (!cpId) return;
+
+  const btn = document.getElementById(`link-btn-${pdId}`);
+  const err = document.getElementById(`link-err-${pdId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Linking…'; }
+
+  try {
+    const body = JSON.stringify({
+      personDocId: pdId,
+      canonicalPersonId: cpId,
+      extractionId: extId || undefined,
+    });
+    const r = await willApi('/link', { method: 'POST', body });
+    if (!r.success) throw new Error(r.error || 'link failed');
+    toast(`✓ Linked to ${r.linkedTo?.canonical_name || 'person id=' + cpId}`);
+    removeWillItem(itemId);
+    // Refresh count
+    loadUnlinkedCount();
+  } catch (e) {
+    if (err) { err.textContent = '✗ ' + e.message; err.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Link to selected'; }
+    toast(e.message, true);
+  }
+}
+
+function removeWillItem(id) {
+  const el = document.getElementById(id);
+  if (el) { el.style.opacity = '.3'; el.style.pointerEvents = 'none'; setTimeout(() => el.remove(), 300); }
+}
+
+// ── Admin review item renderer (unchanged from original) ──────────────────────
 function renderItem(item) {
   const id = `item-${item.id}`;
   const evs = (item.evidence_urls || []).map(u => `<a href="${u}" target="_blank">${u.split('/').pop() || u}</a>`).join('');
@@ -196,8 +378,7 @@ function renderActions(item) {
   }
 }
 
-// 31 Freedmens schema fields the reviewer may fill. Pre-populated with
-// engine extractions where available.
+// 31 Freedmens schema fields the reviewer may fill.
 const FREEDMENS_FIELDS = [
   'account_number','date_of_entry','depositor_name','birthplace','where_brought_up',
   'age','residence','complexion','occupation','employer',
@@ -306,12 +487,25 @@ function removeItem(id) {
 }
 
 function escapeHtml(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s) { return (s ?? '').toString().replace(/'/g, "\\'"); }
 
-// Bootstrap
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// Always load the unlinked wills count (public, no token needed).
+// If a token is stored, skip the auth modal and load admin queues too.
+loadUnlinkedCount();
+
 if (TOKEN) {
   document.getElementById('auth-modal').style.display = 'none';
   document.getElementById('reviewer-info').textContent = '🔑 authenticated';
-  loadQueues();
+  loadAdminQueues();
+} else {
+  // Check if the user came from a will upload (URL param auto-opens the queue)
+  const params = new URLSearchParams(location.search);
+  if (params.get('queue') === 'wills') {
+    document.getElementById('auth-modal').style.display = 'none';
+    document.getElementById('reviewer-info').textContent = '(public access)';
+    selectUnlinkedWills();
+  }
 }
 </script>
 </body>

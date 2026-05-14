@@ -21,7 +21,8 @@ async function main() {
       COUNT(*) FILTER (WHERE s3_key IS NOT NULL)        AS has_s3_key,
       COUNT(*) FILTER (WHERE s3_url IS NOT NULL)        AS has_s3_url,
       COUNT(*) FILTER (WHERE source_url IS NOT NULL)    AS has_source_url,
-      COUNT(*) FILTER (WHERE s3_key IS NULL AND source_url IS NOT NULL) AS needs_backfill,
+      COUNT(*) FILTER (WHERE s3_key IS NULL AND source_url IS NOT NULL
+                         AND document_type NOT IN ('tree_profile','freedmens_bank')) AS needs_backfill,
       COUNT(*) FILTER (WHERE s3_key IS NULL AND source_url IS NULL)     AS no_file_at_all,
       COUNT(*) FILTER (WHERE canonical_person_id IS NOT NULL)           AS linked_to_canonical,
       COUNT(*) FILTER (WHERE canonical_person_id IS NULL)               AS unlinked
