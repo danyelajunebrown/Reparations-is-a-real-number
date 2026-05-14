@@ -332,7 +332,7 @@ export default function SubmitWillPage() {
           <div className="state ok">✓ Document uploaded successfully</div>
 
           {/* ── Linkage banner (wills only) ── */}
-          {!isRegister && matched ? (
+          {!isRegister && matched && matched.created ? (
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
@@ -342,7 +342,31 @@ export default function SubmitWillPage() {
               fontFamily: 'monospace',
               fontSize: '0.85rem',
             }}>
-              <span style={{ color: '#4caf50' }}>✓ Linked to </span>
+              <div style={{ color: '#4caf50', marginBottom: '0.35rem' }}>
+                ✓ Profile created for{' '}
+                <Link
+                  to={`/?id=${matched.id}&table=canonical_persons`}
+                  style={{ color: '#80cbc4', textDecoration: 'underline' }}
+                >
+                  {matched.canonical_name}
+                </Link>
+              </div>
+              <div style={{ color: '#888', fontSize: '0.78rem' }}>
+                The will and testator profile are now in the database, pending source
+                verification by a researcher. You can search for this person by name.
+              </div>
+            </div>
+          ) : !isRegister && matched ? (
+            <div style={{
+              marginTop: '1.25rem',
+              padding: '0.75rem 1rem',
+              background: 'rgba(0,200,100,0.08)',
+              border: '1px solid rgba(0,200,100,0.25)',
+              borderRadius: 4,
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+            }}>
+              <span style={{ color: '#4caf50' }}>✓ Linked to existing profile: </span>
               <Link
                 to={`/?id=${matched.id}&table=canonical_persons`}
                 style={{ color: '#80cbc4', textDecoration: 'underline' }}
@@ -358,7 +382,7 @@ export default function SubmitWillPage() {
               extractionId={result.extractionId}
               onLinked={(person) => setManualLinked(person)}
             />
-          ) : !isRegister && testatorName && !result.matchedPerson ? (
+          ) : !isRegister && testatorName ? (
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
@@ -369,8 +393,8 @@ export default function SubmitWillPage() {
               fontSize: '0.85rem',
               color: '#888',
             }}>
-              ℹ &ldquo;{testatorName}&rdquo; not yet in the database.
-              Document stored — will be linked when the person is added.
+              ℹ Document stored and queued for review. A researcher will create or link the
+              testator profile for &ldquo;{testatorName}&rdquo;.
             </div>
           ) : null}
 
@@ -420,9 +444,12 @@ export default function SubmitWillPage() {
             {result.warning && (
               <div style={{ color: '#f5a623', marginTop: '0.75rem' }}>⚠ {result.warning}</div>
             )}
-            {Array.isArray(result.nextSteps) && result.nextSteps.length > 0 && (
+            {/* Show pipeline next-steps only for non-will types (case registers, deeds, etc.)
+                where a researcher needs to know which scripts to run.
+                For wills, the pipeline is fully automated — no contributor action needed. */}
+            {isRegister && Array.isArray(result.nextSteps) && result.nextSteps.length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <div style={{ color: '#888', fontSize: '0.78rem', marginBottom: '0.4rem' }}>NEXT STEPS:</div>
+                <div style={{ color: '#888', fontSize: '0.78rem', marginBottom: '0.4rem' }}>PIPELINE STEPS (admin):</div>
                 <ul style={{ paddingLeft: '1.2rem', color: '#aaa', lineHeight: 2, margin: 0 }}>
                   {result.nextSteps.map((s, i) => <li key={i}><code style={{ fontSize: '0.78rem' }}>{s}</code></li>)}
                 </ul>

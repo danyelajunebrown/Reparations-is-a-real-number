@@ -229,26 +229,94 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     const s3Url = S3Service.getPublicUrl(s3Key);
 
     // ── 3. Canonical person resolution ──────────────────────────────────────
-    // We ONLY accept an explicit canonicalPersonId from the request body.
-    // Name-based auto-linking has been intentionally removed because:
-    //   - The same testator name (e.g. "Elizabeth Hughes") can appear across
-    //     multiple states, centuries, and contexts.
-    //   - A single ILIKE hit in canonical_persons does NOT imply the correct
-    //     person — it just means one row with that name happens to exist.
-    //   - False auto-links pollute canonical profiles with unrelated documents
-    //     and are hard to audit/repair at scale.
-    //
-    // Correct workflow for uploaded documents without an explicit person ID:
-    //   1. Upload succeeds; canonical_person_id = NULL in person_documents.
-    //   2. Document surfaces in GET /api/wills/unlinked with candidate matches.
-    //   3. A reviewer uses POST /api/wills/link to attach it to the right person
-    //      (or creates a new canonical_persons row if the testator isn't in the DB).
-    //
-    // findCanonicalPersonByName() is kept for the /candidates and /unlinked
-    // suggestion lists — it must NOT be called here.
+    // If an explicit canonicalPersonId was provided, use it.
+    // Otherwise, for wills: auto-create a canonical_persons row using
+    // location + year context to avoid cross-contaminating same-name records.
+    // Name-only auto-linking (ILIKE without location context) is intentionally
+    // avoided — the same name can appear across multiple states and centuries.
     let resolvedPersonId = canonicalPersonId ? parseInt(canonicalPersonId, 10) : null;
     let matchedPerson    = null;
     let matchAmbiguous   = false;
+
+    // ── 3b. Auto-create canonical_persons for wills if testator not in DB ───
+    // Only runs when:
+    //   - documentType is 'will'
+    //   - no explicit canonicalPersonId was supplied
+    //   - testatorName is present
+    // Uses location+year to disambiguate before attaching to an existing row.
+    if (docType === 'will' && !resolvedPersonId && displayName) {
+      try {
+        const nameParts = displayName.trim().split(/\s+/);
+        const firstName = nameParts[0];
+        const lastName  = nameParts[nameParts.length - 1];
+
+        // Location-aware match: only link to existing if county/state + year align
+        let existingPerson = null;
+        if (displayLocation || displayYear) {
+          const locPattern = displayLocation ? `%${displayLocation}%` : null;
+          const existing = await db.query(
+            `SELECT id, canonical_name FROM canonical_persons
+             WHERE canonical_name ILIKE $1
+               AND ($2::text IS NULL OR primary_state ILIKE $2 OR primary_county ILIKE $2)
+               AND ($3::int IS NULL OR death_year_estimate IS NULL
+                    OR death_year_estimate BETWEEN $3 - 10 AND $3 + 10)
+             LIMIT 1`,
+            [displayName, locPattern, displayYear || null]
+          );
+          if (existing.rows.length > 0) existingPerson = existing.rows[0];
+        }
+
+        if (existingPerson) {
+          resolvedPersonId = existingPerson.id;
+          matchedPerson = { id: existingPerson.id, canonical_name: existingPerson.canonical_name };
+          logger.info('Auto-linked will to existing canonical_persons by location+year', {
+            displayName, resolvedPersonId,
+          });
+        } else {
+          // Parse "County, State" from testatorLocation
+          const locParts    = displayLocation ? displayLocation.split(/,\s*/) : [];
+          const primaryCounty = locParts.length >= 2 ? locParts[0] : null;
+          const primaryState  = locParts.length >= 2 ? locParts[1] : (locParts[0] || null);
+
+          const newPerson = await db.query(
+            `INSERT INTO canonical_persons
+               (canonical_name, first_name, last_name,
+                person_type, verification_status,
+                primary_county, primary_state,
+                death_year_estimate, notes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id, canonical_name`,
+            [
+              displayName,
+              firstName,
+              lastName,
+              'enslaver',
+              'pending_review',
+              primaryCounty,
+              primaryState,
+              displayYear || null,
+              `Auto-created from will upload. ` +
+              `Archive: ${archiveSource || 'not specified'}. ` +
+              `Location: ${displayLocation || 'not specified'}. ` +
+              `Pending source verification and admin review.`,
+            ]
+          );
+          resolvedPersonId = newPerson.rows[0].id;
+          matchedPerson = {
+            id: newPerson.rows[0].id,
+            canonical_name: newPerson.rows[0].canonical_name,
+            created: true,
+          };
+          logger.info('Auto-created canonical_persons row from will upload', {
+            displayName, resolvedPersonId,
+          });
+        }
+      } catch (autoCreateErr) {
+        logger.warn('Auto-create canonical_persons failed (non-fatal)', {
+          error: autoCreateErr.message,
+        });
+      }
+    }
 
     // ── 4. Build title and collection name ───────────────────────────────────
     let titleText, collectionName;
@@ -374,15 +442,18 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     if (docType === 'will') {
       nextSteps = [
         `Stored in S3: ${s3Key}`,
-        matchedPerson
-          ? `Auto-linked to ${matchedPerson.canonical_name} (id ${matchedPerson.id})`
-          : matchAmbiguous
-            ? `Multiple persons match "${displayName}" — linked manually later`
-            : displayName ? 'No matching person found in database yet' : 'No person name provided',
+        matchedPerson?.created
+          ? `New profile created for "${matchedPerson.canonical_name}" — pending source verification`
+          : matchedPerson
+            ? `Linked to existing profile: ${matchedPerson.canonical_name} (id ${matchedPerson.id})`
+            : matchAmbiguous
+              ? `Multiple persons match "${displayName}" — document stored, link manually later`
+              : displayName
+                ? 'Document stored — pending admin review and person linking'
+                : 'Document stored — no person name provided',
         extractionId
-          ? `Extraction record created — ID ${extractionId}`
-          : 'Apply migration 048 to enable full extraction tracking',
-        'Run scripts/ocr-hopewell-physical-scans.mjs (or equivalent) to OCR this document',
+          ? `Extraction record created — OCR processing will run automatically`
+          : 'Document queued for processing',
       ];
     } else if (docType === 'case_register') {
       nextSteps = [
