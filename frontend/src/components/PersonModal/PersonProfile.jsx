@@ -379,12 +379,38 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
               const canUseViewer = !!(docId && hasS3);
               const externalUrl = doc.source_url;
 
+              // Detect whether this doc comes from person_documents (integer id)
+              // vs the documents table (UUID string). person_documents rows must be
+              // opened via DocCollectionOverlay → getPersonDocAccess endpoint so
+              // the backend can generate a presigned S3 URL from the s3_key column.
+              // Using DocOverlay (getDocumentAccess) for these rows returns 404
+              // because that endpoint queries the separate `documents` table by UUID.
+              const isPdRow =
+                hasS3 &&
+                docId != null &&
+                (typeof docId === 'number' || /^\d+$/.test(String(docId)));
+
               if (canUseViewer) {
+                const handleClick = isPdRow
+                  ? () => setViewCollection({
+                      collection_name: doc.title || doc.filename || 'Primary source document',
+                      source_type_label: doc.doc_type || '',
+                      doc_type: doc.doc_type || 'will',
+                      pages: [{
+                        id: docId,
+                        filename: doc.filename,
+                        title: doc.title || doc.filename,
+                        ocr_text: doc.ocr_text || null,
+                        source_url: null,
+                      }],
+                    })
+                  : () => setViewDocId(docId);
+
                 return (
                   <button
                     key={`doc-${docId}-${idx}`}
                     type="button"
-                    onClick={() => setViewDocId(docId)}
+                    onClick={handleClick}
                     className="box"
                     style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
                   >
