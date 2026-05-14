@@ -4,14 +4,21 @@
  * POST /api/wills/ingest
  *   - Public-facing (no admin token required)
  *   - Accepts a PDF upload + optional metadata
- *   - Uploads to S3 at wills/{testator-slug}/{uuid}.pdf
- *   - Inserts a person_documents row
- *   - Attempts a will_extractions row (graceful degradation if M048 not yet applied)
+ *   - Routes S3 key prefix by documentType:
+ *       will           → wills/{slug}/{uuid}.pdf
+ *       case_register  → case-registers/{slug}/{uuid}.pdf
+ *       deed           → deeds/{slug}/{uuid}.pdf
+ *       estate_inventory → estate-inventories/{slug}/{uuid}.pdf
+ *       other          → archival-docs/{slug}/{uuid}.pdf
+ *   - Inserts a person_documents row with the correct document_type
+ *   - For 'will' type only: also inserts a will_extractions stub
+ *     (other types queue for post-upload OCR scripts)
  *
  * Session 45 — May 2026: initial implementation.
- * The WillPipeline service (src/services/probate/WillPipeline.js) is tracked in
- * GitHub issue #XX — it will eventually replace the inline logic here for full
- * OCR + structured extraction + downstream fanout.
+ * Session 53 — May 2026: raised file size limit to 75MB; added documentType
+ *   routing for case registers (Hynson DC runaway/fugitive books), deeds,
+ *   estate inventories; added compiledBy + eraStart/eraEnd fields for
+ *   register-type documents.
  */
 
 const express = require('express');
@@ -22,11 +29,29 @@ const db = require('../../database/connection');
 const S3Service = require('../../services/storage/S3Service');
 const logger = require('../../utils/logger');
 
-// ── Multer config ─────────────────────────────────────────────────────────────
+// ── Valid document types ───────────────────────────────────────────────────────
+const VALID_DOC_TYPES = new Set([
+  'will',
+  'case_register',
+  'deed',
+  'estate_inventory',
+  'other',
+]);
+
+// ── S3 prefix per document type ───────────────────────────────────────────────
+const S3_PREFIX = {
+  will:             'wills',
+  case_register:    'case-registers',
+  deed:             'deeds',
+  estate_inventory: 'estate-inventories',
+  other:            'archival-docs',
+};
+
+// ── Multer config — 75MB to accommodate Heritage Books / MSA PDF scans ────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25 MB
+    fileSize: 75 * 1024 * 1024, // 75 MB
     files: 1,
   },
   fileFilter: (_req, file, cb) => {
@@ -39,8 +64,9 @@ const upload = multer({
 });
 
 /**
- * Slugify a testator name for use as an S3 key prefix.
+ * Slugify a name for use as an S3 key prefix.
  * e.g. "Henry Weaver" → "henry-weaver"
+ * e.g. "Hynson DC Runaway 1848-1863" → "hynson-dc-runaway-1848-1863"
  */
 function slugify(name) {
   if (!name) return 'unknown';
@@ -118,23 +144,57 @@ async function findCanonicalPersonByName(name) {
 router.post('/ingest', upload.single('willPdf'), async (req, res) => {
   try {
     const {
-      testatorName,
-      testatorYear,
-      testatorLocation,
+      // Shared fields (all document types)
+      documentType      = 'will',      // 'will' | 'case_register' | 'deed' | 'estate_inventory' | 'other'
       archiveSource,
       canonicalPersonId,
       participantId,
+
+      // Will-specific fields
+      testatorName,
+      testatorYear,
+      testatorLocation,
+
+      // Register-specific fields
+      documentTitle,    // replaces testatorName for case_register
+      eraStart,         // replaces testatorYear for multi-year registers
+      eraEnd,
+      compiledBy,       // e.g. "Hynson, Jerry M., Heritage Books 1999"
     } = req.body;
+
+    // Normalize and validate document type
+    const docType = VALID_DOC_TYPES.has(documentType) ? documentType : 'other';
 
     const file = req.file;
     if (!file) {
       return res.status(400).json({ success: false, error: 'No PDF file uploaded' });
     }
 
-    // ── 1. Upload to S3 ──────────────────────────────────────────────────────
-    const slug = slugify(testatorName);
-    const uuid = crypto.randomUUID();
-    const s3Key = `wills/${slug}/${uuid}.pdf`;
+    // ── 1. Resolve display name and year for the document ────────────────────
+    // For wills: testatorName + testatorYear
+    // For registers: documentTitle + eraStart/eraEnd
+    // For others: fall back to documentTitle → testatorName → filename
+    let displayName, displayYear, displayLocation;
+
+    if (docType === 'will') {
+      displayName     = testatorName || null;
+      displayYear     = testatorYear ? parseInt(testatorYear, 10) : null;
+      displayLocation = testatorLocation || null;
+    } else if (docType === 'case_register') {
+      displayName     = documentTitle || testatorName || null;
+      displayYear     = eraStart ? parseInt(eraStart, 10) : null;
+      displayLocation = archiveSource || null;
+    } else {
+      displayName     = documentTitle || testatorName || null;
+      displayYear     = testatorYear ? parseInt(testatorYear, 10) : (eraStart ? parseInt(eraStart, 10) : null);
+      displayLocation = testatorLocation || archiveSource || null;
+    }
+
+    // ── 2. Upload to S3 ──────────────────────────────────────────────────────
+    const prefix = S3_PREFIX[docType] || 'archival-docs';
+    const slug   = slugify(displayName || file.originalname);
+    const uuid   = crypto.randomUUID();
+    const s3Key  = `${prefix}/${slug}/${uuid}.pdf`;
 
     if (!S3Service.isEnabled()) {
       return res.status(503).json({
@@ -144,47 +204,66 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     }
 
     await S3Service.upload(s3Key, file.buffer, 'application/pdf', {
-      'testator-name': testatorName || '',
+      'document-type':  docType,
+      'display-name':   displayName || '',
       'archive-source': archiveSource || '',
-      'uploaded-by': 'public-ingestion',
+      'compiled-by':    compiledBy || '',
+      'uploaded-by':    'public-ingestion',
     });
 
     const s3Url = S3Service.getPublicUrl(s3Key);
 
-    // ── 2. Name-based canonical person lookup ────────────────────────────────
-    // If the caller didn't pass canonicalPersonId explicitly, try to find
-    // the person by testatorName. Result is one of:
-    //   { id, canonical_name }        → unique match, safe to auto-link
-    //   { ambiguous: true, count, name } → multiple matches, skip linking
-    //   null                           → no match found
+    // ── 3. Name-based canonical person lookup (wills only) ───────────────────
+    // For case registers the "subject" is the book, not a single person.
+    // We still allow an explicit canonicalPersonId to be passed for linking
+    // a register to a specific enslaver profile if known.
     let resolvedPersonId = canonicalPersonId ? parseInt(canonicalPersonId, 10) : null;
     let matchedPerson    = null;
     let matchAmbiguous   = false;
 
-    if (!resolvedPersonId && testatorName) {
-      const lookup = await findCanonicalPersonByName(testatorName);
+    if (docType === 'will' && !resolvedPersonId && displayName) {
+      const lookup = await findCanonicalPersonByName(displayName);
       if (lookup && !lookup.ambiguous) {
         resolvedPersonId = lookup.id;
         matchedPerson    = { id: lookup.id, canonical_name: lookup.canonical_name };
         logger.info('Auto-linked will to canonical person', {
-          testatorName,
+          displayName,
           canonical_person_id: lookup.id,
           canonical_name: lookup.canonical_name,
         });
       } else if (lookup && lookup.ambiguous) {
         matchAmbiguous = true;
         logger.info('Ambiguous name lookup — skipping auto-link', {
-          testatorName,
+          displayName,
           count: lookup.count,
         });
       }
     }
 
-    // ── 3. Insert person_documents row ───────────────────────────────────────
-    const titleText = testatorName
-      ? `Will of ${testatorName}${testatorYear ? ` (${testatorYear})` : ''}${testatorLocation ? ` — ${testatorLocation}` : ''}`
-      : file.originalname;
+    // ── 4. Build title and collection name ───────────────────────────────────
+    let titleText, collectionName;
 
+    if (docType === 'will') {
+      titleText      = displayName
+        ? `Will of ${displayName}${displayYear ? ` (${displayYear})` : ''}${displayLocation ? ` — ${displayLocation}` : ''}`
+        : file.originalname;
+      collectionName = displayName ? `Will of ${displayName}` : 'Uploaded Will';
+    } else if (docType === 'case_register') {
+      const eraLabel = (eraStart && eraEnd) ? `${eraStart}–${eraEnd}`
+                      : eraStart ? `${eraStart}+`
+                      : '';
+      titleText = displayName
+        ? `${displayName}${eraLabel ? ` (${eraLabel})` : ''}${compiledBy ? ` — comp. ${compiledBy}` : ''}`
+        : file.originalname;
+      collectionName = displayName || 'Uploaded Case Register';
+    } else {
+      titleText      = displayName
+        ? `${displayName}${displayYear ? ` (${displayYear})` : ''}${displayLocation ? ` — ${displayLocation}` : ''}`
+        : file.originalname;
+      collectionName = displayName || 'Uploaded Document';
+    }
+
+    // ── 5. Insert person_documents row ───────────────────────────────────────
     let personDocId = null;
     try {
       const pdResult = await db.query(
@@ -197,15 +276,19 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
         [
           s3Key,                                               // $1  s3_key
           s3Url,                                               // $2  s3_url
-          'will',                                              // $3  document_type
+          docType,                                             // $3  document_type (not hardcoded 'will')
           file.originalname,                                   // $4  filename
           file.size,                                           // $5  file_size
           'application/pdf',                                   // $6  mime_type
           titleText,                                           // $7  title
-          'probate_record',                                    // $8  source_type_label
-          testatorName ? `Will of ${testatorName}` : 'Uploaded Will', // $9  collection_name
-          testatorName || file.originalname,                   // $10 name_as_appears (NOT NULL)
-          testatorYear ? parseInt(testatorYear, 10) : null,    // $11 document_year
+          docType === 'will'            ? 'probate_record'
+            : docType === 'case_register' ? 'court_record'
+            : docType === 'deed'          ? 'deed_record'
+            : docType === 'estate_inventory' ? 'estate_record'
+            : 'archival_document',                             // $8  source_type_label
+          collectionName,                                      // $9  collection_name
+          displayName || file.originalname,                    // $10 name_as_appears (NOT NULL)
+          displayYear || null,                                 // $11 document_year
           'public-ingestion',                                  // $12 created_by
           resolvedPersonId || null,                            // $13 canonical_person_id
         ]
@@ -213,7 +296,6 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       personDocId = pdResult.rows[0].id;
     } catch (pdErr) {
       logger.error('person_documents insert failed', { error: pdErr.message });
-      // Still return success for S3 upload — don't block the user
       return res.json({
         success: true,
         personDocId: null,
@@ -227,70 +309,298 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       });
     }
 
-    // ── 4. Insert will_extractions row (graceful — M048 may not be applied) ─
+    // ── 6. Insert will_extractions stub (WILLS ONLY) ─────────────────────────
+    // For case_register, deed, estate_inventory, other: skip this table.
+    // Those document types are post-processed by dedicated OCR scripts
+    // (scripts/ocr-register-document.mjs etc.) that write to will_extractions
+    // with the correct structured shape for their document class.
     let extractionId = null;
-    try {
-      const extResult = await db.query(
-        `INSERT INTO will_extractions
-           (document_id, canonical_person_id, participant_id,
-            raw_pages_jsonb, structured_extraction_jsonb, extractor_version)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [
-          personDocId,
-          resolvedPersonId || null,     // use the resolved id (auto-linked or explicit)
-          participantId || null,
-          JSON.stringify([{
-            index: 0,
-            page_type: 'pending_ocr',
-            ocr_text: '',
-            ocr_method: null,
-            confidence: 0,
-          }]),
-          JSON.stringify({
-            testator: {
-              name: testatorName || null,
-              year: testatorYear ? parseInt(testatorYear, 10) : null,
-              location: testatorLocation || null,
-            },
-            archive_source: archiveSource || null,
-            status: 'pending_extraction',
-          }),
-          '1.0-manual-upload',
-        ]
-      );
-      extractionId = extResult.rows[0].id;
-    } catch (extErr) {
-      // M048 not yet applied, or participant_id FK miss — non-fatal
-      logger.warn('will_extractions insert skipped', { error: extErr.message });
+
+    if (docType === 'will') {
+      try {
+        const extResult = await db.query(
+          `INSERT INTO will_extractions
+             (document_id, canonical_person_id, participant_id,
+              raw_pages_jsonb, structured_extraction_jsonb, extractor_version)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [
+            personDocId,
+            resolvedPersonId || null,
+            participantId || null,
+            JSON.stringify([{
+              index: 0,
+              page_type: 'pending_ocr',
+              ocr_text: '',
+              ocr_method: null,
+              confidence: 0,
+            }]),
+            JSON.stringify({
+              testator: {
+                name:     displayName || null,
+                year:     displayYear || null,
+                location: displayLocation || null,
+              },
+              archive_source: archiveSource || null,
+              status: 'pending_extraction',
+            }),
+            '1.0-manual-upload',
+          ]
+        );
+        extractionId = extResult.rows[0].id;
+      } catch (extErr) {
+        // M048 not yet applied, or participant_id FK miss — non-fatal
+        logger.warn('will_extractions insert skipped', { error: extErr.message });
+      }
     }
 
-    logger.info('Will ingested', { s3Key, personDocId, extractionId, testatorName });
+    logger.info('Document ingested', {
+      docType, s3Key, personDocId, extractionId,
+      displayName: displayName || '(none)',
+    });
+
+    // ── 7. Build next steps per document type ────────────────────────────────
+    let nextSteps;
+    if (docType === 'will') {
+      nextSteps = [
+        `Stored in S3: ${s3Key}`,
+        matchedPerson
+          ? `Auto-linked to ${matchedPerson.canonical_name} (id ${matchedPerson.id})`
+          : matchAmbiguous
+            ? `Multiple persons match "${displayName}" — linked manually later`
+            : displayName ? 'No matching person found in database yet' : 'No person name provided',
+        extractionId
+          ? `Extraction record created — ID ${extractionId}`
+          : 'Apply migration 048 to enable full extraction tracking',
+        'Run scripts/ocr-hopewell-physical-scans.mjs (or equivalent) to OCR this document',
+      ];
+    } else if (docType === 'case_register') {
+      nextSteps = [
+        `Stored in S3: ${s3Key}`,
+        `person_documents.id = ${personDocId}`,
+        'Next: run scripts/ocr-register-document.mjs --person-doc-id ' + personDocId + ' --apply',
+        'Then: run scripts/parse-hynson-case-entries.js --person-doc-id ' + personDocId + ' --apply',
+        'Then: run scripts/fanout-hynson-cases.js --person-doc-id ' + personDocId + ' --apply',
+      ];
+    } else {
+      nextSteps = [
+        `Stored in S3: ${s3Key}`,
+        `person_documents.id = ${personDocId}`,
+        'Document queued for manual OCR + extraction',
+      ];
+    }
 
     return res.json({
       success: true,
       personDocId,
       extractionId,
       s3Key,
-      // Linkage result — used by the frontend success screen
-      matchedPerson:   matchedPerson   || null,   // { id, canonical_name } or null
-      matchAmbiguous:  matchAmbiguous,             // true if >1 person matched
-      message: 'Will uploaded and recorded successfully',
-      nextSteps: [
-        `Stored in S3: ${s3Key}`,
-        matchedPerson
-          ? `Auto-linked to ${matchedPerson.canonical_name} (id ${matchedPerson.id})`
-          : matchAmbiguous
-            ? `Multiple persons match "${testatorName}" — linked manually later`
-            : 'No matching person found in database yet',
-        extractionId
-          ? `Extraction record created — ID ${extractionId}`
-          : 'Apply migration 048 to enable full extraction tracking',
-        'OCR + structured extraction run is queued for the next pipeline pass',
-      ],
+      docType,
+      matchedPerson:   matchedPerson   || null,
+      matchAmbiguous:  matchAmbiguous,
+      message: 'Document uploaded and recorded successfully',
+      nextSteps,
     });
   } catch (err) {
-    logger.error('Will ingestion error', { error: err.message });
+    logger.error('Document ingestion error', { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── GET /api/wills/candidates ─────────────────────────────────────────────────
+// Returns all canonical_persons rows whose name matches a query string.
+// Used by the frontend disambiguation UI after an ambiguous will upload.
+// Public — no auth required.
+//
+// Query params:
+//   name  — the testator name to match (required)
+//   limit — max results (default 10)
+router.get('/candidates', async (req, res) => {
+  const { name, limit = 10 } = req.query;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: 'name query param required' });
+  }
+  const trimmed = name.trim();
+  const parts = trimmed.split(/\s+/);
+  const firstName = parts[0];
+  const lastName  = parts[parts.length - 1];
+
+  try {
+    const result = await db.query(
+      `SELECT
+         id,
+         canonical_name,
+         person_type,
+         birth_year_estimate  AS birth_year,
+         death_year_estimate  AS death_year,
+         primary_county,
+         primary_state,
+         primary_plantation,
+         sex,
+         notes
+       FROM canonical_persons
+       WHERE
+         canonical_name ILIKE $1
+         OR (first_name ILIKE $2 AND last_name ILIKE $3)
+       ORDER BY
+         (CASE WHEN canonical_name ILIKE $1 THEN 0 ELSE 1 END),
+         canonical_name
+       LIMIT $4`,
+      [`%${trimmed}%`, `%${firstName}%`, `%${lastName}%`, parseInt(limit, 10)]
+    );
+    return res.json({ success: true, candidates: result.rows });
+  } catch (err) {
+    logger.error('Will candidates lookup error', { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── POST /api/wills/link ──────────────────────────────────────────────────────
+// Links an uploaded document (person_documents row) to a canonical_persons row.
+// Called from the frontend disambiguation UI.
+// Public — no auth required.
+//
+// Body: { personDocId, canonicalPersonId, extractionId? }
+router.post('/link', async (req, res) => {
+  const { personDocId, canonicalPersonId, extractionId } = req.body;
+  if (!personDocId || !canonicalPersonId) {
+    return res.status(400).json({
+      success: false,
+      error: 'personDocId and canonicalPersonId are required',
+    });
+  }
+  const pdId  = parseInt(personDocId, 10);
+  const cpId  = parseInt(canonicalPersonId, 10);
+
+  try {
+    // Update person_documents
+    await db.query(
+      `UPDATE person_documents SET canonical_person_id = $1 WHERE id = $2`,
+      [cpId, pdId]
+    );
+
+    // Update will_extractions if provided (non-fatal)
+    if (extractionId) {
+      try {
+        await db.query(
+          `UPDATE will_extractions SET canonical_person_id = $1 WHERE id = $2`,
+          [cpId, extractionId]
+        );
+      } catch (extErr) {
+        logger.warn('will_extractions link update skipped', { error: extErr.message });
+      }
+    }
+
+    // Fetch the linked person's name for confirmation
+    const cp = await db.query(
+      `SELECT id, canonical_name FROM canonical_persons WHERE id = $1`,
+      [cpId]
+    );
+    const linkedPerson = cp.rows[0] || null;
+
+    logger.info('Document linked to canonical person', { pdId, cpId, extractionId });
+    return res.json({
+      success: true,
+      linkedTo: linkedPerson,
+      personDocId: pdId,
+    });
+  } catch (err) {
+    logger.error('Document link error', { error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── GET /api/wills/unlinked ───────────────────────────────────────────────────
+// Returns person_documents rows for uploaded documents not yet linked to a
+// canonical_persons row, with candidate matches for immediate resolution.
+// Covers all document types (will, case_register, deed, etc.).
+// Used by public/review.html "Unlinked Wills" queue.
+// Public — no admin token required.
+router.get('/unlinked', async (req, res) => {
+  const limit  = Math.min(parseInt(req.query.limit  || 50, 10), 200);
+  const offset = parseInt(req.query.offset || 0, 10);
+  const type   = req.query.type || null;  // optional filter by document_type
+
+  try {
+    const result = await db.query(
+      `SELECT
+         pd.id              AS person_doc_id,
+         pd.title,
+         pd.name_as_appears,
+         pd.document_type,
+         pd.document_year,
+         pd.collection_name,
+         pd.s3_key,
+         pd.s3_url,
+         pd.created_at,
+         we.id              AS extraction_id,
+         we.structured_extraction_jsonb
+       FROM person_documents pd
+       LEFT JOIN will_extractions we ON we.document_id = pd.id
+       WHERE pd.canonical_person_id IS NULL
+         AND ($1::text IS NULL OR pd.document_type = $1)
+       ORDER BY pd.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [type, limit, offset]
+    );
+
+    // For each unlinked document, fetch the top 5 candidate canonical persons
+    const rows = result.rows;
+    const enriched = await Promise.all(rows.map(async (row) => {
+      const name = row.name_as_appears || '';
+      let candidates = [];
+      if (name && row.document_type === 'will') {
+        // Only auto-suggest candidates for will-type documents (single person)
+        try {
+          const parts = name.trim().split(/\s+/);
+          const first = parts[0];
+          const last  = parts[parts.length - 1];
+          const cands = await db.query(
+            `SELECT id, canonical_name, person_type,
+                    birth_year_estimate AS birth_year,
+                    death_year_estimate AS death_year,
+                    primary_county, primary_state, primary_plantation
+             FROM canonical_persons
+             WHERE canonical_name ILIKE $1
+                OR (first_name ILIKE $2 AND last_name ILIKE $3)
+             ORDER BY (CASE WHEN canonical_name ILIKE $1 THEN 0 ELSE 1 END)
+             LIMIT 5`,
+            [`%${name.trim()}%`, `%${first}%`, `%${last}%`]
+          );
+          candidates = cands.rows;
+        } catch (_) { /* non-fatal */ }
+      }
+
+      // Parse location/year from structured extraction if available
+      let archiveSource = null;
+      let location = null;
+      try {
+        const ext = row.structured_extraction_jsonb;
+        if (ext && typeof ext === 'object') {
+          archiveSource = ext.archive_source || null;
+          location = ext.testator?.location || null;
+        }
+      } catch (_) { /* non-fatal */ }
+
+      return { ...row, candidates, archiveSource, location };
+    }));
+
+    // Count total unlinked (with optional type filter)
+    const countRes = await db.query(
+      `SELECT COUNT(*) FROM person_documents
+       WHERE canonical_person_id IS NULL
+         AND ($1::text IS NULL OR document_type = $1)`,
+      [type]
+    );
+
+    return res.json({
+      success: true,
+      total: parseInt(countRes.rows[0].count, 10),
+      count: enriched.length,
+      items: enriched,
+    });
+  } catch (err) {
+    logger.error('Unlinked docs fetch error', { error: err.message });
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -304,7 +614,7 @@ router.get('/:id', async (req, res) => {
          we.id, we.document_id, we.status, we.extractor_version,
          we.structured_extraction_jsonb, we.review_sections_jsonb,
          we.created_at, we.updated_at,
-         pd.s3_key, pd.title, pd.filename
+         pd.s3_key, pd.title, pd.filename, pd.document_type
        FROM will_extractions we
        JOIN person_documents pd ON pd.id = we.document_id
        WHERE we.id = $1`,
