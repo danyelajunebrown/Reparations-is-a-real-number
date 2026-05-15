@@ -1,6 +1,48 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-15 (Session 57 — Georgia Probate Scraper full rewrite + confirmed working on Mac Mini)_
+_Last updated: 2026-05-15 (Session 58 — Georgia Probate Scraper SAVEPOINT transaction safety)_
+
+---
+
+## Session 58 — Georgia Probate Scraper Transaction Safety — ✅ COMMITTED (2026-05-15)
+
+### Problem
+The `_jsonErr` try/catch added in Session 57 (commit `34a3b3fba`) caught the `invalid input syntax for type json` error and retried the `UPDATE canonical_persons SET notes = $1` — but did not issue a `ROLLBACK` first. Because Neon uses connection pooling, a failed query inside an open transaction leaves the connection in **"aborted" state**: every subsequent query on that `client` returns `ERROR: current transaction is aborted, commands ignored until end of transaction block`. This means all downstream writes (heir upserts, enslaved person inserts, COMMIT) silently failed even though the outer error handler never saw an error.
+
+### Fix — SAVEPOINTs on all three inner catch blocks
+A bare `ROLLBACK` was not used because it would destroy all prior work in the transaction (person_documents INSERT, testator canonical_person upsert, enslaver_evidence_compendium INSERT) and leave the client without an active transaction.
+
+| Savepoint name | Lines | Purpose |
+|---|---|---|
+| `before_notes_update` | 794–807 | JSONB merge retry — rolls back only the notes cast; person_documents + testator rows preserved |
+| `before_heir_upsert` | 822–847 | Per-heir loop — one bad heir name doesn't abort the rest |
+| `before_enslaved_insert` | 857–907 | Per-enslaved loop — one constraint violation doesn't abort subsequent rows |
+
+Pattern used in every case:
+```js
+await client.query('SAVEPOINT <name>');
+try {
+    // risky query
+    await client.query('RELEASE SAVEPOINT <name>');
+} catch (e) {
+    try { await client.query('ROLLBACK TO SAVEPOINT <name>'); } catch (_) {}
+    // log + continue, or retry with fallback query
+}
+```
+
+### Commit
+`node --check` passes. Pushed as commit after `34a3b3fba` to `origin/main`.
+
+### Next Step on Mac Mini
+```bash
+cd ~/Desktop/Reparations-is-a-real-number && git pull origin main
+/usr/local/opt/postgresql@18/bin/psql "$DATABASE_URL" -c "
+  UPDATE probate_scrape_progress SET status='pending', error_text=NULL
+  WHERE collection_id='1999178' AND status='failed';"
+nohup node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty --apply --resume \
+  > ~/probate-liberty-roll1-rerun.log 2>&1 &
+```
 
 ---
 

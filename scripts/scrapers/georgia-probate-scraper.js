@@ -787,14 +787,22 @@ async function writeToDbAndS3(
                     county,
                 });
                 // The notes column may contain plain-text boilerplate from a prior pipeline.
-                // Attempt a JSONB merge; fall back to a direct overwrite if casting fails.
+                // Use a SAVEPOINT so that if the JSONB cast fails, we roll back only this
+                // sub-operation (not the whole transaction) and retry with a plain overwrite.
+                // A bare ROLLBACK would destroy all prior work in the transaction (person_documents
+                // INSERT, testator upsert, etc.) and leave the connection without an active txn.
+                await client.query('SAVEPOINT before_notes_update');
                 try {
                     await client.query(`
                         UPDATE canonical_persons
                         SET notes = COALESCE(notes::jsonb, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
                         WHERE id = $2;
                     `, [notesJson, testatorCanonicalPersonId]);
+                    await client.query('RELEASE SAVEPOINT before_notes_update');
                 } catch (_jsonErr) {
+                    // JSONB cast failed — roll back only to the savepoint so the connection
+                    // is no longer in "aborted" state, then overwrite with the plain value.
+                    try { await client.query('ROLLBACK TO SAVEPOINT before_notes_update'); } catch (_) {}
                     await client.query(`
                         UPDATE canonical_persons
                         SET notes = $1, updated_at = NOW()
@@ -809,6 +817,9 @@ async function writeToDbAndS3(
         if (parsedData?.heirs?.length > 0) {
             for (const heir of parsedData.heirs) {
                 if (!heir.name) continue;
+                // Use a SAVEPOINT per heir so a constraint violation or other error on one
+                // heir does not leave the connection in "aborted" state for subsequent heirs.
+                await client.query('SAVEPOINT before_heir_upsert');
                 try {
                     const heirId = await upsertCanonicalPerson(
                         client, heir.name, 'unknown', parsedData.recordYear, county, STATE
@@ -830,7 +841,9 @@ async function writeToDbAndS3(
                             `${county} County, ${STATE}`
                         ]);
                     }
+                    await client.query('RELEASE SAVEPOINT before_heir_upsert');
                 } catch (e) {
+                    try { await client.query('ROLLBACK TO SAVEPOINT before_heir_upsert'); } catch (_) {}
                     log(`  WARNING: Could not upsert heir "${heir.name}": ${e.message}`);
                 }
             }
@@ -839,6 +852,9 @@ async function writeToDbAndS3(
         // Process enslaved persons
         for (const ep of (parsedData?.enslavedPersons || [])) {
             if (!ep.name && !ep.contextText) continue;
+            // Use a SAVEPOINT per enslaved person so a constraint violation on one
+            // row does not leave the connection in "aborted" state for subsequent rows.
+            await client.query('SAVEPOINT before_enslaved_insert');
             try {
                 const upRes = await client.query(`
                     INSERT INTO unconfirmed_persons
@@ -885,7 +901,9 @@ async function writeToDbAndS3(
                         ]);
                     }
                 }
+                await client.query('RELEASE SAVEPOINT before_enslaved_insert');
             } catch (e) {
+                try { await client.query('ROLLBACK TO SAVEPOINT before_enslaved_insert'); } catch (_) {}
                 log(`  WARNING: Could not insert enslaved person "${ep.name}": ${e.message}`);
             }
         }
