@@ -194,7 +194,7 @@ async function checkAndApplyMigration() {
 
         const methodologyRes = await client.query(`
             SELECT id FROM estimation_methodology_registry
-            WHERE methodology_name = 'georgia_probate_liberty_county_1858_1867'
+            WHERE name = 'georgia_probate_liberty_county_1858_1867'
             LIMIT 1;
         `);
         if (methodologyRes.rows.length > 0) {

@@ -1,35 +1,45 @@
 -- Migration 069: Georgia County Probate Pipeline infrastructure
 
 -- Source registry entry for Liberty County GA probate volume
+-- Schema: regional_source_registry (migration 056)
+-- Required NOT NULL: source_name, citation, jurisdiction_text, record_type, axis_role, access_method
 INSERT INTO regional_source_registry (
-  source_name, source_description, state, county,
-  record_type, date_range_start, date_range_end,
-  is_compilation, max_evidence_tier,
-  external_url, collection_id
+  source_name,
+  citation,
+  jurisdiction_text,
+  era_start, era_end,
+  record_type,
+  axis_role,
+  access_method,
+  coverage_notes
 ) VALUES (
   'Liberty County GA Probate Records 1858-1867',
-  'Georgia, Probate Records 1742-1990 (FamilySearch collection 1999178). Liberty County volume covering 1858-1860 and 1863-1867. Contains wills, estate inventories, estate accounts, guardian accounts, and letters of administration. Pre-transcribed full-text by FamilySearch volunteers. Group ID: 9SYT-PT5, DGS: 267679901,268032901.',
-  'GA', 'Liberty',
-  'probate', 1858, 1867,
-  FALSE, 'direct_primary',
-  'https://www.familysearch.org/ark:/61903/3:1:3QS7-893L-P9FS?cc=1999178&wc=9SYT-PT5%3A267679901%2C268032901&lang=en&i=1',
-  '1999178'
-) ON CONFLICT DO NOTHING;
+  'FamilySearch. "Georgia, Probate Records, 1742-1990." Collection ID 1999178. Liberty County volume: 1858-1860 and 1863-1867. Group ID: 9SYT-PT5, DGS: 267679901,268032901. https://www.familysearch.org/ark:/61903/3:1:3QS7-893L-P9FS?cc=1999178&wc=9SYT-PT5%3A267679901%2C268032901&lang=en&i=1',
+  'Georgia, Liberty County',
+  1858, 1867,
+  'probate',
+  ARRAY['position', 'trajectory'],
+  'web_query',
+  'Contains wills, estate inventories, estate accounts, guardian accounts, and letters of administration. 555 images. Pre-transcribed by FamilySearch volunteers — no OCR required. Covers 1858-1860 and 1863-1867 (wartime gap 1861-1862).'
+) ON CONFLICT (source_name) DO NOTHING;
 
 -- Methodology entry for this pipeline
+-- Schema: estimation_methodology_registry (migration 060)
+-- Required NOT NULL: name, version, description, citations
+-- UNIQUE constraint: (name, version)
 INSERT INTO estimation_methodology_registry (
-  id, methodology_name, methodology_version,
-  description, relationship_type, evidence_tier,
-  source_registry_id
+  id, name, version,
+  description, role_tags, assumptions_jsonb, citations, known_failure_modes
 ) VALUES (
   gen_random_uuid(),
   'georgia_probate_liberty_county_1858_1867',
   'v1.0.0',
-  'Direct extraction from pre-transcribed FamilySearch full-text probate records. Liberty County, GA 1858-1867. Evidence tier: direct_primary. Relationship type: owned (testamentary bequest of enslaved persons). No OCR required — volunteer transcriptions used.',
-  'owned',
-  'direct_primary',
-  (SELECT id FROM regional_source_registry WHERE source_name = 'Liberty County GA Probate Records 1858-1867' LIMIT 1)
-) ON CONFLICT DO NOTHING;
+  'Direct extraction from pre-transcribed FamilySearch full-text probate records. Liberty County, GA 1858-1867. Evidence tier: direct_primary. Relationship type: testamentary bequest of enslaved persons. No OCR required — FamilySearch volunteer transcriptions used.',
+  ARRAY['direct_primary', 'probate_extraction'],
+  '{"county": "Liberty", "state": "GA", "collection_id": "1999178", "group_id": "9SYT-PT5", "dgs": "267679901,268032901", "evidence_tier": "direct_primary", "relationship_type": "owned"}'::jsonb,
+  'FamilySearch. "Georgia, Probate Records, 1742-1990." Collection 1999178. Liberty County volume 1858-1867.',
+  'Transcript quality varies by volunteer accuracy. Handwritten records may have transcription errors. Some images have no transcript (not yet transcribed by volunteers).'
+) ON CONFLICT (name, version) DO NOTHING;
 
 -- Progress tracking table for the probate pipeline
 CREATE TABLE IF NOT EXISTS probate_scrape_progress (
