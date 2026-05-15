@@ -63,6 +63,22 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// --- Unicode / control-char sanitizer ---
+// FamilySearch volunteer transcripts contain OCR artifact codepoints in ranges:
+//   U+2300 to U+23FF (Misc Technical), U+2500 to U+257F (Box Drawing),
+//   U+2100 to U+214F (Letterlike Symbols), and C0/C1 control chars.
+// PostgreSQL rejects these when casting to JSONB. Strip them all before any DB write.
+function sanitizeForDb(str) {
+    if (!str) return str;
+    return str
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+        .replace(/[\u2300-\u23FF]/g, ' ')
+        .replace(/[\u2500-\u257F]/g, ' ')
+        .replace(/[\u2100-\u214F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // --- Name Normalization (unchanged) ---
 function normalizeName(name) {
     if (!name) return name;
@@ -674,6 +690,11 @@ async function writeToDbAndS3(
     try {
         await client.query('BEGIN');
 
+        // Sanitize transcript text before any DB write — strips Unicode OCR artifacts
+        // (Misc Technical, Box Drawing, Letterlike Symbols, control chars) that Postgres
+        // rejects when casting to JSONB.
+        const safeTranscript = sanitizeForDb(rawTranscriptText) || '';
+
         // Fix 2: Dynamic S3 key
         const countySlug = county.toLowerCase().replace(/\s+/g, '-');
         const s3Key = `probate/georgia/${countySlug}/${roll.groupId}/image-${String(imageNumber).padStart(4, '0')}-${baseArkId}.jpg`;
@@ -720,7 +741,7 @@ async function writeToDbAndS3(
             testatorName || `Image ${imageNumber}`,
             parsedData?.recordYear || null,
             'georgia-probate-scraper',
-            rawTranscriptText || '',
+            safeTranscript,
             url,
             'familysearch',
             imageNumber
@@ -765,11 +786,21 @@ async function writeToDbAndS3(
                     roll: roll.title,
                     county,
                 });
-                await client.query(`
-                    UPDATE canonical_persons
-                    SET notes = COALESCE(notes::jsonb, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
-                    WHERE id = $2;
-                `, [notesJson, testatorCanonicalPersonId]);
+                // The notes column may contain plain-text boilerplate from a prior pipeline.
+                // Attempt a JSONB merge; fall back to a direct overwrite if casting fails.
+                try {
+                    await client.query(`
+                        UPDATE canonical_persons
+                        SET notes = COALESCE(notes::jsonb, '{}'::jsonb) || $1::jsonb, updated_at = NOW()
+                        WHERE id = $2;
+                    `, [notesJson, testatorCanonicalPersonId]);
+                } catch (_jsonErr) {
+                    await client.query(`
+                        UPDATE canonical_persons
+                        SET notes = $1, updated_at = NOW()
+                        WHERE id = $2;
+                    `, [notesJson, testatorCanonicalPersonId]);
+                }
             }
         }
 
@@ -821,7 +852,7 @@ async function writeToDbAndS3(
                     [`${county} County, ${STATE}`],
                     url,
                     sourcePageTitle,
-                    ep.contextText || null,
+                    sanitizeForDb(ep.contextText) || null,
                     0.85,
                     JSON.stringify({
                         bequeathed_by_canonical_id: testatorCanonicalPersonId,
@@ -908,7 +939,39 @@ async function updateProgress(
     }
 }
 
-// --- Transcript Parser (unchanged) ---
+// --- Enslaved person name stopword filter ---
+// Prevents generic OCR tokens from being written to unconfirmed_persons as "names".
+// Compiled from contaminated names observed in the Liberty County 1790-1850 run.
+const NAME_STOPWORDS = new Set([
+    'named','one','by','the','my','said','of','and','to','for','in','at','as',
+    'is','it','he','she','his','her','their','our','its','or','but','not',
+    'with','from','that','this','also','above','within','same','aforesaid',
+    'following','certain','another','given','all','other',
+    'man','woman','boy','girl','child','children','wench','fellow','servant',
+    'slave','slaves','negro','negroes','old','young','little','big','aged',
+    'faithful','trusty','female','male','mulatto','called',
+    'two','three','four','five','six','seven','eight','nine','ten','eleven',
+    'twelve','fourteen','fifteen','twenty',
+    'executor','executrix','executors','witness','witnesses','subscriber',
+    'subscribers','rector','deacon',
+    'viz','lastly','likewise','furthermore','moreover','whereas','item',
+    'valued','purchase','forward','house','field','born','cold','had','ditto',
+    'do','gross','pair','mentioned','state','march','day',
+    'pr','sew','suc','amht','god','lemale','foltowing',
+]);
+
+function isValidEnslavedPersonName(token) {
+    if (!token) return false;
+    const clean = token.trim();
+    if (clean.length < 2) return false;
+    if (NAME_STOPWORDS.has(clean.toLowerCase())) return false;
+    if (/^\d+$/.test(clean)) return false;
+    if (!/^[A-Z]/.test(clean)) return false;       // must start with capital
+    if (!/[aeiouAEIOU]/.test(clean)) return false; // must contain a vowel
+    return true;
+}
+
+// --- Transcript Parser ---
 function parseTranscript(rawText, imageNumber, arkId) {
     const result = {
         recordType: 'other',
@@ -1023,6 +1086,9 @@ function parseTranscript(rawText, imageNumber, arkId) {
                 let dollarValue = null;
                 const dvm = afterBlock.match(/\$\s*([\d,]+(?:\.\d{2})?)/);
                 if (dvm) dollarValue = parseFloat(dvm[1].replace(/,/g, ''));
+
+                // Skip stopwords and invalid tokens before treating as an enslaved person's name
+                if (!isValidEnslavedPersonName(name)) continue;
 
                 let bequestRecipientName = null;
                 const bequestMatch = contextText.match(
