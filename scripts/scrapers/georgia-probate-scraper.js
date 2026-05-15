@@ -88,6 +88,9 @@ const S3_BUCKET = process.env.S3_BUCKET_NAME || 'reparations-them';
 // Strategy B: volume image index URL (lists all thumbnails + ARK IDs for this volume)
 const STRATEGY_B_INDEX_URL = `https://www.familysearch.org/search/image/index?owc=${encodeURIComponent(`${GROUP_ID}:${DGS}?cc=${COLLECTION_ID}`)}&cc=${COLLECTION_ID}`;
 
+// Selector for the "little blue button" that opens the transcript panel
+const TRANSCRIPT_BUTTON_SELECTOR = '#main > div > div > div > div > div > nav > div > div.css-j0ozid > a';
+
 // --- Global State ---
 let browser = null;
 let page = null;
@@ -497,7 +500,7 @@ async function processImage(imageNumber, arkId, url, isDryRun) {
     //   a) Promise.race rejects on the FIRST timeout (kills all other selectors)
     //   b) FS uses hashed CSS module class names that vary between deploys
     // A fixed sleep is simpler and more robust for a slow SPA.
-    await sleep(5000);
+    await sleep(10000); // Increased wait time to 10 seconds
 
     let rawTranscriptText = '';
     let screenshotBuffer = null;
@@ -509,36 +512,71 @@ async function processImage(imageNumber, arkId, url, isDryRun) {
     let parsedData = null;
 
     try {
+        // Attempt to click the transcript button if it exists
+        const buttonExists = await page.$(TRANSCRIPT_BUTTON_SELECTOR);
+        if (buttonExists) {
+            if (VERBOSE) log(`Image ${imageNumber}: Clicking transcript button.`);
+            await page.waitForSelector(TRANSCRIPT_BUTTON_SELECTOR, { timeout: 5000 });
+            await page.click(TRANSCRIPT_BUTTON_SELECTOR);
+            await sleep(2000); // Wait for the transcript panel to open after click
+        } else {
+            if (VERBOSE) log(`Image ${imageNumber}: Transcript button not found, assuming view=fullText is sufficient.`);
+        }
+
         // Extract transcript text — probe multiple selectors in priority order.
-        // No waitForSelector timeout — if the panel didn't render in 5s it won't appear;
+        // No waitForSelector timeout — if the panel didn't render in 10s it won't appear;
         // missing transcript → rawTranscriptText = '' → status = 'no_transcript' (normal).
-        // Extract transcript text — probe multiple selectors in priority order
-        rawTranscriptText = await page.evaluate(() => {
+        rawTranscriptText = await page.evaluate((verbose) => {
+            const logEval = (...args) => {
+                if (verbose) console.log('[page.evaluate]', ...args);
+            };
+            let foundText = '';
+
             // Priority 1: most specific container class
-            let el = document.querySelector('[class*="transcript-text-container"]');
-            if (el && el.innerText.trim()) return el.innerText;
+            let el1 = document.querySelector('[class*="transcript-text-container"]');
+            if (el1 && el1.innerText.trim()) {
+                foundText = el1.innerText;
+                logEval('P1 (transcript-text-container) found text length:', foundText.length);
+                return foundText;
+            }
+            logEval('P1 (transcript-text-container) not found or empty.');
 
             // Priority 2: any element with "transcript" in the class name
-            const candidates = Array.from(document.querySelectorAll('[class*="transcript"]'));
-            for (const c of candidates) {
-                if (c.innerText && c.innerText.trim().length > 50) return c.innerText;
-            }
-
-            // Priority 3: data-testid containing "transcript"
-            el = document.querySelector('[data-testid*="transcript"]');
-            if (el && el.innerText.trim()) return el.innerText;
-
-            // Priority 4: find heading labeled "Transcript" and take its next sibling
-            const headings = Array.from(document.querySelectorAll('h2, h3, h4, span, div'));
-            for (const h of headings) {
-                if (h.textContent && h.textContent.trim() === 'Transcript') {
-                    const sibling = h.nextElementSibling;
-                    if (sibling && sibling.innerText.trim().length > 20) return sibling.innerText;
+            const candidates2 = Array.from(document.querySelectorAll('[class*="transcript"]'));
+            for (const c of candidates2) {
+                if (c.innerText && c.innerText.trim().length > 50) {
+                    foundText = c.innerText;
+                    logEval('P2 (any class*="transcript") found text length:', foundText.length);
+                    return foundText;
                 }
             }
+            logEval('P2 (any class*="transcript") not found or too short.');
+
+            // Priority 3: data-testid containing "transcript"
+            let el3 = document.querySelector('[data-testid*="transcript"]');
+            if (el3 && el3.innerText.trim()) {
+                foundText = el3.innerText;
+                logEval('P3 (data-testid*="transcript") found text length:', foundText.length);
+                return foundText;
+            }
+            logEval('P3 (data-testid*="transcript") not found or empty.');
+
+            // Priority 4: find heading labeled "Transcript" and take its next sibling
+            const headings4 = Array.from(document.querySelectorAll('h2, h3, h4, span, div'));
+            for (const h of headings4) {
+                if (h.textContent && h.textContent.trim() === 'Transcript') {
+                    const sibling = h.nextElementSibling;
+                    if (sibling && sibling.innerText.trim().length > 20) {
+                        foundText = sibling.innerText;
+                        logEval('P4 (Transcript heading + sibling) found text length:', foundText.length);
+                        return foundText;
+                    }
+                }
+            }
+            logEval('P4 (Transcript heading + sibling) not found or too short.');
 
             return '';
-        });
+        }, VERBOSE);
 
         if (rawTranscriptText.trim().length > 0) {
             status = 'parsed';
