@@ -39,6 +39,43 @@ const VERBOSE = flag('--verbose');
 // Strategy B: crawl volume image-index page to pre-populate all ARK IDs, then use checkpoint
 const STRATEGY = opt('--strategy', 'a').toLowerCase(); // 'a' or 'b'
 
+// --- Cookie injection (for unattended/Mac Mini runs) ---
+// Option A: Set FS_SESSION_COOKIE=<value> in .env → injects the fssessionid cookie
+// Option B: Set FAMILYSEARCH_COOKIES=/path/to/cookies.json → injects full cookie jar
+// FamilySearch uses Google OAuth — credentials can't be typed programmatically.
+// Export cookies from Chrome DevTools (Application → Cookies → Export) after logging in once.
+const FS_SESSION_COOKIE = process.env.FS_SESSION_COOKIE || null;
+const FAMILYSEARCH_COOKIES_PATH = process.env.FAMILYSEARCH_COOKIES || null;
+
+async function injectCookies() {
+    // Full cookie jar (preferred — survives session rotation better than just fssessionid)
+    if (FAMILYSEARCH_COOKIES_PATH) {
+        if (!fs.existsSync(FAMILYSEARCH_COOKIES_PATH)) {
+            log(`WARNING: FAMILYSEARCH_COOKIES file not found at ${FAMILYSEARCH_COOKIES_PATH}. Skipping cookie injection.`);
+            return false;
+        }
+        const cookies = JSON.parse(fs.readFileSync(FAMILYSEARCH_COOKIES_PATH, 'utf8'));
+        await page.setCookie(...cookies);
+        log(`Injected ${cookies.length} cookies from ${FAMILYSEARCH_COOKIES_PATH}`);
+        return true;
+    }
+    // Single session token (simpler — works as long as the session hasn't expired)
+    if (FS_SESSION_COOKIE) {
+        await page.setCookie({
+            name: 'fssessionid',
+            value: FS_SESSION_COOKIE,
+            domain: '.familysearch.org',
+            path: '/',
+            httpOnly: true,
+            secure: true,
+            sameSite: 'None',
+        });
+        log('Injected FS_SESSION_COOKIE from .env.');
+        return true;
+    }
+    return false; // no cookie source configured — fall through to interactive check
+}
+
 // --- Configuration ---
 const BROWSER_DEBUG_PORT = 9222;
 const FAMILYSEARCH_URL_BASE = 'https://www.familysearch.org/ark:/61903/3:1:';
@@ -133,8 +170,14 @@ async function ensureLoggedIn() {
         return;
     }
 
+    // Inject saved cookies before navigating (supports unattended Mac Mini runs).
+    // If FS_SESSION_COOKIE or FAMILYSEARCH_COOKIES is set in .env, this logs us in
+    // without requiring any manual interaction. Cookie injection is a no-op if neither
+    // env var is set — falls through to the interactive waiting loop below.
+    const cookiesInjected = await injectCookies();
+
     await page.goto('https://www.familysearch.org/', { waitUntil: 'domcontentloaded' });
-    await sleep(2000); // Allow React to mount and redirect to /home/portal/ if logged in
+    await sleep(cookiesInjected ? 3000 : 2000); // a little extra time after cookie injection
 
     const checkLoggedIn = async () => {
         const url = page.url();
