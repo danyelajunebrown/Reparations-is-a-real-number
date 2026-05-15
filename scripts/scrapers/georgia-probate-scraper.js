@@ -438,9 +438,20 @@ async function main() {
 
 async function processImage(imageNumber, arkId, url, isDryRun) {
     if (VERBOSE) log(`processImage(${imageNumber}, ${arkId})`);
-    // domcontentloaded is correct for FamilySearch SPA — networkidle0 never resolves
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await sleep(2000); // Wait for React to render the transcript panel
+
+    // Add view=fullText to ensure FamilySearch opens the transcript sidebar.
+    // The cc/wc params remain intact for correct volume context.
+    const viewUrl = url.includes('view=fullText') ? url : url + '&view=fullText';
+
+    // domcontentloaded only — FS SPA never resolves networkidle
+    await page.goto(viewUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+    // Wait generously for React to render the transcript panel.
+    // We do NOT use waitForSelector here because:
+    //   a) Promise.race rejects on the FIRST timeout (kills all other selectors)
+    //   b) FS uses hashed CSS module class names that vary between deploys
+    // A fixed sleep is simpler and more robust for a slow SPA.
+    await sleep(5000);
 
     let rawTranscriptText = '';
     let screenshotBuffer = null;
@@ -452,15 +463,9 @@ async function processImage(imageNumber, arkId, url, isDryRun) {
     let parsedData = null;
 
     try {
-        // Wait for transcript panel OR image viewer canvas to confirm page loaded.
-        // Try multiple selector variants (FS class names vary by deploy).
-        await Promise.race([
-            page.waitForSelector('[class*="transcript-text-container"]', { timeout: 15000 }),
-            page.waitForSelector('[class*="transcript"]', { timeout: 15000 }),
-            page.waitForSelector('[data-testid*="transcript"]', { timeout: 15000 }),
-            page.waitForSelector('[class*="image-viewer-canvas"]', { timeout: 15000 }),
-        ]);
-
+        // Extract transcript text — probe multiple selectors in priority order.
+        // No waitForSelector timeout — if the panel didn't render in 5s it won't appear;
+        // missing transcript → rawTranscriptText = '' → status = 'no_transcript' (normal).
         // Extract transcript text — probe multiple selectors in priority order
         rawTranscriptText = await page.evaluate(() => {
             // Priority 1: most specific container class
