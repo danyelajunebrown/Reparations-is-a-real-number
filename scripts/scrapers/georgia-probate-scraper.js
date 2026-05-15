@@ -244,6 +244,7 @@ async function checkAndApplyMigration() {
         const methodologyRes = await client.query(`
             SELECT id FROM estimation_methodology_registry
             WHERE name = 'georgia_probate_liberty_county_1858_1867'
+              AND version = 'v1.0.0'
             LIMIT 1;
         `);
         if (methodologyRes.rows.length > 0) {
@@ -650,24 +651,34 @@ async function writeToDbAndS3(imageNumber, arkId, url, rawTranscriptText, screen
         const pdResult = await client.query(`
             INSERT INTO person_documents
                 (s3_key, s3_url, document_type, filename, file_size, mime_type,
-                 title, source_type_label, collection_name, collection_key,
+                 source_type_label, collection_name, collection_key,
                  collection_page_number, name_as_appears, document_year,
-                 created_by, extraction_method, ocr_text)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                 created_by, ocr_text, source_url, source_type, image_number)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+            ON CONFLICT DO NOTHING
             RETURNING id;
         `, [
             s3Key, s3Url, docType,
             `image-${imageNumber}-${arkId}.jpg`,
             screenshotBuffer ? screenshotBuffer.length : 0,
             'image/jpeg',
-            docTitle, 'probate_record',
+            'probate_record',
             collectionName, collectionKey, imageNumber,
             testatorName || `Image ${imageNumber}`,
             parsedData?.recordYear || null,
             'georgia-probate-scraper',
-            'full_text_transcript',
-            rawTranscriptText || ''
+            rawTranscriptText || '',
+            url,
+            'familysearch',
+            imageNumber
         ]);
+        if (!pdResult.rows[0]) {
+            // Duplicate — already written this image. Commit and mark as written.
+            await client.query('COMMIT');
+            log(`person_documents: duplicate detected for image ${imageNumber}, skipping.`);
+            await updateProgress(imageNumber, arkId, 'written', null, recordType, testatorName, enslavedCount, null, s3Key);
+            return;
+        }
         const personDocumentId = pdResult.rows[0].id;
         log(`person_documents id=${personDocumentId}`);
 
@@ -727,7 +738,7 @@ async function writeToDbAndS3(imageNumber, arkId, url, rawTranscriptText, screen
                                 (testator_id, heir_id, asset_type, asset_description,
                                  source_document_id, document_year, document_jurisdiction,
                                  evidence_tier, confidence)
-                            VALUES ($1, $2, 'general_bequest', $3, $4, $5, $6, 1, 0.90)
+                            VALUES ($1, $2, 'unspecified', $3, $4, $5, $6, 1, 0.90)
                             ON CONFLICT DO NOTHING;
                         `, [
                             testatorCanonicalPersonId, heirId,
@@ -773,16 +784,9 @@ async function writeToDbAndS3(imageNumber, arkId, url, rawTranscriptText, screen
                 const upLeadId = upRes.rows[0].lead_id;
                 log(`unconfirmed_persons lead_id=${upLeadId} name="${ep.name}"`);
 
-                // person_relationships_verified: enslaved_by testator
-                if (testatorCanonicalPersonId) {
-                    await client.query(`
-                        INSERT INTO person_relationships_verified
-                            (person_id, related_person_id, relationship_type,
-                             evidence_source_ids, evidence_strength)
-                        VALUES ($1, $2, 'enslaved_by', $3, 2)
-                        ON CONFLICT DO NOTHING;
-                    `, [upLeadId, testatorCanonicalPersonId, [personDocumentId]]);
-                }
+                // NOTE: person_relationships_verified requires canonical_persons FKs on both sides.
+                // Enslaved persons are in unconfirmed_persons (not canonical_persons), so we
+                // cannot insert here. The relationship is captured in unconfirmed_persons.relationships JSONB.
 
                 // inheritance_edge: testator → heir with enslaved_persons asset
                 if (testatorCanonicalPersonId && ep.bequestRecipientName) {
@@ -1066,17 +1070,12 @@ async function upsertCanonicalPerson(client, name, personType, deathYearEstimate
         return existingPersonId;
     }
 
-    // Insert new person; use a plain INSERT with no unique-constraint assumption on canonical_name
+    // Insert new person — no unique constraint on canonical_name, so plain INSERT
     const insertRes = await client.query(`
         INSERT INTO canonical_persons
             (canonical_name, first_name, last_name, person_type, verification_status,
              primary_county, primary_state, death_year_estimate, notes, created_at, updated_at)
         VALUES ($1, $2, $3, $4, 'pending_review', $5, $6, $7, $8, NOW(), NOW())
-        ON CONFLICT (canonical_name, primary_county, primary_state) DO UPDATE SET
-            person_type          = CASE WHEN canonical_persons.person_type = 'unknown' OR canonical_persons.person_type IS NULL
-                                        THEN EXCLUDED.person_type ELSE canonical_persons.person_type END,
-            death_year_estimate  = COALESCE(canonical_persons.death_year_estimate, EXCLUDED.death_year_estimate),
-            updated_at           = NOW()
         RETURNING id;
     `, [
         normalizedName, firstName, lastName, personType,
