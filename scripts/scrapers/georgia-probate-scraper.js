@@ -4,6 +4,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const S3Service = require('../../src/services/storage/S3Service');
 const pg = require('pg');
 
@@ -164,23 +165,35 @@ async function launchBrowser() {
         log(`No existing Chrome session on port ${BROWSER_DEBUG_PORT}. Launching a new browser...`);
     }
 
-    // Strategy 2: launch a new browser (non-headless so user can log in to FamilySearch)
-    // The user-data-dir persists cookies so login is only needed once per Mac Mini boot.
-    browser = await puppeteer.launch({
-        headless: false,
-        args: [
-            `--remote-debugging-port=${BROWSER_DEBUG_PORT}`,
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-blink-features=AutomationControlled',
-            '--user-data-dir=/tmp/familysearch-ancestor-climber',
-            '--window-size=1280,900',
-        ],
-        defaultViewport: null,
-    });
-    log('Launched new Chrome browser instance.');
-    page = (await browser.pages())[0] || await browser.newPage();
-    await page.setViewport({ width: 1280, height: 900 });
+    // Strategy 2: launch system Google Chrome via macOS 'open' command.
+    // DO NOT use puppeteer.launch() — it spawns "Google Chrome for Testing" v143 which
+    // crashes with EXC_BREAKPOINT (SIGTRAP) on Mac mini8,1 Intel macOS 14.x Sonoma.
+    // All working pipelines (1860 census, Freedman's Bank) use puppeteer.connect() only.
+    log('Launching system Google Chrome via open command...');
+    try {
+        execSync(
+            `open -na "Google Chrome" --args --remote-debugging-port=${BROWSER_DEBUG_PORT} --user-data-dir=/tmp/familysearch-scraper-session --no-first-run --no-default-browser-check`,
+            { stdio: 'ignore' }
+        );
+    } catch (openErr) {
+        log(`WARNING: open command failed: ${openErr.message}`);
+    }
+    await sleep(4000); // wait for Chrome to fully boot
+    try {
+        browser = await puppeteer.connect({
+            browserURL: `http://127.0.0.1:${BROWSER_DEBUG_PORT}`,
+            defaultViewport: null
+        });
+        log('Connected to system Chrome instance.');
+        page = await browser.newPage();
+        await page.setViewport({ width: 1280, height: 900 });
+        return;
+    } catch (e2) {
+        log('ERROR: Could not connect to Chrome after launch attempt. Please run manually:');
+        log(`  open -na "Google Chrome" --args --remote-debugging-port=${BROWSER_DEBUG_PORT} --user-data-dir=/tmp/familysearch-scraper-session`);
+        log('Then re-run the scraper.');
+        process.exit(1);
+    }
 }
 
 async function ensureLoggedIn() {
