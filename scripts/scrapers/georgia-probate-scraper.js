@@ -79,7 +79,10 @@ async function injectCookies() {
 // --- Configuration ---
 const BROWSER_DEBUG_PORT = 9222;
 const FAMILYSEARCH_URL_BASE = 'https://www.familysearch.org/ark:/61903/3:1:';
-const COLLECTION_WC_PARAM = `cc=${COLLECTION_ID}&wc=${GROUP_ID}%3A${DGS}&lang=en`;
+// Confirmed live URL uses %3A for ':' and %2C for ',' in the wc parameter.
+// Example: ?cc=1999178&wc=9SYT-PT5%3A267679901%2C268032901&lang=en&i=141
+const DGS_ENCODED = DGS.replace(',', '%2C');
+const COLLECTION_WC_PARAM = `cc=${COLLECTION_ID}&wc=${GROUP_ID}%3A${DGS_ENCODED}&lang=en`;
 const IMAGE_INDEX_FILE = path.join(__dirname, '../../tmp/liberty-county-image-index.json');
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'reparations-them';
 // Strategy B: volume image index URL (lists all thumbnails + ARK IDs for this volume)
