@@ -1,0 +1,37 @@
+{
+  "testator": {
+    "name": "George W. Biscoe",
+    "place": "Georgetown, D.C.",
+    "signing_date": "1859-07-19",
+    "death_date": "1859-08-27",
+    "proved_dates": ["1859-08-27"]
+  },
+  "spouse": {
+    "name": "Ann Maria Biscoe",
+    "prior_marriages": []
+  },
+  "children": [
+    {"name": "Angelica Chew", "role": "legatee", "estate_interest_type": "remainder"},
+    {"name": "Emma Biscoe", "role": "beneficial_owner", "estate_interest_type": "trust"}
+  ],
+  "enslaved_persons": [
+    {"name": "Mary", "group_description": null, "parent_link": null, "bequeathed_to": "Ann Maria Biscoe", "trustee_for": "Ann Maria Biscoe", "beneficial_owner": "Emma Biscoe", "estate_interest_type": "trust", "manumitted": false},
+    {"name": "Caroline", "group_description": null, "parent_link": null, "bequeathed_to": "Ann Maria Biscoe", "trustee_for": "Ann Maria Biscoe", "beneficial_owner": "Emma Biscoe", "estate_interest_type": "trust", "manumitted": false},
+    {"name": null, "group_description": "Caroline's children", "parent_link": {"name": "Caroline", "relationship": "mother"}, "count": null, "bequeathed_to": "Ann Maria Biscoe", "trustee_for": "Ann Maria Biscoe", "beneficial_owner": "Emma Biscoe", "estate_interest_type": "trust", "research_flag": "anonymous_group_needs_follow_up", "manumitted": false}
+  ],
+  "enslaved_persons_extraction_note": "enslaved_named_see_array",
+  "trust_instruments": [
+    {"kind": "separate_use_trust", "trustee": "Ann Maria Biscoe", "beneficial_owner": "Emma Biscoe", "legal_protection": "sole and separate use, free, clear & discharged of and from all liability for or on account of any husband she may marry", "asset_refs": ["Mary", "Caroline", "Caroline's children"]}
+  ],
+  "prior_transfers_referenced": [
+    {"recipient": "Angelica Chew", "nature": "by way of advancement", "property_type": "unspecified", "record_date": null, "notes": "testator states prior gifts made to equalize shares between daughters"}
+  ],
+  "acknowledged_debts": [],
+  "witnesses": [
+    {"name": "Walter H.S. Taylor"},
+    {"name": "Margaret S.B. Tuck"},
+    {"name": "J. Calvert"}
+  ],
+  "executors": [{"name": "Ann Maria Biscoe"}],
+  "court_jurisdiction": "District of Columbia Orphans Court, Washington County"
+}

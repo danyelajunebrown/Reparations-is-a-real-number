@@ -1,0 +1,47 @@
+{
+  "testator": {
+    "name": "Henry Weaver",
+    "place": "Washington, D.C.",
+    "signing_date": "1884-01-15",
+    "death_date": "1884-02-20",
+    "proved_dates": ["1884-03-10"]
+  },
+  "spouse": {
+    "name": "Mary Ann Weaver",
+    "prior_marriages": []
+  },
+  "children": [
+    {"name": "Angeline Drinkhouse", "role": "legatee"},
+    {"name": "Theodore Barnes", "role": "legatee"},
+    {"name": "William Horatio Barnes", "role": "legatee"},
+    {"name": "Mary Ann E. Hall", "role": "legatee"}
+  ],
+  "enslaved_persons": [],
+  "enslaved_persons_extraction_note": "none_mentioned",
+  "monetary_bequests": [
+    {"beneficiary": "Angeline Drinkhouse", "amount": 3916.78, "bequest_fund_source": "mixed_dower_and_inherited"},
+    {"beneficiary": "Theodore Barnes", "amount": 3916.78, "bequest_fund_source": "mixed_dower_and_inherited"},
+    {"beneficiary": "William Horatio Barnes", "amount": 1645.70, "bequest_fund_source": "mixed_dower_and_inherited"},
+    {"beneficiary": "Mary Ann E. Hall", "amount": 2771.08, "bequest_fund_source": "inherited_parental"}
+  ],
+  "acknowledged_debts": [
+    {"creditor": "Mary Ann Weaver (self — funds held by husband)", "amount": 12250.34, "debt_nature": "wife_separate_property", "sources": ["dower_prior_marriage", "inherited_parental"]}
+  ],
+  "named_properties": [
+    {"property_name": "Drover's Rest", "graveyard_present": true, "sale_status": "installment_sale_pending"},
+    {"property_name": "Harlem Farm", "graveyard_present": true, "sale_status": "unknown"}
+  ],
+  "cross_will_accounting_link": {
+    "linked_will_testator": "Mary Ann Weaver",
+    "linked_will_year": 1883,
+    "reconciliation_status": "matched",
+    "delta_cents": 98
+  },
+  "witnesses": [
+    {"name": "Edward J. Drinkhouse"},
+    {"name": "Samuel Barnes"},
+    {"name": "Catherine Hall"}
+  ],
+  "executors": [{"name": "Edward J. Drinkhouse"}],
+  "court_jurisdiction": "District of Columbia Orphans Court, Washington County"
+}
