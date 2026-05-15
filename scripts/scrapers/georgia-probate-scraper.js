@@ -35,6 +35,9 @@ const RESUME = flag('--resume');
 const LIMIT = parseInt(opt('--limit', '0'), 10);
 const ARK_ID_ARG = opt('--ark');
 const VERBOSE = flag('--verbose');
+// Strategy A (default): navigate via i= parameter and extract ARK from URL
+// Strategy B: crawl volume image-index page to pre-populate all ARK IDs, then use checkpoint
+const STRATEGY = opt('--strategy', 'a').toLowerCase(); // 'a' or 'b'
 
 // --- Configuration ---
 const BROWSER_DEBUG_PORT = 9222;
@@ -42,6 +45,8 @@ const FAMILYSEARCH_URL_BASE = 'https://www.familysearch.org/ark:/61903/3:1:';
 const COLLECTION_WC_PARAM = `cc=${COLLECTION_ID}&wc=${GROUP_ID}%3A${DGS}&lang=en`;
 const IMAGE_INDEX_FILE = path.join(__dirname, '../../tmp/liberty-county-image-index.json');
 const S3_BUCKET = process.env.S3_BUCKET_NAME || 'reparations-them';
+// Strategy B: volume image index URL (lists all thumbnails + ARK IDs for this volume)
+const STRATEGY_B_INDEX_URL = `https://www.familysearch.org/search/image/index?owc=${encodeURIComponent(`${GROUP_ID}:${DGS}?cc=${COLLECTION_ID}`)}&cc=${COLLECTION_ID}`;
 
 // --- Global State ---
 let browser = null;
@@ -120,30 +125,50 @@ async function launchBrowser() {
 
 async function ensureLoggedIn() {
     log('Checking FamilySearch login status...');
-    await page.goto('https://www.familysearch.org/', { waitUntil: 'domcontentloaded' });
-    const isLoggedIn = await page.evaluate(() =>
-        document.querySelector('button[data-testid="user-menu-button"]') !== null
-    );
 
-    if (!isLoggedIn) {
-        log('Not logged in. Please log in manually in the Chrome window. Waiting up to 3 minutes...');
-        let loggedIn = false;
-        for (let i = 0; i < 180; i++) {
-            await sleep(1000);
-            await page.reload({ waitUntil: 'domcontentloaded' });
-            loggedIn = await page.evaluate(() =>
-                document.querySelector('button[data-testid="user-menu-button"]') !== null
-            );
-            if (loggedIn) break;
-        }
-        if (!loggedIn) {
-            log('Login timed out. Exiting.');
-            process.exit(1);
-        }
-        log('Successfully logged in.');
-    } else {
-        log('Already logged in to FamilySearch.');
+    // Skip homepage check if already on a record page — session is valid
+    const currentUrl = page.url();
+    if (currentUrl.includes('/ark:/') || currentUrl.includes('familysearch.org/ark')) {
+        if (VERBOSE) log('Already on record page — session assumed valid.');
+        return;
     }
+
+    await page.goto('https://www.familysearch.org/', { waitUntil: 'domcontentloaded' });
+    await sleep(2000); // Allow React to mount and redirect to /home/portal/ if logged in
+
+    const checkLoggedIn = async () => {
+        const url = page.url();
+        // Primary signal: FS redirects to /home/portal/ or /home ONLY when authenticated
+        if (url.includes('/home/portal/') || url.includes('familysearch.org/home')) return true;
+        // Fallback: check for authenticated UI elements
+        return page.evaluate(() =>
+            document.querySelector('button[data-testid="user-menu-button"]') !== null ||
+            document.querySelector('[data-testid="header-profile"]') !== null ||
+            document.querySelector('a[href*="/account/"]') !== null
+        );
+    };
+
+    if (await checkLoggedIn()) {
+        log('Already logged in to FamilySearch.');
+        return;
+    }
+
+    log('Not logged in. Please log in in the Chrome window. Waiting up to 3 minutes...');
+    let loggedIn = false;
+    for (let i = 0; i < 18; i++) {  // 18 × 10s = 3 min (not 180 × 1s)
+        await sleep(10000);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await sleep(2000);
+        if (await checkLoggedIn()) {
+            loggedIn = true;
+            break;
+        }
+    }
+    if (!loggedIn) {
+        log('Login timed out. Exiting.');
+        process.exit(1);
+    }
+    log('Successfully logged in to FamilySearch.');
 }
 
 async function checkAndApplyMigration() {
@@ -229,6 +254,87 @@ async function fetchWrittenImages() {
     }
 }
 
+// --- Strategy B: crawl volume image-index page to pre-populate ARK IDs ---
+// URL: https://www.familysearch.org/search/image/index?owc=9SYT-PT5%3A267679901%2C268032901%3Fcc%3D1999178&cc=1999178
+// The page lists image thumbnails. Each thumbnail has a link containing the ARK ID.
+// We paginate through all pages and save to tmp/liberty-county-image-index.json.
+// Use this when Strategy A produces repeated or incorrect ARK IDs.
+async function buildIndexViaStrategyB() {
+    log('Strategy B: building volume image index from FamilySearch image-index page...');
+    log(`  Index URL: ${STRATEGY_B_INDEX_URL}`);
+
+    let pageNum = 1;
+    let totalFound = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+        const indexPageUrl = pageNum === 1
+            ? STRATEGY_B_INDEX_URL
+            : `${STRATEGY_B_INDEX_URL}&page=${pageNum}`;
+
+        log(`  Fetching index page ${pageNum}: ${indexPageUrl}`);
+        await page.goto(indexPageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await sleep(3000); // wait for React to render thumbnail grid
+
+        // Extract all ARK IDs and their image numbers from thumbnail links
+        const pageEntries = await page.evaluate(() => {
+            const results = [];
+            // FamilySearch image index: each thumbnail has a link with href containing the ARK
+            const links = Array.from(document.querySelectorAll('a[href*="/ark:/61903/3:1:"]'));
+            links.forEach(link => {
+                const href = link.href || '';
+                // Extract ARK ID: /ark:/61903/3:1:XXXX-XXXX-XXXX
+                const arkMatch = href.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+                // Extract image number from i= parameter
+                const iMatch = href.match(/[?&]i=(\d+)/);
+                if (arkMatch && iMatch) {
+                    results.push({
+                        imageNumber: parseInt(iMatch[1], 10),
+                        arkId: arkMatch[1],
+                        url: href,
+                    });
+                }
+            });
+            return results;
+        });
+
+        if (pageEntries.length === 0) {
+            log(`  No entries found on index page ${pageNum}. Stopping pagination.`);
+            hasMore = false;
+            break;
+        }
+
+        // Merge into imageIndex
+        for (const entry of pageEntries) {
+            if (!imageIndex[entry.imageNumber]) {
+                imageIndex[entry.imageNumber] = { arkId: entry.arkId, url: entry.url };
+                totalFound++;
+            }
+        }
+        log(`  Index page ${pageNum}: found ${pageEntries.length} entries (total so far: ${totalFound})`);
+
+        // Check if there's a "next page" link
+        hasMore = await page.evaluate(() => {
+            // Look for a "next" pagination button that is not disabled
+            const nextBtn = document.querySelector('a[aria-label="Next page"], button[aria-label="Next page"], a.next:not(.disabled), [data-testid="pagination-next"]:not([disabled])');
+            return nextBtn !== null && !nextBtn.disabled;
+        });
+
+        if (hasMore) {
+            pageNum++;
+            await sleep(2000 + Math.random() * 1000); // jitter between index pages
+        }
+    }
+
+    await saveCheckpoint();
+    log(`Strategy B complete: indexed ${totalFound} images into checkpoint file.`);
+
+    if (totalFound === 0) {
+        log('WARNING: Strategy B found 0 images. The index page selector may need updating.');
+        log('Falling back to Strategy A for ARK discovery during the main loop.');
+    }
+}
+
 // --- Main Logic ---
 async function main() {
     log('Starting Georgia Probate Scraper...');
@@ -248,6 +354,14 @@ async function main() {
         await browser.close();
         await pool.end();
         return;
+    }
+
+    // Strategy B: pre-populate imageIndex from volume index page before main loop
+    if (STRATEGY === 'b') {
+        log('Strategy B selected — crawling volume image-index to build ARK map first...');
+        await buildIndexViaStrategyB();
+    } else {
+        log('Strategy A selected — ARK IDs discovered on-the-fly via i= parameter navigation.');
     }
 
     // RESUME: load already-written images to skip
@@ -338,14 +452,41 @@ async function processImage(imageNumber, arkId, url, isDryRun) {
     let parsedData = null;
 
     try {
+        // Wait for transcript panel OR image viewer canvas to confirm page loaded.
+        // Try multiple selector variants (FS class names vary by deploy).
         await Promise.race([
             page.waitForSelector('[class*="transcript-text-container"]', { timeout: 15000 }),
+            page.waitForSelector('[class*="transcript"]', { timeout: 15000 }),
+            page.waitForSelector('[data-testid*="transcript"]', { timeout: 15000 }),
             page.waitForSelector('[class*="image-viewer-canvas"]', { timeout: 15000 }),
         ]);
 
+        // Extract transcript text — probe multiple selectors in priority order
         rawTranscriptText = await page.evaluate(() => {
-            const el = document.querySelector('[class*="transcript-text-container"]');
-            return el ? el.innerText : '';
+            // Priority 1: most specific container class
+            let el = document.querySelector('[class*="transcript-text-container"]');
+            if (el && el.innerText.trim()) return el.innerText;
+
+            // Priority 2: any element with "transcript" in the class name
+            const candidates = Array.from(document.querySelectorAll('[class*="transcript"]'));
+            for (const c of candidates) {
+                if (c.innerText && c.innerText.trim().length > 50) return c.innerText;
+            }
+
+            // Priority 3: data-testid containing "transcript"
+            el = document.querySelector('[data-testid*="transcript"]');
+            if (el && el.innerText.trim()) return el.innerText;
+
+            // Priority 4: find heading labeled "Transcript" and take its next sibling
+            const headings = Array.from(document.querySelectorAll('h2, h3, h4, span, div'));
+            for (const h of headings) {
+                if (h.textContent && h.textContent.trim() === 'Transcript') {
+                    const sibling = h.nextElementSibling;
+                    if (sibling && sibling.innerText.trim().length > 20) return sibling.innerText;
+                }
+            }
+
+            return '';
         });
 
         if (rawTranscriptText.trim().length > 0) {
