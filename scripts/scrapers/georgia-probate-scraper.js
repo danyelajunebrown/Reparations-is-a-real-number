@@ -276,8 +276,10 @@ async function main() {
             log(`Image ${i}: discovering ARK via i= parameter`);
             const discoveryUrl = `${FAMILYSEARCH_URL_BASE}3QS7-893L-P9FS?${COLLECTION_WC_PARAM}&i=${i}`;
             try {
+                // domcontentloaded is correct for FamilySearch SPA — networkidle0 never resolves
+                // because FS keeps WebSocket/XHR connections open indefinitely
                 await page.goto(discoveryUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-                await sleep(2500);
+                await sleep(3500); // Wait for React to render the viewer and update window.location
 
                 const resolvedUrl = page.url();
                 // ARK IDs on FamilySearch look like: /ark:/61903/3:1:XXXX-XXXX-XXXX
@@ -291,11 +293,13 @@ async function main() {
                 } else {
                     log(`WARNING: Could not discover ARK for image ${i}. Skipping.`);
                     await updateProgress(i, null, 'failed', 'Could not discover ARK ID');
+                    await sleep(3000); // always pause before continue — prevents rapid-fire loop
                     continue;
                 }
             } catch (e) {
                 log(`ERROR navigating to image ${i}: ${e.message}`);
                 await updateProgress(i, null, 'failed', e.message);
+                await sleep(5000); // back off on error — prevents tight retry loop
                 continue;
             }
         }
@@ -303,8 +307,8 @@ async function main() {
         await processImage(i, currentArkId, imageUrl, DRY_RUN || !APPLY);
         processedCount++;
 
-        // Jitter delay: 2–3.5 seconds
-        await sleep(Math.random() * 1500 + 2000);
+        // Jitter delay: 3–5 seconds (increased for stability)
+        await sleep(Math.random() * 2000 + 3000);
 
         // Re-check login every 50 images
         if (i % 50 === 0) {
@@ -320,7 +324,9 @@ async function main() {
 
 async function processImage(imageNumber, arkId, url, isDryRun) {
     if (VERBOSE) log(`processImage(${imageNumber}, ${arkId})`);
+    // domcontentloaded is correct for FamilySearch SPA — networkidle0 never resolves
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await sleep(2000); // Wait for React to render the transcript panel
 
     let rawTranscriptText = '';
     let screenshotBuffer = null;
