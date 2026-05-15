@@ -189,13 +189,20 @@ async function ensureLoggedIn() {
     await sleep(cookiesInjected ? 3000 : 2000);
 
     const checkLoggedIn = async () => {
-        const url = page.url();
-        if (url.includes('/home/portal/') || url.includes('familysearch.org/home')) return true;
-        return page.evaluate(() =>
-            document.querySelector('button[data-testid="user-menu-button"]') !== null ||
-            document.querySelector('[data-testid="header-profile"]') !== null ||
-            document.querySelector('a[href*="/account/"]') !== null
-        );
+        try {
+            const url = page.url();
+            if (url.includes('/home/portal/') || url.includes('familysearch.org/home')) return true;
+            return await page.evaluate(() =>
+                document.querySelector('button[data-testid="user-menu-button"]') !== null ||
+                document.querySelector('[data-testid="header-profile"]') !== null ||
+                document.querySelector('a[href*="/account/"]') !== null
+            );
+        } catch (_) {
+            // page.evaluate() throws "Execution context was destroyed" when FamilySearch
+            // redirects mid-flight (e.g. / → /en/home/portal/). Fall back to URL check.
+            const url = page.url();
+            return url.includes('/home/portal/') || url.includes('familysearch.org/home');
+        }
     };
 
     if (await checkLoggedIn()) {
