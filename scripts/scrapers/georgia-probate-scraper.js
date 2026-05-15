@@ -380,7 +380,8 @@ async function buildSitemap(sitemap) {
                     const dgs = owcParts[1].trim();
                     const title = (link.textContent || '').trim();
                     if (groupId && dgs && title) {
-                        results.push({ title, groupId, dgs, imageCount: null, status: 'pending' });
+                        const rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(groupId + ':' + dgs + '?cc=1999178')}&cc=1999178`;
+                        results.push({ title, groupId, dgs, rollIndexUrl, imageCount: null, status: 'pending' });
                     }
                 }
                 return results;
@@ -413,55 +414,54 @@ async function buildSitemap(sitemap) {
     return sitemap;
 }
 
-// --- Fix 1: Image URL construction using image-specific ARK ---
-// The base ARK is discovered by navigating to image 1 via the roll's group ID,
-// then extracting the resolved image-specific ARK from the URL.
-// All subsequent images use that same ARK in the path; only i= changes.
-function buildImageUrl(baseArkId, dgsEncoded, groupId, imageNumber) {
-    return `https://www.familysearch.org/ark:/61903/3:1:${baseArkId}` +
-        `?wc=${groupId}%3A${dgsEncoded}&cc=${COLLECTION_ID}&lang=en&i=${imageNumber}&view=fullText`;
+// --- Image URL: uses the image-specific ARK extracted from page.url() after viewer navigation ---
+// Navigation between images uses the viewer's number-input field (not the i= URL parameter).
+// This URL is used for DB storage/display reference only — not for page.goto().
+function buildImageUrl(arkId) {
+    return `https://www.familysearch.org/ark:/61903/3:1:${arkId}?view=fullText&lang=en`;
 }
 
 // --- Phase 1: Scrape all images in one roll ---
+// Navigation: navigate to roll index page → click first thumbnail → enter viewer →
+// use the viewer's number-input field to advance to each subsequent image.
+// Each image has a unique ARK extracted from page.url() after navigation.
 async function scrapeOneRoll(countyObj, roll, isDryRun) {
-    const dgsEncoded = roll.dgs.replace(',', '%2C');
-
     log(`Roll: "${roll.title}" [${roll.groupId}] in ${countyObj.county}`);
 
-    // Fix 1: Navigate to image 1 using the roll's group ID as a placeholder ARK,
-    // then extract the resolved image-specific ARK from the redirected URL.
-    const discoveryUrl = `https://www.familysearch.org/ark:/61903/3:1:${roll.groupId}` +
-        `?wc=${roll.groupId}%3A${dgsEncoded}&cc=${COLLECTION_ID}&lang=en&i=1&view=fullText`;
+    // Backfill rollIndexUrl for sitemaps built before this change
+    if (!roll.rollIndexUrl) {
+        roll.rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(roll.groupId + ':' + roll.dgs + '?cc=' + COLLECTION_ID)}&cc=${COLLECTION_ID}`;
+    }
 
+    // Step 1: Navigate to the roll's index page
     try {
-        await page.goto(discoveryUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await page.goto(roll.rollIndexUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await sleep(4000);
     } catch (e) {
-        log(`  ERROR navigating to roll ${roll.groupId}: ${e.message}. Skipping roll.`);
+        log(`  ERROR navigating to roll index ${roll.groupId}: ${e.message}. Skipping roll.`);
         roll.status = 'failed';
         return;
     }
 
-    const resolvedUrl = page.url();
-    const arkMatch = resolvedUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
-    if (!arkMatch) {
-        log(`  ERROR: Could not resolve base ARK for roll ${roll.groupId} (resolved URL: ${resolvedUrl}). Skipping roll.`);
+    // Step 2: Click the first image thumbnail to enter the viewer
+    try {
+        await page.click('a[href*="/ark:/61903/3:1:"]');
+    } catch (e) {
+        log(`  ERROR: No image thumbnail found for roll ${roll.groupId}: ${e.message}. Skipping roll.`);
         roll.status = 'failed';
         return;
     }
-    const baseArkId = arkMatch[1];
-    log(`  Base ARK: ${baseArkId}`);
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await sleep(6000);
 
-    // Extract image count from "Image X of N" text in the viewer
+    // Step 3: Extract total image count from "Image N of TOTAL" text in viewer body
     let imageCount = roll.imageCount;
     if (!imageCount) {
-        await sleep(4000); // additional wait for viewer to fully render
         imageCount = await page.evaluate(() => {
             const bodyText = document.body.innerText || '';
-            const m = bodyText.match(/[Ii]mage\s+\d+\s+of\s+(\d+)/);
+            const m = bodyText.match(/[Ii]mage\s+\d+\s+of\s+(\d+)/i);
             if (m) return parseInt(m[1], 10);
-            // Fallback: look for "X of N" pattern in nav/aria text
-            const m2 = bodyText.match(/\b\d+\s+of\s+(\d+)\b/);
+            const m2 = bodyText.match(/of\s+(\d+)/i);
             if (m2) return parseInt(m2[1], 10);
             return null;
         });
@@ -473,6 +473,17 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
             imageCount = 500;
         }
     }
+
+    // Step 4: Extract image-1 ARK from the resolved URL
+    const image1Url = page.url();
+    const image1ArkMatch = image1Url.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+    if (!image1ArkMatch) {
+        log(`  ERROR: Could not extract ARK for image 1 of roll ${roll.groupId} (URL: ${image1Url}). Skipping roll.`);
+        roll.status = 'failed';
+        return;
+    }
+    let currentArkId = image1ArkMatch[1];
+    log(`  Image 1 ARK: ${currentArkId}`);
 
     // Load already-written image numbers for this roll (--resume)
     let writtenImages = new Set();
@@ -492,17 +503,26 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         }
     }
 
+    // Step 5: Process image 1 (already in viewer), then advance via input field for images 2…N
     for (let imageNumber = 1; imageNumber <= imageCount; imageNumber++) {
         if (LIMIT > 0 && totalImagesProcessed >= LIMIT) {
             log(`  Global limit of ${LIMIT} images reached.`);
             return;
         }
+
         if (RESUME && writtenImages.has(imageNumber)) {
             if (VERBOSE) log(`  RESUME: Skipping image ${imageNumber}.`);
+            // Advance viewer so it stays in sync, then read the new ARK
+            if (imageNumber < imageCount) {
+                await advanceViewerToImage(imageNumber + 1);
+                const advUrl = page.url();
+                const advMatch = advUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+                if (advMatch) currentArkId = advMatch[1];
+            }
             continue;
         }
 
-        await processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded, isDryRun);
+        await processImage(countyObj, roll, imageNumber, currentArkId, isDryRun);
         totalImagesProcessed++;
 
         await sleep(3000 + Math.random() * 2000);
@@ -511,12 +531,64 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
             log(`  Session check at image ${imageNumber}...`);
             await ensureLoggedIn();
         }
+
+        // Advance to next image via viewer input field and capture new ARK
+        if (imageNumber < imageCount) {
+            const advanced = await advanceViewerToImage(imageNumber + 1);
+            if (!advanced) {
+                log(`  WARNING: Could not advance viewer to image ${imageNumber + 1}. Stopping roll.`);
+                break;
+            }
+            const newUrl = page.url();
+            const newArkMatch = newUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+            if (newArkMatch) {
+                currentArkId = newArkMatch[1];
+                if (VERBOSE) log(`  Image ${imageNumber + 1} ARK: ${currentArkId}`);
+            } else {
+                log(`  WARNING: Could not extract ARK for image ${imageNumber + 1} (URL: ${newUrl}). Using placeholder.`);
+                currentArkId = `unknown-${imageNumber + 1}`;
+            }
+        }
+    }
+}
+
+// --- Advance FamilySearch image viewer to a specific image number via the number-input field ---
+async function advanceViewerToImage(imageNumber) {
+    // Try selectors in priority order as specified
+    const selectors = [
+        'input[aria-label*="mage"]',
+        'input[class*="image-number"]',
+        'input[type="number"]',
+    ];
+    let inputHandle = null;
+    for (const sel of selectors) {
+        try {
+            inputHandle = await page.$(sel);
+            if (inputHandle) break;
+        } catch (_) {}
+    }
+    if (!inputHandle) {
+        log(`  WARNING: Image number input not found for image ${imageNumber}.`);
+        return false;
+    }
+    try {
+        await inputHandle.click({ clickCount: 3 }); // triple-click to select all
+        await inputHandle.type(String(imageNumber));
+        await inputHandle.press('Enter');
+        await sleep(6000); // wait for SPA navigation to settle
+        return true;
+    } catch (e) {
+        log(`  WARNING: Error advancing viewer to image ${imageNumber}: ${e.message}`);
+        return false;
     }
 }
 
 // --- Process a single image ---
-async function processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded, isDryRun) {
-    const url = buildImageUrl(baseArkId, dgsEncoded, roll.groupId, imageNumber);
+// The page is already on the correct image (navigated by scrapeOneRoll via viewer input).
+// Do not navigate again — just extract transcript, take screenshot, write to DB.
+async function processImage(countyObj, roll, imageNumber, currentArkId, isDryRun) {
+    // buildImageUrl takes only the ARK — this URL is for DB storage/display, not navigation
+    const url = buildImageUrl(currentArkId);
     if (VERBOSE) log(`  Image ${imageNumber}: ${url}`);
 
     let rawTranscriptText = '';
@@ -529,8 +601,8 @@ async function processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded,
     let parsedData = null;
 
     try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await sleep(8000); // fixed wait — FamilySearch SPA renders slowly; no waitForSelector
+        // Page is already on this image — wait briefly for transcript panel to fully render
+        await sleep(2000);
 
         // Extract transcript text using the confirmed FamilySearch DOM structure.
         // div[data-testid="full-text-transcript"] contains volunteer transcription as <span> children.
@@ -545,7 +617,7 @@ async function processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded,
 
         if (rawTranscriptText.trim().length > 0) {
             status = 'parsed';
-            parsedData = parseTranscript(rawTranscriptText, imageNumber, baseArkId);
+            parsedData = parseTranscript(rawTranscriptText, imageNumber, currentArkId);
             recordType = parsedData.recordType;
             testatorName = parsedData.testatorName;
             enslavedCount = parsedData.enslavedPersons.length;
@@ -565,7 +637,7 @@ async function processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded,
 
     if (!isDryRun && status !== 'failed') {
         await writeToDbAndS3(
-            imageNumber, baseArkId, url, rawTranscriptText, screenshotBuffer,
+            imageNumber, currentArkId, url, rawTranscriptText, screenshotBuffer,
             status, recordType, testatorName, enslavedCount, errorText, parsedData,
             countyObj.county, roll
         );
@@ -576,10 +648,10 @@ async function processImage(countyObj, roll, imageNumber, baseArkId, dgsEncoded,
             log('    Enslaved:', parsedData.enslavedPersons.map(e => `${e.name} [to: ${e.bequestRecipientName || 'unknown'}]`).join(', ') || 'none');
         }
         // Still record progress in dry-run mode so status is visible
-        await updateProgress(imageNumber, baseArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
     } else {
         // status === 'failed'
-        await updateProgress(imageNumber, baseArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
     }
 }
 
