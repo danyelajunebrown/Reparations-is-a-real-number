@@ -586,60 +586,18 @@ async function processImage(imageNumber, arkId, url, isDryRun) {
             if (VERBOSE) log(`Image ${imageNumber}: Transcript button not found, assuming view=fullText is sufficient.`);
         }
 
-        // Extract transcript text — probe multiple selectors in priority order.
-        // No waitForSelector timeout — if the panel didn't render in 10s it won't appear;
-        // missing transcript → rawTranscriptText = '' → status = 'no_transcript' (normal).
-        rawTranscriptText = await page.evaluate((verbose) => {
-            const logEval = (...args) => {
-                if (verbose) console.log('[page.evaluate]', ...args);
-            };
-            let foundText = '';
-
-            // Priority 1: most specific container class
-            let el1 = document.querySelector('[class*="transcript-text-container"]');
-            if (el1 && el1.innerText.trim()) {
-                foundText = el1.innerText;
-                logEval('P1 (transcript-text-container) found text length:', foundText.length);
-                return foundText;
-            }
-            logEval('P1 (transcript-text-container) not found or empty.');
-
-            // Priority 2: any element with "transcript" in the class name
-            const candidates2 = Array.from(document.querySelectorAll('[class*="transcript"]'));
-            for (const c of candidates2) {
-                if (c.innerText && c.innerText.trim().length > 50) {
-                    foundText = c.innerText;
-                    logEval('P2 (any class*="transcript") found text length:', foundText.length);
-                    return foundText;
-                }
-            }
-            logEval('P2 (any class*="transcript") not found or too short.');
-
-            // Priority 3: data-testid containing "transcript"
-            let el3 = document.querySelector('[data-testid*="transcript"]');
-            if (el3 && el3.innerText.trim()) {
-                foundText = el3.innerText;
-                logEval('P3 (data-testid*="transcript") found text length:', foundText.length);
-                return foundText;
-            }
-            logEval('P3 (data-testid*="transcript") not found or empty.');
-
-            // Priority 4: find heading labeled "Transcript" and take its next sibling
-            const headings4 = Array.from(document.querySelectorAll('h2, h3, h4, span, div'));
-            for (const h of headings4) {
-                if (h.textContent && h.textContent.trim() === 'Transcript') {
-                    const sibling = h.nextElementSibling;
-                    if (sibling && sibling.innerText.trim().length > 20) {
-                        foundText = sibling.innerText;
-                        logEval('P4 (Transcript heading + sibling) found text length:', foundText.length);
-                        return foundText;
-                    }
-                }
-            }
-            logEval('P4 (Transcript heading + sibling) not found or too short.');
-
-            return '';
-        }, VERBOSE);
+        // Extract transcript text using the confirmed FamilySearch DOM structure.
+        // div[data-testid="full-text-transcript"] contains volunteer transcription as <span> children.
+        // Confirmed live in Chrome DevTools on Mac Mini (2026-05-15).
+        // Returns '' for images 1–~30 (cover/index pages) where the panel is empty or contains
+        // only a single period — those are correctly marked no_transcript downstream.
+        rawTranscriptText = await page.evaluate(() => {
+            const container = document.querySelector('div[data-testid="full-text-transcript"]');
+            if (!container) return '';
+            const spans = Array.from(container.querySelectorAll('span'));
+            const joined = spans.map(s => s.textContent).join(' ').replace(/\s+/g, ' ').trim();
+            return joined.length <= 5 ? '' : joined;
+        });
 
         if (rawTranscriptText.trim().length > 0) {
             status = 'parsed';
