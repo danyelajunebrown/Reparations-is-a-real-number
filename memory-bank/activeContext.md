@@ -1,6 +1,105 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-15 (Session 55 — Georgia Probate Scraper schema audit & bug fixes)_
+_Last updated: 2026-05-15 (Session 57 — Georgia Probate Scraper full rewrite + confirmed working on Mac Mini)_
+
+---
+
+## Session 57 — Georgia Probate Scraper Full Rewrite — ✅ COMMITTED & CONFIRMED WORKING (2026-05-15)
+
+### What Was Done (4 major fixes + 1 bonus)
+
+**Fix 1 — `buildSitemap()` stores `rollIndexUrl` per roll**
+Each roll entry now carries the pre-computed URL:
+`https://www.familysearch.org/search/image/index?owc=groupId:dgs?cc=1999178`
+
+**Fix 2 — `buildImageUrl(arkId)` simplified**
+Single-parameter helper; returns the fullText reference URL only (not used for navigation).
+
+**Fix 3 — `scrapeOneRoll()` completely rewritten**
+Old approach used `groupId:dgs` image index URL directly and a fragile multi-param `page.goto()`.
+New approach:
+1. Navigate to `roll.rollIndexUrl`
+2. Click the first `a[href*="/ark:/61903/3:1:"]` thumbnail → viewer opens on image 1
+3. Read image-1 ARK from `page.url()` (each image has a unique ARK, not the group ARK)
+4. Advance images 2…N via viewer number-input field (`advanceViewerToImage` helper) — extracts per-image ARK from `page.url()` each time
+
+**Fix 4 — `processImage()` streamlined**
+- Removed `page.goto()` and `dgsEncoded` param — caller has already navigated
+- 2s wait → `div[data-testid="full-text-transcript"]` extraction (unchanged from Session 56)
+- Returns `status='no_transcript'` for empty/short text
+
+**Bonus fix — `ensureLoggedIn` try/catch**
+FamilySearch redirects `familysearch.org/` → `/en/home/portal/` during `sleep()`, destroying the page execution context. Added try/catch around `page.evaluate()`:
+```js
+const checkLoggedIn = async () => {
+    try {
+        const url = page.url();
+        if (url.includes('/home/portal/') || url.includes('familysearch.org/home')) return true;
+        return await page.evaluate(() =>
+            document.querySelector('button[data-testid="user-menu-button"]') !== null ||
+            document.querySelector('[data-testid="header-profile"]') !== null ||
+            document.querySelector('a[href*="/account/"]') !== null
+        );
+    } catch (_) {
+        const url = page.url();
+        return url.includes('/home/portal/') || url.includes('familysearch.org/home');
+    }
+};
+```
+
+### Commits
+| Commit | Description |
+|--------|-------------|
+| `0526ef8e8` | Session 56: data-testid selector fix |
+| `9c00e32c3` | Session 57: full rewrite — rollIndexUrl sitemap, advanceViewerToImage, per-image ARK from page.url(), ensureLoggedIn try/catch, M078 auto-apply |
+
+### Mac Mini Confirmed Working Output (commit `9c00e32c3`)
+```
+Starting Georgia Probate Scraper (multi-county/multi-roll)...
+Found 131 county entries on waypoints page.
+Found 71 rolls in Liberty.
+Roll: "Wills, appraisements and bonds 1790-1850 vol B" [9SYT-PT5] in Liberty
+Image count: 689
+Image 1 ARK: 3QSQ-G93L-GHFK  ← real image-specific ARK
+Image 2 ARK: 3QSQ-G93L-GHJ2 → status=parsed, rawText: "T ┃ S ┃ Swede"
+Image 3 ARK: 3QS7-L93L-GH2J → status=parsed, rawText: "LIBERTY COUNTY STATE OF GEORGIA COURT BOOK..."
+Image 4 ARK: 3QSQ-G93L-P9R2 → status=parsed, rawText: "AND DATE FILMED AUGED 1958 EXPOSURE..."
+Image 5 ARK: 3QSQ-G93L-PSZZ → status=no_transcript
+Scraping complete. Total images processed: 5
+```
+
+### Key Technical Facts (permanent notes)
+- **FamilySearch SPA**: always `waitUntil: 'domcontentloaded'`; NEVER `networkidle0`
+- **Per-image ARK**: extracted from `page.url()` after viewer navigation — NOT from the group ARK `9SYT-PT5`
+- **Viewer input navigation**: triple-click `input[aria-label*="mage"]` / `input[class*="image-number"]` / `input[type="number"]`, type number, Enter, 6s sleep
+- **puppeteer.connect()** to port 9222; fallback to `open -na "Google Chrome"` system launch; NEVER `puppeteer.launch()` (crashes on Intel Mac Sonoma)
+- **`probate_scrape_progress`** UNIQUE constraint: `(collection_id, roll_group_id, image_number)` — migration 078
+- **Sitemap**: `tmp/georgia-probate-sitemap.json`
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `scripts/scrapers/georgia-probate-scraper.js` | Full rewrite — 4 major fixes + ensureLoggedIn try/catch |
+| `migrations/078-probate-scrape-progress-roll-column.sql` | Adds `roll_group_id TEXT`, replaces UNIQUE constraint |
+
+### Next Steps — Mac Mini
+**Step 3 — Write to DB (limit 10, one roll)**
+```bash
+node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty \
+  --roll-title "Wills, appraisements and bonds 1790" \
+  --limit 10 --apply --verbose
+```
+
+**Step 4 — Full Liberty County**
+```bash
+node scripts/scrapers/georgia-probate-scraper.js --county Liberty --apply --resume
+```
+
+**Step 5 — All counties (only after Step 4 verified)**
+```bash
+node scripts/scrapers/georgia-probate-scraper.js --apply --resume
+```
 
 ---
 

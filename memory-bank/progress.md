@@ -1,8 +1,48 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Hynson DC case book pipeline Day 1 deployed. M068 compilation tracking live. Frontend 429 rate-limit bug fixed. Awaiting Hynson PDF uploads, then Day 2 OCR.
-**Last Updated:** May 14, 2026 (Session 54 — Frontend bug fix)
+**Current Phase:** Georgia Probate Scraper full rewrite deployed + confirmed working on Mac Mini. Pipeline extracting real per-image transcripts from Liberty County probate rolls. Ready for Step 3 (--apply) on Mac Mini.
+**Last Updated:** May 15, 2026 (Session 57 — Georgia Probate Scraper full rewrite confirmed working)
+
+---
+
+## Session 57 — Georgia Probate Scraper Full Rewrite (May 15, 2026) ✅ CONFIRMED WORKING
+
+### What Was Done
+
+Complete rewrite of `scripts/scrapers/georgia-probate-scraper.js` (commit `9c00e32c3`). Four major fixes + one bonus fix. Mac Mini confirmed working after `git pull`.
+
+### Root Causes Fixed
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Zero extractions | Group ARK `9SYT-PT5` used for all images instead of per-image ARKs | Navigate via thumbnail click, extract ARK from `page.url()` each time |
+| No transcript text | 4-selector CSS class cascade never matched FamilySearch DOM | `div[data-testid="full-text-transcript"]` sole selector |
+| TargetCloseError | `puppeteer.launch()` used as fallback (crashes Intel Mac Sonoma) | `open -na "Google Chrome"` + `puppeteer.connect()` only |
+| `ensureLoggedIn` crash | FamilySearch redirects `/` → `/en/home/portal/` during sleep(), destroying page context | try/catch around `page.evaluate()`, fallback to `page.url()` check |
+
+### Mac Mini Confirmed Output (commit `9c00e32c3`)
+```
+Found 131 county entries on waypoints page.
+Found 71 rolls in Liberty.
+Roll: "Wills, appraisements and bonds 1790-1850 vol B" [9SYT-PT5]
+Image 1 ARK: 3QSQ-G93L-GHFK
+Image 2 ARK: 3QSQ-G93L-GHJ2 → status=parsed, rawText: "T ┃ S ┃ Swede"
+Image 3 ARK: 3QS7-L93L-GH2J → status=parsed, rawText: "LIBERTY COUNTY STATE OF GEORGIA COURT BOOK..."
+Image 4 ARK: 3QSQ-G93L-P9R2 → status=parsed, rawText: "AND DATE FILMED AUGED 1958 EXPOSURE..."
+Image 5 ARK: 3QSQ-G93L-PSZZ → status=no_transcript
+```
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `scripts/scrapers/georgia-probate-scraper.js` | Full rewrite |
+| `migrations/078-probate-scrape-progress-roll-column.sql` | NEW — adds `roll_group_id`, replaces UNIQUE constraint |
+
+### Pending Mac Mini Steps
+- [ ] Step 3: `node scripts/scrapers/georgia-probate-scraper.js --county Liberty --roll-title "Wills, appraisements and bonds 1790" --limit 10 --apply --verbose`
+- [ ] Step 4: `node scripts/scrapers/georgia-probate-scraper.js --county Liberty --apply --resume`
+- [ ] Step 5: `node scripts/scrapers/georgia-probate-scraper.js --apply --resume` (all 131 counties)
 
 ---
 
