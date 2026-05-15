@@ -1,5 +1,53 @@
 # Active Context — Reparations Platform
 
+_Last updated: 2026-05-15 (Session 55 — Georgia Probate Scraper schema audit & bug fixes)_
+
+---
+
+## Session 55 — Georgia Probate Scraper Schema Bug Fixes — ✅ COMMITTED (2026-05-15)
+
+### What Was Built
+`scripts/scrapers/georgia-probate-scraper.js` — Puppeteer scraper for Liberty County GA probate records (FamilySearch collection 1999178, group 9SYT-PT5, 555 images, 1858-1867). `migrations/069-georgia-probate-pipeline.sql` — pipeline infrastructure (progress table, source registry, methodology entries).
+
+### Schema Bugs Fixed (commit 6bcdea8fa, pushed to origin main)
+1. **`person_documents` INSERT**: Removed non-existent columns `extraction_method`, `title`. Added `source_url`, `source_type`, `image_number`. Used `ON CONFLICT DO NOTHING` with null-row guard.
+2. **`inheritance_edges` asset_type**: `'general_bequest'` → `'unspecified'` (valid CHECK value per M067).
+3. **`canonical_persons` INSERT**: No unique constraint on canonical_name column. Replaced `ON CONFLICT` clause with fuzzy-match SELECT-first, plain INSERT if no match (Levenshtein ≤ 2 + county + year window).
+4. **`person_relationships_verified`**: Removed — `person_id` FK requires `canonical_persons(id)`, but enslaved persons live in `unconfirmed_persons`. Relationship stored in `unconfirmed_persons.relationships` JSONB instead.
+5. **`estimation_methodology_registry` query**: Column is `name`, not `methodology_name`. Added `AND version = 'v1.0.0'` filter.
+6. **Migration 069**: Rewrote both INSERTs with correct column names matching actual `regional_source_registry` (no `state`/`county`/`is_compilation`/`collection_id` columns) and `estimation_methodology_registry` (columns: `name`, `version`, `description`, `role_tags`, `assumptions_jsonb`, `citations`, `known_failure_modes`).
+
+### Schema Facts Confirmed This Session
+- `canonical_persons`: **NO UNIQUE** constraint on `canonical_name` — use SELECT-first approach
+- `inheritance_edges.asset_type` valid values: `'real_property','enslaved_persons','personal_estate','monetary_bequest','residual_estate','trust_interest','business_interest','mixed','unspecified'`
+- `inheritance_edges.confidence` NUMERIC(4,3) — column EXISTS (confirmed)
+- `person_relationships_verified.person_id` → FK to `canonical_persons(id)` only
+- `regional_source_registry` columns: `source_name, citation, jurisdiction_text, era_start, era_end, record_type, axis_role, access_method, coverage_notes, methodology_id` — NOT state/county/is_compilation/external_url/collection_id
+- `estimation_methodology_registry` UNIQUE on `(name, version)` — conflict target for ON CONFLICT
+
+### Next Steps — Mac Mini
+```bash
+cd ~/Reparations-is-a-real-number && git pull origin main
+
+# Test transcript extraction on image 141 (known-transcribed):
+node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty --state GA --collection 1999178 \
+  --group-id 9SYT-PT5 --dgs "267679901,268032901" \
+  --ark 3QS7-893L-P9FS --dry-run --verbose
+
+# If transcript found, dry-run first 5:
+node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty --state GA --collection 1999178 \
+  --group-id 9SYT-PT5 --dgs "267679901,268032901" \
+  --start-image 1 --limit 5 --dry-run --verbose
+
+# Apply first 10:
+node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty --state GA --collection 1999178 \
+  --group-id 9SYT-PT5 --dgs "267679901,268032901" \
+  --start-image 1 --limit 10 --apply
+```
+
 _Last updated: 2026-05-14 (Session 54 — Frontend 429 / Rate-Limit Bug Fix)_
 
 ---
@@ -222,6 +270,12 @@ unconfirmed_persons columns:
   ← NO branch_name column; branch is in locations[0]
   ← NO docai_data column; enrichment in relationships.docai_fields
   ← NO canonical_person_id; use confirmed_individual_id
+
+// Freedman's Bank Specific Notes:
+// - `last_master` IS NULL is NOT a reliable indicator of "always free" until the DocAI URL bug is fixed and all records are reprocessed against the 3:1: film images.
+// - ALL Freedman's Bank depositors are legally free at the time of deposit.
+// - Lexington, KY records may be stored under "Louisville, KY" in FamilySearch data due to upstream labeling errors.
+// - Total entries in FamilySearch data table: 480,597 (includes primary + associated records). Our `unconfirmed_persons` count of 416,136 likely represents primary account holders.
 
 person_relationships_verified columns:
   id, person_id, related_person_id, relationship_type,

@@ -32,6 +32,7 @@ const END_IMAGE = parseInt(opt('--end-image', '555'), 10);
 const DRY_RUN = flag('--dry-run');
 const APPLY = flag('--apply');
 const RESUME = flag('--resume');
+const CLEAR_CHECKPOINT = flag('--clear-checkpoint');
 const LIMIT = parseInt(opt('--limit', '0'), 10);
 const ARK_ID_ARG = opt('--ark');
 const VERBOSE = flag('--verbose');
@@ -148,22 +149,38 @@ function levenshteinDistance(a, b) {
 
 // --- Puppeteer Setup ---
 async function launchBrowser() {
-    log('Connecting to existing Chrome instance...');
+    // Strategy 1: connect to an already-running Chrome instance (preferred — keeps FamilySearch session)
+    log('Connecting to existing Chrome instance on port 9222...');
     try {
         browser = await puppeteer.connect({
             browserURL: `http://127.0.0.1:${BROWSER_DEBUG_PORT}`,
             defaultViewport: null
         });
         log('Connected to existing Chrome instance.');
+        page = await browser.newPage();
+        await page.setViewport({ width: 1280, height: 900 });
+        return;
     } catch (e) {
-        log(`Could not connect to Chrome on port ${BROWSER_DEBUG_PORT}: ${e.message}`);
-        log('Please launch Chrome with:');
-        log(`open -na "Google Chrome" --args --remote-debugging-port=${BROWSER_DEBUG_PORT} --user-data-dir=/tmp/familysearch-ancestor-climber`);
-        process.exit(1);
+        log(`No existing Chrome session on port ${BROWSER_DEBUG_PORT}. Launching a new browser...`);
     }
-    page = await browser.newPage();
+
+    // Strategy 2: launch a new browser (non-headless so user can log in to FamilySearch)
+    // The user-data-dir persists cookies so login is only needed once per Mac Mini boot.
+    browser = await puppeteer.launch({
+        headless: false,
+        args: [
+            `--remote-debugging-port=${BROWSER_DEBUG_PORT}`,
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--user-data-dir=/tmp/familysearch-ancestor-climber',
+            '--window-size=1280,900',
+        ],
+        defaultViewport: null,
+    });
+    log('Launched new Chrome browser instance.');
+    page = (await browser.pages())[0] || await browser.newPage();
     await page.setViewport({ width: 1280, height: 900 });
-    log('New page created.');
 }
 
 async function ensureLoggedIn() {
@@ -264,8 +281,36 @@ async function checkAndApplyMigration() {
 async function loadCheckpoint() {
     const dir = path.dirname(IMAGE_INDEX_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    if (CLEAR_CHECKPOINT && fs.existsSync(IMAGE_INDEX_FILE)) {
+        fs.unlinkSync(IMAGE_INDEX_FILE);
+        log('--clear-checkpoint: deleted existing checkpoint file.');
+        return;
+    }
+
     if (fs.existsSync(IMAGE_INDEX_FILE)) {
-        imageIndex = JSON.parse(fs.readFileSync(IMAGE_INDEX_FILE, 'utf8'));
+        const loaded = JSON.parse(fs.readFileSync(IMAGE_INDEX_FILE, 'utf8'));
+        const entries = Object.values(loaded);
+        // Corruption detector: if >50% of entries share the same ARK ID, the checkpoint
+        // was built with an image-specific ARK (which FamilySearch ignores the i= param for).
+        // Auto-wipe and rebuild from scratch.
+        if (entries.length >= 3) {
+            const arkCounts = {};
+            for (const e of entries) {
+                const ark = e.arkId || '';
+                arkCounts[ark] = (arkCounts[ark] || 0) + 1;
+            }
+            const maxCount = Math.max(...Object.values(arkCounts));
+            if (maxCount / entries.length > 0.5) {
+                const dominantArk = Object.entries(arkCounts).sort((a, b) => b[1] - a[1])[0][0];
+                log(`WARNING: Checkpoint corruption detected — ${maxCount}/${entries.length} entries share ARK "${dominantArk}".`);
+                log('This is caused by using an image-specific ARK as the discovery base. Auto-wiping checkpoint.');
+                fs.unlinkSync(IMAGE_INDEX_FILE);
+                imageIndex = {};
+                return;
+            }
+        }
+        imageIndex = loaded;
         log(`Loaded ${Object.keys(imageIndex).length} entries from checkpoint file.`);
     }
 }
@@ -438,7 +483,11 @@ async function main() {
             if (VERBOSE) log(`Image ${i}: using checkpointed ARK ${currentArkId}`);
         } else {
             log(`Image ${i}: discovering ARK via i= parameter`);
-            const discoveryUrl = `${FAMILYSEARCH_URL_BASE}3QS7-893L-P9FS?${COLLECTION_WC_PARAM}&i=${i}`;
+            // Use GROUP_ID (volume/group-level ARK) as the base — NOT an image-specific ARK.
+            // Image-specific ARKs (like 3QS7-893L-P9FS) cause FamilySearch to ignore the i=
+            // parameter and always resolve to that image's fixed position.
+            // Group ARKs (like 9SYT-PT5) treat i= as an absolute image number within the volume.
+            const discoveryUrl = `${FAMILYSEARCH_URL_BASE}${GROUP_ID}?${COLLECTION_WC_PARAM}&i=${i}`;
             try {
                 // domcontentloaded is correct for FamilySearch SPA — networkidle0 never resolves
                 // because FS keeps WebSocket/XHR connections open indefinitely
