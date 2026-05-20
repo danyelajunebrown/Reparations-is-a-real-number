@@ -1,0 +1,89 @@
+{
+  "_meta": {
+    "source": "They Had Names — theyhadnames.net/wills (will summary, compiler Stacy Ashmore Cole)",
+    "source_url": "https://theyhadnames.net/wills/",
+    "captured": "2026-05-20",
+    "purpose": "Rich extraction-target ground truth for the Georgia probate scraper. A multi-part document (will + codicil) — exercises document segmentation and per-document field extraction.",
+    "document_structure": "One logical probate document spanning a will (signed 1861-11-19) and a codicil (signed 1861-12-07), both recorded together 1862-04-19. Across the FamilySearch collection this is multiple consecutive page-images."
+  },
+  "testator": {
+    "name": "John B. Barnard",
+    "county": "Liberty",
+    "state": "Georgia",
+    "signing_date": "1861-11-19",
+    "recorded_date": "1862-04-19",
+    "recorded_by": "W.P. Girardeau, Liberty County Ordinary"
+  },
+  "codicil": {
+    "signing_date": "1861-12-07",
+    "recorded_date": "1862-04-19"
+  },
+  "spouse": {
+    "name": "Ann P. Barnard"
+  },
+  "children": [
+    {"name": "Nathaniel Law Barnard", "role": "son", "also": "named executor"},
+    {"name": "John D. Barnard", "role": "son", "status": "deceased", "note": "his children are residuary beneficiaries via trust"}
+  ],
+  "other_kin_beneficiaries": [
+    {"name": "John Barnard Chisolm", "relation": "nephew", "bequest": "gold watch and chain, up to $150"},
+    {"name": "Augusta Barnard Palmer", "relation": "daughter of Dr. B. M. Palmer of New Orleans", "bequest": "gold watch, chain and seal of similar cost"},
+    {"name": "John Barnard Law", "relation": "son of the late Josiah Law", "bequest": "$500 in trust (held by Peter W. Fleming and Augustus Fleming) to aid his education"}
+  ],
+  "enslaved_persons": [
+    {"name": "Hannah", "description": "negro woman, maid servant", "bequeathed_to": "Ann P. Barnard", "estate_interest_type": "absolute (to her and her heirs)"},
+    {"name": "Christina", "parent_link": {"name": "Hannah", "relationship": "mother"}, "bequeathed_to": "Ann P. Barnard", "estate_interest_type": "absolute"},
+    {"name": "Ally", "parent_link": {"name": "Hannah", "relationship": "mother"}, "bequeathed_to": "Ann P. Barnard", "estate_interest_type": "absolute"},
+    {"name": "Alleck", "parent_link": {"name": "Hannah", "relationship": "mother"}, "bequeathed_to": "Ann P. Barnard", "estate_interest_type": "absolute"},
+    {"name": "Letitia", "parent_link": {"name": "Hannah", "relationship": "mother"}, "bequeathed_to": "Ann P. Barnard", "estate_interest_type": "absolute"},
+    {"name": "Becky", "bequeathed_to": "Nathaniel Law Barnard", "context": "to be included in the lot to Nathaniel L. Barnard at division of the estate"},
+    {"name": null, "group_description": "Becky's seven children (and any future children)", "parent_link": {"name": "Becky", "relationship": "mother"}, "count": 7, "bequeathed_to": "Nathaniel Law Barnard", "research_flag": "anonymous_group_needs_follow_up"},
+    {"name": "Will", "description": "old & faithful carpenter man", "bequeathed_to": "Ann P. Barnard", "context": "recommended to her kindest treatment and indulgence for his past fidelity"},
+    {"name": "Peggy", "description": "a mulatto woman in Savannah", "bequeathed_to": "Ann P. Barnard and Nathaniel Law Barnard", "estate_interest_type": "use of own time and profits of own labor", "source_document": "codicil"},
+    {"name": "Mary E.", "parent_link": {"name": "Peggy", "relationship": "mother"}, "bequeathed_to": "Ann P. Barnard and Nathaniel Law Barnard", "estate_interest_type": "use of own time and profits of own labor", "source_document": "codicil"}
+  ],
+  "enslaved_persons_unnamed_groups": [
+    {"description": "negroes in Dougherty County in possession of Nathaniel L. Barnard, to be appraised and divided into two portions", "source_document": "codicil"},
+    {"description": "negroes worked on the North Hampton plantation, allocated among wife and the trust for John D. Barnard's children", "source_document": "codicil"}
+  ],
+  "real_property": [
+    {"name": "North Hampton plantation", "county": "Liberty", "instruction": "not to be sold during the wife's natural life; sold at her death, proceeds divided per will item 5", "source_document": "codicil"},
+    {"description": "lot and improvements in Laurel Grove Cemetery, Savannah", "note": "$2,000 of estate income appropriated to complete arrangements"}
+  ],
+  "monetary_bequests": [
+    {"amount": 2000, "currency_year": 1861, "beneficiary": "Ann P. Barnard", "conditions": "annual maintenance allowance while estate kept together during/after the war"},
+    {"amount": 150, "currency_year": 1861, "beneficiary": "John Barnard Chisolm", "form": "gold watch and chain (max cost)"},
+    {"amount": 500, "currency_year": 1861, "beneficiary": "John Barnard Law", "conditions": "in trust for education; trustees Peter W. Fleming and Augustus Fleming"},
+    {"amount": 2000, "currency_year": 1861, "beneficiary": "estate (Laurel Grove Cemetery lot)", "conditions": "from estate income"}
+  ],
+  "trust_instruments": [
+    {"kind": "residuary_trust", "trustees": ["Peter W. Fleming", "Nathaniel Law Barnard", "William Augustus Fleming"], "beneficiaries": "children of deceased son John D. Barnard", "terms": "one-third of residue sold and reinvested, accumulated until John D. Barnard's children reach majority or marry; negroes to be sold in families and to kind and humane masters"}
+  ],
+  "estate_division": {
+    "scheme": "residue divided into three equal parts after the war",
+    "shares": [
+      {"recipient": "Nathaniel Law Barnard", "interest": "one-third, fee simple"},
+      {"recipient": "Ann P. Barnard", "interest": "one-third, life estate; remainder to Nathaniel L. Barnard and children of John D. Barnard"},
+      {"recipient": "trust for children of John D. Barnard", "interest": "one-third, held by executors as trustees"}
+    ],
+    "hotchpot_note": "division accounts for prior gifts to Nathaniel L. and John D. Barnard and property derived under Sarah M. Law's will and the wife's mother's will"
+  },
+  "executors": [
+    {"name": "Peter W. Fleming", "relation": "friend"},
+    {"name": "Nathaniel Law Barnard", "relation": "son"},
+    {"name": "William Augustus Fleming", "relation": "friend; son of Peter W. Fleming"}
+  ],
+  "witnesses_will": [
+    {"name": "William Law"},
+    {"name": "W.W. Wash"},
+    {"name": "Walter S. Chisholm"}
+  ],
+  "witnesses_codicil": [
+    {"name": "Joseph Law"},
+    {"name": "J.R. Calder"},
+    {"name": "S.S. Barnard"}
+  ],
+  "court_jurisdiction": "Liberty County Court of Ordinary, Georgia",
+  "expected_enslaved_named_count": 9,
+  "expected_enslaved_named": ["Alleck", "Ally", "Becky", "Christina", "Hannah", "Letitia", "Mary E.", "Peggy", "Will"]
+}

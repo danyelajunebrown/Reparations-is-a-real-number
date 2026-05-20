@@ -213,9 +213,17 @@ async function applyOne(filename) {
     }
     const runtimeMs = Date.now() - t0;
 
+    // Upsert: a plain INSERT breaks --force on an already-recorded file
+    // (filename is the PK). ON CONFLICT lets --force refresh the checksum,
+    // which is its documented purpose.
     await sql`
-        INSERT INTO schema_migrations (filename, checksum, applied_by, runtime_ms)
-        VALUES (${filename}, ${checksum}, 'apply-migrations.js', ${runtimeMs})
+        INSERT INTO schema_migrations (filename, checksum, applied_by, runtime_ms, applied_at)
+        VALUES (${filename}, ${checksum}, 'apply-migrations.js', ${runtimeMs}, NOW())
+        ON CONFLICT (filename) DO UPDATE SET
+            checksum   = EXCLUDED.checksum,
+            applied_by = EXCLUDED.applied_by,
+            runtime_ms = EXCLUDED.runtime_ms,
+            applied_at = NOW()
     `;
     console.log(`  ✓ Applied (${runtimeMs}ms, ${applied} statements)`);
     return { filename, status: 'applied', runtimeMs, statementCount: applied };
