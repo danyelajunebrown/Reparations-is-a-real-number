@@ -28,12 +28,17 @@ function cleanName(raw) {
   return norm(raw).replace(/[.,;]+$/, '').replace(/\s+/g, ' ').trim();
 }
 
-// A name fragment for the heir/bequest patterns: 1-4 capitalised tokens.
-// Captures are always re-validated through isValidPersonName.
-const NAME = `([A-Z][a-zA-Z]*\\.?(?:\\s+[A-Z][a-zA-Z]*\\.?){0,3})`;
-
 // Honorifics to skip when they sit immediately before a name.
 const HONORIFICS = new Set(['mr', 'mrs', 'miss', 'dr', 'rev', 'capt', 'col', 'maj', 'hon']);
+
+// Capitalised words that are NOT name parts — sentence/clause starters and
+// boilerplate that OCR run-on bleeds onto the end of a name. A name run stops
+// when one is hit (it is not included).
+const NAME_RUN_STOP = new Set([
+  'also', 'and', 'but', 'item', 'lastly', 'likewise', 'whereas', 'the', 'to',
+  'he', 'she', 'it', 'they', 'that', 'this', 'his', 'her', 'my', 'their',
+  'of', 'in', 'all', 'one', 'first', 'second', 'third', 'now', 'then',
+]);
 
 /**
  * From a string, take the leading run of name tokens — consecutive
@@ -52,7 +57,9 @@ function leadingName(str) {
       continue;                                         // ...skip it if we have no name yet
     }
     if (!/^[A-Z][a-zA-Z]*$/.test(bare)) break;          // must be a Capitalised token
-    if (picked.length === 0 && HONORIFICS.has(bare.toLowerCase())) continue; // skip "Mrs."
+    const lc = bare.toLowerCase();
+    if (picked.length === 0 && HONORIFICS.has(lc)) continue; // skip "Mrs."
+    if (NAME_RUN_STOP.has(lc)) break;                   // clause-starter bled onto the name
     picked.push(bare);
   }
   return picked.join(' ');
@@ -66,6 +73,7 @@ function trailingName(str) {
     const bare = tokens[i].replace(/^[.,;&]+/, '').replace(/[.,;&]+$/, '');
     if (bare === '') { if (picked.length) break; else continue; }
     if (!/^[A-Z][a-zA-Z]*$/.test(bare)) break;
+    if (NAME_RUN_STOP.has(bare.toLowerCase())) break;
     picked.unshift(bare);
   }
   if (picked.length > 1 && HONORIFICS.has(picked[0].toLowerCase())) picked.shift();
@@ -144,35 +152,43 @@ function extractYear(ocr) {
   return null;
 }
 
-const RELATION = 'son|daughter|wife|husband|brother|sister|nephew|niece|grandson|granddaughter|grandchild|mother|father|child|children|friend|cousin|widow|heir|heirs|executor|executrix';
-// Adjectives that routinely sit between "my" and the relation/name.
-const QUALIFIER = '(?:said|beloved|dear|loving|dearly\\s+beloved|youngest|eldest|oldest|only|late|lawful|natural|own|two|three|four|second|third)\\s+';
+// Kinship terms (plural / "grand-" variants) and the qualifier adjectives that
+// routinely sit between "my" and the relation or name.
+const RELATION = 'grandson|granddaughter|grandchild|grand\\s*sons?|grand\\s*daughters?|'
+  + 'grand\\s*child(?:ren)?|sons?|daughters?|wife|husband|brothers?|sisters?|'
+  + 'nephews?|nieces?|mother|father|children|child|cousins?|widow';
+const QUALIFIER = 'said|beloved|dear|loving|dearly|well|youngest|eldest|oldest|only|'
+  + 'late|lawful|natural|own|second|third|two|three|four|five|six|seven';
 
 /**
- * Heirs / beneficiaries and the relation to the testator.
+ * Heirs / beneficiaries and their relation to the testator.
+ *
+ * High-precision by design (reliability over recall): a heir is only taken
+ * from an explicit "...to my <relation> <Name>" construction, and the Name is
+ * bounded with leadingName() so relation/qualifier words and trailing text
+ * cannot bleed into it. Bare "give to <Name>" with no stated relation is
+ * intentionally NOT matched — it was the source of garbage names ("Fence",
+ * "Thos", "DOROTHY LOUISE BAILEfifty").
+ *
  * @returns {Array<{name:string, relation:string}>}
  */
 function extractHeirs(ocr) {
   const text = norm(ocr);
   const out = [];
   const seen = new Set();
-  const add = (name, relation) => {
-    const n = cleanName(name);
-    if (!isValidPersonName(n)) return;
-    const key = n.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({ name: n, relation: (relation || 'unknown').toLowerCase() });
-  };
-
-  // "to my [said|beloved...] daughter Cecile" — qualifier words allowed before the relation
-  const relFirst = new RegExp(`to\\s+(?:my|his|her|their|our)\\s+(?:${QUALIFIER})*(${RELATION})\\s+(?:${QUALIFIER})*${NAME}`, 'gi');
-  // "give/devise/bequeath unto X" — name first, optional relation after
-  const giveFirst = new RegExp(`(?:give|devise|bequeath|leave|grant)\\s+(?:and\\s+(?:devise|bequeath)\\s+)?(?:unto|to)?\\s*(?:my|his|her)?\\s*(?:${QUALIFIER})*${NAME}(?:\\s*[,]?\\s*(?:my|his|her)\\s+(?:${QUALIFIER})*(${RELATION}))?`, 'gi');
+  const QUALS = `(?:(?:${QUALIFIER})\\s+){0,3}`;
+  // "[give/devise/bequeath ...] to|unto my <qual> <relation> <qual> NAME..."
+  const re = new RegExp(`(?:to|unto)\\s+(?:my|his|her|their|our)\\s+${QUALS}(${RELATION})\\s+${QUALS}`, 'gi');
 
   let m;
-  while ((m = relFirst.exec(text)) !== null) add(m[2], m[1]);
-  while ((m = giveFirst.exec(text)) !== null) add(m[1], m[2]);
+  while ((m = re.exec(text)) !== null) {
+    const name = cleanName(leadingName(text.slice(m.index + m[0].length)));
+    if (!isValidPersonName(name)) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, relation: m[1].toLowerCase().replace(/\s+/g, ' ').trim() });
+  }
   return out;
 }
 
