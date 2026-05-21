@@ -35,6 +35,8 @@ const NON_NAME_TOKENS = new Set([
   'do', 'gross', 'pair', 'mentioned', 'state', 'march', 'day', 'god',
   // non-person fragments from the Dec-2025 Wikipedia-scrape junk batch
   'wikipedia', 'united', 'states', 'president', 'vice', 'general',
+  // probate-ledger abbreviations mistaken for single given names
+  'est', 'capt', 'no', 'amt', 'acct',
 ]);
 
 /**

@@ -176,7 +176,9 @@ function extractHeirs(ocr) {
   return out;
 }
 
-const ENSLAVED_LEAD = 'negro|negroe|negroes|negros|slave|slaves|servant|servants|coloured|colored|freedman|freedwoman|boy|girl|man|woman|child';
+const ENSLAVED_LEAD = 'negro|negroe|negroes|negros|slave|slaves|servant|servants|'
+  + 'coloured|colored|freedman|freedwoman|mulatto|boy|girl|man|woman|child|'
+  + 'wench|fellow|infant';
 
 /**
  * Enslaved persons named in a will or inventory.
@@ -190,18 +192,19 @@ function extractEnslaved(ocr) {
   const seen = new Set();
   const add = (name, descriptor, value) => {
     const n = cleanName(name);
-    if (!isValidPersonName(n) && !/^[A-Z][a-z]+$/.test(n)) return; // allow single given name
-    if (n.length < 2) return;
+    if (!isValidPersonName(n)) return;          // a single given name ("Tom") still validates
     const key = n.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
     out.push({ name: n, descriptor: descriptor || null, value: value || null });
   };
 
+  // \b around every lead word so "man" cannot match inside "Sloman"/"Norman".
+  const LEAD = `\\b(?:${ENSLAVED_LEAD})\\b`;
   // "negro man named Tom" / "negro woman Hannah" / "my slave girl Sally"
-  const willStyle = new RegExp(`(?:my\\s+|one\\s+|a\\s+)?(?:${ENSLAVED_LEAD})\\s+(?:${ENSLAVED_LEAD}\\s+)?(?:named?\\s+|called\\s+)?([A-Z][a-z]+)(?:\\s+(?:aged|valued|appraised|at|a\\s+(?:${ENSLAVED_LEAD})))?`, 'gi');
+  const willStyle = new RegExp(`(?:my\\s+|one\\s+|a\\s+)?${LEAD}\\s+(?:${LEAD}\\s+)?(?:named?\\s+|called\\s+)?([A-Z][a-z]+)(?:\\s+(?:aged|valued|appraised|at|a\\s+${LEAD}))?`, 'gi');
   // inventory line: "1 Negro man Tom 800 00" / "Negro Hannah & child  $650"
-  const invStyle = new RegExp(`(?:\\d+\\s+)?(?:${ENSLAVED_LEAD})\\s+(?:${ENSLAVED_LEAD}\\s+)?([A-Z][a-z]+)\\s*(?:&[^$\\d]{0,20})?\\$?\\s*([\\d,]+)(?:[.\\s]\\d{2})?`, 'gi');
+  const invStyle = new RegExp(`(?:\\d+\\s+)?${LEAD}\\s+(?:${LEAD}\\s+)?([A-Z][a-z]+)\\s*(?:&[^$\\d]{0,20})?\\$?\\s*([\\d,]+)(?:[.\\s]\\d{2})?`, 'gi');
 
   let m;
   while ((m = invStyle.exec(text)) !== null) {
