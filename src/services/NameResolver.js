@@ -9,6 +9,8 @@
  * Uses Soundex, Metaphone, and Levenshtein distance for matching.
  */
 
+const { isValidPersonName } = require('../utils/person-name-validator');
+
 class NameResolver {
     constructor(db) {
         this.db = db;
@@ -189,6 +191,12 @@ class NameResolver {
      * Create a new canonical person from a name
      */
     async createCanonicalPerson(fullName, metadata = {}) {
+        // Never create a canonical_persons row for a string that is not a
+        // person's name (parsed phrase fragments, OCR noise). Callers must
+        // treat a null return as "skip".
+        if (!isValidPersonName(fullName)) {
+            return null;
+        }
         const parsed = this.parseName(fullName);
 
         const result = await this.db.query(`
@@ -430,6 +438,12 @@ class NameResolver {
      * Used during scraping to automatically link records
      */
     async resolveOrCreate(fullName, metadata = {}) {
+        // Reject non-names up front — a parsed phrase fragment must never
+        // match or create a canonical person.
+        if (!isValidPersonName(fullName)) {
+            return { action: 'rejected_invalid_name', canonicalPerson: null, confidence: 0 };
+        }
+
         const candidates = await this.findCandidateMatches(fullName, metadata);
 
         // High confidence match (>= 0.85)
