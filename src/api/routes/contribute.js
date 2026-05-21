@@ -1416,9 +1416,11 @@ router.get('/person/:id', async (req, res) => {
                         SELECT DISTINCT collection_key FROM person_documents
                         WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
                     )
-                    -- Fix 1: Exclude climb-sourced FS/WikiTree profile URLs (no real document, just an external ID link)
+                    -- Exclude climb-sourced FS/WikiTree *profile* URLs (no real document, just an
+                    -- external ID link). FamilySearch /ark:/ record URLs are genuine indexed source
+                    -- records and ARE kept — see scripts/backfill-bucketB-source-documents.mjs.
                     AND NOT (pd.s3_key IS NULL AND (
-                        pd.source_url ILIKE '%familysearch.org%'
+                        pd.source_url ILIKE '%familysearch.org/tree/%'
                         OR pd.source_url ILIKE '%wikitree.com%'
                     ))
                     UNION
@@ -1430,9 +1432,10 @@ router.get('/person/:id', async (req, res) => {
                         pd2.document_date, pd2.document_year, pd2.ocr_text
                     FROM person_documents pd2
                     WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
-                    -- Fix 1: Exclude climb-sourced FS/WikiTree profile URLs from primary source documents
+                    -- Exclude climb-sourced FS/WikiTree *profile* URLs only; FamilySearch /ark:/
+                    -- record URLs are genuine indexed source records and ARE kept.
                     AND NOT (pd2.s3_key IS NULL AND (
-                        pd2.source_url ILIKE '%familysearch.org%'
+                        pd2.source_url ILIKE '%familysearch.org/tree/%'
                         OR pd2.source_url ILIKE '%wikitree.com%'
                     ))
                     ORDER BY collection_key NULLS LAST, collection_page_number ASC

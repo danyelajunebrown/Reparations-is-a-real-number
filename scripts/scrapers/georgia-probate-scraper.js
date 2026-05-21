@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const S3Service = require('../../src/services/storage/S3Service');
+const { classifyTranscript } = require('../../src/services/probate/document-classifier');
 const pg = require('pg');
 
 puppeteer.use(StealthPlugin());
@@ -722,13 +723,21 @@ async function writeToDbAndS3(
         };
         const docType = docTypeMap[recordType] || 'other';
 
+        // extraction_confidence reflects the strength of the record-type
+        // classification signal (0 = no recognised anchor — e.g. continuation
+        // or index page). It is NOT a transcript-quality score. The column
+        // schema default is 0.70; writing it explicitly avoids every row
+        // silently inheriting that default regardless of what was matched.
+        const extractionConfidence = parsedData?.classificationConfidence ?? 0;
+
         const pdResult = await client.query(`
             INSERT INTO person_documents
                 (s3_key, s3_url, document_type, filename, file_size, mime_type,
                  source_type_label, collection_name, collection_key,
                  collection_page_number, name_as_appears, document_year,
-                 created_by, ocr_text, source_url, source_type, image_number)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                 created_by, ocr_text, source_url, source_type, image_number,
+                 extraction_confidence)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT DO NOTHING
             RETURNING id;
         `, [
@@ -744,7 +753,8 @@ async function writeToDbAndS3(
             safeTranscript,
             url,
             'familysearch',
-            imageNumber
+            imageNumber,
+            extractionConfidence
         ]);
 
         if (!pdResult.rows[0]) {
@@ -993,6 +1003,7 @@ function isValidEnslavedPersonName(token) {
 function parseTranscript(rawText, imageNumber, arkId) {
     const result = {
         recordType: 'other',
+        classificationConfidence: 0,
         testatorName: null,
         recordYear: null,
         enslavedPersons: [],
@@ -1005,22 +1016,14 @@ function parseTranscript(rawText, imageNumber, arkId) {
         arkId,
     };
 
-    const textLow = rawText.toLowerCase();
-
-    if (textLow.includes('last will and testament') ||
-        (textLow.includes('executor') && textLow.includes('will')) ||
-        textLow.includes('give and bequeath') ||
-        textLow.includes('i give to')) {
-        result.recordType = 'will';
-    } else if (textLow.includes('inventory') || textLow.includes('appraisement') || textLow.includes('appraised')) {
-        result.recordType = 'inventory';
-    } else if ((textLow.includes('account') && textLow.includes('executor')) || textLow.includes('in account')) {
-        result.recordType = 'estate_account';
-    } else if (textLow.includes('guardian') && textLow.includes('account')) {
-        result.recordType = 'guardian_account';
-    } else if (textLow.includes('letters of administration') || textLow.includes('letters testamentary')) {
-        result.recordType = 'letters';
-    }
+    // Record-type classification is delegated to the shared classifier
+    // (src/services/probate/document-classifier.js) so the scraper and the
+    // roll-level segmenter apply identical rules. The old substring rule
+    // ("executor" AND "will" anywhere) tagged almost every probate page as a
+    // will — see the classifier header for the post-mortem.
+    const classified = classifyTranscript(rawText);
+    result.recordType = classified.recordType;
+    result.classificationConfidence = classified.confidence;
 
     const yearMatches = rawText.match(/\b(18\d{2})\b/g);
     if (yearMatches && yearMatches.length > 0) {

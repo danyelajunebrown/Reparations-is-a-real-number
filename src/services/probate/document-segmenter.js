@@ -25,53 +25,14 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
 const { Pool } = require('pg');
 
+// Start-of-document signals and detection now live in the shared classifier so
+// the scraper and this segmenter can never drift apart. See document-classifier.js.
+const { detectStart, normalize, MIN_TEXT_LEN } = require('./document-classifier');
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
-
-// --- Start-of-document signals --------------------------------------------
-// Regexes are deliberately tolerant of OCR noise (FamilySearch "full-text"
-// transcripts are frequently machine OCR, not clean volunteer transcription).
-// Each entry: { type, re, weight }. Highest-weight match wins for an image.
-const START_SIGNALS = [
-  { type: 'will',            weight: 1.00, re: /last\s+will\s+(?:and|&|\W){0,3}testament/i },
-  { type: 'will',            weight: 0.95, re: /in\s+the\s+name\s+of\s+god[\s,.]+amen/i },
-  { type: 'will',            weight: 0.70, re: /\bi[\s,]+[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z.]+){0,3}[\s,]+(?:of\s+the\s+county|being\s+of\s+sound|do\s+(?:hereby\s+)?make)/ },
-  { type: 'inventory',       weight: 1.00, re: /inventory\s+(?:and|&)?\s*appraise?ment/i },
-  { type: 'inventory',       weight: 0.90, re: /appraise?ment\s+of\s+the\s+(?:estate|property|goods|effects)/i },
-  { type: 'inventory',       weight: 0.80, re: /a\s+true\s+(?:and\s+perfect\s+)?inventory/i },
-  { type: 'estate_account',  weight: 0.95, re: /in\s+account\s+(?:current\s+)?with\s+the\s+estate/i },
-  { type: 'estate_account',  weight: 0.80, re: /annual\s+return\s+of/i },
-  { type: 'guardian_account',weight: 0.95, re: /guardian(?:'?s)?\s+(?:account|return)/i },
-  { type: 'letters',         weight: 1.00, re: /letters\s+testamentary/i },
-  { type: 'letters',         weight: 1.00, re: /letters\s+of\s+administration/i },
-  { type: 'letters',         weight: 0.90, re: /letters\s+of\s+guardianship/i },
-];
-
-const MIN_TEXT_LEN = 6; // transcripts <= this are treated as effectively empty
-
-function normalize(text) {
-  return (text || '').replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Classify a single image's transcript.
- * @returns {{isStart:boolean, type:string|null, confidence:number}}
- */
-function detectStart(text) {
-  if (!text || text.length <= MIN_TEXT_LEN) {
-    return { isStart: false, type: null, confidence: 0 };
-  }
-  let best = null;
-  for (const sig of START_SIGNALS) {
-    if (sig.re.test(text)) {
-      if (!best || sig.weight > best.weight) best = sig;
-    }
-  }
-  if (best) return { isStart: true, type: best.type, confidence: best.weight };
-  return { isStart: false, type: null, confidence: 0 };
-}
 
 /**
  * Parse `georgia-probate-{countySlug}-{rollGroupId}` into its parts.
