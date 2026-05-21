@@ -1,6 +1,36 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-15 (Session 58 — Georgia Probate Scraper SAVEPOINT transaction safety)_
+_Last updated: 2026-05-21 (Session 59 — probate classifier fix, canonical source-document audit, probate entity-extraction rebuild)_
+
+---
+
+## Session 59 — Probate Data Quality + Canonical Audit + Extraction Rebuild (2026-05-20/21)
+
+Branch: `audit/probate-classifier-and-source-documents` (un-pushed; 8 commits).
+
+### 1. Probate document classifier
+- The scraper tagged a page `will` whenever "executor" + "will" appeared anywhere — estate accounts, inventories, will-book index pages all swept in. New `src/services/probate/document-classifier.js` is the single shared classifier (scraper + segmenter both import it). `extraction_confidence` no longer inherits the schema-default 0.70 — it's a real signal weight.
+- `scripts/reclassify-probate-documents.mjs` backfilled 12,699 probate `person_documents`: will count 2,085 → 1,054.
+
+### 2. Canonical-person source-document audit
+- Audited all 563k `canonical_persons`; only 7% served a document. `contribute.js` was discarding every S3-less `familysearch.org` doc — narrowed to `/tree/` profiles only so `/ark:/` record links serve.
+- `scripts/backfill-bucketB-source-documents.mjs` (+320,354 FamilySearch ark rows) and `backfill-bucketC-slavevoyages-documents.mjs` (+51,017 SlaveVoyages rows). Coverage 7% → 73%.
+- Bucket C2 (~72k, compendium-only, no stored URL) + D (~80k) not DB-repairable — see `plan-identity-resolution-completion.md`.
+
+### 3. Junk cleanup + leak gate
+- Deleted 3,271 `system`/`unknown` junk rows (Wikipedia + will-fragment OCR turned into persons) via `scripts/cleanup-system-unknown-junk.mjs` (FK-safe, scans all 42 FKs).
+- New shared `src/utils/person-name-validator.js`; `NameResolver` and the probate scraper both gate person creation through `isValidPersonName`.
+- Linked 4,970 ancestor-climb persons to their FamilySearch profile (`backfill-climb-fs-identity.mjs`).
+
+### 4. Probate entity-extraction rebuild
+- `src/services/probate/probate-entity-extractor.js` — testator / year / heirs / enslaved / estate value. Anchor + `leadingName`/`trailingName` trimming; spot-checked and debugged against stored OCR via `scripts/test-probate-extraction.mjs`.
+- Measured vs the scraper's stored values: testator 37%→54%, year 63%→88%, heirs 44→959, enslaved 534→1,943 (false positives removed).
+- `scripts/reparse-probate-entities.mjs` — applies the extractor to all 14,298 stored OCR pages, propagates testators across segmented documents, writes name/year/`canonical_person_id`/`inheritance_edges`/`unconfirmed_persons`/estate value. Dry-run: 6,261 names, 7,094 page links, 645 inheritance edges, 1,677 enslaved.
+
+### Open
+- Liberty scrape finishing on Mac Mini (171 pending images).
+- Identity resolution completion (tiered fingerprint) — scoped, not built.
+- Probate covers 1 of ~130 Georgia counties — extraction must be validated on Liberty before scaling.
 
 ---
 

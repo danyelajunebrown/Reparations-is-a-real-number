@@ -1,8 +1,122 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Georgia Probate Scraper full rewrite deployed + confirmed working on Mac Mini. Pipeline extracting real per-image transcripts from Liberty County probate rolls. Ready for Step 3 (--apply) on Mac Mini.
-**Last Updated:** May 15, 2026 (Session 57 — Georgia Probate Scraper full rewrite confirmed working)
+**Current Phase:** Probate data-quality rebuild — Liberty County corpus (14,298 OCR pages) being re-parsed with the rebuilt entity extractor before scaling to the other ~129 Georgia counties.
+**Last Updated:** May 21, 2026 (Session 59 — probate classifier, canonical audit, entity-extraction rebuild)
+
+---
+
+## Session 59 — Probate Data Quality + Canonical Audit + Extraction Rebuild (May 20-21, 2026)
+
+Branch `audit/probate-classifier-and-source-documents` (un-pushed; 8 commits).
+
+### Probate classifier
+- `document-classifier.js` shared by scraper + segmenter; killed the "executor"+"will" over-classification. Reclassified 12,699 docs (will 2,085→1,054). `extraction_confidence` now a real signal weight, not the 0.70 default.
+
+### Canonical source-document audit
+- 563k canonical_persons audited; document coverage 7% → 73%. Backfills: Bucket B +320,354 (FamilySearch ark URLs), C1 +51,017 (SlaveVoyages). `contribute.js` FS exclusion narrowed to `/tree/` profiles. C2/D (~152k) not DB-repairable.
+
+### Junk cleanup
+- 3,271 `system`/`unknown` junk rows deleted (FK-safe). Shared `person-name-validator.js` now gates `NameResolver` + probate-scraper person creation. 4,970 climb persons linked to FamilySearch identity.
+
+### Probate entity extraction
+- New `probate-entity-extractor.js` (testator/year/heirs/enslaved/estate) + `test-probate-extraction.mjs` harness. Iteratively debugged against stored OCR: testator 37%→54%, year 63%→88%, heirs 44→959, enslaved 534→1,943.
+- `reparse-probate-entities.mjs` re-parses all 14,298 stored OCR pages and writes structured results back (no re-scrape needed). Dry-run: 6,261 names, 7,094 page→person links, 645 inheritance edges, 1,677 enslaved persons.
+
+### Known limits
+- Probate = 1 of ~130 Georgia counties (Liberty only). Validate Liberty end-to-end before scaling.
+- Heir lists ("to my Sons A,B,C,D") yield only the first name — regex plateau.
+- Identity resolution still uncompleted (`identity_fingerprint` populated on 157/560k rows).
+
+---
+
+## Session 58 — Georgia Probate Scraper: Unicode/SAVEPOINT/Stopwords (May 15, 2026) ✅ CODE COMPLETE — RUN 3 IN PROGRESS
+
+### Root Causes Fixed
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| 171 images status='failed' | FamilySearch transcript codepoints U+2300-23FF / U+2500-257F / U+2100-214F rejected by Postgres JSONB cast | `sanitizeForDb()` strips bad ranges before any DB write |
+| `_jsonErr` retry failed silently | Failed `notes::jsonb` cast left Neon connection in "aborted" state; retry query also aborted | SAVEPOINT `before_notes_update` — rollback only the failed cast, retry with plain overwrite |
+| Same for heir + enslaved loops | Same aborted-transaction problem in heir upsert + enslaved insert loops | SAVEPOINTs `before_heir_upsert` + `before_enslaved_insert` on all 3 inner catch blocks |
+| OCR context words written as enslaved names | No filter before `result.enslavedPersons.push(token)` | `NAME_STOPWORDS` set (80+ entries) + `isValidEnslavedPersonName()` guard (capital-start, vowel-present, min-length-2) |
+
+### Key Code Added (`scripts/scrapers/georgia-probate-scraper.js`)
+
+```js
+// sanitizeForDb() — lines ~71-79
+function sanitizeForDb(str) {
+    if (!str) return str;
+    return str
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+        .replace(/[\u2300-\u23FF]/g, ' ')
+        .replace(/[\u2500-\u257F]/g, ' ')
+        .replace(/[\u2100-\u214F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// isValidEnslavedPersonName() — lines ~940-970
+// Guards: capital-start, contains vowel, length≥2, not in NAME_STOPWORDS (80+ entries), not all-digits
+```
+
+### Commits
+| Commit | Description |
+|--------|-------------|
+| `34a3b3fba` | sanitizeForDb() + NAME_STOPWORDS + stopword filter + notes SAVEPOINT |
+| `bdac86c2f` | SAVEPOINTs on all 3 inner catch blocks (heir + enslaved loops) |
+
+### Run 3 — Mac Mini (launched ~4:00 AM ET May 15)
+```bash
+nohup node scripts/scrapers/georgia-probate-scraper.js \
+  --county Liberty --apply --resume \
+  > ~/probate-liberty-roll1-run3.log 2>&1 &
+```
+Monitor: `tail -f ~/probate-liberty-roll1-run3.log`
+
+### Post-Run 3 Acceptance Verification (run on Mac Mini after scraper exits)
+
+**Task 4 — Cleanup stopword names from unconfirmed_persons:**
+```bash
+/usr/local/opt/postgresql@18/bin/psql "$DATABASE_URL" -c "
+DELETE FROM unconfirmed_persons
+WHERE source_url ILIKE '%9SYT-PT5%'
+  AND LOWER(full_name) IN (
+    'named','one','by','the','my','said','of','and','to','for','also',
+    'woman','man','boy','girl','called','slave','certain','following',
+    'female','executor','old','two','three','five','field','born',
+    'cold','had','ditto','subscribers','pair','above','given','another',
+    'mentioned','viz','at','her','forward','valued','male','lemale',
+    'slaves','negro','negroes','mulatto','wench','likewise','item',
+    'lastly','furthermore','moreover','whereas','aforesaid','within',
+    'same','deacon','subscriber','witness','witnesses','executrix',
+    'executors','child','children','fellow','servant','aged',
+    'faithful','trusty','twelve','fourteen','fifteen','twenty',
+    'eleven','nine','eight','seven','six','four','pr','sew','suc',
+    'amht','god','day','march','state','do','cold','house','gross',
+    'foltowing','rector','purchase','which','other','young','little',
+    'big','mentioned','ditto'
+  );"
+```
+
+**Task 5 — Verification queries:**
+```bash
+/usr/local/opt/postgresql@18/bin/psql "$DATABASE_URL" -c "
+SELECT status, COUNT(*) as n
+FROM probate_scrape_progress
+WHERE collection_id = '1999178'
+GROUP BY status ORDER BY n DESC;"
+
+/usr/local/opt/postgresql@18/bin/psql "$DATABASE_URL" -c "
+SELECT COUNT(*) as valid_enslaved
+FROM unconfirmed_persons
+WHERE source_url ILIKE '%familysearch%'
+  AND source_url ILIKE '%1999178%'
+  AND full_name ~ '^[A-Z][a-z]'
+  AND LOWER(full_name) NOT IN ('man','woman','boy','girl','slave','negro');"
+```
+
+**Acceptance criteria:** `status='failed'=0`, `valid_enslaved>200`
 
 ---
 
