@@ -1,0 +1,245 @@
+'use strict';
+
+/**
+ * Probate entity extractor — pulls structured data out of a probate page's
+ * OCR transcript: deceased/testator name, year, heirs + bequests, enslaved
+ * persons, estate value.
+ *
+ * Built for a RE-PARSE pass: the Georgia probate scrape already stored OCR
+ * text for ~13,500 Liberty County pages, but the scraper's inline regexes
+ * extracted a testator for only 37% of them and produced 44 inheritance edges
+ * from 2,621 wills. This module is the corrected, independently testable
+ * extractor — run it against stored `person_documents.ocr_text` (see
+ * scripts/test-probate-extraction.mjs) and against the scraper itself.
+ *
+ * FamilySearch "full-text" transcripts are machine OCR of 19th-century
+ * handwriting: inconsistent casing, dropped words, "Georged" for "Georgia".
+ * Patterns are deliberately case-insensitive and tolerant of inserted words.
+ */
+
+const { isValidPersonName } = require('../../utils/person-name-validator');
+
+function norm(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+// Trim trailing single-letter/punctuation noise and normalise spacing.
+function cleanName(raw) {
+  return norm(raw).replace(/[.,;]+$/, '').replace(/\s+/g, ' ').trim();
+}
+
+// A name fragment for the heir/bequest patterns: 1-4 capitalised tokens.
+// Captures are always re-validated through isValidPersonName.
+const NAME = `([A-Z][a-zA-Z]*\\.?(?:\\s+[A-Z][a-zA-Z]*\\.?){0,3})`;
+
+// Honorifics to skip when they sit immediately before a name.
+const HONORIFICS = new Set(['mr', 'mrs', 'miss', 'dr', 'rev', 'capt', 'col', 'maj', 'hon']);
+
+/**
+ * From a string, take the leading run of name tokens — consecutive
+ * capitalised words and single-letter initials — stopping at the first
+ * lowercase / non-name word. This is how a name is bounded reliably without a
+ * case-insensitive regex over-capturing trailing words ("...late of Liberty").
+ * A leading honorific ("Mrs.") is skipped.
+ */
+function leadingName(str) {
+  const tokens = norm(str).split(' ').filter(Boolean);
+  const picked = [];
+  for (let i = 0; i < tokens.length && picked.length < 4; i++) {
+    const bare = tokens[i].replace(/^[.,;&]+/, '').replace(/[.,;&]+$/, '');
+    if (bare === '') {                                  // standalone punctuation ("Mrs . Smith")
+      if (picked.length) break;
+      continue;                                         // ...skip it if we have no name yet
+    }
+    if (!/^[A-Z][a-zA-Z]*$/.test(bare)) break;          // must be a Capitalised token
+    if (picked.length === 0 && HONORIFICS.has(bare.toLowerCase())) continue; // skip "Mrs."
+    picked.push(bare);
+  }
+  return picked.join(' ');
+}
+
+/** Trailing run of name tokens — leadingName() reading right-to-left. */
+function trailingName(str) {
+  const tokens = norm(str).split(' ').filter(Boolean);
+  const picked = [];
+  for (let i = tokens.length - 1; i >= 0 && picked.length < 4; i--) {
+    const bare = tokens[i].replace(/^[.,;&]+/, '').replace(/[.,;&]+$/, '');
+    if (bare === '') { if (picked.length) break; else continue; }
+    if (!/^[A-Z][a-zA-Z]*$/.test(bare)) break;
+    picked.unshift(bare);
+  }
+  if (picked.length > 1 && HONORIFICS.has(picked[0].toLowerCase())) picked.shift();
+  return picked.join(' ');
+}
+
+// Keyword anchors (case-insensitive) that a deceased/testator name follows or
+// precedes. side: 'after'  — name follows the match (leadingName);
+//            'group'  — name is captured group 1, then trimmed (leadingName);
+//            'before' — name precedes the match (trailingName).
+const TESTATOR_ANCHORS = [
+  { side: 'after',  re: /(?:last\s+will\s+and\s+testament|will\s+and\s+(?:codicil|testament)|nuncupative\s+will)\s+of\s+/i },
+  { side: 'after',  re: /(?:estate|goods\s+and\s+chattels|property|will)\s+of\s+(?:the\s+late\s+)?/i },
+  // 'group' anchors capture loosely (the /i flag lets [A-Z] match lowercase);
+  // leadingName() then trims the capture back to the real capitalised name run.
+  { side: 'group',  re: /\bI[,\s]+([A-Za-z][a-zA-Z.\s]{3,40}?)[,\s]+of\s+(?:the\s+)?(?:county|state|town|city|parish|district)/i },
+  { side: 'group',  re: /\b([A-Za-z][a-zA-Z.\s]{3,40}?)\s+late\s+of\s+[A-Za-z]+\s+(?:county|parish)/i },
+  // 'before' — name sits immediately before the marker word.
+  { side: 'before', re: /\s(?:deceased|dec[e']?d)\b/i },
+];
+
+/**
+ * Deceased / testator name.
+ * @returns {string|null}
+ */
+function extractTestator(ocr) {
+  const text = norm(ocr);
+  if (!text) return null;
+
+  for (const a of TESTATOR_ANCHORS) {
+    const m = text.match(a.re);
+    if (!m) continue;
+    let candidate;
+    if (a.side === 'after') candidate = leadingName(text.slice(m.index + m[0].length));
+    else if (a.side === 'before') candidate = trailingName(text.slice(0, m.index));
+    else candidate = leadingName(m[1]); // 'group' — captured, still trim to name run
+    candidate = cleanName(candidate);
+    if (isValidPersonName(candidate)) return candidate;
+  }
+  return null;
+}
+
+// Numeric and spelled-out year.
+const ONES = { one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+  eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,
+  eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,
+  eighty:80,ninety:90,hundred:100 };
+
+/**
+ * Document year. Prefers a numeric 18xx/19xx; falls back to a spelled-out
+ * "one thousand eight hundred and sixty four" form common in formal wills.
+ * @returns {number|null}
+ */
+function extractYear(ocr) {
+  const text = norm(ocr);
+  if (!text) return null;
+  const numeric = text.match(/\b(1[789]\d{2})\b/g);
+  if (numeric && numeric.length) {
+    // earliest plausible year on the page
+    return Math.min(...numeric.map((y) => parseInt(y, 10)));
+  }
+  // "one thousand eight hundred and sixty[ ]four"
+  const sp = text.match(/one\s+thousand\s+([a-z\s-]{3,40}?)(?=[,.]|\s+(?:the|in|at|of|day|and\s+[A-Z]))/i);
+  if (sp) {
+    const words = sp[1].toLowerCase().replace(/-/g, ' ').split(/\s+/).filter((w) => ONES[w] !== undefined || w === 'and');
+    let year = 1000, acc = 0;
+    for (const w of words) {
+      if (w === 'and') continue;
+      const v = ONES[w];
+      if (v === 100) acc = (acc || 1) * 100;
+      else acc += v;
+    }
+    year += acc;
+    if (year >= 1700 && year <= 1950) return year;
+  }
+  return null;
+}
+
+const RELATION = 'son|daughter|wife|husband|brother|sister|nephew|niece|grandson|granddaughter|grandchild|mother|father|child|children|friend|cousin|widow|heir|heirs|executor|executrix';
+// Adjectives that routinely sit between "my" and the relation/name.
+const QUALIFIER = '(?:said|beloved|dear|loving|dearly\\s+beloved|youngest|eldest|oldest|only|late|lawful|natural|own|two|three|four|second|third)\\s+';
+
+/**
+ * Heirs / beneficiaries and the relation to the testator.
+ * @returns {Array<{name:string, relation:string}>}
+ */
+function extractHeirs(ocr) {
+  const text = norm(ocr);
+  const out = [];
+  const seen = new Set();
+  const add = (name, relation) => {
+    const n = cleanName(name);
+    if (!isValidPersonName(n)) return;
+    const key = n.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name: n, relation: (relation || 'unknown').toLowerCase() });
+  };
+
+  // "to my [said|beloved...] daughter Cecile" — qualifier words allowed before the relation
+  const relFirst = new RegExp(`to\\s+(?:my|his|her|their|our)\\s+(?:${QUALIFIER})*(${RELATION})\\s+(?:${QUALIFIER})*${NAME}`, 'gi');
+  // "give/devise/bequeath unto X" — name first, optional relation after
+  const giveFirst = new RegExp(`(?:give|devise|bequeath|leave|grant)\\s+(?:and\\s+(?:devise|bequeath)\\s+)?(?:unto|to)?\\s*(?:my|his|her)?\\s*(?:${QUALIFIER})*${NAME}(?:\\s*[,]?\\s*(?:my|his|her)\\s+(?:${QUALIFIER})*(${RELATION}))?`, 'gi');
+
+  let m;
+  while ((m = relFirst.exec(text)) !== null) add(m[2], m[1]);
+  while ((m = giveFirst.exec(text)) !== null) add(m[1], m[2]);
+  return out;
+}
+
+const ENSLAVED_LEAD = 'negro|negroe|negroes|negros|slave|slaves|servant|servants|coloured|colored|freedman|freedwoman|boy|girl|man|woman|child';
+
+/**
+ * Enslaved persons named in a will or inventory.
+ * Handles will phrasing ("my negro man Tom") and inventory-line phrasing
+ * ("1 Negro woman Hannah  $650").
+ * @returns {Array<{name:string, descriptor:string|null, value:number|null}>}
+ */
+function extractEnslaved(ocr) {
+  const text = norm(ocr);
+  const out = [];
+  const seen = new Set();
+  const add = (name, descriptor, value) => {
+    const n = cleanName(name);
+    if (!isValidPersonName(n) && !/^[A-Z][a-z]+$/.test(n)) return; // allow single given name
+    if (n.length < 2) return;
+    const key = n.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name: n, descriptor: descriptor || null, value: value || null });
+  };
+
+  // "negro man named Tom" / "negro woman Hannah" / "my slave girl Sally"
+  const willStyle = new RegExp(`(?:my\\s+|one\\s+|a\\s+)?(?:${ENSLAVED_LEAD})\\s+(?:${ENSLAVED_LEAD}\\s+)?(?:named?\\s+|called\\s+)?([A-Z][a-z]+)(?:\\s+(?:aged|valued|appraised|at|a\\s+(?:${ENSLAVED_LEAD})))?`, 'gi');
+  // inventory line: "1 Negro man Tom 800 00" / "Negro Hannah & child  $650"
+  const invStyle = new RegExp(`(?:\\d+\\s+)?(?:${ENSLAVED_LEAD})\\s+(?:${ENSLAVED_LEAD}\\s+)?([A-Z][a-z]+)\\s*(?:&[^$\\d]{0,20})?\\$?\\s*([\\d,]+)(?:[.\\s]\\d{2})?`, 'gi');
+
+  let m;
+  while ((m = invStyle.exec(text)) !== null) {
+    const v = parseFloat((m[2] || '').replace(/,/g, ''));
+    add(m[1], 'inventory_line', Number.isFinite(v) && v > 0 ? v : null);
+  }
+  while ((m = willStyle.exec(text)) !== null) add(m[1], 'will_bequest', null);
+  return out;
+}
+
+/**
+ * Total estate value, if stated.
+ * @returns {number|null}
+ */
+function extractEstateValue(ocr) {
+  const text = norm(ocr);
+  const m = text.match(/(?:total|whole\s+amount|amounting\s+to|aggregate|sum\s+total|inventory\s+amounts?\s+to)[^\d$]{0,20}\$?\s*([\d,]+(?:\.\d{2})?)/i);
+  if (m) {
+    const v = parseFloat(m[1].replace(/,/g, ''));
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
+}
+
+/**
+ * Full extraction for one OCR page.
+ */
+function extractEntities(ocr) {
+  return {
+    testatorName: extractTestator(ocr),
+    year: extractYear(ocr),
+    heirs: extractHeirs(ocr),
+    enslavedPersons: extractEnslaved(ocr),
+    estateValue: extractEstateValue(ocr),
+  };
+}
+
+module.exports = {
+  extractEntities, extractTestator, extractYear,
+  extractHeirs, extractEnslaved, extractEstateValue,
+};
