@@ -772,6 +772,10 @@ async function writeToDbAndS3(
             testatorCanonicalPersonId = await upsertCanonicalPerson(
                 client, testatorName, 'enslaver', parsedData.recordYear, county, STATE
             );
+        }
+        // Dependent writes run only when the testator resolved to a real
+        // person — upsertCanonicalPerson returns null for a rejected non-name.
+        if (testatorCanonicalPersonId) {
             await client.query(
                 `UPDATE person_documents SET canonical_person_id = $1 WHERE id = $2`,
                 [testatorCanonicalPersonId, personDocumentId]
@@ -826,7 +830,7 @@ async function writeToDbAndS3(
         const heirNameToId = {};
         if (parsedData?.heirs?.length > 0) {
             for (const heir of parsedData.heirs) {
-                if (!heir.name) continue;
+                if (!heir.name || !isValidPersonName(heir.name)) continue;
                 // Use a SAVEPOINT per heir so a constraint violation or other error on one
                 // heir does not leave the connection in "aborted" state for subsequent heirs.
                 await client.query('SAVEPOINT before_heir_upsert');
@@ -834,6 +838,11 @@ async function writeToDbAndS3(
                     const heirId = await upsertCanonicalPerson(
                         client, heir.name, 'unknown', parsedData.recordYear, county, STATE
                     );
+                    // upsertCanonicalPerson returns null for a rejected non-name — skip.
+                    if (!heirId) {
+                        await client.query('RELEASE SAVEPOINT before_heir_upsert');
+                        continue;
+                    }
                     heirNameToId[normalizeName(heir.name).toLowerCase()] = heirId;
 
                     if (testatorCanonicalPersonId) {
@@ -999,6 +1008,43 @@ function isValidEnslavedPersonName(token) {
     return true;
 }
 
+// Articles, prepositions, pronouns and will/deed boilerplate. A "name" that
+// contains any of these is a parsed phrase fragment, not a person — this is
+// what produced the 3,271 `system`/`unknown` junk rows the audit deleted
+// ("to my beloved", "and recommend my", "them by will", "the premisses", …).
+const NON_NAME_TOKENS = new Set([
+    'a','an','the','and','or','of','to','in','on','at','by','for','with','from',
+    'as','my','his','her','their','our','your','its','i','he','she','we','they',
+    'them','it','who','whom','which','that','this','these','those','said','same',
+    'shall','should','will','would','hereby','unto','upon','before','during',
+    'after','until','whereas','wherein','therein','thereof','herein','anno',
+    'lawful','issue','premises','premisses','tract','estate','heirs','heir',
+    'recommend','dispose','bequeath','devise','give','given','sell','submit',
+    'children','child','dollars','dollar','perty','property',
+]);
+
+// True only for strings that plausibly name a single human being. Used to gate
+// every canonical_persons creation in this scraper (testators and heirs).
+function isValidPersonName(name) {
+    if (!name) return false;
+    const clean = String(name).trim();
+    if (clean.length < 3) return false;
+    if (/[\n\t\r]/.test(clean)) return false;          // OCR line-break artifact
+    if (!/[A-Za-z]/.test(clean)) return false;
+    const tokens = clean.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0 || tokens.length > 5) return false; // a name is not a phrase
+    let realTokens = 0;
+    for (const t of tokens) {
+        const lc = t.toLowerCase().replace(/[^a-z]/g, '');
+        if (!lc) continue;
+        if (NON_NAME_TOKENS.has(lc) || NAME_STOPWORDS.has(lc)) return false;
+        if (lc.length === 1) continue;                  // middle initial — allowed
+        if (!/[aeiou]/.test(lc)) return false;          // multi-letter name words need a vowel
+        if (/^[A-Z]/.test(t)) realTokens++;
+    }
+    return realTokens >= 1;                             // ≥1 capitalised name word
+}
+
 // --- Transcript Parser ---
 function parseTranscript(rawText, imageNumber, arkId) {
     const result = {
@@ -1038,9 +1084,12 @@ function parseTranscript(rawText, imageNumber, arkId) {
     ];
     for (const pat of namePatterns) {
         const m = rawText.match(pat);
-        if (m && m[1] && m[1].length > 2) {
-            result.testatorName = normalizeName(m[1]);
-            break;
+        if (m && m[1]) {
+            const candidate = normalizeName(m[1]);
+            if (isValidPersonName(candidate)) {
+                result.testatorName = candidate;
+                break;
+            }
         }
     }
 
@@ -1056,15 +1105,14 @@ function parseTranscript(rawText, imageNumber, arkId) {
     while ((hm = heirRelationPattern.exec(rawText)) !== null) {
         const relation = hm[1].toLowerCase();
         const name = normalizeName(hm[2]);
-        if (name.length > 1 && !result.heirs.find(h => h.name === name)) {
+        if (isValidPersonName(name) && !result.heirs.find(h => h.name === name)) {
             result.heirs.push({ name, relation, personType: 'unknown' });
         }
     }
     while ((hm = giveBequeath.exec(rawText)) !== null) {
         const name = normalizeName(hm[1]);
         const relation = hm[2] ? hm[2].toLowerCase() : 'unknown';
-        if (name.length > 2 && !/^(My|The|His|Her|All|Said|Each)$/i.test(name) &&
-            !result.heirs.find(h => h.name === name)) {
+        if (isValidPersonName(name) && !result.heirs.find(h => h.name === name)) {
             result.heirs.push({ name, relation, personType: 'unknown' });
         }
     }
@@ -1073,7 +1121,7 @@ function parseTranscript(rawText, imageNumber, arkId) {
     let em;
     while ((em = execPattern.exec(rawText)) !== null) {
         const name = normalizeName(em[1]);
-        if (name.length > 1) result.executors.push({ name });
+        if (isValidPersonName(name)) result.executors.push({ name });
     }
 
     const enslavedPatterns = [
@@ -1133,6 +1181,12 @@ function parseTranscript(rawText, imageNumber, arkId) {
 
 // --- Canonical Person Upsert (unchanged) ---
 async function upsertCanonicalPerson(client, name, personType, deathYearEstimate, primaryCounty, primaryState) {
+    // Last line of defense: never create a canonical_persons row for a string
+    // that is not a person's name. Callers must treat a null return as "skip".
+    if (!isValidPersonName(name)) {
+        if (VERBOSE) log(`    Rejected non-name "${name}" — not creating canonical_person`);
+        return null;
+    }
     const normalizedName = normalizeName(name);
     const nameParts = normalizedName.split(/\s+/);
     const firstName = nameParts[0] || null;
