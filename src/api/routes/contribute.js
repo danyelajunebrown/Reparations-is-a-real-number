@@ -1416,6 +1416,11 @@ router.get('/person/:id', async (req, res) => {
                         SELECT DISTINCT collection_key FROM person_documents
                         WHERE canonical_person_id = $1 AND collection_key IS NOT NULL
                     )
+                    -- collection_key expansion is for small per-document collections
+                    -- (e.g. a 12-page DC petition). Probate collection_key is the
+                    -- whole roll (500-800 pages); expanding it returned thousands of
+                    -- unrelated pages. Probate is handled by the direct-link half below.
+                    AND pd.collection_key NOT LIKE 'georgia-probate-%'
                     -- Exclude climb-sourced FS/WikiTree *profile* URLs (no real document, just an
                     -- external ID link). FamilySearch /ark:/ record URLs are genuine indexed source
                     -- records and ARE kept — see scripts/backfill-bucketB-source-documents.mjs.
@@ -1431,7 +1436,12 @@ router.get('/person/:id', async (req, res) => {
                         pd2.page_reference, pd2.s3_key, pd2.s3_url, pd2.source_url,
                         pd2.document_date, pd2.document_year, pd2.ocr_text
                     FROM person_documents pd2
-                    WHERE pd2.canonical_person_id = $1 AND pd2.collection_key IS NULL
+                    -- direct-linked pages: collection-less docs, plus probate pages
+                    -- (testator propagation already linked every page of a person's
+                    -- own will/inventory, so this returns their full document — not
+                    -- the whole roll).
+                    WHERE pd2.canonical_person_id = $1
+                      AND (pd2.collection_key IS NULL OR pd2.collection_key LIKE 'georgia-probate-%')
                     -- Exclude climb-sourced FS/WikiTree *profile* URLs only; FamilySearch /ark:/
                     -- record URLs are genuine indexed source records and ARE kept.
                     AND NOT (pd2.s3_key IS NULL AND (

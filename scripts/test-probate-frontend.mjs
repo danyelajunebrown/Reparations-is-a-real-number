@@ -76,8 +76,9 @@ async function main() {
     const prof = await api(`/api/contribute/person/${t.id}?table=canonical_persons`);
     if (prof.__error) { bugs.push(`profile #${t.id} error: ${prof.__error}`); line.push('profile:ERR'); }
     else {
-      const docs = (prof.documents || []).length + (prof.documentCollections || []).length + (prof.ownerDocuments || []).length;
+      const docs = (prof.documents || []).length + (prof.ownerDocuments || []).length;
       if (docs === 0) { bugs.push(`profile #${t.id} "${t.canonical_name}" serves 0 documents (DB says ${t.docs})`); line.push('docs:0'); }
+      else if (docs > t.docs * 3 + 25) { bugs.push(`profile #${t.id} "${t.canonical_name}" serves ${docs} documents but DB links only ${t.docs} — over-broad query`); line.push(`docs:${docs}!!`); }
       else line.push(`docs:${docs}`);
     }
 
