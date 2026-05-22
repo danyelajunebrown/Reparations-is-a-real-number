@@ -185,12 +185,17 @@ async function main() {
       if (seenEnsl.has(en.name.toLowerCase())) continue;
       seenEnsl.add(en.name.toLowerCase());
       if (APPLY) {
+        // unconfirmed_persons has no unique constraint — guard with NOT EXISTS
+        // so re-running the pass does not duplicate enslaved rows.
         await q(
           `INSERT INTO unconfirmed_persons
              (full_name, person_type, source_url, source_type, extraction_method,
               context_text, status, created_at)
-           VALUES ($1,'enslaved',$2,'georgia_probate',$3,$4,'pending',NOW())
-           ON CONFLICT DO NOTHING`,
+           SELECT $1,'enslaved',$2,'georgia_probate',$3,$4,'pending',NOW()
+           WHERE NOT EXISTS (
+             SELECT 1 FROM unconfirmed_persons
+              WHERE full_name = $1 AND extraction_method = $3
+                AND COALESCE(source_url,'') = COALESCE($2,''))`,
           [en.name, en.sourceUrl || '', CREATED_BY,
            `Named in ${d.testator}'s probate (Liberty Co. GA${d.year ? ', ' + d.year : ''})`
            + (en.value ? `; appraised $${en.value}` : '')]
