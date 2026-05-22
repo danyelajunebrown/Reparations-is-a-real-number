@@ -37,7 +37,10 @@ const HONORIFICS = new Set(['mr', 'mrs', 'miss', 'dr', 'rev', 'capt', 'col', 'ma
 const NAME_RUN_STOP = new Set([
   'also', 'and', 'but', 'item', 'lastly', 'likewise', 'whereas', 'the', 'to',
   'he', 'she', 'it', 'they', 'that', 'this', 'his', 'her', 'my', 'their',
-  'of', 'in', 'all', 'one', 'first', 'second', 'third', 'now', 'then',
+  'of', 'in', 'all', 'one', 'first', 'second', 'third', 'now', 'then', 'each',
+  // will roles / boilerplate that OCR run-on appends to a name
+  'executor', 'executrix', 'executors', 'administrator', 'administratrix',
+  'testament', 'codicil', 'witness', 'deceased', 'heir', 'heirs', 'share',
 ]);
 
 /**
@@ -172,22 +175,45 @@ const QUALIFIER = 'said|beloved|dear|loving|dearly|well|youngest|eldest|oldest|o
  *
  * @returns {Array<{name:string, relation:string}>}
  */
+/**
+ * From the text after a "<relation>" anchor, pull the run of heir names —
+ * one name, or a comma/"and"/"&"-separated list ("A, B, C and D"). Stops at
+ * the first non-name segment (a clause boundary), so trailing will text
+ * cannot leak in.
+ */
+function parseHeirList(after) {
+  // window the search, and normalise list separators to commas.
+  const seg = after.slice(0, 200).replace(/&/g, ' , ').replace(/\band\b/gi, ' , ');
+  const names = [];
+  for (const part of seg.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;                       // empty (leading/double comma)
+    const nm = cleanName(leadingName(trimmed));
+    if (isValidPersonName(nm)) names.push(nm);
+    else break;                                   // first non-name segment ends the list
+  }
+  return names;
+}
+
 function extractHeirs(ocr) {
   const text = norm(ocr);
   const out = [];
   const seen = new Set();
   const QUALS = `(?:(?:${QUALIFIER})\\s+){0,3}`;
-  // "[give/devise/bequeath ...] to|unto my <qual> <relation> <qual> NAME..."
-  const re = new RegExp(`(?:to|unto)\\s+(?:my|his|her|their|our)\\s+${QUALS}(${RELATION})\\s+${QUALS}`, 'gi');
+  // "[give/bequeath ...] [to|unto] my <qual> <relation> <qual> NAME[, NAME, ...]"
+  // "to|unto" is optional so a continuation clause ("& my children A, B") still
+  // anchors; <relation> is a closed kinship set, which keeps "my <X>" precise.
+  const re = new RegExp(`(?:my|his|her|their|our)\\s+${QUALS}(${RELATION})\\s+${QUALS}`, 'gi');
 
   let m;
   while ((m = re.exec(text)) !== null) {
-    const name = cleanName(leadingName(text.slice(m.index + m[0].length)));
-    if (!isValidPersonName(name)) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ name, relation: m[1].toLowerCase().replace(/\s+/g, ' ').trim() });
+    const relation = m[1].toLowerCase().replace(/\s+/g, ' ').trim();
+    for (const name of parseHeirList(text.slice(m.index + m[0].length))) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name, relation });
+    }
   }
   return out;
 }

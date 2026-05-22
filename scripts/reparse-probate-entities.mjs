@@ -202,11 +202,12 @@ async function main() {
     // Phase E — estate value onto the testator's notes
     if (d.estateValue) {
       if (APPLY) {
+        // idempotent — skip if a probate estate value is already noted.
         await q(
           `UPDATE canonical_persons
-              SET notes = COALESCE(notes,'') ||
-                  $2, updated_at = NOW()
-            WHERE id = $1`,
+              SET notes = COALESCE(notes,'') || $2, updated_at = NOW()
+            WHERE id = $1
+              AND (notes IS NULL OR notes NOT LIKE '%[probate estate value:%')`,
           [testatorId, ` [probate estate value: $${d.estateValue}${d.year ? ' (' + d.year + ')' : ''}]`]
         );
       }
