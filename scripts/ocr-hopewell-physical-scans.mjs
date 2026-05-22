@@ -185,10 +185,13 @@ async function ocrDocument(manifest) {
   const outDir = path.join('/tmp/hopewell-physical-scans', slug);
   fs.mkdirSync(outDir, { recursive: true });
 
-  console.log(`\n  Converting PDF → PNGs (300 DPI): ${path.basename(localPath)}`);
+  // Will 3 (Hugh V 1777) is 23.7MB — at 300 DPI the rendered PNGs exceed Vision API 10MB limit.
+  // 150 DPI keeps file size under 5MB per page while preserving legibility for 19th-century handwriting.
+  const dpi = 150;
+  console.log(`\n  Converting PDF → PNGs (${dpi} DPI): ${path.basename(localPath)}`);
   // Quote the path to handle spaces
   execSync(
-    `pdftoppm -r 300 -png "${localPath}" "${path.join(outDir, 'page')}"`,
+    `pdftoppm -r ${dpi} -png "${localPath}" "${path.join(outDir, 'page')}"`,
     { stdio: 'inherit' }
   );
 
