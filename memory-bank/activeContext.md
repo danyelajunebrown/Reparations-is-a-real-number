@@ -25,12 +25,19 @@ Branch: `audit/probate-classifier-and-source-documents` (un-pushed; 8 commits).
 ### 4. Probate entity-extraction rebuild
 - `src/services/probate/probate-entity-extractor.js` — testator / year / heirs / enslaved / estate value. Anchor + `leadingName`/`trailingName` trimming; spot-checked and debugged against stored OCR via `scripts/test-probate-extraction.mjs`.
 - Measured vs the scraper's stored values: testator 37%→54%, year 63%→88%, heirs 44→959, enslaved 534→1,943 (false positives removed).
-- `scripts/reparse-probate-entities.mjs` — applies the extractor to all 14,298 stored OCR pages, propagates testators across segmented documents, writes name/year/`canonical_person_id`/`inheritance_edges`/`unconfirmed_persons`/estate value. Dry-run: 6,261 names, 7,094 page links, 645 inheritance edges, 1,677 enslaved.
+- `scripts/reparse-probate-entities.mjs` — applies the extractor to all 14,298 stored OCR pages, propagates testators across segmented documents, writes name/year/`canonical_person_id`/`inheritance_edges`/`unconfirmed_persons`/estate value. **APPLIED.** DB now: person_documents named 37%→81%, linked 30%→79%; `inheritance_edges` 44→2,637; 1,675 enslaved `unconfirmed_persons`; 447 estate values; 2,637 canonical_persons created/matched.
 
-### Open
-- Liberty scrape finishing on Mac Mini (171 pending images).
-- Identity resolution completion (tiered fingerprint) — scoped, not built.
-- Probate covers 1 of ~130 Georgia counties — extraction must be validated on Liberty before scaling.
+### 5. Heir-list extraction + front-end test
+- `extractHeirs` rewritten with `parseHeirList` — captures full comma/and/&-separated lists ("to my Sons A, B, C, D"), not just the first name. `scripts/test-heir-extraction.mjs` 5/5. Heirs 959→2,789.
+- `scripts/test-probate-frontend.mjs` drives the real HTTP API for 20 testators. **Found + fixed a critical bug:** the person-profile endpoint expanded probate `collection_key` to the whole roll — Mary #609577 served 10,606 documents for 43 linked. `contribute.js` now excludes `georgia-probate-%` from collection_key expansion; probate serves via direct `canonical_person_id` link. Re-test: 0 bugs, document counts exact.
+
+### Open / Next
+- **Land transfer events: NONE** — `land_transfer_events` has 1 row total; `inheritance_edges` asset_type all 'unspecified'. Wills bequeath land but it is not extracted — needs an asset-classification pass.
+- Liberty scrape finishing on Mac Mini (171 pending images) — re-run `reparse-probate-entities.mjs` after.
+- 133/2,130 reparse testators are single-word names (partial OCR) — dedup risk.
+- Identity resolution completion (tiered fingerprint) — scoped (`plan-identity-resolution-completion.md`), not built.
+- Probate covers 1 of ~130 Georgia counties — Liberty validated; ready to scale.
+- Frontend groups probate pages by roll `collection_key`, not `probate_documents` (logical document) — cosmetic grouping refinement.
 
 ---
 

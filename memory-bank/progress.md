@@ -19,14 +19,17 @@ Branch `audit/probate-classifier-and-source-documents` (un-pushed; 8 commits).
 ### Junk cleanup
 - 3,271 `system`/`unknown` junk rows deleted (FK-safe). Shared `person-name-validator.js` now gates `NameResolver` + probate-scraper person creation. 4,970 climb persons linked to FamilySearch identity.
 
-### Probate entity extraction
-- New `probate-entity-extractor.js` (testator/year/heirs/enslaved/estate) + `test-probate-extraction.mjs` harness. Iteratively debugged against stored OCR: testator 37%→54%, year 63%→88%, heirs 44→959, enslaved 534→1,943.
-- `reparse-probate-entities.mjs` re-parses all 14,298 stored OCR pages and writes structured results back (no re-scrape needed). Dry-run: 6,261 names, 7,094 page→person links, 645 inheritance edges, 1,677 enslaved persons.
+### Probate entity extraction — built + APPLIED
+- New `probate-entity-extractor.js` (testator/year/heirs/enslaved/estate) + `test-probate-extraction.mjs` + `test-heir-extraction.mjs` harnesses. Iteratively debugged against stored OCR.
+- `reparse-probate-entities.mjs` re-parsed all 14,298 stored OCR pages (no re-scrape) and wrote results back. DB result: person_documents named 37%→81%, linked-to-person 30%→79%; `inheritance_edges` 44→2,637; 1,675 enslaved `unconfirmed_persons`; 447 estate values.
+- Heir-list extraction added — `parseHeirList` captures full "A, B, C and D" lists; corpus heirs 959→2,789.
+- `test-probate-frontend.mjs` drove the live HTTP API for 20 testators → found + fixed a critical bug: profile endpoint returned whole probate rolls (10,606 docs for a 43-doc person); `contribute.js` collection_key expansion now excludes probate. Re-test: 0 bugs.
 
-### Known limits
-- Probate = 1 of ~130 Georgia counties (Liberty only). Validate Liberty end-to-end before scaling.
-- Heir lists ("to my Sons A,B,C,D") yield only the first name — regex plateau.
-- Identity resolution still uncompleted (`identity_fingerprint` populated on 157/560k rows).
+### Known limits / next
+- **Land transfer events: none captured.** `land_transfer_events` 1 row total; inheritance edges have no asset typing. Wills bequeath land — needs extraction.
+- Probate = 1 of ~130 Georgia counties (Liberty only) — now validated end-to-end; ready to scale.
+- 133/2,130 reparse testators are single-word names (partial OCR).
+- Identity resolution still uncompleted (`identity_fingerprint` on 157/560k rows).
 
 ---
 
