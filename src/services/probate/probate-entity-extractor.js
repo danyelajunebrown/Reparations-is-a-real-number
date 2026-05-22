@@ -114,7 +114,10 @@ function extractTestator(ocr) {
     else if (a.side === 'before') candidate = trailingName(text.slice(0, m.index));
     else candidate = leadingName(m[1]); // 'group' — captured, still trim to name run
     candidate = cleanName(candidate);
-    if (isValidPersonName(candidate)) return candidate;
+    // A testator always has a full name in the record — reject single-token
+    // captures ("WHERE", "Cason", "SERVICE") from garbled OCR. Better null than
+    // a surname-only or boilerplate-fragment "name".
+    if (isValidPersonName(candidate) && candidate.split(/\s+/).length >= 2) return candidate;
   }
   return null;
 }
