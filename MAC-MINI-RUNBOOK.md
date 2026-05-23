@@ -335,6 +335,16 @@ node scripts/audit-pipeline-state.js
 
 ## KNOWN ISSUES / DATA NOTES
 
+### Freedman's Bank DocAI Enrichment — Data Quality Warnings (CRITICAL)
+Refer to `docs/freedmens-bank-dataset-notes.md` for full details on these issues.
+
+- ⚠️ **Lexington, KY / Louisville, KY Label Error:** The FamilySearch data table erroneously labels Lexington, KY records as "Louisville, KY". Be aware that `--branch-like "Louisville"` may include Lexington records, and `--branch-like "Lexington"` may miss them if they are stored under "Louisville" in our DB.
+- ⚠️ **`last_master IS NULL` is NOT "always free":** Due to a URL bug (enricher screenshots index page, not image page), `last_master` and `last_mistress` fields are currently `NULL` for all enriched records. Do NOT use `last_master IS NULL` as a classification signal for "always free" until the URL bug is fixed and all records are reprocessed against the `3:1:` film images.
+- ⚠️ **Raleigh, NC:** Contains only a single page of very unreliable records. Enrichment on this branch is likely to be low quality and should be skipped or flagged.
+- ⚠️ **Philadelphia, PA:** Records are primarily for organizational accounts, not individuals. Enrichment on this branch is not meaningful for individual depositor research.
+- ⚠️ **Charleston, SC (Image #139–189):** This section is devoted to miscellaneous housekeeping and contains no valid dates. DocAI enrichment on these pages will return garbage.
+- ⚠️ **Known Record Gaps:** Significant gaps exist in Richmond (57 accounts, Nov-Dec 1871) and Washington D.C. (209 records, Apr-May 1871). Refer to `docs/freedmens-bank-dataset-notes.md` for exact ranges.
+
 ### 1860 unconfirmed_persons — garbled locations
 - 696 rows in `unconfirmed_persons` matched the 1860 filter but have garbled `locations[1]` values (word fragments like "County", "Dallas", "Peter" instead of state names).  
 - `extraction_method = 'ml'` — these were stored by a prior ML extraction pass, not the FamilySearch scraper.  
