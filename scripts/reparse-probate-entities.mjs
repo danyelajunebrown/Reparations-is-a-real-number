@@ -191,11 +191,11 @@ async function main() {
           `INSERT INTO unconfirmed_persons
              (full_name, person_type, source_url, source_type, extraction_method,
               context_text, status, created_at)
-           SELECT $1,'enslaved',$2,'georgia_probate',$3,$4,'pending',NOW()
+           SELECT $1::text,'enslaved',$2::text,'georgia_probate',$3::text,$4::text,'pending',NOW()
            WHERE NOT EXISTS (
              SELECT 1 FROM unconfirmed_persons
-              WHERE full_name = $1 AND extraction_method = $3
-                AND COALESCE(source_url,'') = COALESCE($2,''))`,
+              WHERE full_name = $1::text AND extraction_method = $3::text
+                AND COALESCE(source_url,'') = COALESCE($2::text,''))`,
           [en.name, en.sourceUrl || '', CREATED_BY,
            `Named in ${d.testator}'s probate (Liberty Co. GA${d.year ? ', ' + d.year : ''})`
            + (en.value ? `; appraised $${en.value}` : '')]
