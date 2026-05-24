@@ -316,9 +316,9 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
 
       {/* ── No-documents banner: shown when coverage says no docs exist ─── */}
       {!coverage.hasDocuments && (
-        <Section title="Primary source documents">
+        <Section title="Source documents">
           <div className="box" style={{ color: 'var(--dim)', fontSize: 13 }}>
-            <div style={{ marginBottom: 4 }}>No primary source documents linked yet.</div>
+            <div style={{ marginBottom: 4 }}>No source documents linked yet.</div>
             {coverage.source_label && (
               <div style={{ fontSize: 11 }}>
                 This record was extracted from the{' '}
@@ -330,16 +330,43 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         </Section>
       )}
 
-      {/* ── Primary source documents ─────────────────────────────────────
-           If backend returned documentCollections (grouped by source), render
-           collection cards with multi-page viewer support. Otherwise fall back
-           to the legacy flat list of documents + ownerDocuments.
+      {/* "Primary documentation still needed" banner — fires when the person
+           has documents but none of them are direct_primary (the linked
+           sources are all secondary/indexed). Surfacing this is the project's
+           research-priority signal. */}
+      {coverage.hasDocuments && coverage.hasPrimarySource === false && (
+        <div className="box" style={{
+          margin: '12px 0', padding: 12, borderLeft: '3px solid #d97706',
+          background: 'rgba(217, 119, 6, 0.08)', fontSize: 13,
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Primary documentation still needed</div>
+          <div className="dim" style={{ fontSize: 11 }}>
+            Every linked source on this profile is a secondary citation
+            (indexed transcript, published compilation, or database entry).
+            An original document — scanned will, deed, slave-schedule scan,
+            or other archival record — has not yet been linked.
+          </div>
+        </div>
+      )}
+
+      {/* ── Source documents, split by evidence tier ──────────────────────
+           Primary = direct_primary (an original record image / scan).
+           Secondary = indirect_primary, secondary_published, secondary_database,
+           tertiary_aggregate, unverified — any citation that is not itself
+           an original. A collection counts as primary if any of its pages is
+           direct_primary.
       ──────────────────────────────────────────────────────────────────── */}
-      {(documentCollections.length > 0 || documents.length > 0) && (
-        <Section title="Primary source documents">
-          <div className="stack">
-            {/* Collection cards — each card opens the full multi-page viewer */}
-            {documentCollections.map((col, idx) => {
+      {(() => {
+        if (documentCollections.length === 0 && documents.length === 0) return null;
+
+        const isCollPrimary = (col) => (col.pages || []).some((p) => p?.evidence_strength === 'direct_primary');
+        const isDocPrimary  = (d) => d?.evidence_strength === 'direct_primary';
+        const primaryColls   = documentCollections.filter(isCollPrimary);
+        const secondaryColls = documentCollections.filter((c) => !isCollPrimary(c));
+        const primaryDocs    = documents.filter(isDocPrimary);
+        const secondaryDocs  = documents.filter((d) => !isDocPrimary(d));
+
+        const renderCollCard = (col, idx) => {
               const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
               if (!hasPages) {
                 // No viewable URL in any page — show metadata-only card
@@ -370,90 +397,104 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                   </div>
                 </button>
               );
-            })}
+        };
+        const renderDocCard = (doc, idx) => {
+          const docId = doc.id || doc.document_id;
+          const hasS3 = !!(doc.s3_key || doc.s3_url);
+          const canUseViewer = !!(docId && hasS3);
+          const externalUrl = doc.source_url;
+          // Detect whether this doc comes from person_documents (integer id)
+          // vs the documents table (UUID string). person_documents rows must be
+          // opened via DocCollectionOverlay → getPersonDocAccess so the backend
+          // generates a presigned S3 URL from s3_key. Using DocOverlay for these
+          // returns 404 (that endpoint queries the separate documents table).
+          const isPdRow = hasS3 && docId != null &&
+            (typeof docId === 'number' || /^\d+$/.test(String(docId)));
 
-            {/* Enslaved individual's own directly-linked documents (flat list) */}
-            {documents.map((doc, idx) => {
-              const docId = doc.id || doc.document_id;
-              const hasS3 = !!(doc.s3_key || doc.s3_url);
-              const canUseViewer = !!(docId && hasS3);
-              const externalUrl = doc.source_url;
-
-              // Detect whether this doc comes from person_documents (integer id)
-              // vs the documents table (UUID string). person_documents rows must be
-              // opened via DocCollectionOverlay → getPersonDocAccess endpoint so
-              // the backend can generate a presigned S3 URL from the s3_key column.
-              // Using DocOverlay (getDocumentAccess) for these rows returns 404
-              // because that endpoint queries the separate `documents` table by UUID.
-              const isPdRow =
-                hasS3 &&
-                docId != null &&
-                (typeof docId === 'number' || /^\d+$/.test(String(docId)));
-
-              if (canUseViewer) {
-                const handleClick = isPdRow
-                  ? () => setViewCollection({
-                      collection_name: doc.title || doc.filename || 'Primary source document',
-                      source_type_label: doc.doc_type || '',
-                      doc_type: doc.doc_type || 'will',
-                      pages: [{
-                        id: docId,
-                        filename: doc.filename,
-                        title: doc.title || doc.filename,
-                        ocr_text: doc.ocr_text || null,
-                        source_url: null,
-                      }],
-                    })
-                  : () => setViewDocId(docId);
-
-                return (
-                  <button
-                    key={`doc-${docId}-${idx}`}
-                    type="button"
-                    onClick={handleClick}
-                    className="box"
-                    style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
-                  >
-                    <div>{doc.title || doc.filename || 'Untitled document'}</div>
-                    <div className="dim" style={{ fontSize: 12 }}>
-                      {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                      <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
-                    </div>
-                  </button>
-                );
-              }
-
-              if (externalUrl) {
-                let hostname = externalUrl;
-                try { hostname = new URL(externalUrl).hostname; } catch (_) {}
-                return (
-                  <a
-                    key={`ext-${idx}`}
-                    href={externalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="box"
-                    style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-                  >
-                    <div>{doc.title || doc.filename || 'Primary source document'}</div>
-                    <div className="dim" style={{ fontSize: 12 }}>
-                      {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                      {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>{hostname} ↗</span>
-                    </div>
-                  </a>
-                );
-              }
-
-              return (
-                <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
-                  <div>{doc.title || doc.filename || 'Document reference'}</div>
-                  <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
+          if (canUseViewer) {
+            const handleClick = isPdRow
+              ? () => setViewCollection({
+                  collection_name: doc.title || doc.filename || 'Source document',
+                  source_type_label: doc.doc_type || '',
+                  doc_type: doc.doc_type || 'will',
+                  pages: [{
+                    id: docId,
+                    filename: doc.filename,
+                    title: doc.title || doc.filename,
+                    ocr_text: doc.ocr_text || null,
+                    source_url: null,
+                  }],
+                })
+              : () => setViewDocId(docId);
+            return (
+              <button
+                key={`doc-${docId}-${idx}`}
+                type="button"
+                onClick={handleClick}
+                className="box"
+                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+              >
+                <div>{doc.title || doc.filename || 'Untitled document'}</div>
+                <div className="dim" style={{ fontSize: 12 }}>
+                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+                  <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
                 </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+              </button>
+            );
+          }
+          if (externalUrl) {
+            let hostname = externalUrl;
+            try { hostname = new URL(externalUrl).hostname; } catch (_) {}
+            return (
+              <a
+                key={`ext-${idx}`}
+                href={externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="box"
+                style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+              >
+                <div>{doc.title || doc.filename || 'Source document'}</div>
+                <div className="dim" style={{ fontSize: 12 }}>
+                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+                  {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>{hostname} ↗</span>
+                </div>
+              </a>
+            );
+          }
+          return (
+            <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
+              <div>{doc.title || doc.filename || 'Document reference'}</div>
+              <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
+            </div>
+          );
+        };
+
+        return (
+          <>
+            {(primaryColls.length > 0 || primaryDocs.length > 0) && (
+              <Section title="Primary source documents">
+                <div className="stack">
+                  {primaryColls.map(renderCollCard)}
+                  {primaryDocs.map(renderDocCard)}
+                </div>
+              </Section>
+            )}
+            {(secondaryColls.length > 0 || secondaryDocs.length > 0) && (
+              <Section title="Secondary source documents">
+                <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
+                  Indexed, transcribed, republished or database-derived citations.
+                  These document that a record exists; they are not the original.
+                </div>
+                <div className="stack">
+                  {secondaryColls.map(renderCollCard)}
+                  {secondaryDocs.map(renderDocCard)}
+                </div>
+              </Section>
+            )}
+          </>
+        );
+      })()}
 
       {viewDocId && (
         <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />
