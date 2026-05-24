@@ -250,20 +250,78 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
         const firstName = nameParts[0];
         const lastName  = nameParts[nameParts.length - 1];
 
-        // Location-aware match: only link to existing if county/state + year align
+        // ── auto-match to existing canonical_persons ────────────────────────
+        // Three bugs were merging the old query — see the May 23 Hopewell dup
+        // discovery for why "Hugh Hopewell IV" uploaded against an existing
+        // "Hugh Hopewell IV" still created a duplicate:
+        //   1. user's testatorLocation is comma-joined ("County, State") but
+        //      the DB stores county and state in separate columns, so the
+        //      single ILIKE could never align.
+        //   2. existing rows with NULL primary_state/county were rejected by
+        //      the OR clause even though they are not in conflict.
+        //   3. ILIKE was strict on suffix variants — "Hugh Hopewell IV" did
+        //      not match an existing "Hugh Hopewell".
+        // The query now returns candidates by name (with / without suffix);
+        // location and year compatibility are decided in JS so the logic is
+        // legible and so we can prefer richer matches.
+        const stripped = displayName.replace(/[,\s]+(jr|sr|[ivx]+|esq)\.?$/i, '').trim();
+        const nameVariants = stripped && stripped !== displayName ? [displayName, stripped] : [displayName];
+        const locParts = displayLocation
+          ? displayLocation.split(/,\s*/).map((s) => s.trim()).filter(Boolean)
+          : [];
+
+        const candidates = await db.query(
+          `SELECT id, canonical_name, primary_state, primary_county, death_year_estimate
+             FROM canonical_persons
+            WHERE person_type = 'enslaver'
+              AND canonical_name ILIKE ANY($1::text[])`,
+          [nameVariants]
+        );
+
+        const norm = (s) => (s || '').toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ').trim();
+        const userLocBlob = locParts.map(norm).join(' ');
         let existingPerson = null;
-        if (displayLocation || displayYear) {
-          const locPattern = displayLocation ? `%${displayLocation}%` : null;
-          const existing = await db.query(
-            `SELECT id, canonical_name FROM canonical_persons
-             WHERE canonical_name ILIKE $1
-               AND ($2::text IS NULL OR primary_state ILIKE $2 OR primary_county ILIKE $2)
-               AND ($3::int IS NULL OR death_year_estimate IS NULL
-                    OR death_year_estimate BETWEEN $3 - 10 AND $3 + 10)
-             LIMIT 1`,
-            [displayName, locPattern, displayYear || null]
+        let bestScore = -1;
+        for (const c of candidates.rows) {
+          // year compatibility: incompatible only if BOTH sides have a year and they're > 10 apart
+          if (displayYear && c.death_year_estimate
+              && Math.abs(c.death_year_estimate - displayYear) > 10) continue;
+
+          // location compatibility:
+          //   - user provided no location: any candidate accepted
+          //   - candidate has NULL state AND county: no conflict (we'll enrich)
+          //   - both have location: any locPart must appear in either column (or vice versa)
+          if (locParts.length > 0 && (c.primary_state || c.primary_county)) {
+            const dbBlob = `${norm(c.primary_state)} ${norm(c.primary_county)}`;
+            const overlap = locParts.some((p) => {
+              const np = norm(p);
+              return np && (dbBlob.includes(np) || userLocBlob.includes(norm(c.primary_state))
+                          || userLocBlob.includes(norm(c.primary_county)));
+            });
+            if (!overlap) continue;
+          }
+
+          // score: prefer candidates with location and year info
+          const score = ((c.primary_state || c.primary_county) ? 2 : 0)
+                      + (c.death_year_estimate ? 1 : 0);
+          if (score > bestScore) { bestScore = score; existingPerson = c; }
+        }
+
+        // Enrich an existing match if it has no location and the upload does.
+        if (existingPerson && !existingPerson.primary_state && !existingPerson.primary_county
+            && locParts.length >= 2) {
+          await db.query(
+            `UPDATE canonical_persons
+                SET primary_county = COALESCE(primary_county, $2),
+                    primary_state  = COALESCE(primary_state, $3),
+                    death_year_estimate = COALESCE(death_year_estimate, $4),
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [existingPerson.id, locParts[0], locParts[1], displayYear || null]
           );
-          if (existing.rows.length > 0) existingPerson = existing.rows[0];
+          logger.info('Enriched existing canonical_persons row with upload location/year', {
+            id: existingPerson.id, county: locParts[0], state: locParts[1],
+          });
         }
 
         if (existingPerson) {
