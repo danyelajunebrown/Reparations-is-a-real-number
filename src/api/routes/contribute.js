@@ -1410,7 +1410,8 @@ router.get('/person/:id', async (req, res) => {
                         pd.collection_page_count, pd.source_type_label,
                         COALESCE(pd.title, pd.collection_name, pd.document_type) AS title,
                         pd.page_reference, pd.s3_key, pd.s3_url, pd.source_url,
-                        pd.document_date, pd.document_year, pd.ocr_text
+                        pd.document_date, pd.document_year, pd.ocr_text,
+                        COALESCE(pd.evidence_strength, 'unverified') AS evidence_strength
                     FROM person_documents pd
                     WHERE pd.collection_key IN (
                         SELECT DISTINCT collection_key FROM person_documents
@@ -1434,7 +1435,8 @@ router.get('/person/:id', async (req, res) => {
                         pd2.collection_page_count, pd2.source_type_label,
                         COALESCE(pd2.title, pd2.collection_name, pd2.document_type) AS title,
                         pd2.page_reference, pd2.s3_key, pd2.s3_url, pd2.source_url,
-                        pd2.document_date, pd2.document_year, pd2.ocr_text
+                        pd2.document_date, pd2.document_year, pd2.ocr_text,
+                        COALESCE(pd2.evidence_strength, 'unverified') AS evidence_strength
                     FROM person_documents pd2
                     -- direct-linked pages: collection-less docs, plus probate pages
                     -- (testator propagation already linked every page of a person's
@@ -1868,8 +1870,18 @@ router.get('/person/:id', async (req, res) => {
             sourceLabel = extractionMethod || 'Unconfirmed record';
         }
 
+        // Did any of this person's documents come from an original record
+        // (scanned will, deed, slave schedule scan, original petition)? Used
+        // by the frontend to surface a "Primary documentation still needed"
+        // banner when every linked doc is secondary/indexed.
+        const allDocsForCoverage = [...documents, ...ownerDocuments,
+            ...documentCollections.flatMap((c) => c.pages || [])];
+        const hasPrimarySource = allDocsForCoverage
+            .some((d) => d.evidence_strength === 'direct_primary');
+
         const coverage = {
             hasDocuments: (documents.length + ownerDocuments.length + documentCollections.length) > 0,
+            hasPrimarySource,
             hasClimbData: dataAvailability.hasBirthYear || false,
             hasFamilyMembers: (
                 (Array.isArray(familyMembers?.parents) && familyMembers.parents.length > 0) ||
