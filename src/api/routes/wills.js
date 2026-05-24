@@ -160,6 +160,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     const {
       // Shared fields (all document types)
       documentType      = 'will',      // 'will' | 'case_register' | 'deed' | 'estate_inventory' | 'other'
+      evidenceStrength,                // 'direct_primary' | 'secondary_published' | … — uploader's tier choice
       archiveSource,
       canonicalPersonId,
       participantId,
@@ -402,12 +403,21 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
     // ── 5. Insert person_documents row ───────────────────────────────────────
     let personDocId = null;
     try {
+      // Honor the uploader's tier choice; fall back to type-based default.
+      const ALLOWED_STRENGTHS = new Set([
+        'direct_primary', 'indirect_primary', 'secondary_published',
+        'secondary_database', 'tertiary_aggregate', 'unverified',
+      ]);
+      const tierDefault = (docType === 'case_register') ? 'secondary_published' : 'direct_primary';
+      const tier = ALLOWED_STRENGTHS.has(evidenceStrength) ? evidenceStrength : tierDefault;
+
       const pdResult = await db.query(
         `INSERT INTO person_documents
            (s3_key, s3_url, document_type, filename, file_size, mime_type,
             title, source_type_label, collection_name,
-            name_as_appears, document_year, created_by, canonical_person_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            name_as_appears, document_year, created_by, canonical_person_id,
+            evidence_strength)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id`,
         [
           s3Key,                                               // $1  s3_key
@@ -427,6 +437,7 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
           displayYear || null,                                 // $11 document_year
           'public-ingestion',                                  // $12 created_by
           resolvedPersonId || null,                            // $13 canonical_person_id
+          tier,                                                // $14 evidence_strength
         ]
       );
       personDocId = pdResult.rows[0].id;

@@ -258,6 +258,14 @@ export default function SubmitWillPage() {
   const [eraEnd, setEraEnd]             = useState('');
   const [compiledBy, setCompiledBy]     = useState('');
 
+  // evidence_strength: 'direct_primary' (original scan) or 'secondary_published'
+  // (published compilation / republished compendium). Defaulted from docType
+  // and overridable by the user. See plan-source-classification.md.
+  const [evidenceStrength, setEvidenceStrength] = useState('direct_primary');
+  useEffect(() => {
+    setEvidenceStrength(docType === 'case_register' ? 'secondary_published' : 'direct_primary');
+  }, [docType]);
+
   // ── UI state ──────────────────────────────────────────────────────────────────
   const [status, setStatus] = useState('idle'); // idle | uploading | done | error
   const [result, setResult] = useState(null);
@@ -276,6 +284,7 @@ export default function SubmitWillPage() {
     const fd = new FormData();
     fd.append('willPdf', file);
     fd.append('documentType', docType);
+    fd.append('evidenceStrength', evidenceStrength);
     if (archiveSource) fd.append('archiveSource', archiveSource);
 
     if (docType === 'will') {
@@ -525,6 +534,45 @@ export default function SubmitWillPage() {
                     </div>
                     <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#555', marginTop: 2 }}>
                       {t.description}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </Field>
+
+          {/* ── Evidence tier — primary vs secondary ── */}
+          <Field label="SOURCE TIER *" hint="Is this an original record, or a republished/derivative citation?">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              {[
+                { value: 'direct_primary',      label: 'PRIMARY SOURCE',
+                  desc: 'A scan or image of an original historical record — courthouse will, deed, slave schedule scan, original ledger page.' },
+                { value: 'secondary_published', label: 'SECONDARY SOURCE',
+                  desc: 'A published compilation, indexed transcription, scholarly edition, or database citation. Cites an original; is not itself the original.' },
+              ].map(opt => (
+                <label
+                  key={opt.value}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer',
+                    padding: '0.5rem 0.7rem', borderRadius: 4,
+                    border: `1px solid ${evidenceStrength === opt.value ? 'rgba(128,203,196,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    background: evidenceStrength === opt.value ? 'rgba(128,203,196,0.06)' : 'transparent',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="evidenceStrength"
+                    value={opt.value}
+                    checked={evidenceStrength === opt.value}
+                    onChange={() => setEvidenceStrength(opt.value)}
+                    style={{ marginTop: 2, flexShrink: 0 }}
+                  />
+                  <div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: evidenceStrength === opt.value ? '#80cbc4' : '#e0e0e0' }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#555', marginTop: 2 }}>
+                      {opt.desc}
                     </div>
                   </div>
                 </label>
