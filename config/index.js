@@ -100,6 +100,17 @@ const envSchema = Joi.object({
     .optional()
     .description('Comma-separated list of allowed CORS origins'),
 
+  // Internet Archive
+  IA_ACCESS_KEY: Joi.string()
+    .optional()
+    .description('Internet Archive S3-like API access key (archive.org/account/s3.php)'),
+  IA_SECRET_KEY: Joi.string()
+    .optional()
+    .description('Internet Archive S3-like API secret key'),
+  IA_UPLOAD_ENABLED: Joi.boolean()
+    .default(false)
+    .description('Enable dual-write to Internet Archive alongside S3'),
+
   // Monitoring
   SENTRY_DSN: Joi.string()
     .uri()
@@ -167,6 +178,13 @@ const config = {
     }
   },
 
+  // Internet Archive
+  internetArchive: {
+    enabled: env.IA_UPLOAD_ENABLED,
+    accessKey: env.IA_ACCESS_KEY,
+    secretKey: env.IA_SECRET_KEY,
+  },
+
   // IPFS
   ipfs: {
     enabled: env.IPFS_ENABLED,
@@ -217,6 +235,7 @@ if (config.isDevelopment) {
   console.log('   Port:', config.port);
   console.log('   Database:', config.database.connectionString ? 'DATABASE_URL' : 'Individual vars');
   console.log('   S3 Storage:', config.storage.s3.enabled ? 'ENABLED' : 'DISABLED');
+  console.log('   Internet Archive:', config.internetArchive.enabled ? 'ENABLED' : 'DISABLED');
   console.log('   IPFS:', config.ipfs.enabled ? 'ENABLED' : 'DISABLED');
   console.log('   Google Vision API:', config.apiKeys.googleVisionCredentials || config.apiKeys.googleVisionKeyPath ? 'CONFIGURED' : 'NOT CONFIGURED (using Tesseract)');
   console.log('   OpenRouter API:', config.apiKeys.openRouter ? 'CONFIGURED' : 'NOT CONFIGURED');

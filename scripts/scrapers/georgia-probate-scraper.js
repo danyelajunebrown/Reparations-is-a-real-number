@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const S3Service = require('../../src/services/storage/S3Service');
+const IAService = require('../../src/services/storage/InternetArchiveService');
+const { InternetArchiveService } = require('../../src/services/storage/InternetArchiveService');
 const pg = require('pg');
 
 puppeteer.use(StealthPlugin());
@@ -910,6 +912,27 @@ async function writeToDbAndS3(
 
         await client.query('COMMIT');
         await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, personDocumentId, s3Key, roll.groupId, county);
+
+        // Async IA upload — Strategy A (behind-auth FamilySearch page)
+        // Fire and forget: failure logs a warning but never blocks the scrape loop.
+        if (IAService.isEnabled() && personDocumentId) {
+            const pdRow = { id: personDocumentId, collection_key: collectionKey, document_type: docType, image_number: imageNumber };
+            const iaIdentifier = InternetArchiveService.buildIdentifier(pdRow);
+            const iaFiles = InternetArchiveService.buildScrapedImageFiles({
+                screenshotBuffer, transcriptText: safeTranscript, parsedData, county, sourceUrl: url
+            });
+            const iaMetadata = InternetArchiveService.buildProbateMetadata({ county, parsedData, sourceUrl: url });
+            IAService.uploadItem(iaIdentifier, iaFiles, iaMetadata)
+                .then(result => {
+                    if (result) {
+                        return pool.query(
+                            'UPDATE person_documents SET ia_item_id = $1 WHERE id = $2',
+                            [result.itemId, personDocumentId]
+                        );
+                    }
+                })
+                .catch(() => {});
+        }
     } catch (e) {
         await client.query('ROLLBACK');
         log(`  ERROR writing image ${imageNumber}: ${e.message}`);

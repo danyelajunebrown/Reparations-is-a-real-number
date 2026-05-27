@@ -252,7 +252,8 @@ router.get('/person-doc/:pdId/access',
     const expiresIn = parseInt(req.query.expiresIn) || 3600; // 1 hour default
 
     const result = await db.query(
-      `SELECT id, s3_key, s3_url, source_url, name_as_appears AS filename, document_type
+      `SELECT id, s3_key, s3_url, source_url, ia_item_id, wayback_url,
+              name_as_appears AS filename, document_type
        FROM person_documents WHERE id = $1`,
       [pdId]
     );
@@ -283,6 +284,38 @@ router.get('/person-doc/:pdId/access',
           presigned: false,
         });
       }
+
+      // Fall back to Internet Archive if we uploaded a copy there (Strategy A/B)
+      if (pd.ia_item_id) {
+        const IAService = require('../../../services/storage/InternetArchiveService');
+        const fileExt = pd.document_type === 'will' || pd.document_type === 'estate_inventory'
+          || pd.document_type === 'deed' || pd.document_type === 'case_register'
+          ? 'pdf' : 'jpg';
+        const iaUrl = IAService.constructor.fileUrl
+          ? IAService.constructor.fileUrl(pd.ia_item_id, `original.${fileExt}`)
+          : `https://archive.org/download/${pd.ia_item_id}/original.${fileExt}`;
+        return res.json({
+          success: true,
+          viewUrl: iaUrl,
+          downloadUrl: iaUrl,
+          filename: pd.filename,
+          presigned: false,
+          source: 'internet_archive',
+        });
+      }
+
+      // Wayback Machine snapshot (Strategy C)
+      if (pd.wayback_url) {
+        return res.json({
+          success: true,
+          viewUrl: pd.wayback_url,
+          downloadUrl: pd.wayback_url,
+          filename: pd.filename,
+          presigned: false,
+          source: 'wayback_machine',
+        });
+      }
+
       // Do NOT return a raw s3_url as viewUrl — the bucket is private and direct access
       // will result in a 403. Instead tell the frontend no presignable key was found.
       return res.status(422).json({

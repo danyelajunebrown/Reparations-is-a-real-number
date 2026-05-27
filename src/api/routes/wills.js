@@ -27,6 +27,8 @@ const multer = require('multer');
 const crypto = require('crypto');
 const db = require('../../database/connection');
 const S3Service = require('../../services/storage/S3Service');
+const IAService = require('../../services/storage/InternetArchiveService');
+const { InternetArchiveService } = require('../../services/storage/InternetArchiveService');
 const logger = require('../../utils/logger');
 
 // ── Valid document types ───────────────────────────────────────────────────────
@@ -436,6 +438,45 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
       docType, s3Key, personDocId, extractionId,
       displayName: displayName || '(none)',
     });
+
+    // ── 6b. Async Internet Archive upload (best-effort, never blocks response) ─
+    if (personDocId && IAService.isEnabled()) {
+      const pdRow = {
+        id:             personDocId,
+        document_type:  docType,
+        name_as_appears: displayName || file.originalname,
+        document_year:  displayYear || null,
+        s3_key:         s3Key,
+      };
+      const iaIdentifier = InternetArchiveService.buildIdentifier(pdRow);
+      const iaFiles = [
+        { filename: `original.${fileExt}`, buffer: file.buffer, contentType: file.mimetype },
+        {
+          filename:    'metadata.json',
+          buffer:      Buffer.from(JSON.stringify({
+            docType, displayName, displayYear, displayLocation,
+            archiveSource, s3Key, archivedAt: new Date().toISOString(),
+          }, null, 2), 'utf8'),
+          contentType: 'application/json',
+        },
+      ];
+      const iaMetadata = {
+        title:       titleText,
+        description: `${docType.replace('_', ' ')} document. ${displayName || ''}${displayYear ? ` (${displayYear})` : ''}. ${displayLocation || ''}. Archive source: ${archiveSource || 'uploaded'}`,
+        year:        displayYear || null,
+        source:      archiveSource || null,
+      };
+      IAService.uploadItem(iaIdentifier, iaFiles, iaMetadata)
+        .then(result => {
+          if (result) {
+            return db.query(
+              'UPDATE person_documents SET ia_item_id = $1 WHERE id = $2',
+              [result.itemId, personDocId]
+            );
+          }
+        })
+        .catch(() => {});
+    }
 
     // ── 7. Build next steps per document type ────────────────────────────────
     let nextSteps;
