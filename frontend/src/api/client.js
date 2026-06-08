@@ -125,6 +125,10 @@ export const api = {
   // person_documents presigned URL (used by DocCollectionOverlay for S3 images/PDFs)
   getPersonDocAccess: (pdId, signal) => request(`/api/documents/person-doc/${pdId}/access`, { signal }),
 
+  // Global reparations indicator targets (Brattle / Darity-Mullen / Craemer …)
+  // — population-level context for the line-item DAA breakdown.
+  getGlobalIndicators: (signal) => request('/api/daa/global-indicators', { signal }),
+
   // Corporate debts
   listFarmerPaellmann: () => request('/api/corporate-debts/farmer-paellmann'),
   getFarmerPaellmannBySector: () => request('/api/corporate-debts/farmer-paellmann/by-sector'),

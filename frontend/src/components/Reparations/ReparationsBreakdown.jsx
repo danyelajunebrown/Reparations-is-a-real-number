@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { formatUSD } from '../../api/format.js';
+import { api } from '../../api/client.js';
+import { useApi } from '../../hooks/useApi.js';
 
 /**
  * ReparationsBreakdown — displays the multi-calculator output for a person.
@@ -73,6 +75,11 @@ function detectMethods(breakdown) {
   if (!breakdown) return [];
   const methods = [];
 
+  // New Line Items method
+  if (breakdown.line_items_by_era) {
+    methods.push({ key: 'line_items', label: 'Line Items' });
+  }
+
   // Check for wealth gap calculator output
   if (breakdown.wealth_gap || breakdown.wealthGap || breakdown.craemer || breakdown.wage_theft) {
     methods.push({ key: 'wealth_gap', label: 'Wealth gap (Craemer 2015 / Darity & Mullen)' });
@@ -105,6 +112,8 @@ function MethodDetail({ methodKey, breakdown, enslavedCount, subject }) {
   if (!breakdown) return null;
 
   switch (methodKey) {
+    case 'line_items':
+      return <LineItemsView breakdown={breakdown} />;
     case 'wealth_gap':
       return <WealthGapView breakdown={breakdown} enslavedCount={enslavedCount} />;
     case 'icheic':
@@ -122,6 +131,115 @@ function MethodDetail({ methodKey, breakdown, enslavedCount, subject }) {
     default:
       return <div className="state">Unknown methodology.</div>;
   }
+}
+
+function LineItemsView({ breakdown }) {
+    const { line_items_by_era, global_indicator_context, domestic_total_usd, international_total_usd } = breakdown;
+
+    // Global indicator targets come from the backend (global_indicator_targets
+    // table via GET /api/daa/global-indicators) — never hardcoded, so the
+    // published estimates stay in one sourced place.
+    const { data: indicatorData, loading: indicatorsLoading, error: indicatorsError } =
+        useApi(signal => api.getGlobalIndicators(signal), []);
+    const globalIndicatorTargetsData = indicatorData?.indicators || [];
+
+    return (
+        <div className="stack-lg">
+            {/* SECTION 1 — International Law Context */}
+            <div className="box">
+                <div className="box-label">International Law Context</div>
+                <p>On March 25, 2026, 123 UN member states declared the transatlantic slave trade "the gravest crime against humanity" (Resolution A/80/L.48, adopted 123–3 with 52 abstentions). The United States voted against.</p>
+                <table className="table">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Scope</th>
+                            <th>Methodology</th>
+                            <th>Estimate</th>
+                            <th>Reference Year</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {indicatorsLoading && (
+                            <tr><td colSpan={5} className="dim">Loading published estimates…</td></tr>
+                        )}
+                        {indicatorsError && !indicatorsLoading && (
+                            <tr><td colSpan={5} className="err">Could not load indicator targets.</td></tr>
+                        )}
+                        {!indicatorsLoading && !indicatorsError && globalIndicatorTargetsData.length === 0 && (
+                            <tr><td colSpan={5} className="dim">No indicator targets available.</td></tr>
+                        )}
+                        {globalIndicatorTargetsData.map((item) => (
+                            <tr key={item.id}>
+                                <td>{item.source_author}</td>
+                                <td>{item.scope}</td>
+                                <td>{item.methodology}</td>
+                                <td>
+                                    {item.total_usd_high && item.total_usd_high !== item.total_usd_low
+                                        ? `${formatUSD(item.total_usd_low)} - ${formatUSD(item.total_usd_high)}`
+                                        : formatUSD(item.total_usd_low)}
+                                </td>
+                                <td>{item.reference_year}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* SECTION 2 — This Person's Documented Line Items */}
+            <div className="box">
+                <div className="box-label">This Person's Documented Line Items</div>
+                {Object.keys(line_items_by_era).map(era => (
+                    <div key={era} className="stack-sm">
+                        <h3>{era.replace(/_/g, ' ').toUpperCase()}</h3>
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Harm Category</th>
+                                    <th>Evidence Tier</th>
+                                    <th>Perpetrator</th>
+                                    <th>Compounded Amount</th>
+                                    <th>Legal Theory</th>
+                                    <th>Citation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {line_items_by_era[era].map((item, index) => (
+                                    <tr key={index}>
+                                        <td>{item.harm_display}</td>
+                                        <td>{item.evidence_tier}</td>
+                                        <td>{item.perpetrator_display}</td>
+                                        <td>{formatUSD(item.compounded_amount_usd)}</td>
+                                        <td>{item.legal_theory_display} ({item.legal_theory_jurisdiction})</td>
+                                        <td>{item.citation}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <div className="text-right">
+                            <strong>Subtotal ({era.replace(/_/g, ' ').toUpperCase()}):</strong> {formatUSD(line_items_by_era[era].reduce((sum, item) => sum + parseFloat(item.compounded_amount_usd || 0), 0))}
+                        </div>
+                    </div>
+                ))}
+                <div className="text-right" style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                    <strong>Grand Total:</strong> {formatUSD(breakdown.total_usd)}
+                </div>
+                <div className="text-right">
+                    <strong>Domestic Subtotal:</strong> {formatUSD(domestic_total_usd)}
+                </div>
+                <div className="text-right">
+                    <strong>International Subtotal:</strong> {formatUSD(international_total_usd)}
+                </div>
+            </div>
+
+            {/* SECTION 3 — Context and Disclaimer */}
+            <div className="box" style={{ fontSize: 11, color: 'var(--dim)' }}>
+                <strong>Context and Disclaimer:</strong>
+                <p>These figures represent Tier 1 (directly documented) evidence. Additional community-level (Tier 2) and population-level (Tier 3) claims may apply.</p>
+                <p>This calculation is an estimate grounded in published academic methodology. It does not constitute legal advice or a legally binding claim.</p>
+            </div>
+        </div>
+    );
 }
 
 function WealthGapView({ breakdown, enslavedCount }) {

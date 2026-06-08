@@ -1,5 +1,11 @@
 const rateLimit = require('express-rate-limit');
 
+// Global bypass for local development / automated test sweeps (e.g. the
+// famous-slaveholder E2E harness, which intentionally fires hundreds of
+// requests from one IP). Gated behind an env var so production is unaffected.
+const BYPASS = process.env.DISABLE_RATE_LIMIT === 'true';
+const bypassSkip = (req) => BYPASS;
+
 // General rate limiter.
 // Stats endpoint is excluded here so it gets its own generous statsLimiter
 // (registered separately) without being double-counted against this budget.
@@ -10,7 +16,7 @@ const generalLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/contribute/stats'
+  skip: (req) => BYPASS || req.path === '/contribute/stats'
 });
 
 // Stats rate limiter - very permissive because the backend already caches
@@ -41,7 +47,8 @@ const queryLimiter = rateLimit({
   max: 30, // Limit each IP to 30 queries per minute
   message: 'Too many queries from this IP, please slow down.',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skip: bypassSkip
 });
 
 // Moderate rate limiter

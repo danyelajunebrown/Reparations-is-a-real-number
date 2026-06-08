@@ -40,6 +40,92 @@ class DAAOrchestrator {
         this.tieredCalc = new TieredPaymentCalculator();
         this.wealthGapCalc = new WealthGapCalculator();
         this.successionTracer = new CorporateSuccessionTracer(database);
+        this.USE_LINE_ITEM_METHODOLOGY = true;
+    }
+
+    async getLineItemsForPerson(canonical_person_id) {
+        const tier1Result = await this.db.query(`
+            SELECT
+                rli.*,
+                rhc.category_key,
+                rhc.display_name AS harm_display,
+                rhc.era,
+                hpe.display_name AS perpetrator_display,
+                hpe.entity_type,
+                lt.display_name AS legal_theory_display,
+                lt.jurisdiction AS legal_theory_jurisdiction
+            FROM reparations_line_items rli
+            JOIN reparations_harm_categories rhc ON rli.harm_category_id = rhc.id
+            LEFT JOIN harm_perpetrator_entities hpe ON rli.perpetrator_entity_id = hpe.id
+            LEFT JOIN LATERAL unnest(rli.legal_theory_ids) AS lt_id ON TRUE
+            LEFT JOIN legal_theory_registry lt ON lt_id = lt.id
+            WHERE rli.canonical_person_id = $1
+            ORDER BY rhc.era, rhc.period_start
+        `, [canonical_person_id]);
+
+        // Tier 2 (geographic) query - requires person's primary_state
+        // This will be handled in the computeDAAFromLineItems method or by fetching person data separately
+        // For now, we'll return an empty array for tier2 if not explicitly requested with state info.
+        const tier2Result = []; // Placeholder for now, will implement when person.primary_state is available
+
+        return { tier1: tier1Result.rows, tier2: tier2Result };
+    }
+
+    computeDAAFromLineItems(lineItems) {
+        const allItems = [...lineItems.tier1, ...lineItems.tier2];
+        let total_usd = 0;
+        let domestic_total_usd = 0;
+        let international_total_usd = 0;
+
+        const line_items_by_era = {
+            antebellum: [],
+            reconstruction: [],
+            jim_crow: [],
+            modern: []
+        };
+
+        for (const item of allItems) {
+            total_usd += parseFloat(item.compounded_amount_usd || 0);
+
+            // Check for domestic legal theories
+            const isDomestic = item.legal_theory_jurisdiction === 'domestic_us';
+            // Check for international legal theories
+            const isInternational = item.legal_theory_jurisdiction === 'international';
+
+            if (isDomestic) {
+                domestic_total_usd += parseFloat(item.compounded_amount_usd || 0);
+            }
+            if (isInternational) {
+                international_total_usd += parseFloat(item.compounded_amount_usd || 0);
+            }
+
+            if (line_items_by_era[item.era]) {
+                line_items_by_era[item.era].push(item);
+            }
+        }
+
+        // Darity & Mullen: $14T / 40M eligible descendants = $350,000 per capita
+        const darityMullenPerCapita = 14000000000000 / 40000000;
+        // Brattle Group: $36T / 80M eligible descendants = $450,000 per capita
+        const brattleUsPerCapita = 36000000000000 / 80000000;
+
+        return {
+            total_usd,
+            domestic_total_usd,
+            international_total_usd,
+            line_items_by_era,
+            global_indicator_context: {
+                darity_mullen_per_capita_usd: darityMullenPerCapita,
+                brattle_us_per_capita_usd: brattleUsPerCapita,
+                note: 'Individual DAA represents Tier 1 directly documented evidence. Global scholars estimate total U.S. obligation at $14T (D&M, domestic racial wealth gap) to $36T (Brattle, international law) across approximately 40–80M eligible descendants.'
+            },
+            methodology_citations: [
+                'Darity, Mullen & Slaughter 2022 (JEP 36:2)',
+                'Craemer 2015 (Social Science Quarterly 96:2)',
+                'Brattle Group 2023 (ASIL/UWI)',
+                'UNGA Resolution A/80/L.48 (March 25, 2026)'
+            ]
+        };
     }
 
     /**
@@ -143,32 +229,39 @@ class DAAOrchestrator {
         console.log(`   ✓ Total enslaved persons documented: ${totalEnslavedCount}`);
         console.log();
 
-        // Step 4a: Load participant wealth fingerprint from DB (migration 037).
-        // Merges DB-stored fingerprint fields with any fields supplied inline
-        // by the caller (inline values take precedence so API callers can
-        // override DB data without a separate participants update).
-        console.log('Step 4: Loading participant wealth fingerprint (M037)...');
-        const wealthFingerprint = await this.loadParticipantWealthFingerprint(
-            acknowledgerInfo.participantId || null,
-            acknowledgerInfo
-        );
-        console.log(`   ✓ Wealth fingerprint loaded: corporateConnectionType=${wealthFingerprint.corporateConnectionType}, trustBeneficiary=${wealthFingerprint.trustBeneficiary}`);
-        if (wealthFingerprint.wealthFlagElevated) {
-            console.log(`   ⚑ DB wealth_flag_elevated=TRUE (${wealthFingerprint.wealthFlagReasons?.join(', ')})`);
-        }
+        let debtCalculation;
+        if (this.USE_LINE_ITEM_METHODOLOGY && acknowledgerInfo.canonicalPersonId) {
+            console.log('Step 4: Calculating debt using Line Item Methodology...');
+            const lineItems = await this.getLineItemsForPerson(acknowledgerInfo.canonicalPersonId);
+            debtCalculation = this.computeDAAFromLineItems(lineItems);
+            console.log(`   ✓ Total Line Item Debt: $${debtCalculation.total_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            console.log(`   ✓ Domestic Line Item Debt: $${debtCalculation.domestic_total_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            console.log(`   ✓ International Line Item Debt: $${debtCalculation.international_total_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+        } else {
+            // Step 4a: Load participant wealth fingerprint from DB (migration 037).
+            console.log('Step 4: Loading participant wealth fingerprint (M037)...');
+            const wealthFingerprint = await this.loadParticipantWealthFingerprint(
+                acknowledgerInfo.participantId || null,
+                acknowledgerInfo
+            );
+            console.log(`   ✓ Wealth fingerprint loaded: corporateConnectionType=${wealthFingerprint.corporateConnectionType}, trustBeneficiary=${wealthFingerprint.trustBeneficiary}`);
+            if (wealthFingerprint.wealthFlagElevated) {
+                console.log(`   ⚑ DB wealth_flag_elevated=TRUE (${wealthFingerprint.wealthFlagReasons?.join(', ')})`);
+            }
 
-        // Step 4b: Calculate total debt (using ALL financial data)
-        console.log('Step 4b: Calculating total debt (Craemer + tiered payment + wealth gap)...');
-        const debtCalculation = await this.calculateTotalDebt(slaveholderData, wealthFingerprint);
-        console.log(`   ✓ Craemer debt: $${debtCalculation.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-        console.log(`   ✓ Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-        console.log(`   ✓ Recommended (higher): $${debtCalculation.recommendedDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${debtCalculation.dualMethodology.recommendedMethodology})`);
-        console.log(`   ✓ Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (was flat $${debtCalculation.flatRateComparison.flatAnnualPayment.toLocaleString()})`);
-        if (debtCalculation.wealthFlagElevated) {
-            console.log(`   ⚑ ELEVATED WEALTH: ${debtCalculation.wealthFlagReasons.join(', ')}`);
-        }
-        if (debtCalculation.corporateEvidence.length > 0) {
-            console.log(`   ⚑ Corporate connections: ${debtCalculation.corporateEvidence.map(e => e.modernEntity).join(', ')}`);
+            // Step 4b: Calculate total debt (using ALL financial data)
+            console.log('Step 4b: Calculating total debt (Craemer + tiered payment + wealth gap)...');
+            debtCalculation = await this.calculateTotalDebt(slaveholderData, wealthFingerprint);
+            console.log(`   ✓ Craemer debt: $${debtCalculation.totalDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            console.log(`   ✓ Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+            console.log(`   ✓ Recommended (higher): $${debtCalculation.recommendedDebt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${debtCalculation.dualMethodology.recommendedMethodology})`);
+            console.log(`   ✓ Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (was flat $${debtCalculation.flatRateComparison.flatAnnualPayment.toLocaleString()})`);
+            if (debtCalculation.wealthFlagElevated) {
+                console.log(`   ⚑ ELEVATED WEALTH: ${debtCalculation.wealthFlagReasons.join(', ')}`);
+            }
+            if (debtCalculation.corporateEvidence.length > 0) {
+                console.log(`   ⚑ Corporate connections: ${debtCalculation.corporateEvidence.map(e => e.modernEntity).join(', ')}`);
+            }
         }
         console.log();
 
@@ -216,12 +309,18 @@ class DAAOrchestrator {
         console.log('═══════════════════════════════════════════════════════════════');
         console.log();
         console.log('Summary:');
-        console.log(`   • Slaveholders: ${slaveholderData.length}`);
-        console.log(`   • Enslaved persons: ${totalEnslavedCount}`);
-        console.log(`   • Craemer debt: $${debtCalculation.totalDebt.toLocaleString()}`);
-        console.log(`   • Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString()}`);
-        console.log(`   • Recommended debt (higher): $${debtCalculation.recommendedDebt.toLocaleString()}`);
-        console.log(`   • Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString()}`);
+        if (this.USE_LINE_ITEM_METHODOLOGY && acknowledgerInfo.canonicalPersonId) {
+            console.log(`   • Total Line Item Debt: $${debtCalculation.total_usd.toLocaleString()}`);
+            console.log(`   • Domestic Line Item Debt: $${debtCalculation.domestic_total_usd.toLocaleString()}`);
+            console.log(`   • International Line Item Debt: $${debtCalculation.international_total_usd.toLocaleString()}`);
+        } else {
+            console.log(`   • Slaveholders: ${slaveholderData.length}`);
+            console.log(`   • Enslaved persons: ${totalEnslavedCount}`);
+            console.log(`   • Craemer debt: $${debtCalculation.totalDebt.toLocaleString()}`);
+            console.log(`   • Wealth-gap obligation: $${debtCalculation.wealthGapObligation.toLocaleString()}`);
+            console.log(`   • Recommended debt (higher): $${debtCalculation.recommendedDebt.toLocaleString()}`);
+            console.log(`   • Tiered annual payment: $${debtCalculation.annualPayment.toLocaleString()}`);
+        }
         console.log(`   • Document: ${docxPath}`);
         console.log(`   • DAA ID: ${daaRecord.daaId}`);
         console.log();
@@ -1275,6 +1374,27 @@ class DAAOrchestrator {
             `Unlinked matches from climb ${climbSession.id.substring(0, 8)}`;
 
         // Generate DAA
+        let totalDebtValue;
+        let calculationMethodology;
+        let calculationBreakdown;
+
+        if (this.USE_LINE_ITEM_METHODOLOGY && acknowledgerInfo.canonicalPersonId) {
+            totalDebtValue = debtCalculation.total_usd;
+            calculationMethodology = 'Itemized Reparations Line Items';
+            calculationBreakdown = debtCalculation; // Store the full line item breakdown
+        } else {
+            totalDebtValue = debtCalculation.recommendedDebt;
+            calculationMethodology = debtCalculation.dualMethodology.recommendedMethodology;
+            calculationBreakdown = {
+                craemerDebt: debtCalculation.totalDebt,
+                wealthGapObligation: debtCalculation.wealthGapObligation,
+                tieredBreakdown: debtCalculation.tieredBreakdown,
+                corporateEvidence: debtCalculation.corporateEvidence,
+                slaveholderCalculations: debtCalculation.slaveholderCalculations
+            };
+        }
+
+        // Generate DAA
         const daaResult = await this.daaGenerator.generateDAA({
             acknowledgerName: acknowledgerInfo.name,
             acknowledgerEmail: acknowledgerInfo.email,
@@ -1290,23 +1410,11 @@ class DAAOrchestrator {
             generationFromSlaveholder: mainSlaveholder?.slaveholder?.generation_distance || null,
             annualIncome: acknowledgerInfo.annualIncome,
             enslavedPersons: allEnslavedPersons,
+            totalDebt: totalDebtValue, // Use the determined totalDebtValue
+            calculationMethodology: calculationMethodology, // Use the determined methodology
+            calculationBreakdown: calculationBreakdown, // Use the determined breakdown
             notes: `Comprehensive DAA generated from ancestor climb session ${climbSession.id}. ${slaveholderData.length} documented slaveholder(s), ${allEnslavedPersons.length} documented enslaved person(s). Climb visited ${climbSession.ancestors_visited} ancestors with ${climbSession.matches_found} matches.`
         });
-
-        // Store slaveholder breakdown in notes for now
-        // TODO: Use multi-slaveholder schema once migration 029 is run
-        await this.db.query(`
-            UPDATE debt_acknowledgment_agreements
-            SET calculation_breakdown = jsonb_set(
-                calculation_breakdown,
-                '{slaveholder_breakdown}',
-                $2::jsonb
-            )
-            WHERE daa_id = $1
-        `, [
-            daaResult.daaId,
-            JSON.stringify(debtCalculation.slaveholderCalculations)
-        ]);
 
         return daaResult;
     }

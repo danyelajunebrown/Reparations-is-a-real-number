@@ -193,5 +193,24 @@ async function submitDAAOnChain(daaResult, acknowledgerInfo) {
     };
 }
 
+// Global reparations indicator targets (Brattle / Darity-Mullen / Craemer, etc.)
+// Published scholarly population-level estimates that contextualize an
+// individual's itemized line-item DAA. Read-only; powers the "International Law
+// Context" table in the front-end LineItemsView (replaces a hardcoded array).
+router.get('/global-indicators', async (req, res) => {
+    try {
+        const result = await db.query(`
+            SELECT id, source_author, source_year, source_title, scope, methodology,
+                   total_usd_low, total_usd_high, per_capita_usd, reference_year,
+                   interest_rate, notes, primary_citation
+            FROM global_indicator_targets
+            ORDER BY total_usd_low ASC NULLS LAST, source_year ASC
+        `);
+        return res.json({ success: true, indicators: result.rows });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
 module.exports._submitDAAOnChain = submitDAAOnChain;
