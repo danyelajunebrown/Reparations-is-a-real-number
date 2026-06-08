@@ -12,6 +12,24 @@ const path = require('path');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 
+// Map a file extension to a content type. Used so presigned VIEW URLs can force
+// the correct Content-Type via ResponseContentType — desktop browsers sniff
+// bytes and render regardless, but mobile Safari trusts the served Content-Type
+// and the filename extension, so a missing/octet-stream type renders nothing.
+const EXT_CONTENT_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp', tif: 'image/tiff', tiff: 'image/tiff',
+  pdf: 'application/pdf',
+};
+function extOf(key) {
+  const m = (key || '').split('?')[0].toLowerCase().match(/\.([a-z0-9]+)$/);
+  return m ? m[1] : null;
+}
+function contentTypeForKey(key) {
+  const e = extOf(key);
+  return e ? EXT_CONTENT_TYPES[e] : undefined;
+}
+
 class S3Service {
   constructor() {
     if (!config.storage.s3.enabled) {
@@ -174,17 +192,27 @@ class S3Service {
     // Ensure region is correct before signing (no-op if already verified)
     await this._regionVerifiedPromise;
 
+    // Force the correct Content-Type from the key's extension (the stored S3
+    // object metadata is frequently NULL/octet-stream — fine for desktop which
+    // sniffs, but mobile Safari renders nothing without a real image type).
+    const contentType = contentTypeForKey(key);
+    // Ensure the inline filename carries the right extension. The caller often
+    // passes a person's name (e.g. "Egbert Thompson") with no extension; without
+    // one, Safari opening the URL directly has no type hint.
+    const ext = extOf(key);
+    let dispName = filename || path.basename(key);
+    if (ext && !new RegExp(`\\.${ext}$`, 'i').test(dispName)) dispName += `.${ext}`;
+
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
-      ResponseContentDisposition: filename
-        ? `inline; filename="${filename}"`
-        : 'inline'
+      ResponseContentDisposition: `inline; filename="${dispName}"`,
+      ...(contentType ? { ResponseContentType: contentType } : {})
     });
 
     try {
       const url = await getSignedUrl(this.client, command, { expiresIn });
-      logger.info('S3 presigned view URL generated', { key, expiresIn });
+      logger.info('S3 presigned view URL generated', { key, expiresIn, contentType });
       return url;
     } catch (error) {
       logger.error('Failed to generate S3 presigned URL', {
