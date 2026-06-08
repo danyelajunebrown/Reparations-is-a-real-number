@@ -50,16 +50,6 @@ const SECTIONS = [
   },
 ];
 
-// Example searches shown below the search bar pre-search.
-// These help the primary audience (Black folks searching ancestors) understand
-// what kind of queries this database answers.
-const EXAMPLE_SEARCHES = [
-  'Ann Maria Biscoe',
-  'James Hopewell',
-  'freedmen Richmond Virginia',
-  'Biscoe District of Columbia',
-];
-
 export default function HomePage() {
   const [submitted, setSubmitted] = useState('');
   // useKioskMode persists the ?mode=kiosk flag in sessionStorage so it
@@ -129,39 +119,6 @@ export default function HomePage() {
         <SearchBar autoFocus onSearch={q => setSubmitted(q)} />
       </div>
 
-      {/* Example searches -- pre-search only */}
-      {!hasResults && (
-        <div style={{
-          width: '100%',
-          maxWidth: 540,
-          marginTop: 10,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '4px 16px',
-        }}>
-          <span style={{ color: 'var(--dimmer)', fontSize: 11 }}>try:</span>
-          {EXAMPLE_SEARCHES.map(q => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => setSubmitted(q)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--dim)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11,
-                cursor: 'pointer',
-                padding: 0,
-                textDecoration: 'underline',
-                textDecorationStyle: 'dotted',
-              }}
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* REQUEST INTAKE button -- kiosk mode only (Pi) */}
       {!hasResults && isKiosk && (
