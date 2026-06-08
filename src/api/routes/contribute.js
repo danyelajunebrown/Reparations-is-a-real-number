@@ -179,6 +179,47 @@ router.get('/search/:query', async (req, res) => {
         const { query } = req.params;
         const { limit = 50, source, type } = req.query;
 
+        // ── Person-ID search ────────────────────────────────────────────────
+        // Name search can't disambiguate the many same-named owners (e.g. dozens
+        // of "David Smith"s), so a bare number — optionally written `#1170` or
+        // `id:1170` — is treated as an exact person-ID lookup across the three
+        // person tables. Runs before the length guard so even short ids work.
+        const idMatch = query.trim().match(/^(?:id:|#)?\s*(\d+)$/i);
+        if (idMatch) {
+            const pid = idMatch[1];
+            const idResult = await sharedPool.query(`
+                SELECT id::text AS id, canonical_name AS name, person_type AS type,
+                       NULL AS source_url, 'canonical' AS source_type,
+                       COALESCE(confidence_score, 1.0) AS confidence_score,
+                       CONCAT_WS(', ', primary_county, primary_state) AS locations,
+                       notes AS context_text, created_at, 'canonical_persons' AS table_source
+                FROM canonical_persons WHERE id = $1::int
+                UNION ALL
+                SELECT lead_id::text, full_name, person_type, source_url, source_type,
+                       confidence_score, array_to_string(locations, ', '), context_text,
+                       scraped_at, 'unconfirmed_persons'
+                FROM unconfirmed_persons
+                WHERE lead_id::text = $2 AND (status IS NULL OR status != 'duplicate')
+                UNION ALL
+                SELECT enslaved_id::text, full_name, 'enslaved', NULL, 'confirmed', 1.0,
+                       NULL::text, notes, created_at, 'enslaved_individuals'
+                FROM enslaved_individuals WHERE enslaved_id::text = $2
+            `, [pid, pid]);
+            return res.json({
+                success: true,
+                query,
+                searchTerms: pid,
+                filteredWords: [],
+                hasTextSearch: false,
+                idSearch: true,
+                detectedType: null,
+                count: idResult.rows.length,
+                results: idResult.rows,
+                bySource: {},
+                sources: []
+            });
+        }
+
         if (!query || query.length < 2) {
             return res.status(400).json({
                 success: false,

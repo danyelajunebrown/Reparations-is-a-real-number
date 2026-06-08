@@ -23,7 +23,7 @@ export function SearchBar({ autoFocus = false, onSearch = null }) {
     <form onSubmit={onSubmit} className="row">
       <input
         type="text"
-        placeholder="search by name, location, source, entity..."
+        placeholder="search by name, person ID (#1170), location, source..."
         value={query}
         onChange={e => setQuery(e.target.value)}
         autoFocus={autoFocus}

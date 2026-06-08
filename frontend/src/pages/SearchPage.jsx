@@ -29,9 +29,13 @@ export default function SearchPage() {
   );
 
   const allPersons = personsState.data?.results || [];
-  const verifiedPersons = filterVerified(allPersons);
+  // An explicit person-ID lookup (query was a bare number / #id / id:) returns
+  // exact matches — show them as-is, bypassing the verified + classification
+  // filters so the record the user asked for always appears.
+  const isIdSearch = personsState.data?.idSearch === true;
+  const verifiedPersons = isIdSearch ? allPersons : filterVerified(allPersons);
   // Additional user filter on classification
-  const shownPersons = verifiedPersons.filter(p => {
+  const shownPersons = isIdSearch ? allPersons : verifiedPersons.filter(p => {
     if (showAll) return true;
     if (!p.verification_status) return true; // canonical/individuals table rows
     return activeClasses.has(p.verification_status);
@@ -54,20 +58,26 @@ export default function SearchPage() {
 
       {query && (
         <>
-          <Filters
-            activeClasses={activeClasses}
-            showAll={showAll}
-            onToggleClass={toggleClass}
-            onSetShowAll={setShowAll}
-          />
+          {!isIdSearch && (
+            <Filters
+              activeClasses={activeClasses}
+              showAll={showAll}
+              onToggleClass={toggleClass}
+              onSetShowAll={setShowAll}
+            />
+          )}
 
           <Section
-            title={`Persons (${shownPersons.length} of ${verifiedPersons.length} verified, ${allPersons.length} total)`}
+            title={isIdSearch
+              ? `Person ID ${query} (${shownPersons.length} match${shownPersons.length === 1 ? '' : 'es'})`
+              : `Persons (${shownPersons.length} of ${verifiedPersons.length} verified, ${allPersons.length} total)`}
             loading={personsState.loading}
             error={personsState.error}
           >
             {shownPersons.length === 0 && !personsState.loading && (
-              <div className="state">No verified persons match "{query}".</div>
+              <div className="state">
+                {isIdSearch ? `No person found with ID ${query}.` : `No verified persons match "${query}".`}
+              </div>
             )}
             <div className="stack">
               {shownPersons.map((p, i) => <PersonResult key={p.id + '-' + i} person={p} />)}
