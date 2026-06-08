@@ -1379,6 +1379,58 @@ router.get('/person/:id', async (req, res) => {
             .includes(person.person_type);
         const isFreedpersonType = FREEDPERSON_TYPES.has(person.person_type);
 
+        // ── Enslaved / freedperson OWN source documents ────────────────────
+        //    The slaveholder block below is gated by !isFreedpersonType so a
+        //    freedperson is never shown as owning other people. That same guard
+        //    also suppressed an enslaved/freed person's OWN documents — e.g. the
+        //    1860 slave-schedule scan or certificate of freedom linked directly
+        //    via canonical_person_id — leaving their primary-source viewer empty.
+        //    This branch loads ONLY their own docs (no owner→enslaved lookup,
+        //    no collection expansion, so no probate-roll blow-up).
+        if (isFreedpersonType && tableSource !== 'unconfirmed_persons' &&
+            (tableSource === 'canonical_persons' || tableSource === 'documents')) {
+            try {
+                const ownDocs = await pool.query(`
+                    SELECT pd.id, pd.name_as_appears AS filename, pd.document_type AS doc_type,
+                        pd.collection_name, pd.collection_key, pd.collection_page_number,
+                        pd.collection_page_count, pd.source_type_label,
+                        COALESCE(pd.title, pd.collection_name, pd.document_type) AS title,
+                        pd.page_reference, pd.s3_key, pd.s3_url, pd.source_url,
+                        pd.document_date, pd.document_year, pd.ocr_text,
+                        COALESCE(pd.evidence_strength, 'unverified') AS evidence_strength
+                    FROM person_documents pd
+                    WHERE pd.canonical_person_id = $1
+                      AND NOT (pd.s3_key IS NULL AND (
+                          pd.source_url ILIKE '%familysearch.org/tree/%'
+                          OR pd.source_url ILIKE '%wikitree.com%'
+                      ))
+                    ORDER BY pd.collection_key NULLS LAST, pd.collection_page_number ASC, pd.id ASC
+                    LIMIT 200
+                `, [parseInt(id, 10)]);
+                if (ownDocs.rows.length > 0) {
+                    const grouped = {};
+                    for (const row of ownDocs.rows) {
+                        const key = row.collection_key || `__solo__${row.id}`;
+                        if (!grouped[key]) {
+                            grouped[key] = {
+                                collection_key: row.collection_key,
+                                collection_name: row.collection_name || row.title || row.filename,
+                                source_type_label: row.source_type_label,
+                                doc_type: row.doc_type,
+                                page_count: row.collection_page_count || 1,
+                                pages: [],
+                            };
+                        }
+                        grouped[key].pages.push(row);
+                    }
+                    documentCollections = Object.values(grouped);
+                    ownerDocuments = [...ownDocs.rows, ...ownerDocuments];
+                }
+            } catch (e) {
+                console.log('person_documents own-docs (freedperson) query error (non-fatal):', e.message);
+            }
+        }
+
         if (!isFreedpersonType && tableSource !== 'unconfirmed_persons' && (
             isConfirmedSlaveholder ||
             tableSource === 'canonical_persons' ||
