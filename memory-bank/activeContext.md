@@ -6,7 +6,7 @@ _Last updated: 2026-06-08 (Session 61 — line-item methodology backfill + sourc
 
 ## Session 61 — Line-Item DAA Backfill + Source-Loading Fixes (2026-06-07/08)
 
-Branch: `audit/probate-classifier-and-source-documents` (un-pushed). All work UNCOMMITTED.
+Branch: `audit/probate-classifier-and-source-documents` — **committed + pushed** (3 commits `438849671`, `a2eeeb7c9`, `32ad3bca6`; pushed to origin `7cf3c1265..32ad3bca6`).
 
 ### Line-item methodology — status
 - **SlaveVoyages voyages (M089):** applied + loaded — 64,853 voyage rows in `slavevoyages_voyages`.
@@ -14,17 +14,21 @@ Branch: `audit/probate-classifier-and-source-documents` (un-pushed). All work UN
 - **Freedman's backfill: DONE** — `scripts/backfill-freedmans-line-items.mjs` had three bugs (all fixed): (1) `extraction_method='freedmans_bank_index'` typo vs data `freedmens_bank_index`/`_ocr` (matched 0/416,520); (2) citation `'Freedman\'s…'` — `\'` in a JS template literal collapsed to a bare quote and broke the string-concatenated SQL; (3) `canonical_person_id ← confirmed_individual_id` (varchar) violated the FK for non-numeric / dangling ids. Source query now filters `confirmed_individual_id ~ '^[0-9]+$' AND EXISTS(canonical_persons)`. **Inserted 89,406 line items across 83,442 people** ($47,501.29 each = $42 median × 0.75 recovery × 1.05^150; reconstruction era, domestic_us; 0 FK orphans). The line-item DAA now computes non-zero per person.
   - CAUTION: script builds INSERTs by string concat; only PK (uuid) constraint exists, so `ON CONFLICT DO NOTHING` does NOT dedupe — clear `WHERE calculation_method_key='freedmans_bank_direct_loss'` before any re-run.
 - **Middle Passage backfill: DEFERRED.** 67,102 enslaved canonical_persons, 46,645 have birth year, **0 have death year** → Brattle person-years (death−birth) uncomputable. Decision: use a researched proxy (option b), assume children/elderly did not survive, and label proxies explicitly in output — but only after the proxy is research-justified. No constant hardcoded.
-- **DAAOrchestrator:** `USE_LINE_ITEM_METHODOLOGY=true`; `getLineItemsForPerson` Tier 1 works, **Tier 2 (geographic/state) is still a `[]` placeholder** (L66-69). `ReparationsBreakdown.jsx` `LineItemsView` still has a hardcoded `globalIndicatorTargetsData` array — TODO: fetch from backend.
+- **DAAOrchestrator:** `USE_LINE_ITEM_METHODOLOGY=true` but the line-item path is **dormant in production** — `daa.js` never passes `acknowledgerInfo.canonicalPersonId`, so live DAAs still use the legacy Craemer path (no $0 regression). `getLineItemsForPerson` Tier 1 works, **Tier 2 (geographic/state) is still a `[]` placeholder** (L66-69). LATENT: if the line-item branch is ever invoked, `DAADocumentGenerator.generateDOCX` (reads `slaveholderCalculations`/`totalEnslavedCount`/`totalDebt`) would crash, and `submitDAAOnChain` (daa.js:171) would submit `0`; `createDAARecord` + `upsertLineageLedger` handle both shapes.
+- **Indicator wiring: DONE.** `GET /api/daa/global-indicators` serves `global_indicator_targets`; `client.js` `getGlobalIndicators`; `ReparationsBreakdown.jsx` `LineItemsView` now fetches via `useApi` (loading/error/empty states), replacing the hardcoded array. Frontend builds clean.
 
 ### Source-loading audit ("sources not loading on the canonical-persons front end")
 - **Root cause #1 (broad blank):** transient AWS outage hit the Render backend's Neon/S3 calls. Self-healed when AWS recovered — verified prod healthy (enslaver 1170: 2 collections/122 pages, S3 presign 200 in 89ms). No code action.
 - **Root cause #2 (persistent, FIXED):** enslaved/freedperson `canonical_persons` never loaded their OWN documents. In `contribute.js` the flat-`documents` loader had no `canonical_persons` branch for them, and the only `canonical_person_id` query (`documentCollections`) was gated by `!isFreedpersonType` (and `FREEDPERSON_TYPES` includes `'enslaved'`). Fix: a dedicated block loads their own `canonical_person_id` docs (no owner→enslaved lookup, no collection expansion). Scope was 12 canonical 'enslaved' persons.
 - **Test harness:** `scripts/test-source-loading.mjs` — picks enslavers + enslaved/freedperson spanning every source type, hits `GET /api/contribute/person/:id` + S3 presign, prints per-source efficacy. Post-fix: **18/18 load, 0 zero-doc, 0 S3 failures** across DC compensated emancipation, SlaveVoyages, 1860 slave schedule, Georgia probate, FamilySearch.
 
+### Migration renumber
+- Resolved a duplicate `089` collision: `089-secondary-source-compilations.sql` (a separate probate/secondary-source effort, never applied, no `schema_migrations` row, table absent) renamed → `090-secondary-source-compilations.sql`. My `089-slavevoyages-voyages.sql` (applied + tracked) kept its number. The 090 file + `tests/fixtures/plantation-records/` + `tests/unit/test-plantation-record-extraction.js` are left UNTRACKED (belong to that other effort, not Session 61).
+
 ### Next
-- Commit Session 61 work (contribute.js fix, backfill script, test harness).
-- Implement DAAOrchestrator Tier 2 geographic query; wire `LineItemsView` to backend `global_indicator_targets`.
+- Make the line-item DAA path end-to-end before wiring `canonicalPersonId` into `daa.js`: implement Tier 2 geographic query, and teach `DAADocumentGenerator`/`submitDAAOnChain` the line-item shape (else they crash / submit $0).
 - Research-justify Middle Passage person-years proxy, then backfill with explicit proxy labeling.
+- Commit the separate probate/secondary-source work (090 migration + plantation-record fixtures/tests).
 
 ---
 

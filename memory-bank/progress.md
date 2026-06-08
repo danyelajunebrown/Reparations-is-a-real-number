@@ -8,7 +8,7 @@
 
 ## Session 61 — Line-Item DAA Backfill + Source-Loading Fixes (June 7-8, 2026)
 
-Branch `audit/probate-classifier-and-source-documents` (un-pushed). All work UNCOMMITTED.
+Branch `audit/probate-classifier-and-source-documents` — committed + pushed (3 commits `438849671`, `a2eeeb7c9`, `32ad3bca6`; origin `7cf3c1265..32ad3bca6`). Indicator wiring (`GET /api/daa/global-indicators` + `ReparationsBreakdown` fetch) done. Duplicate `089` migration resolved by renaming the unapplied `089-secondary-source-compilations.sql` → `090` (left untracked; belongs to the separate probate effort). Line-item DAA path remains dormant in prod (`daa.js` doesn't pass `canonicalPersonId`) and not yet end-to-end (generateDOCX/submitDAAOnChain read legacy-shape fields).
 
 ### Line-item methodology
 - **SlaveVoyages M089 applied + loaded** — 64,853 voyage rows; framework seeds present (20 perpetrators, 5 legal theories, 5 indicator targets).
