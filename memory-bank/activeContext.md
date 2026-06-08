@@ -1,6 +1,75 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-05-21 (Session 59 — probate classifier fix, canonical source-document audit, probate entity-extraction rebuild)_
+_Last updated: 2026-06-08 (Session 61 — line-item methodology backfill + source-loading bug fixes)_
+
+---
+
+## Session 61 — Line-Item DAA Backfill + Source-Loading Fixes (2026-06-07/08)
+
+Branch: `audit/probate-classifier-and-source-documents` (un-pushed). All work UNCOMMITTED.
+
+### Line-item methodology — status
+- **SlaveVoyages voyages (M089):** applied + loaded — 64,853 voyage rows in `slavevoyages_voyages`.
+- **Framework seeds:** present — `harm_perpetrator_entities` (20), `legal_theory_registry` (5), `global_indicator_targets` (5).
+- **Freedman's backfill: DONE** — `scripts/backfill-freedmans-line-items.mjs` had three bugs (all fixed): (1) `extraction_method='freedmans_bank_index'` typo vs data `freedmens_bank_index`/`_ocr` (matched 0/416,520); (2) citation `'Freedman\'s…'` — `\'` in a JS template literal collapsed to a bare quote and broke the string-concatenated SQL; (3) `canonical_person_id ← confirmed_individual_id` (varchar) violated the FK for non-numeric / dangling ids. Source query now filters `confirmed_individual_id ~ '^[0-9]+$' AND EXISTS(canonical_persons)`. **Inserted 89,406 line items across 83,442 people** ($47,501.29 each = $42 median × 0.75 recovery × 1.05^150; reconstruction era, domestic_us; 0 FK orphans). The line-item DAA now computes non-zero per person.
+  - CAUTION: script builds INSERTs by string concat; only PK (uuid) constraint exists, so `ON CONFLICT DO NOTHING` does NOT dedupe — clear `WHERE calculation_method_key='freedmans_bank_direct_loss'` before any re-run.
+- **Middle Passage backfill: DEFERRED.** 67,102 enslaved canonical_persons, 46,645 have birth year, **0 have death year** → Brattle person-years (death−birth) uncomputable. Decision: use a researched proxy (option b), assume children/elderly did not survive, and label proxies explicitly in output — but only after the proxy is research-justified. No constant hardcoded.
+- **DAAOrchestrator:** `USE_LINE_ITEM_METHODOLOGY=true`; `getLineItemsForPerson` Tier 1 works, **Tier 2 (geographic/state) is still a `[]` placeholder** (L66-69). `ReparationsBreakdown.jsx` `LineItemsView` still has a hardcoded `globalIndicatorTargetsData` array — TODO: fetch from backend.
+
+### Source-loading audit ("sources not loading on the canonical-persons front end")
+- **Root cause #1 (broad blank):** transient AWS outage hit the Render backend's Neon/S3 calls. Self-healed when AWS recovered — verified prod healthy (enslaver 1170: 2 collections/122 pages, S3 presign 200 in 89ms). No code action.
+- **Root cause #2 (persistent, FIXED):** enslaved/freedperson `canonical_persons` never loaded their OWN documents. In `contribute.js` the flat-`documents` loader had no `canonical_persons` branch for them, and the only `canonical_person_id` query (`documentCollections`) was gated by `!isFreedpersonType` (and `FREEDPERSON_TYPES` includes `'enslaved'`). Fix: a dedicated block loads their own `canonical_person_id` docs (no owner→enslaved lookup, no collection expansion). Scope was 12 canonical 'enslaved' persons.
+- **Test harness:** `scripts/test-source-loading.mjs` — picks enslavers + enslaved/freedperson spanning every source type, hits `GET /api/contribute/person/:id` + S3 presign, prints per-source efficacy. Post-fix: **18/18 load, 0 zero-doc, 0 S3 failures** across DC compensated emancipation, SlaveVoyages, 1860 slave schedule, Georgia probate, FamilySearch.
+
+### Next
+- Commit Session 61 work (contribute.js fix, backfill script, test harness).
+- Implement DAAOrchestrator Tier 2 geographic query; wire `LineItemsView` to backend `global_indicator_targets`.
+- Research-justify Middle Passage person-years proxy, then backfill with explicit proxy labeling.
+
+---
+
+## Session 60 — Global Reparations Schema Framework (2026-05-23/24)
+
+Branch: `audit/probate-classifier-and-source-documents` (un-pushed; +1 commit `3117a284a`).
+
+### Framing
+
+User directed an expansion of the platform's schema beyond US-internal harm accounting toward a global framework that can sit on top of all three legs of the triangle trade. Reference reading: Vijay Prashad, *Washington Bullets* (Sankara's "debt of blood"; IMF as post-1945 CIA; tariff escalation as the modern continuation of manufactured-goods dependency). The schema landing is the scaffolding for that vision — no front-end work yet, no row data, just the tables and ALTERs needed so the platform can REPRESENT chartered companies, African polities, capital-flow successions, and bankruptcy-event wealth transfers as first-class objects.
+
+User rule established this session and saved to auto-memory: **all harm_perpetrator_entities and similar reparations-domain row inserts must enter via the contribute pipeline on the front end, never via hardcoded seed scripts.** Schema CREATE TABLE migrations are fine to commit; row INSERTs are not. Examples raised: Bank of Bristol, Mount Hope Insurance Company, DeWolf family.
+
+### Migrations landed (082-088, all applied to Neon, committed to git)
+
+| # | Purpose | Key field / decision |
+|---|---|---|
+| 082 | `chartered_companies` (Royal African Company, WIC, East India, etc.) + bridge column on harm_perpetrator_entities | `sovereign_debt_fold_in_pathway` traces how modern obligations land on Treasuries when companies dissolved (RAC → Crown 1821 → modern FCDO/HM Treasury) |
+| 083 | `african_polities` — both-ways modeling | `appears_as_harm_party` AND `appears_as_receiving_party` defaults BOTH FALSE — agnostic on entry, contributor must affirmatively assert with evidence. CHECK requires at least one. |
+| 084 | `provenance_evidence` (generalized polymorphic citation table) | Subject is polymorphic (subject_entity_type + subject_entity_id, no FK enforcement). Replaces a polity-only `coercion_evidence` scope so corporate acknowledgments, charter documents, archival voyage records can all live in one table. Afonso I 1526 letters are the prototype use case. |
+| 085 | `entity_successions` — unified corporate-merger AND capital-flow | `succession_kind` discriminator. `flow_path` JSONB required (CHECK constraint) when `capital_flow`. Lets DeWolf Bank of Bristol → Industrial Trust → Fleet → Bank of America be recorded as `attenuated` traceability, distinct from RAC → African Co. of Merchants → Crown `direct` succession. |
+| 086 | `actor_roles` — polymorphic (actor, period, role) | `raider` is not exclusively a state role (EIC at Plassey 1757). Same actor can have multiple roles in same period or different roles across periods (Kongo: refuser 1500-1550 → coerced 1550-1800). `dependency_commodity` covers cowries, firearms, textiles, iron bars, copper manilas, glass beads, spirits, tobacco, mixed. |
+| 087 | ALTER `reparations_harm_categories` — neocolonial extension | Adds `perpetrating_multilateral` (IMF / World Bank / BIS / WTO) + `extraction_mechanism` (currency_devaluation / tariff_escalation / reserve_seigniorage / sovereign_debt_buyback / structural_adjustment / vulture_litigation). Targets: Haiti double-debt, CFA franc seigniorage, IMF SAPs, tariff escalation, vulture funds. |
+| 088 | `wealth_transfer_events` — first-class object for bankruptcy / foreclosure / probate sale events | Asset-proportion columns (`enslaved_persons_appraised_value_usd` vs `non_chattel_assets_value_usd`) make recoverable the typically-larger non-chattel wealth that flowed to creditors as additional extraction beyond what Brattle person-year valuation captures. Astor pattern (Northern financier-turned-enslaver-via-default). Adds nullable `wealth_transfer_event_id` FK on entity_successions AND family_relationships. `probate_sale` is a distinct event_type. |
+
+### Research corrections incurred this session
+
+- **NHM ≠ WIC successor.** NHM was a 1824 fresh creation, not a successor. ABN AMRO's actual slavery exposure runs through Hope & Co. and R. Mees & Zoonen per the IISH 2022 study (Pepijn Brandon, *Sporen van het slavernijverleden van de historische rechtsvoorgangers van ABN AMRO*).
+- **Caisse des Dépôts ≠ Compagnie des Indes successor.** CDC founded 1816, post-dates 1790 Compagnie liquidation. Modern obligation sits with the French Republic.
+- **Bank of Bristol → Bank of America is family-capital, not corporate succession.** James DeWolf wealth → grand-nephew Samuel Pomeroy Colt founded Industrial Trust (1886) → Industrial National → Fleet → BofA (2004). Recorded as `traceability='attenuated'`.
+- **Adjua DeWolf confirmed enslaved African woman**, gifted by James DeWolf to his wife Nancy in 1803 along with Pauledore. Akan name from southern Ghana. PBS *Traces of the Trade*. Early-platform DB entry was a real person, not a stray.
+- **South Sea Annuities → consols → finally redeemed by HM Treasury in 2015** — same year UK Treasury closed the 1833 abolition loan. Two slavery-derived British debts paid by UK taxpayers as recently as 2015.
+- **Companhia Grão-Pará liquidation ran until 1914** (130 years).
+- **Afonso I letters canonical citation:** Thornton 2023, *Afonso I Mvemba a Nzinga, King of Kongo* (Hackett). Archive: ANTT Lisbon, *Corpo Cronológico* Parte I, maço 34, July 6 + October 18, 1526.
+
+### Probate work — unaffected
+
+M082-M088 are additive (new tables + nullable column adds). The only intersection with probate-relevant tables is M088's nullable `wealth_transfer_event_id` FK addition on `family_relationships`, which doesn't require any existing INSERT to change. Forward-looking: the Georgia probate ETL is a natural source of `wealth_transfer_events` rows (every probated estate sale is `event_type='probate_sale'`), but that's an enhancement post-probate-rebuild, not a present requirement.
+
+### Open / Next
+
+- **Contribute pipeline extension** (the pipe — was originally going to be called M085 in conversation but is code, not a migration). Extend `/promote/:leadId` in `src/api/routes/contribute.js:3704` with a `target_table` discriminator so a single endpoint can land into `chartered_companies`, `african_polities`, `provenance_evidence`, `entity_successions`, `actor_roles`, or `wealth_transfer_events` (in addition to current `enslaved_individuals`). Plus per-entity-type validators. Reuse existing review-queue gating pattern at line 4294.
+- **Front-end nomination form.** New contribute UI component that lets a contributor pick "I'm nominating a [perpetrator entity / chartered company / polity / succession / role / evidence / wealth transfer event]" and fill the appropriate fields.
+- **Bank of Bristol, Mount Hope Insurance Company, DeWolf family, Royal African Company, Kingdom of Kongo (Afonso I evidence)** are queued for first-test entries through the contribute pipeline once the extension lands.
+- **Probate ETL enrichment** to emit `wealth_transfer_events` rows from will/inventory records — deferred until probate rebuild stabilizes per Session 59 plan.
 
 ---
 

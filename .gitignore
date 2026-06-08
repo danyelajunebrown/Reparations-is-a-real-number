@@ -75,3 +75,6 @@ storage/temp-ocr/
 tmp/
 tmp-*.js
 .env.bak*
+scripts/_tmp_*.mjs
+test-results/
+test-barnard-extract.js
