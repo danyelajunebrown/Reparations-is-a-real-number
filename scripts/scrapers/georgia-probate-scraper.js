@@ -203,7 +203,12 @@ async function ensureLoggedIn() {
     }
 
     const cookiesInjected = await injectCookies();
-    await page.goto('https://www.familysearch.org/', { waitUntil: 'domcontentloaded' });
+    // Navigate straight to the authenticated dashboard: logged in it stays on
+    // /home/portal/, logged out FamilySearch redirects to the login page. This
+    // is far more reliable than loading the root marketing page and probing
+    // header DOM selectors that FamilySearch changes periodically (the old check
+    // reported "Not logged in" even on a valid session).
+    await page.goto('https://www.familysearch.org/home/portal/', { waitUntil: 'domcontentloaded' });
     await sleep(cookiesInjected ? 3000 : 2000);
 
     const checkLoggedIn = async () => {
