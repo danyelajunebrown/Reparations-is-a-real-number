@@ -35,15 +35,25 @@ const LIMIT            = parseInt(opt('--limit', '0'), 10);
 const VERBOSE          = flag('--verbose');
 const CLEAR_SITEMAP    = flag('--clear-sitemap');
 
+// --- Collection parameters (defaults reproduce the original Georgia run) ---
+// This scraper is generic over any FamilySearch probate-by-county collection.
+//   Georgia  Probate Records 1742-1990 -> --collection 1999178 --state GA --region georgia      --region-label "Georgia"
+//   New York Probate Records 1629-1971 -> --collection 1920234 --state NY --region new-york      --region-label "New York"
+const COLLECTION_ID   = opt('--collection', '1999178');
+const STATE           = opt('--state', 'GA');
+const REGION_SLUG     = opt('--region', 'georgia');         // s3 path + collection key (kebab-case)
+const REGION_LABEL    = opt('--region-label', 'Georgia');   // human-readable state name
+const REGION_KEY      = REGION_SLUG.replace(/-/g, '_');      // jsonb metadata key prefix (snake_case)
+const METHODOLOGY_NAME = opt('--methodology-name', 'georgia_probate_liberty_county_1858_1867');
+const PROVENANCE      = `${REGION_SLUG}-probate-scraper`;    // created_by / ingested_by label
+
 // --- Constants ---
-const COLLECTION_ID   = '1999178';
-const STATE           = 'GA';
 const BROWSER_DEBUG_PORT = 9222;
 const S3_BUCKET       = process.env.S3_BUCKET_NAME || 'reparations-them';
-const SITEMAP_FILE    = path.join(__dirname, '../../tmp/georgia-probate-sitemap.json');
+const SITEMAP_FILE    = path.join(__dirname, `../../tmp/${REGION_SLUG}-probate-sitemap.json`);
 
-// Fix 3: Confirmed working waypoints URL (Level 1 — all 130 counties in collection 1999178)
-const WAYPOINTS_URL   = 'https://www.familysearch.org/search/image/index?owc=https%3A%2F%2Fwww.familysearch.org%2Fplatform%2Frecords%2Fcollections%2F1999178%2Fwaypoints';
+// Fix 3: Confirmed-working waypoints URL (Level 1 — all counties in the collection).
+const WAYPOINTS_URL   = `https://www.familysearch.org/search/image/index?owc=${encodeURIComponent('https://www.familysearch.org/platform/records/collections/' + COLLECTION_ID + '/waypoints')}`;
 
 // --- Cookie injection ---
 const FS_SESSION_COOKIE = process.env.FS_SESSION_COOKIE || null;
@@ -289,10 +299,10 @@ async function checkAndApplyMigrations() {
         // Fetch methodology UUID
         const mRes = await client.query(`
             SELECT id FROM estimation_methodology_registry
-            WHERE name = 'georgia_probate_liberty_county_1858_1867'
+            WHERE name = $1
               AND version = 'v1.0.0'
             LIMIT 1;
-        `);
+        `, [METHODOLOGY_NAME]);
         if (mRes.rows.length > 0) {
             methodologyId = mRes.rows[0].id;
             if (VERBOSE) log(`Methodology UUID: ${methodologyId}`);
@@ -396,7 +406,7 @@ async function buildSitemap(sitemap) {
             await page.goto(countyIndexUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await sleep(4000);
 
-            rolls = await page.evaluate(() => {
+            rolls = await page.evaluate((collectionId) => {
                 const results = [];
                 const links = Array.from(document.querySelectorAll('a[href*="owc="]'));
                 for (const link of links) {
@@ -410,12 +420,12 @@ async function buildSitemap(sitemap) {
                     const dgs = owcParts[1].trim();
                     const title = (link.textContent || '').trim();
                     if (groupId && dgs && title) {
-                        const rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(groupId + ':' + dgs + '?cc=1999178')}&cc=1999178`;
+                        const rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(groupId + ':' + dgs + '?cc=' + collectionId)}&cc=${collectionId}`;
                         results.push({ title, groupId, dgs, rollIndexUrl, imageCount: null, status: 'pending' });
                     }
                 }
                 return results;
-            });
+            }, COLLECTION_ID);
 
             // Deduplicate by groupId
             const seen = new Set();
@@ -704,12 +714,12 @@ async function writeToDbAndS3(
 
         // Fix 2: Dynamic S3 key
         const countySlug = county.toLowerCase().replace(/\s+/g, '-');
-        const s3Key = `probate/georgia/${countySlug}/${roll.groupId}/image-${String(imageNumber).padStart(4, '0')}-${baseArkId}.jpg`;
+        const s3Key = `probate/${REGION_SLUG}/${countySlug}/${roll.groupId}/image-${String(imageNumber).padStart(4, '0')}-${baseArkId}.jpg`;
 
         // Fix 2: Dynamic collection strings
-        const collectionName = `${county} County GA Probate Records — ${roll.title}`;
-        const collectionKey = `georgia-probate-${countySlug}-${roll.groupId}`;
-        const sourcePageTitle = `${county} County Georgia Probate Records, ${roll.title}, Image ${imageNumber}`;
+        const collectionName = `${county} County ${STATE} Probate Records — ${roll.title}`;
+        const collectionKey = `${REGION_SLUG}-probate-${countySlug}-${roll.groupId}`;
+        const sourcePageTitle = `${county} County ${REGION_LABEL} Probate Records, ${roll.title}, Image ${imageNumber}`;
 
         let s3Url = '';
         if (screenshotBuffer) {
@@ -755,7 +765,7 @@ async function writeToDbAndS3(
             collectionName, collectionKey, imageNumber,
             testatorName || `Image ${imageNumber}`,
             parsedData?.recordYear || null,
-            'georgia-probate-scraper',
+            PROVENANCE,
             safeTranscript,
             url,
             'familysearch',
@@ -791,18 +801,19 @@ async function writeToDbAndS3(
                 INSERT INTO enslaver_evidence_compendium
                     (canonical_person_id, evidence_source_table, evidence_source_id,
                      evidence_strength, claim_summary, methodology_id, ingested_at, ingested_by)
-                VALUES ($1, 'person_documents', $2::text, 'direct_primary', $3, $4, NOW(), 'georgia-probate-scraper')
+                VALUES ($1, 'person_documents', $2::text, 'direct_primary', $3, $4, NOW(), $5)
                 ON CONFLICT DO NOTHING;
             `, [
                 testatorCanonicalPersonId, personDocumentId,
-                `Named as testator in ${county} County GA probate ${parsedData.recordYear}, type: ${recordType}`,
-                methodologyId
+                `Named as testator in ${county} County ${STATE} probate ${parsedData.recordYear}, type: ${recordType}`,
+                methodologyId,
+                PROVENANCE
             ]);
 
             if (parsedData.estateValue) {
                 const notesJson = JSON.stringify({
-                    georgia_probate_estate_value: parsedData.estateValue,
-                    georgia_probate_year: parsedData.recordYear,
+                    [`${REGION_KEY}_probate_estate_value`]: parsedData.estateValue,
+                    [`${REGION_KEY}_probate_year`]: parsedData.recordYear,
                     roll: roll.title,
                     county,
                 });
@@ -1219,7 +1230,7 @@ async function upsertCanonicalPerson(client, name, personType, deathYearEstimate
     `, [
         normalizedName, firstName, lastName, personType,
         primaryCounty, primaryState, deathYearEstimate || null,
-        `Auto-created by georgia-probate-scraper. Type: ${personType}.`
+        `Auto-created by ${PROVENANCE}. Type: ${personType}.`
     ]);
     const newId = insertRes.rows[0].id;
     if (VERBOSE) log(`    Created canonical_person id=${newId} for "${normalizedName}"`);
@@ -1228,7 +1239,7 @@ async function upsertCanonicalPerson(client, name, personType, deathYearEstimate
 
 // --- Main ---
 async function main() {
-    log('Starting Georgia Probate Scraper (multi-county/multi-roll)...');
+    log(`Starting ${REGION_LABEL} Probate Scraper (multi-county/multi-roll) — collection ${COLLECTION_ID}, state ${STATE}...`);
     log(`  COUNTY_FILTER=${COUNTY_FILTER || 'all'}, ROLL_TITLE_FILTER=${ROLL_TITLE_FILTER || 'all'}`);
     log(`  DRY_RUN=${DRY_RUN}, APPLY=${APPLY}, RESUME=${RESUME}, LIMIT=${LIMIT || 'none'}`);
 
