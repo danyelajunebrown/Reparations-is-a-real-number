@@ -1,6 +1,39 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-08 (Session 61 — line-item methodology backfill + source-loading bug fixes)_
+_Last updated: 2026-06-10 (Session 62 — generic probate scraper + New York full-state run + scrape watchdog)_
+
+---
+
+## Session 62 — New York Probate Full-State Scrape (2026-06-10)
+
+Branch: `audit/probate-classifier-and-source-documents` — **committed + pushed** (`1f88915bc` generic scraper; watchdog folded in this session).
+
+### Goal / framing
+Run **New York probate records 1629–1971** (FamilySearch collection **1920234**, 58 counties) end-to-end on the Mac Mini, the way Georgia was run. The point is **not** NY's brief direct slavery (abolished 1827) — it is full-population capture of the **northern merchant/financier wealth** built on slave-harvested products. Isaac Franklin's transaction ledgers give the southern side; the northern counterparties surface as testators across these probate files. Capturing the entire population reconciles both ledgers. Scope decision (user): **full collection, all counties.**
+
+### Generic probate scraper (`scripts/scrapers/georgia-probate-scraper.js`, `1f88915bc`)
+- Parameterized the (mis-named) Georgia scraper over any FS probate-by-county collection: `--collection --state --region --region-label --methodology-name`. **Defaults reproduce the Georgia run byte-for-byte**, so GA is unchanged.
+- Derived `COLLECTION_ID/STATE/REGION_SLUG/REGION_LABEL/WAYPOINTS_URL/SITEMAP_FILE` from CLI; fixed a hardcoded `cc=1999178` inside a `page.evaluate` (browser-context closure couldn't see the constant — now passed as an arg); region/state-driven S3 prefix, collection labels, provenance, JSONB metadata keys, auto-created-person notes.
+- NY launch: `--collection 1920234 --state NY --region new-york --region-label "New York" --apply --resume`.
+- Filename kept as `georgia-probate-scraper.js` to avoid churning 7 references + the Mini deploy path; a rename is deferred.
+
+### Run status (live on Mini, PID 50478, detached via nohup)
+- Phase 0 complete: **58/58 counties, 12,948 rolls** indexed → `tmp/new-york-probate-sitemap.json`.
+- Phase 1 writing, alphabetical from Albany. Verified in DB: `probate_scrape_progress` (collection 1920234) written-count climbing (35→116+ within minutes); `person_documents collection_key new-york-probate-%` with resolved testators; testators auto-promoted to `canonical_persons` (enslaver). S3 prefix `probate/new-york/…`.
+- Multi-week crawl. Log: `~/probate-newyork-full.log` on the Mini.
+
+### Operational gotchas hit & fixed
+- **FS session was expired.** Old Chrome:9222 tabs *looked* logged in but every fresh nav hit the Sign-In wall (blocked Georgia too). User re-confirmed the Google login via VNC (`vnc://100.114.130.16`) → 58 counties enumerated. Captured a durable 61-cookie jar (`scripts/scrapers/_capture-fs-cookies.js` → `tmp/familysearch-cookies.json`, incl. `fssessionid`) and wired `FAMILYSEARCH_COOKIES` in the Mini `.env`. NOTE: `fssessionid` is a *session* cookie (no expiry, dies with the browser) — true durability = keep Chrome:9222 + the Google session alive; a weeks-long crawl may still need a periodic VNC re-login.
+- **Mini repo was behind my branch** (on `main`): missing `src/services/probate/document-classifier.js` and `src/utils/person-name-validator.js` (both self-contained) — scp'd. Lesson: when deploying a branch scraper to the Mini, sync its new local requires too.
+- Mini's non-login ssh shell lacks node on PATH — use `/usr/local/bin/node`.
+
+### Scrape watchdog (`scripts/scrapers/probate-scrape-watchdog.js`, this session)
+- Mini-local watchdog parameterized by `--collection`; alerts via existing `notify()`/ntfy (`OPS_NOTIFY_WEBHOOK`) on **state transitions only** (no spam): `died` (process gone), `login-wall` (no DB writes 30 min + log shows sign-in wall → "re-login via VNC"), `stall` (alive but no writes 30 min), and `recovered`. Keys off `probate_scrape_progress` written-count + `pgrep` + log tail; checks every 10 min.
+- Registered under PM2 as `probate-watchdog-ny` (id 13, online) + `pm2 save` (resurrects on reboot). Host-level "Mini down" stays covered by the separate Pi `health-watchdog.js`. Test ntfy ping returned `{ok:true}`.
+
+### Next
+- Periodically confirm the crawl is advancing through the high-enslaved Hudson Valley / NYC-area counties (Kings, New York, Queens, Richmond, Ulster, Albany, Dutchess) and that the watchdog stays green.
+- The session-cookie durability limitation is the main multi-week risk — watch for a `login-wall` ntfy alert.
 
 ---
 
