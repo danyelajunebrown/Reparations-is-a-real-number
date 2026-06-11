@@ -18,6 +18,16 @@
 // ideal for big batches. Cerebras next: 1M tok/day, very fast. Groq last: overflow.
 function buildProviders() {
   const p = [];
+  // OpenRouter first ($10 deposit → 1,000 :free req/day; pooled strong models).
+  // Llama-70B:free = best quality when its upstream isn't rate-limited; gpt-oss-120b:free
+  // = reliable workhorse (strong on financial/appraisement extraction). 429s fall through.
+  if (process.env.OPENROUTER_API_KEY) {
+    const orHdr = { 'HTTP-Referer': 'https://reparations.local', 'X-Title': 'reparations-probate' };
+    for (const m of ['meta-llama/llama-3.3-70b-instruct:free', 'openai/gpt-oss-120b:free']) {
+      p.push({ name: `openrouter(${m.split('/')[1].replace(':free','')})`, url: 'https://openrouter.ai/api/v1/chat/completions',
+        key: process.env.OPENROUTER_API_KEY, model: m, extra: {}, headers: orHdr });
+    }
+  }
   if (process.env.GEMINI_API_KEY) p.push({
     name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     key: process.env.GEMINI_API_KEY, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
@@ -87,7 +97,7 @@ async function callLLM(userContent, { maxTokens = 4000 } = {}) {
       try {
         const res = await fetch(prov.url, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${prov.key}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${prov.key}`, 'Content-Type': 'application/json', ...(prov.headers || {}) },
           body: JSON.stringify(body), signal: AbortSignal.timeout(90000),
         });
         if (!res.ok) {
