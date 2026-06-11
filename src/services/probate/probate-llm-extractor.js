@@ -40,22 +40,30 @@ function buildProviders() {
 const PROVIDERS = buildProviders();
 const MODEL = PROVIDERS.length ? `${PROVIDERS[0].name}:${PROVIDERS[0].model}` : 'none';
 
-const SYSTEM = `You are a forensic archivist extracting structured data from transcribed 18th-20th century U.S. probate documents (wills, estate inventories, appraisements, estate/guardian accounts). The OCR may contain errors. Extract ONLY what is explicitly present — never invent names, values, or relationships. Enslaved people appear as first names (sometimes with age, an appraised dollar value, or a kin note like "Lucy his wife"); record names exactly as written. Distinguish CHATTEL (enslaved humans) from NON-CHATTEL assets (land/acreage, livestock, crops, tools, household goods, cash, notes/bonds receivable). Output STRICT JSON only.`;
+const SYSTEM = `You are a forensic archivist extracting structured data from transcribed 18th-20th century U.S. probate documents (wills, estate inventories, appraisements, estate/guardian accounts). The OCR may contain errors and appraisements are often two-column with a name and its dollar value separated — pair each enslaved person with the dollar amount appraised against THEM. Extract ONLY what is explicitly present — never invent names, values, or relationships. Enslaved people appear as first names (sometimes with age, an appraised dollar value, or a kin note like "Lucy his wife", or a bequest "to my wife Ann"); record names exactly as written. When a will or division record says an enslaved person goes to a named heir, record that heir as bequeathed_to. Distinguish CHATTEL (enslaved humans) from NON-CHATTEL assets (land/acreage, livestock, crops, tools, household goods, cash, notes/bonds receivable). Output STRICT JSON only.`;
 
 const ESTATE_SCHEMA = `{
   "testator": string|null,
   "document_type": "will"|"inventory"|"appraisement"|"estate_account"|"guardian_account"|"other",
   "year": number|null,
-  "enslaved_persons": [ { "name": string, "age": number|null, "appraised_value_usd": number|null, "kin_relation": string|null } ],
+  "enslaved_persons": [ { "name": string, "age": number|null, "appraised_value_usd": number|null, "kin_relation": string|null, "bequeathed_to": string|null } ],
   "non_chattel_assets": [ { "description": string, "category": "land"|"livestock"|"crop"|"tool"|"household"|"cash"|"receivable"|"other", "quantity": string|null, "value_usd": number|null } ],
   "liabilities": [ { "description": string, "creditor": string|null, "amount_usd": number|null } ],
   "heirs": [ { "name": string, "relation": string|null, "bequest": string|null } ],
+  "monetary_bequests": [ { "beneficiary": string, "amount_usd": number|null, "form": string|null } ],
   "estate_totals": { "total_appraised_value_usd": number|null, "enslaved_value_usd": number|null, "non_chattel_value_usd": number|null }
 }`;
 
+// Guidance appended to every extraction prompt — drives the (1) quality fixes.
+const FIELD_RULES = `RULES:
+- estate_totals.total_appraised_value_usd: use the document's STATED grand total if present (e.g. "Total amount $7340", "amounting to $..."). If no total is stated, sum all appraised values you extracted.
+- estate_totals.enslaved_value_usd: sum of enslaved_persons[].appraised_value_usd (null if none have values).
+- bequeathed_to: the heir who receives this enslaved person, when a will/division states it; else null.
+- monetary_bequests: cash/legacy bequests of dollar amounts to named people (wills only).`;
+
 function singlePrompt(ocr, decedent) {
   const focus = decedent ? `\nFOCAL DECEDENT: "${decedent}". This OCR is an assembled estate file and may include stray lines bleeding in from an ADJACENT decedent. Extract ONLY ${decedent}'s estate; exclude anyone clearly tied to a different decedent.\n` : '';
-  return `Extract this probate document into the JSON schema below. null/empty when absent; dollar values as plain numbers.${focus}\nSCHEMA:\n${ESTATE_SCHEMA}\n\nOCR:\n"""\n${ocr.slice(0, 12000)}\n"""\n\nReturn only the JSON object.`;
+  return `Extract this probate document into the JSON schema below. null/empty when absent; dollar values as plain numbers.${focus}\nSCHEMA:\n${ESTATE_SCHEMA}\n\n${FIELD_RULES}\n\nOCR:\n"""\n${ocr.slice(0, 12000)}\n"""\n\nReturn only the JSON object.`;
 }
 
 // Batch prompt: many estates → one request. Returns {"results":[{id, ...estate}]}.
@@ -63,7 +71,7 @@ function batchPrompt(estates) {
   const blocks = estates.map(e =>
     `=== ESTATE id=${e.id}${e.decedent ? ` decedent="${e.decedent}"` : ''} ===\n${(e.ocr || '').slice(0, 6000)}`
   ).join('\n\n');
-  return `Below are ${estates.length} separate probate estate files, each delimited by "=== ESTATE id=... ===". Extract EACH independently into the schema. Keep estates separate — never merge people or assets across estates; attribute each to its own decedent.\n\nSCHEMA (per estate):\n${ESTATE_SCHEMA}\n\nReturn STRICT JSON: {"results":[{"id": <the estate id>, ...schema fields}]} with one entry per estate, ids matching exactly.\n\n${blocks}`;
+  return `Below are ${estates.length} separate probate estate files, each delimited by "=== ESTATE id=... ===". Extract EACH independently into the schema. Keep estates separate — never merge people or assets across estates; attribute each to its own decedent.\n\nSCHEMA (per estate):\n${ESTATE_SCHEMA}\n\n${FIELD_RULES}\n\nReturn STRICT JSON: {"results":[{"id": <the estate id>, ...schema fields}]} with one entry per estate, ids matching exactly.\n\n${blocks}`;
 }
 
 async function callLLM(userContent, { maxTokens = 4000 } = {}) {
