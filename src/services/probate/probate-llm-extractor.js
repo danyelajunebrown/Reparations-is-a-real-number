@@ -1,82 +1,119 @@
 /**
- * Probate LLM extractor — forensic financial + entity extraction from a probate
- * document's OCR text (Cloud Vision output), via the Hugging Face Inference
- * router (OpenAI-compatible chat completions). Replaces the regex
- * probate-entity-extractor.js, which scored 7.7% precision / 9.9% recall on
- * enslaved names and captured almost no financial detail.
+ * Probate LLM extractor — forensic financial + entity extraction from probate
+ * OCR (Cloud Vision), with a multi-provider free-tier router and BATCH prompting
+ * (many estates per request) to stay within free quotas at scale.
  *
- * Produces a structured ESTATE FINANCIAL STATEMENT so the same pass feeds both
- * the lineage/inheritance graph AND the wealth-transfer accounting (M088):
- * chattel (enslaved persons w/ appraised value + kin) vs non-chattel assets
- * (land, livestock, goods, cash, receivables), liabilities, and per-heir
- * bequest allocations.
+ * Two cost levers (see project memory: sustainable per-county extraction):
+ *   1. Batch prompting — pack N estates into one request. Slashes request count
+ *      on request-limited free tiers (Gemini: 1,500 req/day) and amortizes the
+ *      shared system prompt on token-limited ones (Cerebras 1M tok/day, Groq).
+ *   2. Provider router — try providers in order; on 429/quota fall through to the
+ *      next. Pooled free tiers ≈ one county/day at $0.
  *
- * Env: HUGGINGFACE_API_KEY (or HF_TOKEN). Model via PROBATE_LLM_MODEL
- * (default meta-llama/Llama-3.3-70B-Instruct).
+ * All providers are OpenAI-compatible chat-completions. Keys in .env:
+ *   GEMINI_API_KEY, CEREBRAS_API_KEY, GROQ_API_KEY.
  */
-const HF_URL = 'https://router.huggingface.co/v1/chat/completions';
-const MODEL = process.env.PROBATE_LLM_MODEL || 'meta-llama/Llama-3.3-70B-Instruct';
-const TOKEN = process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
 
-const SYSTEM = `You are a forensic archivist extracting structured data from a transcribed 18th–20th century U.S. probate document (will, estate inventory, appraisement, or estate/guardian account). The text is OCR of historical handwriting and may contain errors. Extract ONLY what is explicitly present — never invent names, values, or relationships. Enslaved people appear as first names (sometimes with an age, an appraised dollar value, or a kin note like "Lucy his wife"); record their names exactly as written, including descriptors. Distinguish CHATTEL (enslaved humans) from NON-CHATTEL assets (land/acreage, livestock, crops, tools, household goods, cash, notes/bonds receivable). Output STRICT JSON only.`;
+// Provider pool, tried in order. Gemini first: request-rich (1,500/day, 1M TPM),
+// ideal for big batches. Cerebras next: 1M tok/day, very fast. Groq last: overflow.
+function buildProviders() {
+  const p = [];
+  if (process.env.GEMINI_API_KEY) p.push({
+    name: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    key: process.env.GEMINI_API_KEY, model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
+    extra: { reasoning_effort: 'none' }, // Gemini 2.5 is a thinking model — disable, or it burns the token budget and truncates JSON
+  });
+  if (process.env.CEREBRAS_API_KEY) p.push({
+    name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions',
+    key: process.env.CEREBRAS_API_KEY, model: process.env.CEREBRAS_MODEL || 'gpt-oss-120b',
+    extra: { reasoning_effort: 'low' },
+  });
+  if (process.env.GROQ_API_KEY) p.push({
+    name: 'groq', url: process.env.PROBATE_LLM_URL || 'https://api.groq.com/openai/v1/chat/completions',
+    key: process.env.GROQ_API_KEY, model: process.env.PROBATE_LLM_MODEL || 'llama-3.3-70b-versatile', extra: {},
+  });
+  // PROBATE_PROVIDERS=cerebras,gemini restricts/reorders the pool (for bake-offs).
+  const order = (process.env.PROBATE_PROVIDERS || '').split(',').map(s=>s.trim()).filter(Boolean);
+  if (order.length) return order.map(n => p.find(x => x.name === n)).filter(Boolean);
+  return p;
+}
+const PROVIDERS = buildProviders();
+const MODEL = PROVIDERS.length ? `${PROVIDERS[0].name}:${PROVIDERS[0].model}` : 'none';
 
-function buildUserPrompt(ocr) {
-  return `Extract this probate document into the JSON schema below. Use null/empty arrays when a field is absent. Dollar values as numbers (no $ or commas).
+const SYSTEM = `You are a forensic archivist extracting structured data from transcribed 18th-20th century U.S. probate documents (wills, estate inventories, appraisements, estate/guardian accounts). The OCR may contain errors. Extract ONLY what is explicitly present — never invent names, values, or relationships. Enslaved people appear as first names (sometimes with age, an appraised dollar value, or a kin note like "Lucy his wife"); record names exactly as written. Distinguish CHATTEL (enslaved humans) from NON-CHATTEL assets (land/acreage, livestock, crops, tools, household goods, cash, notes/bonds receivable). Output STRICT JSON only.`;
 
-SCHEMA:
-{
-  "testator": string|null,            // the deceased / estate owner
+const ESTATE_SCHEMA = `{
+  "testator": string|null,
   "document_type": "will"|"inventory"|"appraisement"|"estate_account"|"guardian_account"|"other",
   "year": number|null,
   "enslaved_persons": [ { "name": string, "age": number|null, "appraised_value_usd": number|null, "kin_relation": string|null } ],
   "non_chattel_assets": [ { "description": string, "category": "land"|"livestock"|"crop"|"tool"|"household"|"cash"|"receivable"|"other", "quantity": string|null, "value_usd": number|null } ],
   "liabilities": [ { "description": string, "creditor": string|null, "amount_usd": number|null } ],
-  "heirs": [ { "name": string, "relation": string|null, "bequest": string|null } ],   // bequest = plain-text of what they receive
+  "heirs": [ { "name": string, "relation": string|null, "bequest": string|null } ],
   "estate_totals": { "total_appraised_value_usd": number|null, "enslaved_value_usd": number|null, "non_chattel_value_usd": number|null }
+}`;
+
+function singlePrompt(ocr, decedent) {
+  const focus = decedent ? `\nFOCAL DECEDENT: "${decedent}". This OCR is an assembled estate file and may include stray lines bleeding in from an ADJACENT decedent. Extract ONLY ${decedent}'s estate; exclude anyone clearly tied to a different decedent.\n` : '';
+  return `Extract this probate document into the JSON schema below. null/empty when absent; dollar values as plain numbers.${focus}\nSCHEMA:\n${ESTATE_SCHEMA}\n\nOCR:\n"""\n${ocr.slice(0, 12000)}\n"""\n\nReturn only the JSON object.`;
 }
 
-OCR TEXT:
-"""
-${ocr.slice(0, 12000)}
-"""
-
-Return only the JSON object.`;
+// Batch prompt: many estates → one request. Returns {"results":[{id, ...estate}]}.
+function batchPrompt(estates) {
+  const blocks = estates.map(e =>
+    `=== ESTATE id=${e.id}${e.decedent ? ` decedent="${e.decedent}"` : ''} ===\n${(e.ocr || '').slice(0, 6000)}`
+  ).join('\n\n');
+  return `Below are ${estates.length} separate probate estate files, each delimited by "=== ESTATE id=... ===". Extract EACH independently into the schema. Keep estates separate — never merge people or assets across estates; attribute each to its own decedent.\n\nSCHEMA (per estate):\n${ESTATE_SCHEMA}\n\nReturn STRICT JSON: {"results":[{"id": <the estate id>, ...schema fields}]} with one entry per estate, ids matching exactly.\n\n${blocks}`;
 }
 
-async function extractEstate(ocr, { retries = 2 } = {}) {
-  if (!TOKEN) throw new Error('HUGGINGFACE_API_KEY / HF_TOKEN not set');
-  if (!ocr || ocr.trim().length < 20) return null;
-  const body = {
-    model: MODEL,
-    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: buildUserPrompt(ocr) }],
-    temperature: 0,
-    max_tokens: 4000,
-    response_format: { type: 'json_object' },
-  };
+async function callLLM(userContent, { maxTokens = 4000 } = {}) {
+  if (!PROVIDERS.length) throw new Error('No LLM provider key set (GEMINI_API_KEY / CEREBRAS_API_KEY / GROQ_API_KEY)');
   let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(HF_URL, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90000),
-      });
-      if (!res.ok) { lastErr = new Error(`HF ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        if (res.status === 429 || res.status >= 500) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
-        throw lastErr; }
-      const data = await res.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) { lastErr = new Error('empty completion'); continue; }
-      // Strip code fences if the model added them despite json mode.
-      const clean = content.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-      return JSON.parse(clean);
-    } catch (e) {
-      lastErr = e;
-      if (attempt < retries) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+  for (const prov of PROVIDERS) {
+    const body = {
+      model: prov.model,
+      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userContent }],
+      temperature: 0, max_tokens: maxTokens, response_format: { type: 'json_object' }, ...prov.extra,
+    };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(prov.url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${prov.key}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(90000),
+        });
+        if (!res.ok) {
+          const txt = (await res.text()).slice(0, 160);
+          // Quota/rate exhausted on this provider → fall through to the next one.
+          if (res.status === 429 || res.status === 402 || res.status === 403) { lastErr = new Error(`${prov.name} ${res.status}: ${txt}`); break; }
+          if (res.status >= 500) { lastErr = new Error(`${prov.name} ${res.status}`); await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
+          throw new Error(`${prov.name} ${res.status}: ${txt}`);
+        }
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) { lastErr = new Error(`${prov.name} empty`); break; }
+        const clean = content.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+        return { json: JSON.parse(clean), provider: prov.name, usage: data.usage };
+      } catch (e) { lastErr = e; if (attempt < 2) await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); }
     }
   }
-  throw lastErr;
+  throw lastErr || new Error('all providers failed');
 }
 
-module.exports = { extractEstate, MODEL };
+// Single estate (back-compat). decedent constrains extraction to the focal estate.
+async function extractEstate(ocr, { decedent = null } = {}) {
+  if (!ocr || ocr.trim().length < 20) return null;
+  const { json } = await callLLM(singlePrompt(ocr, decedent), { maxTokens: 4000 });
+  return json;
+}
+
+// Batch: estates = [{id, decedent, ocr}] → [{id, ...estate}] (order not guaranteed; match by id).
+async function extractEstatesBatch(estates, { maxTokens } = {}) {
+  const usable = estates.filter(e => e.ocr && e.ocr.trim().length >= 20);
+  if (!usable.length) return [];
+  const { json, provider, usage } = await callLLM(batchPrompt(usable), { maxTokens: maxTokens || Math.min(16000, 1200 * usable.length + 1000) });
+  const results = Array.isArray(json?.results) ? json.results : (Array.isArray(json) ? json : []);
+  return { results, provider, usage };
+}
+
+module.exports = { extractEstate, extractEstatesBatch, MODEL, PROVIDERS };
