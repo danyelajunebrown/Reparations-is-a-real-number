@@ -23,8 +23,15 @@ Liberty probate was scraped/OCR'd (14,450 pp) but structured extraction was neve
 ### Also this session (earlier)
 CivilWarDC enslaved↔enslaver **role-inversion** fixed (124 person_type flips + 117 petitions + 104 family_relationships; un-merged 2 collisions; promoted 75 petition persons) — DC petitions filed BY the enslaved under the July-12-1862 supplementary act had roles backwards. Line-item DAA Freedman's backfill (89,406 line items). Source-loading bug (enslaved canonical_persons own docs). Person-ID search. Mobile-Safari S3 image fix. Liberty probate scrape finished (last 171 images).
 
+### Identity resolution / entity dedup (later in Session 63)
+Triggered by the "how many Ann Biscoe?" problem. Resolved the **Biscoe/Briscoe DC cluster** by primary sources: **THREE distinct women** separated by FATHER (Ann Maria/Hopewell, Ann/Edward-Briscoe, Ann/Bennett-Biscoe) + daughters Angelica Chew & Emma. Hand-resolved (FK-safe merges of the FS-L64X-RH2/b.1799 matriarch dupes into 141015; 6 primary-source kinship edges; 1860-schedule link to Georgetown Ward 2). **Critical catch:** "Annie Maria Hopewell" #140344 (b.1844) is a DIFFERENT person — birth-year + father's FS ID kept her separate.
+- **Methodology research** (`research/entity-resolution-methodology.md`, deep-research, 24/25 claims verified): Fellegi-Sunter scoring + Splink; phonetic-for-blocking-only / Jaro-Winkler-for-scoring; census one-to-one; discard multi-match; name-commonness. Parentage-primary + holding-trajectory are OUR extensions beyond published work.
+- **First-pass resolver** (`scripts/resolve-canonical-dedup.mjs`, Biscoe-validated): block→score→route with shared-extid/shared-parent/CONFLICTING-parents/JW/birth-year/census-exclusion. Caught + fixed a sibling-merge bug (kinship is relational). GAP: phonetic blocking keys unpopulated → needs fixing before the full 565K/1.68M run.
+- The 5 rules: **parentage is the primary disambiguation key**; **census-set mutual-exclusion** (one enumeration can't count a person twice); **completeness needs the relationship graph** not name search (married-name daughters/surname-bearing enslaved get missed); **holding-size is a trajectory** (inheritance), not a count match; **dedup runs both owner + enslaved sides**.
+
 ### Next
-- Let the drip work through the antebellum Liberty rolls (monitor via ntfy / `~/probate-drip.log` on Mini). Then option (2) data-layer breadth + (3) OCR quality on dense 2-column valuation pages. Recall on NAMES ~55%; FINANCIAL extraction is the strong, reconciling product. Point drip at next county = one-line change.
+- Identity: fix blocking-key population, implement the resolver's full --all run → review table → MatchVerifier UI; then the cross-source 1.68M pass. Close the research gaps (Enslaved.org/Freedmen's methodology, kinship-primary weights).
+- Probate: let the drip work the antebellum Liberty rolls (ntfy / `~/probate-drip.log`). Then option (2) data-layer breadth + (3) OCR quality on dense valuation pages. FINANCIAL extraction is the strong reconciling product; name-recall ceiling ~55%. Next county = one-line drip change.
 
 ---
 

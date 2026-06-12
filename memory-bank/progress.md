@@ -24,6 +24,13 @@ Branch `audit/probate-classifier-and-source-documents` — committed + pushed.
 
 **Next:** drip works the antebellum rolls; then data-layer breadth + OCR quality on dense valuation pages. Recall on names ~55% (OCR/dispersion ceiling); financial extraction is the strong, reconciling product.
 
+### Identity resolution / entity dedup (Session 63, later)
+
+The "how many Ann Biscoe?" problem opened a system-wide entity-resolution workstream. Resolved the Biscoe/Briscoe DC cluster from primary sources: **3 distinct women separated by father** (+ daughters Angelica Chew & Emma) — hand-merged the matriarch's FS dupes into 141015, wrote 6 primary-source kinship edges, linked to the 1860 schedule; correctly kept the b.1844 namesake separate.
+- **Research** (`research/entity-resolution-methodology.md`): deep-research survey (24/25 verified) — Fellegi-Sunter + Splink; phonetic-for-blocking-only + Jaro-Winkler scoring; census one-to-one; discard multi-match; name-commonness. Parentage-primary + holding-trajectory = our extensions beyond the literature.
+- **First-pass resolver** (`scripts/resolve-canonical-dedup.mjs`): block→score→route, Biscoe-validated; caught/fixed a sibling-merge bug (kinship is relational). Blocking-key population is the gap before the full 565K/1.68M run.
+- **5 rules:** parentage = primary key; census-set mutual-exclusion; completeness needs the relationship graph (not name search); holding-size is a trajectory not a count; dedup both owner + enslaved sides.
+
 ---
 
 ---
