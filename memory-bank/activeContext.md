@@ -1,6 +1,30 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-10 (Session 62 — generic probate scraper + New York full-state run + scrape watchdog)_
+_Last updated: 2026-06-12 (Session 63 — probate LLM extraction pipeline: free multi-provider router, segmentation v2, financial forensic accounting, self-running drip)_
+
+---
+
+## Session 63 — Probate LLM Extraction Pipeline + Forensic Accounting + Cron Drip (2026-06-09→12)
+
+Branch: `audit/probate-classifier-and-source-documents` — committed + pushed (`fdb0c50e5`, `8d1c3e011`, `d42d3c9cb`, `f6660cd30`, `c95222389`, + the civilwardc/role-inversion + line-item-DAA commits earlier this session).
+
+### The problem & the arc
+Liberty probate was scraped/OCR'd (14,450 pp) but structured extraction was never done — the regex extractor scored **7.7% precision / 9.9% recall** on enslaved names. Built a real LLM extractor and discovered, in order: (1) the extractor is fine, **segmentation** was broken; (2) the name-recall ceiling is ~**55%** (cursive-OCR misses + estates spanning multiple roll series + first-name-only ambiguity — Fillis/Jane recur), NOT the model; (3) **the financial extraction is the strong product** — appraisements name FAR more enslaved-with-dollar-values than wills do. Pivoted to financial/forensic accounting (user: option 3 then 2).
+
+### What was built (all in `src/services/probate/probate-llm-extractor.js` + `scripts/`)
+- **Free multi-provider router** — OpenRouter(llama-3.3-70b:free) → OpenRouter(gpt-oss-120b:free) → Gemini-flash-lite → Cerebras gpt-oss-120b → Groq llama-70b, with 429/402/403 fall-through. Keys in `.env` (gitignored): OPENROUTER/GEMINI/CEREBRAS/GROQ. **Paid hosted ruled out** (user max $1-2/county; a county ~35M tokens ≈ $6 even cheapest). **Local ruled out empirically** — Mini is Intel i5/no-GPU/8GB; M1 MacBook 8GB swaps a 7B into a 5-min timeout. Good local needs Apple-Silicon ≥32GB (future hardware). User added **$10 OpenRouter** (one-time → 1,000 :free req/day, deposit not consumed by :free). NOTE OpenRouter :free models share *upstream* rate limits (llama-70b/qwen 429 intermittently) — gpt-oss-120b:free is the reliable workhorse.
+- **Segmentation v2** (`scripts/segment-probate-v2.mjs` → `probate_estate_segments_v2`) — header-driven ("appraisement of the estate of NAME deceased"), groups a decedent's scattered will/appraisement pages by name; fixes v1 sequential carry-forward mis-attribution.
+- **Estate-extraction runner** (`scripts/extract-probate-estates.mjs` → `probate_estate_extractions`) — single-estate (batching tanks recall), idempotent (UNIQUE segment_id), budget-resumable (stops on 4 consecutive provider failures). Schema: enslaved persons (name/age/appraised value/kin/bequeathed_to), non-chattel assets, liabilities, heirs, monetary_bequests, reconciling estate_totals.
+- **Cron drip** (`scripts/probate-drip.mjs`) — one roll/tick, antebellum-first priority, segments+extracts, PID-locked, ntfy-notified. **Cron installed on Mini (every 3h).** Self-advances the corpus across daily free resets, hands-off, ~$0.
+
+### Results (first roll, 9SYT-PT5 "Wills & appraisements 1790-1850")
+**142/142 estates → 763 enslaved persons, 550 with individual dollar valuations, $224,857 total appraised.** Forensic accounting reconciles (Cooper: enslaved $4,341 + non-chattel $2,999 = stated total $7,340 — the chattel/non-chattel split M088 wealth_transfer_events needs). Drip now running the next antebellum roll (Accounts 1830-1858, 776pp).
+
+### Also this session (earlier)
+CivilWarDC enslaved↔enslaver **role-inversion** fixed (124 person_type flips + 117 petitions + 104 family_relationships; un-merged 2 collisions; promoted 75 petition persons) — DC petitions filed BY the enslaved under the July-12-1862 supplementary act had roles backwards. Line-item DAA Freedman's backfill (89,406 line items). Source-loading bug (enslaved canonical_persons own docs). Person-ID search. Mobile-Safari S3 image fix. Liberty probate scrape finished (last 171 images).
+
+### Next
+- Let the drip work through the antebellum Liberty rolls (monitor via ntfy / `~/probate-drip.log` on Mini). Then option (2) data-layer breadth + (3) OCR quality on dense 2-column valuation pages. Recall on NAMES ~55%; FINANCIAL extraction is the strong, reconciling product. Point drip at next county = one-line change.
 
 ---
 

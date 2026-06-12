@@ -1,8 +1,30 @@
 # Development Progress: Reparations Is A Real Number
 
 **Project Start:** 2024
-**Current Phase:** Line-item DAA methodology coming online (Freedman's line items backfilled, 89,406 across 83,442 people); source-loading bugs on the canonical-persons front end fixed.
-**Last Updated:** June 8, 2026 (Session 61 — line-item backfill + source-loading fixes)
+**Current Phase:** Probate forensic-accounting extraction live — a free, self-running LLM pipeline (multi-provider router + header-driven segmentation + cron drip) extracting per-enslaved-person appraised valuations into `probate_estate_extractions`. First Liberty roll: 763 enslaved, 550 valued, $224,857 appraised.
+**Last Updated:** June 12, 2026 (Session 63 — probate LLM extraction pipeline + forensic accounting + cron drip)
+
+---
+
+## Session 63 — Probate LLM Extraction Pipeline + Forensic Accounting + Cron Drip (June 9-12, 2026)
+
+Branch `audit/probate-classifier-and-source-documents` — committed + pushed.
+
+**The turn:** probate was scraped/OCR'd but never structured-extracted (regex scored 7.7%/9.9% on enslaved names). Built an LLM extractor; found the binding constraint is segmentation + OCR, not the model; pivoted (user's call) to **financial extraction**, which is the strong product — appraisements yield far more enslaved-with-dollar-values than wills do.
+
+**Built:**
+- **Free multi-provider router** (`src/services/probate/probate-llm-extractor.js`): OpenRouter llama-70b/gpt-oss-120b → Gemini-lite → Cerebras → Groq, 429-fallthrough. Paid hosted ruled out ($1-2/county ceiling); **local ruled out empirically** (Mini Intel/no-GPU/8GB; M1 MacBook 8GB swaps a 7B into a 5-min timeout — good local needs Apple-Silicon ≥32GB). User added one-time **$10 OpenRouter** → 1,000 :free/day, reliable strong-model access, ~$0 ongoing, zero laptop load.
+- **Header-driven segmentation v2** (`segment-probate-v2.mjs` → `probate_estate_segments_v2`): reads decedent from section headers, groups scattered pages by name; fixes v1 carry-forward mis-attribution.
+- **Estate-extraction runner** (`extract-probate-estates.mjs` → `probate_estate_extractions`): full financial statement per estate (enslaved w/ value+kin+bequeathed_to, non-chattel assets, liabilities, heirs, bequests, reconciling totals). Idempotent + budget-resumable.
+- **Cron drip** (`probate-drip.mjs`): one roll/tick, antebellum-first, segment+extract, PID-locked, ntfy-notified. Installed on Mini (every 3h) — self-advances the corpus across daily free resets, hands-off.
+
+**Result:** first roll (1790-1850 wills/appraisements) = **142/142 estates, 763 enslaved persons, 550 with individual valuations, $224,857 appraised**; forensic accounting reconciles (Cooper enslaved $4,341 + non-chattel $2,999 = $7,340). Drip now running the next antebellum roll automatically.
+
+**Also (earlier this session):** CivilWarDC enslaved↔enslaver role-inversion fixed (supplementary-act petitions filed BY the enslaved); line-item DAA Freedman's backfill (89,406); source-loading bug; person-ID search; mobile-Safari S3 image fix; Liberty scrape finished.
+
+**Next:** drip works the antebellum rolls; then data-layer breadth + OCR quality on dense valuation pages. Recall on names ~55% (OCR/dispersion ceiling); financial extraction is the strong, reconciling product.
+
+---
 
 ---
 
