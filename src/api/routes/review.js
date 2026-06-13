@@ -93,14 +93,17 @@ router.get('/queues', async (req, res) => {
             {
                 name: 'duplicate_canonicals',
                 title: 'Duplicate canonical_persons candidates',
-                description: 'Canonical rows that share a name AND have evidence on more than one row — likely the same historical person.',
+                description: 'Scored duplicate-person pairs from the entity-resolution resolver (blocking + Biscoe-rule scoring). Auto-merge candidates first, then review. Every merge is human-confirmed.',
                 count: await pendingCount(`
-                    SELECT COUNT(*)::int c FROM (
-                        SELECT canonical_name FROM canonical_persons
-                        WHERE person_type != 'merged'
-                        GROUP BY canonical_name
-                        HAVING COUNT(*) > 1
-                    ) x
+                    SELECT COUNT(*)::int c FROM dedup_candidate_pairs WHERE status = 'pending'
+                `),
+            },
+            {
+                name: 'cross_source_enslavers',
+                title: 'Cross-source enslaver links',
+                description: 'Unlinked enslaver unconfirmed_persons leads matched to an existing canonical enslaver by name + state/county. Confirm to link the lead to that canonical person.',
+                count: await pendingCount(`
+                    SELECT COUNT(*)::int c FROM cross_source_candidates WHERE status = 'pending' AND entity_kind = 'enslaver'
                 `),
             },
         ];
@@ -142,6 +145,9 @@ router.get('/queue/:name', async (req, res) => {
                 break;
             case 'duplicate_canonicals':
                 items = await getDuplicateCanonicals(limit, offset);
+                break;
+            case 'cross_source_enslavers':
+                items = await getCrossSourceEnslavers(limit, offset);
                 break;
             default:
                 return res.status(404).json({ success: false, error: 'Unknown queue' });
@@ -280,22 +286,74 @@ async function getParseFailures(limit, offset) {
 }
 
 async function getDuplicateCanonicals(limit, offset) {
+    // Scored pairs from the resolver, highest-confidence first. Each side is
+    // enriched with attributes + a source-document count so the reviewer can
+    // pick the survivor (the richer record) before confirming a merge.
     const r = await db.query(`
-        SELECT canonical_name, ARRAY_AGG(id ORDER BY id)::int[] ids, COUNT(*)::int c
-        FROM canonical_persons
-        WHERE person_type != 'merged'
-        GROUP BY canonical_name
-        HAVING COUNT(*) > 1
-        ORDER BY c DESC, canonical_name
+        SELECT d.id, d.person_a_id, d.person_b_id, d.score, d.route, d.evidence, d.blocking_keys,
+               a.canonical_name a_name, a.birth_year_estimate a_birth, a.death_year_estimate a_death,
+               a.primary_state a_state, a.person_type a_type,
+               (SELECT COUNT(*)::int FROM person_documents pd WHERE pd.canonical_person_id = a.id) a_docs,
+               b.canonical_name b_name, b.birth_year_estimate b_birth, b.death_year_estimate b_death,
+               b.primary_state b_state, b.person_type b_type,
+               (SELECT COUNT(*)::int FROM person_documents pd WHERE pd.canonical_person_id = b.id) b_docs
+        FROM dedup_candidate_pairs d
+        JOIN canonical_persons a ON a.id = d.person_a_id
+        JOIN canonical_persons b ON b.id = d.person_b_id
+        WHERE d.status = 'pending' AND a.person_type <> 'merged' AND b.person_type <> 'merged'
+        ORDER BY (d.route = 'auto_merge_candidate') DESC, d.score DESC, d.id
+        LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+    return r.rows.map(row => {
+        // suggest the richer record (more source docs, tie-break lower id) as survivor
+        const aRicher = row.a_docs > row.b_docs || (row.a_docs === row.b_docs && row.person_a_id < row.person_b_id);
+        const survivor = aRicher ? row.person_a_id : row.person_b_id;
+        const victim = aRicher ? row.person_b_id : row.person_a_id;
+        const fmt = (n, y1, y2, st, t, docs) => `cp=${n} "${''}" ${y1 || '?'}–${y2 || '?'} ${st || ''} [${t}] · ${docs} docs`;
+        return {
+            id: String(row.id),
+            kind: 'dedup_pair',
+            title: `${row.route === 'auto_merge_candidate' ? '★ ' : ''}${row.score} — "${row.a_name}" ⟷ "${row.b_name}"`,
+            subtitle: `${row.route} · suggested survivor cp=${survivor}, fold cp=${victim}`,
+            detail: (Array.isArray(row.evidence) ? row.evidence : []).join(' · '),
+            score: Number(row.score),
+            route: row.route,
+            evidence: Array.isArray(row.evidence) ? row.evidence : [],
+            blocking_keys: row.blocking_keys || [],
+            suggested_survivor: survivor,
+            suggested_victim: victim,
+            person_a: { id: row.person_a_id, name: row.a_name, birth: row.a_birth, death: row.a_death, state: row.a_state, type: row.a_type, docs: row.a_docs, label: fmt(row.person_a_id, row.a_birth, row.a_death, row.a_state, row.a_type, row.a_docs) },
+            person_b: { id: row.person_b_id, name: row.b_name, birth: row.b_birth, death: row.b_death, state: row.b_state, type: row.b_type, docs: row.b_docs, label: fmt(row.person_b_id, row.b_birth, row.b_death, row.b_state, row.b_type, row.b_docs) },
+        };
+    });
+}
+
+async function getCrossSourceEnslavers(limit, offset) {
+    const r = await db.query(`
+        SELECT x.id, x.canonical_person_id, x.unconfirmed_lead_id, x.score, x.route, x.evidence,
+               x.canonical_name, x.unconfirmed_name, x.location,
+               cp.primary_state cp_state, cp.primary_county cp_county,
+               (SELECT COUNT(*)::int FROM person_documents pd WHERE pd.canonical_person_id = cp.id) cp_docs,
+               u.locations u_locations, u.source_type u_source
+        FROM cross_source_candidates x
+        JOIN canonical_persons cp ON cp.id = x.canonical_person_id
+        JOIN unconfirmed_persons u ON u.lead_id = x.unconfirmed_lead_id
+        WHERE x.status = 'pending' AND x.entity_kind = 'enslaver'
+          AND cp.person_type <> 'merged' AND u.confirmed_individual_id IS NULL
+        ORDER BY (x.route = 'auto_link_candidate') DESC, x.score DESC, x.id
         LIMIT $1 OFFSET $2
     `, [limit, offset]);
     return r.rows.map(row => ({
-        id: row.ids.join(','),
-        kind: 'duplicate_cluster',
-        title: `${row.c}× "${row.canonical_name}"`,
-        subtitle: `Candidate winner: cp=${row.ids[0]} (lowest ID)`,
-        detail: '',
-        candidate_canonicals: row.ids.map(id => ({ id })),
+        id: String(row.id),
+        kind: 'xsrc_enslaver',
+        title: `${row.route === 'auto_link_candidate' ? '★ ' : ''}${row.score} — lead "${row.unconfirmed_name}" → cp=${row.canonical_person_id} "${row.canonical_name}"`,
+        subtitle: `${row.route} · ${row.location || ''}`,
+        detail: (Array.isArray(row.evidence) ? row.evidence : []).join(' · '),
+        score: Number(row.score),
+        route: row.route,
+        evidence: Array.isArray(row.evidence) ? row.evidence : [],
+        canonical: { id: row.canonical_person_id, name: row.canonical_name, state: row.cp_state, county: row.cp_county, docs: row.cp_docs },
+        lead: { id: row.unconfirmed_lead_id, name: row.unconfirmed_name, location: row.location, source: row.u_source },
     }));
 }
 
@@ -529,6 +587,125 @@ router.post('/parse_failures/:id/unreviewable', async (req, res) => {
                 reviewed_by = $3, reviewed_at = NOW()
             WHERE failure_id = $1
         `, [id, reason || 'no reason', req.headers['x-reviewer'] || 'admin']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ═══ DEDUP PAIR ACTIONS (duplicate_canonicals queue) ═══
+// All three resolve a row in dedup_candidate_pairs. Merges are HAND-CONFIRMED
+// here (Biscoe rule: never auto-merge) and executed FK-safely by the existing
+// scripts/merge-canonical-persons.mjs tool (42-FK-aware, logs person_merge_log).
+const { execFile } = require('child_process');
+const nodePath = require('path');
+const MERGE_TOOL = nodePath.resolve(__dirname, '../../../scripts/merge-canonical-persons.mjs');
+
+function runMerge(survivor, victim) {
+    return new Promise((resolve, reject) => {
+        execFile('node', [MERGE_TOOL, '--survivor', String(survivor), '--victim', String(victim), '--apply'],
+            { cwd: nodePath.resolve(__dirname, '../../../'), timeout: 120000 },
+            (err, stdout, stderr) => {
+                if (err) return reject(new Error((stderr || stdout || err.message).slice(-800)));
+                resolve(stdout);
+            });
+    });
+}
+
+// POST /api/review/duplicate_canonicals/:id/merge  Body: { survivor_id, victim_id }
+router.post('/duplicate_canonicals/:id/merge', async (req, res) => {
+    const { id } = req.params;
+    let { survivor_id, victim_id } = req.body || {};
+    survivor_id = parseInt(survivor_id, 10); victim_id = parseInt(victim_id, 10);
+    const reviewer = req.headers['x-reviewer'] || 'admin';
+    try {
+        const pair = (await db.query(`SELECT person_a_id, person_b_id, status FROM dedup_candidate_pairs WHERE id = $1`, [id])).rows[0];
+        if (!pair) return res.status(404).json({ success: false, error: 'pair not found' });
+        if (pair.status !== 'pending') return res.status(409).json({ success: false, error: `already ${pair.status}` });
+        const ids = [pair.person_a_id, pair.person_b_id];
+        if (!ids.includes(survivor_id) || !ids.includes(victim_id) || survivor_id === victim_id) {
+            return res.status(400).json({ success: false, error: 'survivor_id/victim_id must be the two persons of this pair' });
+        }
+        // Remove all dedup_candidate_pairs that reference the victim BEFORE merging.
+        // The merge tool rewrites victim→survivor on every FK, which would turn the
+        // merged pair into a self-referential (survivor,survivor) row and violate the
+        // person_a_id<person_b_id CHECK. The durable audit lives in person_merge_log;
+        // survivor's other pending pairs (with third parties) are untouched.
+        await db.query(`DELETE FROM dedup_candidate_pairs WHERE person_a_id=$1 OR person_b_id=$1`, [victim_id]);
+        await runMerge(survivor_id, victim_id);
+        res.json({ success: true, survivor: survivor_id, victim: victim_id, reviewer });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// POST /api/review/duplicate_canonicals/:id/distinct — confirm NOT a duplicate
+router.post('/duplicate_canonicals/:id/distinct', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query(`UPDATE dedup_candidate_pairs SET status='confirmed_distinct', reviewed_by=$2, reviewed_at=NOW(),
+            reviewer_notes=COALESCE(reviewer_notes,'') || ' | ' || COALESCE($3,'') WHERE id=$1`,
+            [id, req.headers['x-reviewer'] || 'admin', (req.body && req.body.reason) || '']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// POST /api/review/duplicate_canonicals/:id/skip — defer (needs more research)
+router.post('/duplicate_canonicals/:id/skip', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.query(`UPDATE dedup_candidate_pairs SET status='skipped', reviewed_by=$2, reviewed_at=NOW() WHERE id=$1`,
+            [id, req.headers['x-reviewer'] || 'admin']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ═══ CROSS-SOURCE ENSLAVER ACTIONS ═══
+// POST /api/review/cross_source_enslavers/:id/link — confirm the lead IS this canonical person
+router.post('/cross_source_enslavers/:id/link', async (req, res) => {
+    const { id } = req.params;
+    const reviewer = req.headers['x-reviewer'] || 'admin';
+    try {
+        const c = (await db.query(`SELECT canonical_person_id, unconfirmed_lead_id, status FROM cross_source_candidates WHERE id=$1`, [id])).rows[0];
+        if (!c) return res.status(404).json({ success: false, error: 'candidate not found' });
+        if (c.status !== 'pending') return res.status(409).json({ success: false, error: `already ${c.status}` });
+        // link the lead to the canonical person (confirmed_individual_id is varchar)
+        await db.query(`UPDATE unconfirmed_persons SET confirmed_individual_id=$2, status='confirmed',
+            reviewed_by=$3, reviewed_at=NOW(),
+            review_notes=COALESCE(review_notes,'') || ' | linked to canonical cp=' || $2 || ' (cross-source resolver)'
+            WHERE lead_id=$1`, [c.unconfirmed_lead_id, String(c.canonical_person_id), reviewer]);
+        await db.query(`UPDATE cross_source_candidates SET status='linked', reviewed_by=$2, reviewed_at=NOW() WHERE id=$1`, [id, reviewer]);
+        // other pending candidates for the same lead are now moot
+        await db.query(`UPDATE cross_source_candidates SET status='skipped',
+            reviewer_notes=COALESCE(reviewer_notes,'') || ' | lead linked elsewhere'
+            WHERE status='pending' AND unconfirmed_lead_id=$1 AND id<>$2`, [c.unconfirmed_lead_id, id]);
+        res.json({ success: true, lead: c.unconfirmed_lead_id, canonical: c.canonical_person_id });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// POST /api/review/cross_source_enslavers/:id/distinct — NOT the same person
+router.post('/cross_source_enslavers/:id/distinct', async (req, res) => {
+    try {
+        await db.query(`UPDATE cross_source_candidates SET status='confirmed_distinct', reviewed_by=$2, reviewed_at=NOW(),
+            reviewer_notes=COALESCE(reviewer_notes,'') || ' | ' || COALESCE($3,'') WHERE id=$1`,
+            [req.params.id, req.headers['x-reviewer'] || 'admin', (req.body && req.body.reason) || '']);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// POST /api/review/cross_source_enslavers/:id/skip
+router.post('/cross_source_enslavers/:id/skip', async (req, res) => {
+    try {
+        await db.query(`UPDATE cross_source_candidates SET status='skipped', reviewed_by=$2, reviewed_at=NOW() WHERE id=$1`,
+            [req.params.id, req.headers['x-reviewer'] || 'admin']);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });

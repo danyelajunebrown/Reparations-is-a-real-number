@@ -372,6 +372,39 @@ function renderActions(item) {
         </div>`;
     case 'parse_failure':
       return renderParseFailureActions(item);
+    case 'dedup_pair': {
+      const a = item.person_a || {}, b = item.person_b || {};
+      const card = (p) => `<div style="flex:1; border:1px solid var(--border,#333); border-radius:6px; padding:.5rem;">
+          <b>cp=${p.id}</b> "${escapeHtml(p.name || '')}"<br>
+          <span style="color:var(--muted); font-size:11px;">${p.birth || '?'}–${p.death || '?'} · ${escapeHtml(p.state || '—')} · ${escapeHtml(p.type || '')} · ${p.docs || 0} docs</span></div>`;
+      const evChips = (item.evidence || []).map(e => `<span class="candidate-pill">${escapeHtml(e)}</span>`).join(' ');
+      const sv = item.suggested_survivor, vi = item.suggested_victim;
+      return `<div style="display:flex; gap:.75rem; margin:.5rem 0;">${card(a)}${card(b)}</div>
+        ${evChips ? `<div class="evidence">${evChips}</div>` : ''}
+        <div class="actions">
+          <button class="action approve" onclick="mergeDedup('${item.id}', ${sv}, ${vi})">⇄ Merge — keep cp=${sv}</button>
+          <button class="action approve" onclick="mergeDedup('${item.id}', ${vi}, ${sv})">⇄ Merge — keep cp=${vi}</button>
+          <button class="action reject" onclick="distinctDedup('${item.id}')">✗ Distinct people</button>
+          <button class="action skip" onclick="skipDedup('${item.id}')">skip</button>
+        </div>`;
+    }
+    case 'xsrc_enslaver': {
+      const cp = item.canonical || {}, ld = item.lead || {};
+      const card = (label, name, sub) => `<div style="flex:1; border:1px solid var(--border,#333); border-radius:6px; padding:.5rem;">
+          <span style="color:var(--muted); font-size:10px;">${label}</span><br><b>${escapeHtml(name || '')}</b><br>
+          <span style="color:var(--muted); font-size:11px;">${escapeHtml(sub || '')}</span></div>`;
+      const evChips = (item.evidence || []).map(e => `<span class="candidate-pill">${escapeHtml(e)}</span>`).join(' ');
+      return `<div style="display:flex; gap:.75rem; margin:.5rem 0;">
+          ${card('unconfirmed lead #' + ld.id, ld.name, `${ld.location || ''} · ${ld.source || ''}`)}
+          ${card('canonical cp=' + cp.id, cp.name, `${cp.state || ''} ${cp.county || ''} · ${cp.docs || 0} docs`)}
+        </div>
+        ${evChips ? `<div class="evidence">${evChips}</div>` : ''}
+        <div class="actions">
+          <button class="action approve" onclick="linkXsrc('${item.id}', ${cp.id}, ${ld.id})">⛓ Link lead → cp=${cp.id}</button>
+          <button class="action reject" onclick="distinctXsrc('${item.id}')">✗ Different person</button>
+          <button class="action skip" onclick="skipXsrc('${item.id}')">skip</button>
+        </div>`;
+    }
     case 'duplicate_cluster':
       return `<div class="actions"><button class="action skip" onclick="skip('${item.id}')">dismiss (use merge script for now)</button></div>`;
     default: return '';
@@ -479,6 +512,37 @@ async function approveAmbiguous(id, target_type) {
 async function rejectAmbiguous(id) {
   try { await api(`/ambiguous_unconfirmed/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: 'not_a_person' }) }); toast('✗ not-a-person'); removeItem(id); } catch (e) { toast(e.message, true); }
 }
+async function mergeDedup(id, survivor, victim) {
+  if (!confirm(`Merge cp=${victim} INTO cp=${survivor}?\n\nThis folds all of cp=${victim}'s records into cp=${survivor} (FK-safe, logged), then marks cp=${victim} as merged. Not trivially reversible.`)) return;
+  try {
+    await api(`/duplicate_canonicals/${id}/merge`, { method: 'POST', body: JSON.stringify({ survivor_id: survivor, victim_id: victim }) });
+    toast(`✓ merged cp=${victim} → cp=${survivor}`); removeItem(id);
+  } catch (e) { toast(e.message, true); }
+}
+async function distinctDedup(id) {
+  try { await api(`/duplicate_canonicals/${id}/distinct`, { method: 'POST', body: JSON.stringify({ reason: '' }) }); toast('✓ marked distinct'); removeItem(id); }
+  catch (e) { toast(e.message, true); }
+}
+async function skipDedup(id) {
+  try { await api(`/duplicate_canonicals/${id}/skip`, { method: 'POST' }); } catch (e) { /* local skip anyway */ }
+  removeItem(id);
+}
+
+async function linkXsrc(id, canonicalId, leadId) {
+  try {
+    await api(`/cross_source_enslavers/${id}/link`, { method: 'POST', body: JSON.stringify({}) });
+    toast(`⛓ linked lead #${leadId} → cp=${canonicalId}`); removeItem(id);
+  } catch (e) { toast(e.message, true); }
+}
+async function distinctXsrc(id) {
+  try { await api(`/cross_source_enslavers/${id}/distinct`, { method: 'POST', body: JSON.stringify({ reason: '' }) }); toast('✓ marked distinct'); removeItem(id); }
+  catch (e) { toast(e.message, true); }
+}
+async function skipXsrc(id) {
+  try { await api(`/cross_source_enslavers/${id}/skip`, { method: 'POST' }); } catch (e) { /* local skip */ }
+  removeItem(id);
+}
+
 function skip(id) { removeItem(id); }
 
 function removeItem(id) {
