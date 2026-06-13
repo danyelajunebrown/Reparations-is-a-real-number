@@ -34,7 +34,8 @@ echo "=== er-refresh START $(date) (node $NODE) ==="
 echo "=== er-refresh DONE $(date) ==="
 
 # optional ntfy ping
-HOOK="$(grep -E '^OPS_NOTIFY_WEBHOOK=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"'"'"'"' ')"
+HOOK="$(grep -E '^OPS_NOTIFY_WEBHOOK=' .env 2>/dev/null | head -1 | cut -d= -f2-)"
+HOOK="${HOOK//\"/}"; HOOK="${HOOK//\'/}"; HOOK="${HOOK// /}"   # strip quotes/spaces
 if [ -n "$HOOK" ]; then
   curl -fsS -m 10 -d "entity-resolution refresh complete $(date '+%Y-%m-%d %H:%M')" "$HOOK" >/dev/null 2>&1 || true
 fi
