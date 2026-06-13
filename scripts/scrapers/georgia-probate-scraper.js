@@ -8,6 +8,8 @@ const { execSync } = require('child_process');
 const S3Service = require('../../src/services/storage/S3Service');
 const { classifyTranscript } = require('../../src/services/probate/document-classifier');
 const { isValidPersonName } = require('../../src/utils/person-name-validator');
+const { notify } = require('../../src/utils/notify');
+const os = require('os');
 const pg = require('pg');
 
 puppeteer.use(StealthPlugin());
@@ -73,6 +75,77 @@ function log(...args) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// --- Session-loss detection + human re-auth wait (resilience) ---
+// A FamilySearch session can drop mid-crawl (token expiry or an Incapsula /
+// hCaptcha wall). When it does, FS 302-redirects *every* request to its identity
+// login page. If we don't detect that, scrapeOneRoll mistakes the login page for
+// "this roll has no images", marks the roll failed, and immediately navigates to
+// the next roll — machine-gunning the login/hCaptcha endpoint every few seconds.
+// That re-triggers the captcha on every navigation (so a human can never finish
+// logging in) and risks getting the account blocked. Detect it and PAUSE instead.
+const PAUSE_SENTINEL = path.join(os.homedir(), `.probate-scraper-paused-${COLLECTION_ID}.json`);
+
+function isSessionLostUrl(url) {
+    if (!url) return true;
+    return /\/identity\/login/i.test(url)      // ident.familysearch.org/identity/login
+        || /hcaptcha\.com/i.test(url)          // captcha challenge frame became the top doc
+        || !/familysearch\.org/i.test(url);    // bounced off FS entirely
+}
+
+function writePauseSentinel(reason) {
+    try {
+        fs.writeFileSync(PAUSE_SENTINEL, JSON.stringify(
+            { reason, since: new Date().toISOString(), pid: process.pid, collection: COLLECTION_ID }, null, 2));
+    } catch (_) { /* sentinel is best-effort */ }
+}
+function clearPauseSentinel() {
+    try { if (fs.existsSync(PAUSE_SENTINEL)) fs.unlinkSync(PAUSE_SENTINEL); } catch (_) {}
+}
+
+// Block until a human logs back in on the Mini. CRITICAL: we must NOT navigate
+// while waiting — every page.goto() would yank the login page out from under the
+// operator and spawn a fresh hCaptcha. We only poll page.url() (cheap, no nav).
+async function waitForReauth(contextLabel) {
+    let url;
+    try { url = page.url(); } catch (_) { url = ''; }
+    if (!isSessionLostUrl(url)) return true; // already healthy — nothing to do
+
+    log(`  SESSION LOST during ${contextLabel}. Top URL: ${url}`);
+    log('  PAUSING navigation. Log back in to FamilySearch in the scraper tab on the Mini (VNC vnc://100.114.130.16). Polling without navigating.');
+    writePauseSentinel(`session lost during ${contextLabel}`);
+    await notify(
+        `FamilySearch session dropped during ${REGION_LABEL} probate scrape (${contextLabel}). Scraper is PAUSED — log in on the Mini (VNC vnc://100.114.130.16) and it resumes on its own.`,
+        { severity: 'error', title: 'probate-scrape session lost', tags: ['scraper', 'probate', 'login'] }
+    );
+
+    const POLL_MS = 30000;
+    let waited = 0;
+    let nextReAlert = 600000; // re-page every 10 min while still locked out
+    while (true) {
+        await sleep(POLL_MS);
+        waited += POLL_MS;
+        let u;
+        try { u = page.url(); } catch (_) { u = ''; }
+        if (!isSessionLostUrl(u)) {
+            log(`  Session restored after ${Math.round(waited / 60000)}m. Resuming. URL: ${u}`);
+            clearPauseSentinel();
+            await notify(
+                `${REGION_LABEL} probate scrape session restored after ${Math.round(waited / 60000)}m — resuming.`,
+                { severity: 'info', title: 'probate-scrape resumed', tags: ['scraper', 'probate'] }
+            );
+            await sleep(3000);
+            return true;
+        }
+        if (waited >= nextReAlert) {
+            nextReAlert += 600000;
+            await notify(
+                `Still logged out of FamilySearch (${Math.round(waited / 60000)}m). ${REGION_LABEL} probate scrape still paused — log in on the Mini.`,
+                { severity: 'warn', title: 'probate-scrape still paused', tags: ['scraper', 'probate', 'login'] }
+            );
+        }
+    }
 }
 
 // --- Unicode / control-char sanitizer ---
@@ -243,19 +316,36 @@ async function ensureLoggedIn() {
         return;
     }
 
-    log('Not logged in. Please log in in the Chrome window. Waiting up to 3 minutes...');
+    log('Not logged in. Waiting for manual login in the Chrome window on the Mini (VNC vnc://100.114.130.16).');
+    log('  Will NOT reload while a captcha/login challenge is on screen (reloading re-triggers the captcha and yanks your in-progress solve).');
+    writePauseSentinel('startup: waiting for manual login');
+    await notify(
+        `${REGION_LABEL} probate scrape is waiting for a manual FamilySearch login on the Mini (VNC vnc://100.114.130.16).`,
+        { severity: 'warn', title: 'probate-scrape login needed', tags: ['scraper', 'probate', 'login'] }
+    );
     let loggedIn = false;
-    for (let i = 0; i < 18; i++) {
-        await sleep(10000);
-        await page.reload({ waitUntil: 'domcontentloaded' });
-        await sleep(2000);
-        if (await checkLoggedIn()) {
-            loggedIn = true;
-            break;
+    const POLL_MS = 5000;
+    const MAX_WAIT_MS = 30 * 60 * 1000; // patient: 30 min, not 3
+    let waited = 0;
+    let lastReloadAt = 0;
+    while (waited < MAX_WAIT_MS) {
+        await sleep(POLL_MS);
+        waited += POLL_MS;
+        if (await checkLoggedIn()) { loggedIn = true; break; }
+        // Only reload to refresh state when we are NOT sitting on a login/captcha
+        // challenge, and at most once a minute. A human's login navigates the page
+        // away from the challenge on its own — we just need to notice it happened.
+        let url; try { url = page.url(); } catch (_) { url = ''; }
+        if (!isSessionLostUrl(url) && (waited - lastReloadAt) >= 60000) {
+            lastReloadAt = waited;
+            try { await page.reload({ waitUntil: 'domcontentloaded' }); await sleep(2000); } catch (_) {}
         }
     }
+    clearPauseSentinel();
     if (!loggedIn) {
-        log('Login timed out. Exiting.');
+        log('Login timed out after 30m. Exiting.');
+        await notify(`${REGION_LABEL} probate scrape exited: manual login not completed within 30m.`,
+            { severity: 'error', title: 'probate-scrape login timeout', tags: ['scraper', 'probate', 'login'] });
         process.exit(1);
     }
     log('Successfully logged in to FamilySearch.');
@@ -372,8 +462,16 @@ async function buildSitemap(sitemap) {
         return results;
     });
 
-    // Fix 3: Hard stop if zero counties found
+    // Fix 3: Hard stop if zero counties found — UNLESS we already have a cached
+    // sitemap. The waypoints SPA intermittently renders zero links (slow load,
+    // A/B page variant), which on a RESUME would needlessly kill a crawl whose
+    // counties are all already indexed. Only a genuinely empty first-run build
+    // is fatal; otherwise fall back to the cached sitemap and proceed.
     if (countyLinks.length === 0) {
+        if (sitemap.counties.length > 0) {
+            log(`WARNING: Waypoints page returned zero county links, but sitemap already has ${sitemap.counties.length} counties — using cached sitemap and continuing.`);
+            return sitemap;
+        }
         log('ERROR: Waypoints page returned zero county links. The URL or DOM structure may have changed.');
         log(`  URL used: ${WAYPOINTS_URL}`);
         log('  Open this URL in Chrome DevTools, find the county links, and update the selector.');
@@ -483,6 +581,26 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         return;
     }
 
+    // Resilience: if FS bounced us to its login / hCaptcha wall, pause for human
+    // re-auth (without navigating) and re-load the roll index. NEVER treat a
+    // logout as an empty roll — that is what caused the captcha-hammering spiral.
+    if (isSessionLostUrl(page.url())) {
+        await waitForReauth(`roll ${roll.groupId} (${countyObj.county})`);
+        try {
+            await page.goto(roll.rollIndexUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await sleep(4000);
+        } catch (e) {
+            log(`  ERROR re-navigating to roll index ${roll.groupId} after re-auth: ${e.message}. Skipping roll.`);
+            roll.status = 'failed';
+            return;
+        }
+        if (isSessionLostUrl(page.url())) {
+            log(`  Still walled after re-auth for roll ${roll.groupId}; deferring roll for a later retry.`);
+            roll.status = 'failed';
+            return;
+        }
+    }
+
     // Step 2: Click the first image thumbnail to enter the viewer
     try {
         await page.click('a[href*="/ark:/61903/3:1:"]');
@@ -576,6 +694,16 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         if (imageNumber < imageCount) {
             const advanced = await advanceViewerToImage(imageNumber + 1);
             if (!advanced) {
+                // Distinguish a real end-of-roll from a session drop. If FS logged
+                // us out mid-roll, pause for re-auth, then mark the roll failed so
+                // it is re-scraped from the top later (do NOT let the caller mark a
+                // truncated roll 'complete' — that silently drops the tail images).
+                if (isSessionLostUrl(page.url())) {
+                    await waitForReauth(`mid-roll ${roll.groupId} at image ${imageNumber}`);
+                    log(`  Session restored; deferring roll ${roll.groupId} for a clean re-scrape from the top.`);
+                    roll.status = 'failed';
+                    return;
+                }
                 log(`  WARNING: Could not advance viewer to image ${imageNumber + 1}. Stopping roll.`);
                 break;
             }

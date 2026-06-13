@@ -42,6 +42,13 @@ const LOG_FILE           = opt('--log', '');
 const CHECK_INTERVAL_MS  = parseInt(opt('--interval-min', '10'), 10) * 60 * 1000;
 const STALL_THRESHOLD_MS = parseInt(opt('--stall-min', '30'), 10) * 60 * 1000;
 const STATE_FILE         = `${os.homedir()}/.probate-watchdog-${COLLECTION_ID}.json`;
+// Sentinel the scraper writes while it has intentionally paused itself to wait
+// for a human re-login. When present, a write-stall is EXPECTED — do not SIGSTOP.
+const PAUSE_SENTINEL     = `${os.homedir()}/.probate-scraper-paused-${COLLECTION_ID}.json`;
+// Backstop: if the scraper stalls WITHOUT self-pausing (some failure mode its own
+// session-loss detection missed), freeze it with SIGSTOP so it can't keep
+// hammering FamilySearch unattended. Disable with --no-auto-pause.
+const AUTO_PAUSE         = !argv.includes('--no-auto-pause');
 // Process-match pattern: the scraper invoked with this collection id.
 const PROC_PATTERN       = `georgia-probate-scraper.js.*${COLLECTION_ID}`;
 const LOGIN_WALL_RE      = /waiting for (manual )?login|login (timed out|timeout)|not logged in|please (sign|log) in/i;
@@ -72,6 +79,18 @@ async function dbCount() {
     return r.rows[0].n;
 }
 
+function scraperSelfPaused() {
+    try { return fs.existsSync(PAUSE_SENTINEL); } catch { return false; }
+}
+
+// Freeze the scraper so it stops navigating. SIGSTOP leaves the process listed
+// (pgrep still finds it) so we won't then misreport it as 'died'. Resume later
+// with `kill -CONT <pid>` or just restart the scraper.
+function suspendScraper() {
+    try { execSync(`pkill -STOP -f '${PROC_PATTERN}'`); return true; }
+    catch { return false; }
+}
+
 function logShowsLoginWall() {
     if (!LOG_FILE) return false;
     try {
@@ -97,17 +116,37 @@ async function check() {
     if (advanced) { s.lastProgressAt = now; }
     const stalledMs = now - (s.lastProgressAt || now);
 
-    // Determine current incident (priority: died > login wall > stall > none)
+    // Determine current incident.
+    // Priority: died > self-paused (expected) > login wall > stall/auto-pause > none
+    const selfPaused = scraperSelfPaused();
     let incident = null, message = '', severity = 'error';
     if (!running) {
         incident = 'died'; severity = 'critical';
         message = `scraper process not found (pattern ${PROC_PATTERN}). ${count} images written so far.`;
+    } else if (selfPaused) {
+        // The scraper detected a logout and parked itself (not navigating). A
+        // stall here is expected — page the operator, but never SIGSTOP it.
+        incident = 'awaiting-reauth'; severity = 'warn';
+        message = `scraper detected a FamilySearch logout and PAUSED itself — log in on the Mini (VNC vnc://100.114.130.16) and it resumes automatically. Stuck at ${count} images.`;
     } else if (stalledMs > STALL_THRESHOLD_MS && logShowsLoginWall()) {
         incident = 'login-wall'; severity = 'error';
         message = `no new writes for ${Math.round(stalledMs / 60000)}m and log shows a sign-in wall — re-login via VNC (vnc://100.114.130.16). Stuck at ${count} images.`;
     } else if (stalledMs > STALL_THRESHOLD_MS) {
-        incident = 'stall'; severity = 'error';
-        message = `process alive but no new writes for ${Math.round(stalledMs / 60000)}m (stuck at ${count} images).`;
+        if (AUTO_PAUSE && s.incident !== 'auto-paused') {
+            // Stalled but NOT self-paused: a failure mode the scraper's own
+            // detection missed. Freeze it so it can't hammer FS unattended.
+            const frozen = suspendScraper();
+            incident = 'auto-paused'; severity = 'error';
+            message = frozen
+                ? `no new writes for ${Math.round(stalledMs / 60000)}m and no self-pause sentinel — SIGSTOPped the scraper to stop it hammering FamilySearch. Investigate via VNC, then 'kill -CONT' or restart. Stuck at ${count} images.`
+                : `no new writes for ${Math.round(stalledMs / 60000)}m and no self-pause sentinel — tried to SIGSTOP the scraper but pkill failed. Investigate via VNC. Stuck at ${count} images.`;
+        } else if (s.incident === 'auto-paused') {
+            incident = 'auto-paused'; severity = 'error';
+            message = `scraper remains SIGSTOPped at ${count} images — awaiting manual restart.`;
+        } else {
+            incident = 'stall'; severity = 'error';
+            message = `process alive but no new writes for ${Math.round(stalledMs / 60000)}m (stuck at ${count} images).`;
+        }
     }
 
     // Alert only on transitions.
