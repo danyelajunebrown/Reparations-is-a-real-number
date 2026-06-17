@@ -28,44 +28,30 @@
  *   inheritance) collected via intake form to compute individual share.
  */
 
+const MACRO = require('./macro-config');
+
 class WealthGapCalculator {
     constructor() {
         // ── Survey of Consumer Finances Constants ────────────────────
-        //
-        // 2019 SCF (most recent complete data):
-        //   Mean white household wealth: $983,400
-        //   Mean Black household wealth: $142,500
-        //   Gap per household: $840,900
-        //   ~10M Black households → total gap: ~$8.41T
-        //
-        // 2016 SCF (Darity & Mullen's figure):
-        //   Gap per household: $795,000
-        //   Total gap: ~$7.95T
-        //
-        // We use 2019 as it's more current. Darity's per-capita: ~$240K.
+        // SINGLE-SOURCED from macro-config (WEALTH_GAP block). These were
+        // hardcoded here (983400 / 142500 / 10M / 40M); they now read from the
+        // one canonical module so the $8.41T SCF mean-gap operationalization
+        // can't drift from the rest of the pipeline. NOTE this is Darity's SCF
+        // mean-gap operationalization — DISTINCT from the $14T demographic
+        // per-capita one in DARITY (see macro-config header).
         //
         // Source: Federal Reserve Board, "Changes in U.S. Family Finances
         //   from 2016 to 2019," Federal Reserve Bulletin 106(5), Sept 2020.
+        const wg = MACRO.WEALTH_GAP;
+        const derived = MACRO.deriveWealthGap();
 
-        this.MEAN_WHITE_HOUSEHOLD_WEALTH = 983400;  // 2019 SCF
-        this.MEAN_BLACK_HOUSEHOLD_WEALTH = 142500;  // 2019 SCF
-        this.GAP_PER_HOUSEHOLD = this.MEAN_WHITE_HOUSEHOLD_WEALTH - this.MEAN_BLACK_HOUSEHOLD_WEALTH; // $840,900
-        this.BLACK_HOUSEHOLDS = 10000000;  // ~10M (Census Bureau)
-        this.TOTAL_GAP = this.GAP_PER_HOUSEHOLD * this.BLACK_HOUSEHOLDS; // ~$8.41T
-
-        // Estimated number of living white Americans descended from slaveholders.
-        // This is the denominator for share-of-gap.
-        // Ager et al. (2021): slaveholder families recovered fully → their descendants
-        // disproportionately hold white wealth today.
-        //
-        // Conservative estimate: ~40M Americans have at least one slaveholder ancestor
-        // (based on ~400K slaveholders in 1860 × ~100 descendants each over 6-7 generations)
-        // This is rough — needs refinement with actual genealogical data.
-        this.ESTIMATED_SLAVEHOLDER_DESCENDANTS = 40000000;
-
-        // Per-descendant share of the total gap
-        this.BASE_SHARE_PER_DESCENDANT = this.TOTAL_GAP / this.ESTIMATED_SLAVEHOLDER_DESCENDANTS;
-        // ~$210,250 per descendant
+        this.MEAN_WHITE_HOUSEHOLD_WEALTH = wg.mean_white_household_usd.value;
+        this.MEAN_BLACK_HOUSEHOLD_WEALTH = wg.mean_black_household_usd.value;
+        this.GAP_PER_HOUSEHOLD = derived.gapPerHousehold;          // $840,900
+        this.BLACK_HOUSEHOLDS = wg.black_households.value;         // ~10M
+        this.TOTAL_GAP = derived.totalGap;                        // ~$8.41T
+        this.ESTIMATED_SLAVEHOLDER_DESCENDANTS = wg.estimated_slaveholder_descendants.value;
+        this.BASE_SHARE_PER_DESCENDANT = derived.baseSharePerDescendant; // ~$210,250
     }
 
     /**
@@ -92,56 +78,86 @@ class WealthGapCalculator {
             numLivingDescendants = null
         } = params;
 
-        // Step 1: Base share (equal division of total gap)
+        // ── REWRITE (Jun 2026): the hand-picked multipliers are gone. ──
+        // Removed: 0.2-per-ancestor step + 3.0 cap (slaveholderMultiplier),
+        //          0.1 floor on the wealth tilt, 20×-income imputation,
+        //          and the 0.5 "default to half if no data" — all undisciplined
+        //          constants that the build directive flagged.
+        //
+        // The level now comes from the SCF per-descendant base share (an OBSERVED
+        // aggregate ÷ descendant count); individual variation is a MEAN-PRESERVING
+        // wealth tilt around that base, and every imputation is FLAGGED rather than
+        // silently filled. The absolute level is disciplined to subpopulation
+        // sub-aggregates by ObligationReconciler.reconcilePopulation — this method
+        // produces the per-descendant estimate + its imputation provenance.
+
+        const imputations = [];
+
+        // Base per-descendant share (TOTAL_GAP ÷ estimated descendants). Already
+        // per-capita: it is NOT divided again by a descendant count here. The
+        // lineage-level division across living descendants happens in the ledger
+        // (estimated_living_descendants), which is where the old descendantShare
+        // belonged. Defaulting that to 1.0 here was the 100%-to-everyone bug.
         const baseShare = this.BASE_SHARE_PER_DESCENDANT;
 
-        // Step 2: Wealth-adjusted share
-        // If the acknowledger is wealthier than the mean white household,
-        // their share should be proportionally larger.
-        // If poorer, proportionally smaller.
-        const totalWealth = Math.max(0, netWorth + (inheritanceExpected || 0));
-        const wealthRatio = totalWealth > 0
-            ? totalWealth / this.MEAN_WHITE_HOUSEHOLD_WEALTH
-            : annualIncome > 0
-                ? (annualIncome * 20) / this.MEAN_WHITE_HOUSEHOLD_WEALTH // Impute wealth as 20x income if no net worth data
-                : 0.5; // Default to half if no data at all
+        // Wealth tilt: how this descendant's wealth compares to the mean white
+        // household. No arbitrary floor; if wealth is unknown we FLAG the
+        // imputation and use a neutral tilt of 1.0 (the subpopulation mean),
+        // which is mean-preserving — not the old 0.5 or 20×-income guesses.
+        const totalWealth = netWorth + (inheritanceExpected || 0);
+        let wealthRatio;
+        if (totalWealth > 0) {
+            wealthRatio = totalWealth / this.MEAN_WHITE_HOUSEHOLD_WEALTH;
+        } else if (annualIncome > 0) {
+            // Income-as-wealth is a proxy. We use a capitalization factor but
+            // CARRY IT AS A FLAGGED IMPUTATION rather than burying 20× in the math.
+            const CAPITALIZATION_FACTOR = 12; // ≈ wealth/income ratio, US median (Fed SCF); flagged
+            wealthRatio = (annualIncome * CAPITALIZATION_FACTOR) / this.MEAN_WHITE_HOUSEHOLD_WEALTH;
+            imputations.push({ field: 'wealthRatio', basis: `income × ${CAPITALIZATION_FACTOR} capitalization proxy`, confidence: 0.4 });
+        } else {
+            wealthRatio = 1.0; // neutral, mean-preserving
+            imputations.push({ field: 'wealthRatio', basis: 'no wealth or income data — neutral tilt (1.0)', confidence: 0.15 });
+        }
 
-        const wealthAdjustedShare = baseShare * Math.max(0.1, wealthRatio); // Floor at 10% of base
+        const wealthAdjustedShare = baseShare * wealthRatio;
 
-        // Step 3: Slaveholder scale adjustment
-        // More documented slaveholder ancestors = proportionally more responsibility
-        const slaveholderMultiplier = Math.min(3.0, 1.0 + (numSlaveholderAncestors - 1) * 0.2);
-
-        // Step 4: Descendant proportion adjustment
-        // If we know there are 1000 living descendants, each carries 1/1000th
-        // If unknown, use the population estimate
-        const descendantShare = numLivingDescendants
-            ? 1.0 / numLivingDescendants
-            : 1.0; // Full share if we don't know the descendant count
-
-        // Step 5: Inheritance factor
-        // Direct inheritance from slaveholder line is the most traceable wealth transfer
+        // Inheritance tilt: documented inheritance from the slaveholder line is the
+        // most traceable transfer. Bounded additive tilt (an inheritance equal to
+        // mean white wealth at most doubles the share). Documented, not magic.
         const inheritanceFactor = inheritanceReceived > 0
             ? 1.0 + Math.min(1.0, inheritanceReceived / this.MEAN_WHITE_HOUSEHOLD_WEALTH)
             : 1.0;
 
-        // Final calculation
-        const totalObligation = wealthAdjustedShare * slaveholderMultiplier * descendantShare * inheritanceFactor;
+        // descendantShare: only applied if a real living-descendant count is given.
+        // Unknown → NOT divided (no 1.0 "full share" default); the lineage ledger
+        // owns the division. Flagged so callers know the level is per-descendant.
+        let descendantShare = 1.0;
+        if (numLivingDescendants && numLivingDescendants > 0) {
+            descendantShare = 1.0 / numLivingDescendants;
+        } else {
+            imputations.push({ field: 'descendantShare', basis: 'living-descendant count unknown — division deferred to lineage ledger (estimated_living_descendants)', confidence: 0.3 });
+        }
+
+        const totalObligation = wealthAdjustedShare * inheritanceFactor * descendantShare;
 
         return {
             // Core result
             totalObligation: Math.round(totalObligation * 100) / 100,
 
+            // Imputation provenance (explicit, never silent)
+            imputations,
+            isImputed: imputations.length > 0,
+
             // Breakdown
             baseShare: Math.round(baseShare * 100) / 100,
             wealthRatio: Math.round(wealthRatio * 1000) / 1000,
             wealthAdjustedShare: Math.round(wealthAdjustedShare * 100) / 100,
-            slaveholderMultiplier: Math.round(slaveholderMultiplier * 100) / 100,
             descendantShare,
             inheritanceFactor: Math.round(inheritanceFactor * 100) / 100,
+            numSlaveholderAncestors,
 
             // Context
-            methodology: 'Darity & Mullen wealth-gap closure (share-of-gap approach)',
+            methodology: 'Darity & Mullen wealth-gap closure (share-of-gap approach; mean-preserving wealth tilt, level disciplined by population benchmarking)',
             citations: {
                 model: 'Darity & Mullen, "From Here to Equality" (2020)',
                 data: 'Federal Reserve, Survey of Consumer Finances (2019)',

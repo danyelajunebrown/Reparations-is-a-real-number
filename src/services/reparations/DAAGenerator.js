@@ -41,6 +41,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
+const MACRO = require('./macro-config');
 
 class DAAGenerator {
     constructor(database) {
@@ -64,14 +65,13 @@ class DAAGenerator {
         // Source: Craemer (2015), p. 643
         this.WORKING_DAYS_PER_YEAR = 300;
 
-        // 3% annual compound interest rate.
-        // Craemer describes this as "very conservative" — below historical
-        // inflation, intended as an absolute minimum reasonable return.
-        // Makes the estimate a floor, not a ceiling.
-        // For comparison: ICHEIC used U.S. 30-year bond returns (~4-5%).
-        //
-        // Source: Craemer (2015), p. 645
-        this.COMPOUND_INTEREST_RATE = 0.03;
+        // Craemer's conservative compound rate — "very conservative", below
+        // historical inflation, an absolute-minimum reasonable return that makes
+        // the estimate a floor, not a ceiling. (ICHEIC used ~4-5% bond returns.)
+        // SINGLE-SOURCED from macro-config (was a hardcoded 0.03 here).
+        // This is the labor-value floor rate — DISTINCT from the 0.05 line-item
+        // itemization rate stamped on reparations_line_items rows.
+        this.COMPOUND_INTEREST_RATE = MACRO.RATES.craemerCompound.value;
 
         // Payment percentage — PLACEHOLDER pending tiered structure.
         // See GitHub Issue #21 for research on income-based tiers,

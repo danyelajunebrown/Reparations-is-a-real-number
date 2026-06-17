@@ -141,6 +141,34 @@ async function mergeCluster(merge) {
         }
         if (count.rows[0].c === 0) continue;
 
+        if (table === 'enslaver_lineage_ledger') {
+            // UNIQUE(enslaver_person_id): if the winner already has a ledger row,
+            // remapping a loser's row would violate uniqueness. The obligation is
+            // recomputed deterministically by ObligationReconciler, so it is safe
+            // to DROP the loser's ledger row (and its CASCADE-linked
+            // daa_lineage_contributions) and let the next reconcile rebuild the
+            // winner's. Only drops losers that actually collide with the winner.
+            const winnerHas = await pool.query(
+                `SELECT 1 FROM enslaver_lineage_ledger WHERE enslaver_person_id = $1`,
+                [merge.winner]
+            ).catch(() => ({ rowCount: 0 }));
+            if (winnerHas.rowCount) {
+                if (!APPLY) {
+                    console.log(`    enslaver_lineage_ledger: would drop loser row(s) colliding with winner`);
+                    continue;
+                }
+                const del = await pool.query(
+                    `DELETE FROM enslaver_lineage_ledger
+                     WHERE enslaver_person_id = ANY($1::int[])
+                     RETURNING enslaver_person_id`,
+                    [merge.losers]
+                ).catch(() => ({ rowCount: 0 }));
+                if (del.rowCount) console.log(`    enslaver_lineage_ledger: dropped ${del.rowCount} loser row(s) colliding with winner (recomputed on next reconcile)`);
+                continue; // nothing left to redirect
+            }
+            // else: winner has none → fall through and redirect the loser's row.
+        }
+
         if (table === 'person_external_ids') {
             // Avoid (canonical_person_id, id_system, external_id) unique conflict:
             // delete loser rows whose external_id already exists on winner.

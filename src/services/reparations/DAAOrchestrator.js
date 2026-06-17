@@ -15,7 +15,10 @@ const path = require('path');
 const fs = require('fs');
 const TieredPaymentCalculator = require('./TieredPaymentCalculator');
 const WealthGapCalculator = require('./WealthGapCalculator');
+const MACRO = require('./macro-config');
+const ObligationReconciler = require('./ObligationReconciler');
 const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
+const DisgorgementCalculator = require('./DisgorgementCalculator');
 const FamilySearchClimberAgent = require('../../../scripts/agents/FamilySearchClimberAgent');
 
 /**
@@ -40,6 +43,8 @@ class DAAOrchestrator {
         this.tieredCalc = new TieredPaymentCalculator();
         this.wealthGapCalc = new WealthGapCalculator();
         this.successionTracer = new CorporateSuccessionTracer(database);
+        this.disgorgementCalc = new DisgorgementCalculator(database);
+        this.reconciler = new ObligationReconciler();
         this.USE_LINE_ITEM_METHODOLOGY = true;
     }
 
@@ -104,10 +109,14 @@ class DAAOrchestrator {
             }
         }
 
-        // Darity & Mullen: $14T / 40M eligible descendants = $350,000 per capita
-        const darityMullenPerCapita = 14000000000000 / 40000000;
-        // Brattle Group: $36T / 80M eligible descendants = $450,000 per capita
-        const brattleUsPerCapita = 36000000000000 / 80000000;
+        // Darity & Mullen demographic per-capita and Brattle US per-capita.
+        // SINGLE-SOURCED from macro-config (was inline 14e12/40e6 and 36e12/80e6).
+        // NOTE: Brattle's published per-capita is $450,000 (macro-config /
+        // global_indicator_targets), NOT 36e12/80e6=$450,000 by coincidence —
+        // the prior inline 80e6 denominator was an undocumented guess; we now
+        // read Brattle's own figure.
+        const darityMullenPerCapita = MACRO.DARITY.percapita_demographic.value;
+        const brattleUsPerCapita = MACRO.BRATTLE.us_percapita_usd.value;
 
         return {
             total_usd,
@@ -284,7 +293,7 @@ class DAAOrchestrator {
         // (rhizomatic/distributed pledge model).
         console.log('Step 5b: Updating enslaver lineage ledger (M040)...');
         try {
-            await this.upsertLineageLedger(slaveholders, debtCalculation, daaRecord.daaId);
+            await this.upsertLineageLedger(slaveholders, debtCalculation, daaRecord.daaId, slaveholderData);
             console.log(`   ✓ Lineage ledger updated for ${slaveholders.length} enslaver(s)`);
         } catch (ledgerErr) {
             // Non-fatal: ledger update failure should NOT block DAA generation.
@@ -1288,11 +1297,26 @@ class DAAOrchestrator {
             }
         }
 
-        // ── Dual-methodology comparison ─────────────────────────────
+        // ── Combination: reconcile (replaces max(Craemer, wealth-gap)) ──
+        // compareWithCraemer (the old max rule) is kept ONLY for display/back-compat;
+        // the recommended figure now comes from ObligationReconciler.combine so the
+        // headline number is a reconciled central estimate, not "whichever theory
+        // is biggest". (Disgorgement/line-item predictors are added at the lineage
+        // level in upsertLineageLedger; this DAA-level call reconciles the two
+        // predictors available here.)
         const dualMethodology = this.wealthGapCalc.compareWithCraemer(
             wealthGapResult,
             totalDebt
         );
+        const reconciledDaa = this.reconciler.combine({
+            craemer:   totalDebt > 0 ? { usd: totalDebt, confidence: 0.7 } : null,
+            wealthGap: wealthGapResult.totalObligation > 0 ? { usd: wealthGapResult.totalObligation, confidence: wealthGapResult.isImputed ? 0.3 : 0.5 } : null,
+            disgorgement: { usd: 0, confidence: 0.2, evidence: 'none' },
+            lineItem: null,
+        });
+        dualMethodology.reconciled = reconciledDaa.reconciled_obligation_usd;
+        dualMethodology.reconciliationConfidence = reconciledDaa.confidence;
+        dualMethodology.disagreement = reconciledDaa.disagreement;
 
         // ── Wealth flag computation ─────────────────────────────────
         const wealthReasons = [];
@@ -1318,9 +1342,12 @@ class DAAOrchestrator {
             wealthGapObligation: wealthGapResult.totalObligation,
             wealthGapBreakdown: wealthGapResult,
 
-            // Dual methodology recommendation
+            // Dual methodology recommendation — recommended is now the RECONCILED
+            // figure (was dualMethodology.recommended = the max of the two).
             dualMethodology,
-            recommendedDebt: dualMethodology.recommended,
+            recommendedDebt: reconciledDaa.reconciled_obligation_usd,
+            recommendedDebtLegacyMax: dualMethodology.recommended,
+            reconciliation: reconciledDaa,
 
             // Corporate evidence
             corporateEvidence,
@@ -1504,88 +1531,234 @@ class DAAOrchestrator {
      * @param {Object} debtCalculation - Result of calculateTotalDebt()
      * @param {string} daaId           - UUID of the newly created DAA record
      */
-    async upsertLineageLedger(slaveholders, debtCalculation, daaId) {
+    async upsertLineageLedger(slaveholders, debtCalculation, daaId, slaveholderData = []) {
         if (!slaveholders || slaveholders.length === 0) return;
 
-        // slaveholders is the raw array returned by getDocumentedSlaveholders():
-        // each item has flat properties slaveholder_id, slaveholder_name,
-        // generation_distance etc. directly on the object (NOT wrapped in
-        // a .slaveholder sub-object). debtCalculation.slaveholderCalculations
-        // items have shape { slaveholder: {...}, debt, enslavedCount, calculations }.
+        // IMPORTANT FIX (Jun 2026): this writer previously targeted columns that
+        // DO NOT EXIST on the live enslaver_lineage_ledger (enslaver_canonical_id,
+        // craemer_2015_total_usd, wealth_gap_share_usd, combined_obligation_usd,
+        // generation_from_enslaver) with ON CONFLICT on a nonexistent unique
+        // key — so every write silently failed in the catch and the table stayed
+        // empty (0 rows). The live schema is migration 040 (+093):
+        //   enslaver_person_id (UNIQUE), total_obligation_usd, craemer_component_usd,
+        //   wealth_gap_component_usd, disgorgement_component_usd, line_item_component_usd,
+        //   reconciled_obligation_usd, obligation_confidence, reconciliation_metadata.
+        // This rewrite targets the real columns AND replaces the max/sum rule with
+        // the four-predictor ObligationReconciler.
+
+        const sdByKey = new Map();
+        for (const d of (slaveholderData || [])) {
+            if (d?.slaveholder?.slaveholder_id) sdByKey.set(d.slaveholder.slaveholder_id, d);
+        }
 
         for (const sh of slaveholders) {
             const slaveholderId = sh.slaveholder_id;
             if (!slaveholderId) continue;   // Skip unresolved climb matches
 
-            // Find this slaveholder's per-slaveholder Craemer calculation if present.
-            const slaveholderCalc = (debtCalculation.slaveholderCalculations || [])
-                .find(c =>
-                    c.slaveholder?.slaveholder_id === slaveholderId ||
-                    c.slaveholder?.slaveholder_name === sh.slaveholder_name
-                );
-
-            // 'debt' is the Craemer total for this one slaveholder.
-            // Fall back to the DAA-wide Craemer total when per-slaveholder
-            // breakdown is absent (e.g. zero-slaveholder DAA fallback path).
-            const craemerTotal       = slaveholderCalc?.debt        ?? debtCalculation.totalDebt          ?? 0;
-            const wealthGapShare     = debtCalculation.wealthGapObligation                                ?? 0;
-            const combinedObligation = slaveholderCalc?.debt        ?? debtCalculation.recommendedDebt
-                                       ?? debtCalculation.totalDebt ?? 0;
-
             try {
-                // Upsert the lineage ledger row — one row per (enslaver_canonical_id, generation_from_enslaver)
+                // ── Predictor 1: Craemer labor-value over THIS enslaver's documented enslaved ──
+                // Prefer the per-slaveholder breakdown from the legacy path; else
+                // compute from the aggregated enslaved persons for this lineage.
+                const slaveholderCalc = (debtCalculation.slaveholderCalculations || [])
+                    .find(c => c.slaveholder?.slaveholder_id === slaveholderId
+                            || c.slaveholder?.slaveholder_name === sh.slaveholder_name);
+                let craemerLineage = slaveholderCalc?.debt ?? null;
+                const sd = sdByKey.get(slaveholderId);
+                if (craemerLineage == null && sd && Array.isArray(sd.enslavedPersons) && sd.enslavedPersons.length) {
+                    const preview = this.daaGenerator.calculatePreview(
+                        sd.enslavedPersons.map(p => ({
+                            name: p.enslaved_name,
+                            yearsEnslaved: p.years_enslaved,
+                            startYear: p.start_year || 1800,
+                        })).filter(p => p.yearsEnslaved != null),
+                        1 // annualIncome unused for the historical-debt preview
+                    );
+                    craemerLineage = preview.totalDebt || null;
+                }
+
+                // ── Descendant aggregation (fixes the 100%-to-everyone bug) ──
+                // estimated_living_descendants is the denominator for the lineage's
+                // share-of-gap AND for each DAA's contribution share. Sourced from
+                // the inheritance graph heir count when available, else a documented
+                // generational-fanout estimate — NEVER defaulted to 1 (= full share).
+                const { estDescendants, method: descMethod } =
+                    await this._estimateLivingDescendants(slaveholderId, sh.generation_distance);
+
+                // ── Predictor 2: wealth-gap share for this lineage ──
+                // Lineage's collective share of the SCF gap = base-share-per-descendant
+                // × this lineage's estimated living descendants. (Allocation
+                // disciplined by descendant count, not a hand-picked multiplier.)
+                const wealthGapLineage = this.wealthGapCalc.BASE_SHARE_PER_DESCENDANT * estDescendants;
+
+                // ── Predictor 3: disgorgement (traced non-chattel enrichment) ──
+                const disg = await this.disgorgementCalc.forEnslaver(slaveholderId);
+
+                // ── Predictor 4: line-item sum tied to this lineage's enslaved ──
+                const lineItemLineage = await this._lineItemSumForLineage(slaveholderId, sd);
+
+                // ── Reconcile the four predictors (replaces max / sum) ──
+                const result = this.reconciler.combine({
+                    craemer:      craemerLineage != null ? { usd: craemerLineage, confidence: 0.7 } : null,
+                    wealthGap:    estDescendants > 0 ? { usd: wealthGapLineage, confidence: 0.5 } : null,
+                    disgorgement: { usd: disg.total_usd, confidence: disg.confidence, evidence: disg.evidence },
+                    lineItem:     lineItemLineage != null ? { usd: lineItemLineage, confidence: 0.6 } : null,
+                });
+
+                const metadata = {
+                    ...result.metadata,
+                    predictors: result.predictors,
+                    disagreement: result.disagreement,
+                    flags: result.flags,
+                    estimated_living_descendants: estDescendants,
+                    descendants_estimate_method: descMethod,
+                    disgorgement_detail: disg,
+                };
+
                 const lineageResult = await this.db.query(`
                     INSERT INTO enslaver_lineage_ledger (
-                        enslaver_canonical_id,
-                        enslaver_name_display,
-                        generation_from_enslaver,
-                        craemer_2015_total_usd,
-                        wealth_gap_share_usd,
-                        combined_obligation_usd,
-                        share_basis,
-                        methodology_version,
+                        enslaver_person_id,
+                        enslaver_canonical_name,
+                        total_obligation_usd,
+                        craemer_component_usd,
+                        wealth_gap_component_usd,
+                        disgorgement_component_usd,
+                        line_item_component_usd,
+                        reconciled_obligation_usd,
+                        obligation_confidence,
+                        reconciliation_metadata,
+                        calculation_methodology_note,
+                        calculated_at,
+                        estimated_living_descendants,
+                        descendants_estimate_method,
                         created_at,
                         updated_at
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6,
-                        'full_obligation_ceiling',
-                        '2025-layer-a',
-                        NOW(), NOW()
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, NOW(), $12, $13, NOW(), NOW()
                     )
-                    ON CONFLICT (enslaver_canonical_id, generation_from_enslaver)
+                    ON CONFLICT (enslaver_person_id)
                     DO UPDATE SET
-                        craemer_2015_total_usd   = EXCLUDED.craemer_2015_total_usd,
-                        wealth_gap_share_usd     = EXCLUDED.wealth_gap_share_usd,
-                        combined_obligation_usd  = EXCLUDED.combined_obligation_usd,
-                        updated_at               = NOW()
+                        total_obligation_usd         = EXCLUDED.total_obligation_usd,
+                        craemer_component_usd        = EXCLUDED.craemer_component_usd,
+                        wealth_gap_component_usd     = EXCLUDED.wealth_gap_component_usd,
+                        disgorgement_component_usd   = EXCLUDED.disgorgement_component_usd,
+                        line_item_component_usd      = EXCLUDED.line_item_component_usd,
+                        reconciled_obligation_usd    = EXCLUDED.reconciled_obligation_usd,
+                        obligation_confidence        = EXCLUDED.obligation_confidence,
+                        reconciliation_metadata      = EXCLUDED.reconciliation_metadata,
+                        calculation_methodology_note = EXCLUDED.calculation_methodology_note,
+                        calculated_at                = NOW(),
+                        estimated_living_descendants = EXCLUDED.estimated_living_descendants,
+                        descendants_estimate_method  = EXCLUDED.descendants_estimate_method,
+                        updated_at                   = NOW()
                     RETURNING lineage_id
                 `, [
                     slaveholderId,
                     sh.slaveholder_name,
-                    sh.generation_distance ?? 0,
-                    craemerTotal,
-                    wealthGapShare,
-                    combinedObligation,
+                    result.reconciled_obligation_usd,
+                    craemerLineage,
+                    wealthGapLineage,
+                    disg.total_usd,
+                    lineItemLineage,
+                    result.reconciled_obligation_usd,
+                    result.confidence,
+                    JSON.stringify(metadata),
+                    result.metadata.combination_rule,
+                    estDescendants,
+                    descMethod,
                 ]);
 
                 const lineageId = lineageResult.rows[0]?.lineage_id;
                 if (!lineageId) continue;
 
-                // Link this lineage entry to the DAA (idempotent — ignore duplicates)
+                // Per-descendant contribution share — reconciled obligation divided
+                // across the lineage's estimated living descendants. This is the
+                // fix for "100% of ancestral debt to each descendant": share_fraction
+                // is 1/estDescendants, not 1.0.
+                const shareFraction = estDescendants > 0 ? 1.0 / estDescendants : null;
+                const contributionUsd = shareFraction != null
+                    ? Math.round(result.reconciled_obligation_usd * shareFraction * 100) / 100
+                    : result.reconciled_obligation_usd;
+                const shareBasis = descMethod === 'inheritance_heir_count'
+                    ? 'inheritance_share_probate'
+                    : 'naive_generational_split';
+
                 await this.db.query(`
                     INSERT INTO daa_lineage_contributions (
-                        daa_id,
-                        lineage_id,
-                        contribution_share,
-                        created_at
-                    ) VALUES ($1, $2, 1.0, NOW())
-                    ON CONFLICT (daa_id, lineage_id) DO NOTHING
-                `, [daaId, lineageId]);
+                        daa_id, lineage_id, contribution_usd, share_basis, share_fraction,
+                        share_methodology_note, source_calculation, confidence, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, NOW())
+                    ON CONFLICT (daa_id, lineage_id) DO UPDATE SET
+                        contribution_usd = EXCLUDED.contribution_usd,
+                        share_basis = EXCLUDED.share_basis,
+                        share_fraction = EXCLUDED.share_fraction,
+                        source_calculation = EXCLUDED.source_calculation,
+                        confidence = EXCLUDED.confidence
+                `, [
+                    daaId, lineageId, contributionUsd, shareBasis, shareFraction,
+                    `Reconciled lineage obligation ${result.reconciled_obligation_usd} ÷ ${estDescendants} est. living descendants (${descMethod}).`,
+                    JSON.stringify({ reconciled: result.reconciled_obligation_usd, predictors: result.predictors, disagreement: result.disagreement }),
+                    result.confidence,
+                ]);
 
             } catch (err) {
                 console.warn(`[DAAOrchestrator] upsertLineageLedger failed for slaveholder ${slaveholderId}: ${err.message}`);
                 // Non-fatal — continue with remaining slaveholders
             }
+        }
+    }
+
+    /**
+     * Estimate living descendants of an enslaver lineage — the denominator that
+     * fixes the "100% of debt to each descendant" bug. Priority:
+     *   1. inheritance_summary_by_testator.heir_count (documented heirs) — when
+     *      this enslaver appears as a testator in inheritance_edges.
+     *   2. generational fan-out: ~2 surviving children per generation from the
+     *      enslaver to the present (generation_distance), a documented demographic
+     *      proxy (carried as a flagged estimate, not a silent constant).
+     * Never returns < 1; never defaults to 1-as-full-share silently.
+     */
+    async _estimateLivingDescendants(enslaverPersonId, generationDistance) {
+        try {
+            const r = await this.db.query(`
+                SELECT heir_count FROM inheritance_summary_by_testator WHERE testator_id = $1
+            `, [enslaverPersonId]);
+            if (r.rows.length && Number(r.rows[0].heir_count) > 0) {
+                // Heirs documented at gen 1; project forward by fan-out to present.
+                const heirs = Number(r.rows[0].heir_count);
+                const gens = Math.max(0, (generationDistance || 6) - 1);
+                const projected = Math.round(heirs * Math.pow(2, gens));
+                return { estDescendants: Math.max(heirs, projected), method: 'inheritance_heir_count' };
+            }
+        } catch (e) { /* view may be absent on some envs — fall through */ }
+
+        // Generational fan-out proxy (≈2 surviving offspring/generation).
+        const gens = generationDistance || 6;
+        const est = Math.max(1, Math.round(Math.pow(2, gens)));
+        return { estDescendants: est, method: 'generational_fanout_2_per_gen' };
+    }
+
+    /**
+     * Sum of reparations_line_items.compounded_amount_usd attributable to this
+     * enslaver lineage. Line items are keyed to affected canonical persons; we
+     * sum those tied to this enslaver's documented enslaved where resolvable.
+     * Returns null (predictor absent) when nothing resolves — NOT 0-as-fact.
+     */
+    async _lineItemSumForLineage(enslaverPersonId, slaveholderData) {
+        try {
+            const r = await this.db.query(`
+                SELECT COALESCE(SUM(rli.compounded_amount_usd), 0) AS sum_usd, COUNT(*) AS n
+                FROM reparations_line_items rli
+                JOIN family_relationships fr
+                  ON LOWER(fr.person2_name) = LOWER((SELECT canonical_name FROM canonical_persons WHERE id = rli.canonical_person_id))
+                JOIN canonical_persons enslaver ON LOWER(fr.person1_name) = LOWER(enslaver.canonical_name)
+                WHERE enslaver.id = $1
+                  AND fr.relationship_type = 'enslaved_by'
+            `, [enslaverPersonId]);
+            const n = Number(r.rows[0].n) || 0;
+            if (n === 0) return null;
+            return Math.round(Number(r.rows[0].sum_usd) * 100) / 100;
+        } catch (e) {
+            return null;
         }
     }
 }
