@@ -28,9 +28,17 @@
  * an explicit, flagged, low-confidence path, never a silent constant.
  */
 
+const RateResolver = require('./rate-resolver');
+
 class DisgorgementCalculator {
-    constructor(database) {
+    constructor(database, opts = {}) {
         this.db = database;
+        // Bring traced enrichment forward to present via the rate-resolver
+        // (anchored where a series exists, labeled proxy otherwise). Unjust-
+        // enrichment law: COMPOUND for egregious wrongs at the WRONGDOER's rate
+        // of return — here the enterprise_roi anchor family. (GitHub #79, #83.)
+        this.rateResolver = opts.rateResolver || new RateResolver(database);
+        this.presentYear = opts.presentYear || 2026;
     }
 
     /**
@@ -44,56 +52,63 @@ class DisgorgementCalculator {
             return this._empty('no_enslaver_id');
         }
 
-        // land_transfer_events — consideration_usd is nominal USD at transfer_year.
-        // We sum nominal here; the reconciler benchmarks levels, and a future
-        // pass can compound transfer_year→present. We surface the year span so
-        // that compounding is possible downstream rather than baked in silently.
-        const land = await this.db.query(`
-            SELECT
-                COUNT(*)                              AS n,
-                COUNT(consideration_usd)              AS n_valued,
-                COALESCE(SUM(consideration_usd), 0)   AS sum_usd,
-                MIN(transfer_year)                    AS min_year,
-                MAX(transfer_year)                    AS max_year
+        // Enslaver's place (for the rate-resolver reference class).
+        const placeRow = await this.db.query(
+            `SELECT primary_state FROM canonical_persons WHERE id = $1`, [enslaverPersonId]);
+        const placeState = placeRow.rows[0]?.primary_state || null;
+
+        // land_transfer_events + flagrant_heirloom_assets — fetch valued rows with
+        // their year and COMPOUND each to present via the rate-resolver (wrongdoer's
+        // rate of return / enterprise_roi anchor). Nominal is also tracked so the
+        // compounding is transparent, not baked-in-silently. (#79)
+        const landRows = await this.db.query(`
+            SELECT consideration_usd AS usd, transfer_year AS year
             FROM land_transfer_events
-            WHERE enslaver_person_id = $1
-              AND implicates_enslaver = TRUE
+            WHERE enslaver_person_id = $1 AND implicates_enslaver = TRUE
         `, [enslaverPersonId]);
-
-        const heirloom = await this.db.query(`
-            SELECT
-                COUNT(*)                                AS n,
-                COUNT(appraised_value_usd)              AS n_valued,
-                COALESCE(SUM(appraised_value_usd), 0)   AS sum_usd
+        const heirloomRows = await this.db.query(`
+            SELECT appraised_value_usd AS usd, appraised_year AS year
             FROM flagrant_heirloom_assets
-            WHERE enslaver_person_id = $1
-              AND implicates_enslaver = TRUE
+            WHERE enslaver_person_id = $1 AND implicates_enslaver = TRUE
         `, [enslaverPersonId]);
 
-        // wealth_transfer_events has no enslaver_person_id column; it links via
-        // debtor_entity_id (polymorphic, currently always NULL). Until an
-        // explicit resolution table exists we cannot attribute these rows to a
-        // canonical enslaver, so the per-lineage contribution is 0. We report
-        // the GLOBAL unattributed pool separately as a flag so the gap is visible.
+        // Two passes following the anchor lattice (nested by aggressiveness):
+        //   FLOOR   = price_index (inflation / real-value preservation) — the
+        //             defensible MINIMUM the obligation is floored at. Unbounded
+        //             compounding at the aggressive wrongdoer-ROI rate over ~175
+        //             years explodes to economically absurd figures (a single
+        //             estate → hundreds of billions), so it must NOT be the floor.
+        //   CEILING = enterprise_roi (wrongdoer's actual gain) — reported as the
+        //             aggressive upper estimate, the top of the disagreement region.
+        const landFloor = await this._compoundRows(landRows.rows, 'land', placeState, 'price_index');
+        const heirFloor = await this._compoundRows(heirloomRows.rows, 'estate_nonchattel', placeState, 'price_index');
+        const landCeil = await this._compoundRows(landRows.rows, 'land', placeState, 'enterprise_roi');
+        const heirCeil = await this._compoundRows(heirloomRows.rows, 'estate_nonchattel', placeState, 'enterprise_roi');
+        const land = landFloor, heirloom = heirFloor; // floor drives the components/total
+
+        // wealth_transfer_events: still unattributed (debtor_entity_id NULL). See flag.
         const wte = await this._unattributedWealthTransferPool();
 
-        const landSum = Number(land.rows[0].sum_usd) || 0;
-        const heirloomSum = Number(heirloom.rows[0].sum_usd) || 0;
-        const total = landSum + heirloomSum; // wte excluded: unattributable today
+        const landSum = land.compounded;
+        const heirloomSum = heirloom.compounded;
+        const total = landSum + heirloomSum;                 // FLOOR present-value
+        const totalCeiling = landCeil.compounded + heirCeil.compounded; // aggressive upper
 
         const components = {
             land_transfer: {
-                usd: landSum,
-                events: Number(land.rows[0].n) || 0,
-                valued_events: Number(land.rows[0].n_valued) || 0,
-                year_span: land.rows[0].min_year
-                    ? [Number(land.rows[0].min_year), Number(land.rows[0].max_year)]
-                    : null,
+                usd: Math.round(landSum * 100) / 100,
+                usd_nominal: Math.round(land.nominal * 100) / 100,
+                events: landRows.rows.length,
+                valued_events: land.valued,
+                year_span: land.yearSpan,
+                rate_basis: land.rateBasis,
             },
             flagrant_heirloom: {
-                usd: heirloomSum,
-                assets: Number(heirloom.rows[0].n) || 0,
-                valued_assets: Number(heirloom.rows[0].n_valued) || 0,
+                usd: Math.round(heirloomSum * 100) / 100,
+                usd_nominal: Math.round(heirloom.nominal * 100) / 100,
+                assets: heirloomRows.rows.length,
+                valued_assets: heirloom.valued,
+                rate_basis: heirloom.rateBasis,
             },
             wealth_transfer_events: {
                 usd: 0,
@@ -110,26 +125,56 @@ class DisgorgementCalculator {
         const flags = [];
         if (evidence === 'none') flags.push('disgorgement_no_traced_evidence');
         if (wte.sum_usd > 0) flags.push('wealth_transfer_events_unattributed');
-        if (Number(land.rows[0].n) > Number(land.rows[0].n_valued)) {
-            flags.push('land_events_missing_consideration');
-        }
+        if (landRows.rows.length > land.valued) flags.push('land_events_missing_consideration');
+        // Surface whether the compounding used a real anchor or a labeled proxy.
+        const rateBases = [...new Set([...land.rateBasisList, ...heirloom.rateBasisList])];
+        if (rateBases.includes('proxy')) flags.push('disgorgement_rate_proxied');
 
         // Confidence reflects how much of the component is documentary vs absent.
-        // Pure traced dollars → high (0.85); nothing traced → low (0.2) so the
-        // reconciler down-weights this predictor for this lineage rather than
-        // treating a $0 as a confident zero.
         const confidence = evidence === 'traced' ? 0.85 : 0.2;
 
         return {
-            total_usd: Math.round(total * 100) / 100,
+            total_usd: Math.round(total * 100) / 100,              // FLOOR (price_index)
+            total_ceiling_usd: Math.round(totalCeiling * 100) / 100, // aggressive (enterprise_roi)
+            total_nominal_usd: Math.round((land.nominal + heirloom.nominal) * 100) / 100,
+            compounding_band: { floor_family: 'price_index', ceiling_family: 'enterprise_roi' },
             components,
             evidence,
             confidence,
             flags,
-            methodology: 'Disgorgement (unjust enrichment): sum of traced non-chattel '
-                + 'transfers + heirloom assets implicating this enslaver. '
-                + 'Nominal USD at documented year; not yet compounded to present.',
+            rate_basis: rateBases.join(',') || 'none',
+            methodology: 'Disgorgement (unjust enrichment): traced non-chattel transfers + '
+                + 'heirloom assets implicating this enslaver. Compounded to present via the '
+                + 'rate-resolver across the anchor lattice — FLOOR at price_index (real-value '
+                + 'preservation), CEILING at enterprise_roi (wrongdoer gain). total_usd is the '
+                + 'floor; raw aggressive compounding over ~175yr explodes and is the ceiling only.',
         };
+    }
+
+    /**
+     * Compound a set of {usd, year} rows to present via the rate-resolver.
+     * Rows with null value contribute 0 (descriptive provenance only).
+     */
+    async _compoundRows(rows, assetClass, placeState, family) {
+        let nominal = 0, compounded = 0, valued = 0, minY = null, maxY = null;
+        const rateBasisList = [];
+        for (const row of rows) {
+            const usd = row.usd == null ? null : Number(row.usd);
+            const year = row.year == null ? null : Number(row.year);
+            if (usd == null || Number.isNaN(usd)) continue;
+            valued++;
+            nominal += usd;
+            if (year != null) { minY = minY == null ? year : Math.min(minY, year); maxY = maxY == null ? year : Math.max(maxY, year); }
+            if (year == null) { compounded += usd; rateBasisList.push('no_year'); continue; }
+            const pv = await this.rateResolver.bringToPresent(usd, year, this.presentYear,
+                { predictor: 'disgorgement', assetClass, placeState, family });
+            compounded += pv.present_value;
+            rateBasisList.push(pv.basis);
+        }
+        const rateBasis = rateBasisList.length
+            ? (rateBasisList.includes('anchored') ? (rateBasisList.includes('proxy') ? 'mixed' : 'anchored') : 'proxy')
+            : 'none';
+        return { nominal, compounded, valued, yearSpan: minY != null ? [minY, maxY] : null, rateBasis, rateBasisList };
     }
 
     async _unattributedWealthTransferPool() {
