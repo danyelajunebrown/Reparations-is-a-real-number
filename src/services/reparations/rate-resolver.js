@@ -48,6 +48,7 @@ const PREDICTOR_FAMILY = {
     unjust_enrichment: 'enterprise_roi',
     craemer: 'bond_yield',
     labor_value: 'bond_yield',
+    wage_theft: 'bond_yield',       // victim's opportunity cost (make-whole)
     line_item: 'price_index',
     land: 'farmland_appreciation',
     wealth_gap: null, // wealth-gap is already present-valued; no compounding
