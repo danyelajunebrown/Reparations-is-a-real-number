@@ -70,21 +70,31 @@ async function main() {
     for (const r of craemerByName.rows) craemerMap.set(r.nm, { usd: Number(r.craemer_usd) || 0, n: Number(r.enslaved_n) });
     console.log(`      ${craemerMap.size} enslaver names with documented Craemer value`);
 
-    // ── Predictor 3: disgorgement, set-based, clean by enslaver_person_id ──
-    console.log('[2/4] Disgorgement (set-based, by enslaver_person_id)…');
+    // ── Predictor 3: disgorgement, set-based, COMPOUNDED to present ──
+    // POSTURE (user decision #79, option 2): the aggressive wrongdoer-gain
+    // (enterprise_roi) compounding STANDS per-lineage; the population BENCHMARK
+    // scales the aggregate to a control total. Rate from anchor_rate_series
+    // (enterprise_roi); fall back to the seeded 0.08 antebellum benchmark.
+    console.log('[2/4] Disgorgement (set-based, COMPOUNDED at enterprise_roi)…');
+    const roiRow = await pool.query(
+        `SELECT annual_rate FROM anchor_rate_series WHERE anchor_family='enterprise_roi' ORDER BY confidence DESC LIMIT 1`);
+    const ROI = roiRow.rows.length ? Number(roiRow.rows[0].annual_rate) : 0.08;
     const disg = await pool.query(`
         SELECT id, SUM(usd) AS usd FROM (
-            SELECT enslaver_person_id AS id, COALESCE(SUM(consideration_usd),0) AS usd
+            SELECT enslaver_person_id AS id,
+                   COALESCE(SUM(consideration_usd * power(1 + $1::numeric, ${CURRENT_YEAR} - COALESCE(transfer_year,1850))),0) AS usd
             FROM land_transfer_events WHERE implicates_enslaver = TRUE AND enslaver_person_id IS NOT NULL
             GROUP BY enslaver_person_id
             UNION ALL
-            SELECT enslaver_person_id AS id, COALESCE(SUM(appraised_value_usd),0) AS usd
+            SELECT enslaver_person_id AS id,
+                   COALESCE(SUM(appraised_value_usd * power(1 + $1::numeric, ${CURRENT_YEAR} - COALESCE(appraised_year,1850))),0) AS usd
             FROM flagrant_heirloom_assets WHERE implicates_enslaver = TRUE AND enslaver_person_id IS NOT NULL
             GROUP BY enslaver_person_id
         ) s GROUP BY id
-    `);
+    `, [ROI]);
     const disgMap = new Map();
     for (const r of disg.rows) disgMap.set(Number(r.id), Number(r.usd) || 0);
+    console.log(`      compounding rate (enterprise_roi): ${ROI}`);
     console.log(`      ${disgMap.size} enslavers with traced disgorgement`);
 
     // ── Descendants: heir_count where documented, else fan-out fallback ──
@@ -141,10 +151,26 @@ async function main() {
     console.log(`      ${units.length} evidenced lineages in scope`);
 
     // ── Reconcile each ──
-    let sumOld = 0, sumNew = 0, floorBinds = 0;
+    // CONSISTENCY CAP (multicalibration guardrail, user #79 option 2): aggressive
+    // wrongdoer-ROI compounding STANDS, but no single lineage may exceed the Darity
+    // per-descendant UPPER band × its living descendants. Without this, explosive
+    // compounding lets ~5 small estates capture a quarter of the national total
+    // (benchmarking preserves relative shares). The cap bounds per-case absurdity
+    // BEFORE the population benchmark scales the disciplined set. CAP_TOLERANCE
+    // gives headroom above the band.
+    const CAP_TOLERANCE = 1.0;
+    const perCapCap = MACRO.DARITY.percapita_high.value * CAP_TOLERANCE;
+    let sumOld = 0, sumNew = 0, floorBinds = 0, capped = 0;
     const percapitas = [];
     for (const u of units) {
         const r = reconciler.combine(u);
+        const cap = perCapCap * u.estDescendants;
+        if (r.reconciled_obligation_usd > cap) {
+            r.uncapped_usd = r.reconciled_obligation_usd;
+            r.reconciled_obligation_usd = cap;
+            r.flags.push('consistency_capped');
+            capped++;
+        }
         u._result = r;
         const oldMax = Math.max(u.craemer?.usd || 0, u.wealthGap?.usd || 0);
         sumOld += oldMax;
@@ -152,6 +178,7 @@ async function main() {
         if (r.flags.includes('disgorgement_floor_binds')) floorBinds++;
         percapitas.push(r.reconciled_obligation_usd / u.estDescendants);
     }
+    console.log(`      consistency-capped lineages: ${capped} (exceeded Darity $${perCapCap.toLocaleString()}/descendant band)`);
 
     // ── Optional benchmark to a control total (off by default) ──
     let benchFactor = 1;
@@ -172,6 +199,14 @@ async function main() {
     console.log(`  Δ (reconcile effect):     $${Math.round(sumNew - sumOld).toLocaleString()} (${sumOld ? ((sumNew/sumOld - 1)*100).toFixed(1) : '0'}%)`);
     console.log(`  median per-descendant:    $${Math.round(median).toLocaleString()}  (Darity band $${MACRO.DARITY.percapita_low.value.toLocaleString()}–$${MACRO.DARITY.percapita_high.value.toLocaleString()})`);
     if (BENCHMARK) console.log(`  Σ after benchmark:        $${Math.round(sumNew * benchFactor).toLocaleString()}`);
+
+    // ── Outlier concentration (does explosive compounding let a few lineages dominate?) ──
+    const ranked = units.map(u => ({ name: u.name, v: u._result.reconciled_obligation_usd }))
+        .sort((a, b) => b.v - a.v);
+    const top10 = ranked.slice(0, 10).reduce((a, x) => a + x.v, 0);
+    console.log(`  top-10 share of Σ:        ${sumNew > 0 ? (100 * top10 / sumNew).toFixed(1) : 0}%  (concentration check — benchmarking preserves relative shares)`);
+    console.log('  top 5 lineages (post-benchmark):');
+    for (const x of ranked.slice(0, 5)) console.log(`      $${Math.round(x.v * benchFactor).toLocaleString().padStart(18)}  ${x.name}`);
 
     if (!APPLY) {
         console.log('\nDRY-RUN: no rows written. Re-run with --apply to write the ledger.');
