@@ -80,26 +80,40 @@ async function main() {
         console.log(`     ${s.decade}s:  $${Math.round(perPY).toLocaleString().padStart(10)}/PY   (benchmarked → $${Math.round(perPY*factor).toLocaleString()})`);
     }
 
+    // ── Lineage ledger (ENSLAVER side) benchmarked to the SAME labor control ──
+    // The ledger's Craemer component is the enslaver-side valuation of the same
+    // documented labor; benchmarking it to the same $96k/PY control reconciles the
+    // enslaver-owed and enslaved-suffered estimates — computed at different rates
+    // (ledger 3%, wage_theft 5%) — into agreement from opposite directions.
+    const led = await pool.query(`SELECT SUM(craemer_component_usd) craemer, COUNT(*) n FROM enslaver_lineage_ledger`);
+    const ledCraemer = Number(led.rows[0].craemer);
+    const ledFactor = controlTotal / ledCraemer;
+    console.log(`\n  ── lineage ledger (enslaver side) ──`);
+    console.log(`  ledger Craemer Σ:      $${Math.round(ledCraemer).toLocaleString()}  (at 3%, enslaver side)`);
+    console.log(`  same scoped control:   $${Math.round(controlTotal).toLocaleString()}  → factor ${ledFactor.toFixed(5)} (scales ${ledFactor>1?'UP':'DOWN'})`);
+    console.log(`  → both wage_theft (×${factor.toFixed(3)}, down) and ledger Craemer (×${ledFactor.toFixed(3)}, up) meet at $${Math.round(controlTotal).toLocaleString()}`);
+
     if (!APPLY) { console.log('\nDRY-RUN — re-run with --apply to record in calibration_benchmarks.'); await pool.end(); return; }
 
-    await pool.query(`
+    const rec = async (model, scope, denomVal, raw, fac, meta) => pool.query(`
         INSERT INTO calibration_benchmarks
             (model_key, population_scope, scope_denominator, scope_denominator_value,
              control_total_usd, control_basis, control_citation, raw_sum_usd,
              benchmark_factor, benchmarked_sum_usd, metadata)
-        VALUES ('wage_theft', $1, 'person_years', $2, $3,
-                'brattle_per_person_year_low_x_documented_PY', $4, $5, $6, $7, $8::jsonb)
+        VALUES ($1, $2, 'person_years', $3, $4,
+                'brattle_per_person_year_low_x_documented_PY', $5, $6, $7, $8, $9::jsonb)
         ON CONFLICT (model_key, population_scope) DO UPDATE SET
             control_total_usd=EXCLUDED.control_total_usd, raw_sum_usd=EXCLUDED.raw_sum_usd,
             benchmark_factor=EXCLUDED.benchmark_factor, benchmarked_sum_usd=EXCLUDED.benchmarked_sum_usd,
             metadata=EXCLUDED.metadata, computed_at=NOW()
-    `, [
-        `${n} documented enslaved-person wage_theft line items`,
-        personYears, controlTotal, MACRO.BRATTLE.per_person_year_low_usd.cite,
-        rawSum, factor, rawSum * factor,
-        JSON.stringify({ raw_per_py: Math.round(rawPerPY), brattle_per_py: BRATTLE_PER_PY, line_items: n, note: 'Scoped to documented person-years; reconciles Craemer-compound to Brattle PY.' }),
-    ]);
-    console.log('\n✓ recorded in calibration_benchmarks (model_key=wage_theft)');
+    `, [model, scope, denomVal, controlTotal, MACRO.BRATTLE.per_person_year_low_usd.cite, raw, fac, controlTotal, JSON.stringify(meta)]);
+
+    await rec('wage_theft', `${n} documented enslaved-person wage_theft line items`, personYears, rawSum, factor,
+        { raw_per_py: Math.round(rawPerPY), brattle_per_py: BRATTLE_PER_PY, line_items: n, side: 'enslaved', note: 'Scoped to documented person-years; reconciles Craemer-compound (5%) to Brattle PY.' });
+    await rec('lineage_ledger_craemer', `${led.rows[0].n} documented enslaver lineages (Craemer component)`, personYears, ledCraemer, ledFactor,
+        { brattle_per_py: BRATTLE_PER_PY, lineages: Number(led.rows[0].n), side: 'enslaver', rate: '3%',
+          note: 'Enslaver-side labor benchmarked to the SAME control as wage_theft (enslaved side) — they reconcile from opposite directions. Uses total documented PY as the labor basis (approximation; enslaved under documented enslavers ⊆ all documented enslaved).' });
+    console.log('\n✓ recorded calibration_benchmarks: wage_theft + lineage_ledger_craemer');
     await pool.end();
 }
 main().catch(e => { console.error('FATAL', e.message); process.exit(1); });
