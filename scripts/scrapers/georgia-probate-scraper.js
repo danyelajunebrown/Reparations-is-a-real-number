@@ -121,11 +121,28 @@ async function waitForReauth(contextLabel) {
     );
 
     const POLL_MS = 30000;
+    const REPROBE_MS = 180000; // every 3 min, gently re-navigate to portal to
+                               // test+heal a transient redirect: with valid cookies
+                               // FS loads content (we recover); a genuine logout
+                               // bounces back to login (we keep waiting). This is
+                               // infrequent enough not to disrupt a human captcha,
+                               // and stops a stale redirect from hanging forever.
     let waited = 0;
     let nextReAlert = 600000; // re-page every 10 min while still locked out
+    let nextReprobe = REPROBE_MS;
     while (true) {
         await sleep(POLL_MS);
         waited += POLL_MS;
+
+        if (waited >= nextReprobe) {
+            nextReprobe += REPROBE_MS;
+            log('  Re-probing session health (gentle nav to portal)...');
+            try {
+                await page.goto('https://www.familysearch.org/home/portal/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+                await sleep(3000);
+            } catch (_) { /* probe is best-effort */ }
+        }
+
         let u;
         try { u = page.url(); } catch (_) { u = ''; }
         if (!isSessionLostUrl(u)) {
@@ -566,6 +583,17 @@ function buildImageUrl(arkId) {
 async function scrapeOneRoll(countyObj, roll, isDryRun) {
     log(`Roll: "${roll.title}" [${roll.groupId}] in ${countyObj.county}`);
 
+    // Skip malformed sitemap entries. A real FS roll groupId looks like "Q7P3-N3X";
+    // the waypoints crawl occasionally emits a stray collection-level row whose
+    // groupId got mis-parsed as "https". Its bogus rollIndexUrl just redirects to
+    // the login page and trips the session-loss guard for nothing. Mark it complete
+    // so it is never revisited.
+    if (!/^[0-9A-Z]{4}-[0-9A-Z]{2,5}$/i.test(roll.groupId || '')) {
+        log(`  Skipping malformed roll entry (groupId="${roll.groupId}").`);
+        roll.status = 'complete';
+        return;
+    }
+
     // Backfill rollIndexUrl for sitemaps built before this change
     if (!roll.rollIndexUrl) {
         roll.rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(roll.groupId + ':' + roll.dgs + '?cc=' + COLLECTION_ID)}&cc=${COLLECTION_ID}`;
@@ -661,61 +689,64 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         }
     }
 
-    // Step 5: Process image 1 (already in viewer), then advance via input field for images 2…N
-    for (let imageNumber = 1; imageNumber <= imageCount; imageNumber++) {
+    // Step 5: Build the list of image numbers we still need. On --resume we skip
+    // already-written images by JUMPING the viewer directly to each remaining
+    // target via the number-input — so a long run of already-written images
+    // collapses into one jump instead of stepping +1 through each (which cost
+    // ~6s/image: a 750-image resume-skip was ~75m of dead time + nuisance
+    // watchdog stall alerts). A fully-written roll now costs ~0 instead of N*6s.
+    const targets = [];
+    for (let n = 1; n <= imageCount; n++) {
+        if (!(RESUME && writtenImages.has(n))) targets.push(n);
+    }
+    if (RESUME && writtenImages.size > 0) {
+        log(`  RESUME: ${writtenImages.size} already-written; ${targets.length} image(s) left to fetch (jumping directly).`);
+    }
+
+    let currentImage = 1; // we entered the viewer on image 1
+    for (const target of targets) {
         if (LIMIT > 0 && totalImagesProcessed >= LIMIT) {
             log(`  Global limit of ${LIMIT} images reached.`);
             return;
         }
 
-        if (RESUME && writtenImages.has(imageNumber)) {
-            if (VERBOSE) log(`  RESUME: Skipping image ${imageNumber}.`);
-            // Advance viewer so it stays in sync, then read the new ARK
-            if (imageNumber < imageCount) {
-                await advanceViewerToImage(imageNumber + 1);
-                const advUrl = page.url();
-                const advMatch = advUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
-                if (advMatch) currentArkId = advMatch[1];
-            }
-            continue;
-        }
-
-        await processImage(countyObj, roll, imageNumber, currentArkId, isDryRun);
-        totalImagesProcessed++;
-
-        await sleep(3000 + Math.random() * 2000);
-
-        if (imageNumber % 50 === 0) {
-            log(`  Session check at image ${imageNumber}...`);
-            await ensureLoggedIn();
-        }
-
-        // Advance to next image via viewer input field and capture new ARK
-        if (imageNumber < imageCount) {
-            const advanced = await advanceViewerToImage(imageNumber + 1);
+        // Jump the viewer directly to the target image (no-op if already there).
+        if (target !== currentImage) {
+            const advanced = await advanceViewerToImage(target);
             if (!advanced) {
-                // Distinguish a real end-of-roll from a session drop. If FS logged
-                // us out mid-roll, pause for re-auth, then mark the roll failed so
-                // it is re-scraped from the top later (do NOT let the caller mark a
+                // Distinguish a real failure from a session drop. If FS logged us
+                // out mid-roll, pause for re-auth, then mark the roll failed so it
+                // is re-scraped from the top later (don't let the caller mark a
                 // truncated roll 'complete' — that silently drops the tail images).
                 if (isSessionLostUrl(page.url())) {
-                    await waitForReauth(`mid-roll ${roll.groupId} at image ${imageNumber}`);
+                    await waitForReauth(`mid-roll ${roll.groupId} at image ${target}`);
                     log(`  Session restored; deferring roll ${roll.groupId} for a clean re-scrape from the top.`);
                     roll.status = 'failed';
                     return;
                 }
-                log(`  WARNING: Could not advance viewer to image ${imageNumber + 1}. Stopping roll.`);
+                log(`  WARNING: Could not advance viewer to image ${target}. Stopping roll.`);
                 break;
             }
-            const newUrl = page.url();
-            const newArkMatch = newUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
-            if (newArkMatch) {
-                currentArkId = newArkMatch[1];
-                if (VERBOSE) log(`  Image ${imageNumber + 1} ARK: ${currentArkId}`);
+            currentImage = target;
+            const jumpUrl = page.url();
+            const jumpMatch = jumpUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+            if (jumpMatch) {
+                currentArkId = jumpMatch[1];
+                if (VERBOSE) log(`  Image ${target} ARK: ${currentArkId}`);
             } else {
-                log(`  WARNING: Could not extract ARK for image ${imageNumber + 1} (URL: ${newUrl}). Using placeholder.`);
-                currentArkId = `unknown-${imageNumber + 1}`;
+                log(`  WARNING: Could not extract ARK for image ${target} (URL: ${jumpUrl}). Using placeholder.`);
+                currentArkId = `unknown-${target}`;
             }
+        }
+
+        await processImage(countyObj, roll, target, currentArkId, isDryRun);
+        totalImagesProcessed++;
+
+        await sleep(3000 + Math.random() * 2000);
+
+        if (totalImagesProcessed % 50 === 0) {
+            log(`  Session check at image ${target}...`);
+            await ensureLoggedIn();
         }
     }
 }
