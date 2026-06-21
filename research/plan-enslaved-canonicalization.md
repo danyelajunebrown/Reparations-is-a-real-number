@@ -99,6 +99,35 @@ list / license NOT yet confirmed from the dump files — first execution step re
 Open before execution: confirm Enslaved.org dump schema + reuse license (academic LOD —
 likely CC, but verify); decide staging-table shape for the dump.
 
+## Richer spine: the genealogical EVIDENCE layer (person_facts, M096 — BUILT)
+
+The spine was too thin: `canonical_persons` is flat — birth/death YEAR only (**10% / 3%
+filled**, sex 12%, plantation 0%) — and the person modal already shows fields the spine
+can't supply (Occupation, Spouse, Racial designation, Freedom year — not even columns),
+so those sections render empty. Genealogical convention (GEDCOM / Genealogical Proof
+Standard) models a person as a bundle of dated, placed, SOURCED events + attributes.
+
+**`person_facts` (migration 096, applied)** is that layer: `(person_id, fact_type, date_*,
+place_*, value_text, related_person_id, source_*, confidence, contested)`. fact_type spans
+birth/baptism/death/burial/marriage/residence/census/migration/military_service/occupation/
+business_affiliation/will/enslavement/sale/manumission/emancipation + attributes
+(sex/race_designation/physical_description/ethnicity_origin/...). `canonical_persons` keeps
+the stable id + a RECONCILED SUMMARY derived from the facts.
+
+It does four jobs at once: (1) fills the modal; (2) gives the resolver MANY more match
+vectors (birth/death dates, marriage, residence, occupation, military) → more rigorous,
+fewer false merges (fixes the "simplistic spine"); (3) makes disagreement FACT-level
+(two sources differ on birth date → keep BOTH, flag contested); (4) makes mass ingestion
+LOSSLESS. Per the en-masse principle: facts come from the AGGREGATED datasets
+(Enslaved.org events, Hall dates/origins, FamilySearch vitals, Liberated Africans
+registers) — NOT from re-harvesting census/municipal records one by one.
+
+**Integration:** B.5 ingestion writes Enslaved.org/Hall/Liberated-Africans events →
+person_facts (with source_external_system + Q-ID). The resolver (B.1–B.2) gains fact-based
+comparison vectors. Disagreement detection runs at fact level. A later pass recomputes the
+canonical_persons reconciled summary from person_facts and backfills the empty modal
+sections.
+
 ## Identity model: multiple IDs and what happens when they DISAGREE
 
 Each canonical person will accumulate MANY external IDs (FS, SlaveVoyages, Enslaved.org
