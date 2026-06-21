@@ -100,6 +100,22 @@ function logShowsLoginWall() {
     } catch { return false; }
 }
 
+// The actual captcha-spiral signature: many consecutive "No image thumbnail
+// found" skips with ZERO real-work lines — i.e. every roll's index page is
+// redirecting to the login wall. This is the ONLY thing that justifies an
+// auto-SIGSTOP. A bare DB-write stall is NOT enough: a resume that skips
+// thousands of already-written images (advanceViewerToImage ~6s each) can run
+// 60-90m with no new rows yet is perfectly healthy.
+function logShowsSpiral() {
+    if (!LOG_FILE) return false;
+    try {
+        const tail = fs.readFileSync(LOG_FILE, 'utf8').slice(-6000);
+        const skips = (tail.match(/No image thumbnail found/g) || []).length;
+        const healthy = /S3 upload OK|person_documents|RESUME: Skipping|Image count:/.test(tail);
+        return skips >= 8 && !healthy;
+    } catch { return false; }
+}
+
 async function page(incident, message, severity) {
     log(`ALERT [${severity}] ${incident}: ${message}`);
     await notify(`${LABEL}: ${message}`, { severity, title: `probate-scrape ${incident}`, tags: ['scraper', 'probate'] });
@@ -132,20 +148,23 @@ async function check() {
         incident = 'login-wall'; severity = 'error';
         message = `no new writes for ${Math.round(stalledMs / 60000)}m and log shows a sign-in wall — re-login via VNC (vnc://100.114.130.16). Stuck at ${count} images.`;
     } else if (stalledMs > STALL_THRESHOLD_MS) {
-        if (AUTO_PAUSE && s.incident !== 'auto-paused') {
-            // Stalled but NOT self-paused: a failure mode the scraper's own
-            // detection missed. Freeze it so it can't hammer FS unattended.
+        // DB writes have stopped. ONLY freeze the scraper if the log shows the
+        // real captcha-spiral signature — a stall alone is a false positive for a
+        // slow resume-skip or a large roll. Otherwise just alert (non-destructive).
+        const spiral = logShowsSpiral();
+        if (AUTO_PAUSE && spiral && s.incident !== 'auto-paused') {
             const frozen = suspendScraper();
             incident = 'auto-paused'; severity = 'error';
             message = frozen
-                ? `no new writes for ${Math.round(stalledMs / 60000)}m and no self-pause sentinel — SIGSTOPped the scraper to stop it hammering FamilySearch. Investigate via VNC, then 'kill -CONT' or restart. Stuck at ${count} images.`
-                : `no new writes for ${Math.round(stalledMs / 60000)}m and no self-pause sentinel — tried to SIGSTOP the scraper but pkill failed. Investigate via VNC. Stuck at ${count} images.`;
+                ? `captcha-spiral signature + no writes for ${Math.round(stalledMs / 60000)}m and no self-pause sentinel — SIGSTOPped the scraper to stop it hammering FamilySearch. Investigate via VNC, then 'kill -CONT' or restart. Stuck at ${count} images.`
+                : `captcha-spiral signature + no writes for ${Math.round(stalledMs / 60000)}m — tried to SIGSTOP but pkill failed. Investigate via VNC. Stuck at ${count} images.`;
         } else if (s.incident === 'auto-paused') {
             incident = 'auto-paused'; severity = 'error';
             message = `scraper remains SIGSTOPped at ${count} images — awaiting manual restart.`;
         } else {
             incident = 'stall'; severity = 'error';
-            message = `process alive but no new writes for ${Math.round(stalledMs / 60000)}m (stuck at ${count} images).`;
+            message = `process alive but no new writes for ${Math.round(stalledMs / 60000)}m (stuck at ${count} images)`
+                + (spiral ? '.' : ' — log shows no spiral (likely a slow resume-skip or large roll); NOT freezing.');
         }
     }
 
@@ -163,8 +182,12 @@ async function check() {
 }
 
 (async () => {
-    log(`probate-scrape-watchdog up — ${LABEL} (collection ${COLLECTION_ID}), interval ${CHECK_INTERVAL_MS / 60000}m, stall ${STALL_THRESHOLD_MS / 60000}m`);
+    log(`probate-scrape-watchdog up — ${LABEL} (collection ${COLLECTION_ID}), interval ${CHECK_INTERVAL_MS / 60000}m, stall ${STALL_THRESHOLD_MS / 60000}m, auto-pause ${AUTO_PAUSE ? 'on' : 'off'}`);
     if (!process.env.OPS_NOTIFY_WEBHOOK) log('WARNING: OPS_NOTIFY_WEBHOOK not set — alerts will be skipped.');
+    // Fresh start: clear any stall timer / incident inherited from a previous run
+    // or a prior scraper instance, so a restart can't instantly look like an
+    // hours-long stall and trip the backstop on a healthy scraper.
+    { const s0 = loadState(); s0.lastProgressAt = Date.now(); s0.incident = null; saveState(s0); }
     await check();
     setInterval(() => { check().catch(e => log('check error', e.message)); }, CHECK_INTERVAL_MS);
 })();
