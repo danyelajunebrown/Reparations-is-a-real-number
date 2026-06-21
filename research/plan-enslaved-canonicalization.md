@@ -67,6 +67,38 @@ Per the Biscoe hand-confirm rule, but scaled: **auto-promote** only single-block
 3. **Promotion autonomy**: how aggressive is auto-promote vs review, given 1.6M volume?
 4. **Mini vs MacBook**: ER refresh runs nightly on the Mini (`er-refresh.sh`); Phase B at 1.6M scale — extend that cron or run as a one-time MacBook batch?
 
+## DECISIONS LOCKED (Jun 21) + Louisiana first-build
+
+**Scope = Louisiana. Sequence = external-anchor first.**
+
+Why Louisiana (verified): it is the ONLY state with a substantial CANONICAL enslaved
+population already — **57,261 canonical 'enslaved' + 38,865 enslavers** — because of the
+`louisiana_slave_db_import` (113,500 records = the **Gwendolyn Midlo Hall Louisiana Slave
+Database**). Plus ~58K enslaved `unconfirmed_persons` for LA, and it's Isaac Franklin
+territory (the northern-financier-counterparty goal). Decisive: **the Hall database is
+itself a primary Enslaved.org dataset**, so external-anchor-first is natural — our LA
+records and Enslaved.org share a common source, giving a built-in cross-source key.
+
+External access (verified): Enslaved.org publishes periodic **RDF + JSON `.gz` dumps**
+(docs.enslaved.org/lod/), refreshed when datasets are added. Q-ID scheme / exact dataset
+list / license NOT yet confirmed from the dump files — first execution step resolves these.
+
+**Louisiana build order (external-anchor first):**
+1. **B.5-LA (FIRST)**: fetch + parse the Enslaved.org RDF/JSON dump; filter to Louisiana /
+   the Hall dataset; stage to a holding table; confirm Q-ID scheme + license. Anchor our
+   `louisiana_slave_db_import` rows to Enslaved.org Q-IDs via `person_external_ids`
+   (id_system='enslaved_org'). Also pull Liberated Africans LA-relevant records.
+2. **B.0-LA**: gold-validate on one well-documented LA owner (Isaac Franklin, or a Hall
+   cluster) — hand-resolve as ground truth.
+3. **B.1–B.2-LA**: owner-anchored blocking + scored resolution + census mutual-exclusion
+   over LA enslaved (canonical 57K + unconfirmed 58K), now anchored by Enslaved.org Q-IDs.
+4. **B.3-LA**: promote/merge clusters; **backfill `reparations_line_items.canonical_person_id`**
+   for LA wage_theft items + `family_relationships.person2_lead_id`.
+5. **B.4-LA**: cross-source link LA schedule ↔ probate ↔ Freedman's (New Orleans branch).
+
+Open before execution: confirm Enslaved.org dump schema + reuse license (academic LOD —
+likely CC, but verify); decide staging-table shape for the dump.
+
 ## Risks
 - Over-merge (common given-names like "Mary"/"Tom"): mitigated by owner+census mutual-exclusion + route-on-ambiguity.
 - Parallel-population double-canonicalization (epi vs unconfirmed same person twice): resolve both into the same blocks.
