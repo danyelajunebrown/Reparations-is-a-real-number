@@ -99,6 +99,31 @@ list / license NOT yet confirmed from the dump files — first execution step re
 Open before execution: confirm Enslaved.org dump schema + reuse license (academic LOD —
 likely CC, but verify); decide staging-table shape for the dump.
 
+### B.5 inspection RESULTS (Jun 21) + licensing refinement
+
+- **Dump confirmed**: Wikibase RDF + JSON, Q-ID identifiers, refreshed Mar 31 2026.
+  JSON dump = **~464 MB compressed** (`manta.matrix.msu.edu/.../latest.wikibase.dump.json.gz`)
+  → multi-GB decompressed → the parse runs on the **Mac Mini**, not inline.
+- **License**: Enslaved.org's journal (JSDP) is **CC BY-NC-SA 4.0** (non-commercial +
+  share-alike); the data license isn't stated separately → treat as NC-SA. Our platform's
+  payment/blockchain layer makes "non-commercial" a gray area.
+- **REFINEMENT (licensing-safe AND cleaner) — ANCHOR BY REFERENCE, don't bulk-copy:**
+  - We ALREADY HOLD the Hall Louisiana data (`louisiana_slave_db_import`, 113,500) — and
+    **Hall is a primary Enslaved.org SOURCE dataset.** So for LA facts we use OUR Hall
+    import (no license issue — our data), extracting it into `person_facts`
+    (source_external_system='hall_louisiana').
+  - We use Enslaved.org only for the **persistent-ID anchor**: match our Hall rows →
+    Enslaved.org Q-IDs (via shared Hall record-ID in the dump, else name+date+place) →
+    `person_external_ids` (id_system='enslaved_org'). Storing a Q-ID + link is
+    attribution/reference, clearly permissible; we do NOT redistribute their NC-SA data.
+  - Net: facts from our own Hall import; cross-source IDENTITY anchor from Enslaved.org.
+    The 464MB dump is downloaded/filtered on the Mini only to build the Hall-ID ↔ Q-ID
+    crosswalk.
+- **Revised B.5-LA steps:** (1) extract `louisiana_slave_db_import` → `person_facts`
+  (doable now, our data); (2) on the Mini, download + stream-filter the Enslaved.org dump
+  to the Hall-ID↔Q-ID crosswalk; (3) write Q-IDs to `person_external_ids` (anchor by
+  reference). Liberated Africans: check its license similarly (MSU Matrix, likely same).
+
 ## Richer spine: the genealogical EVIDENCE layer (person_facts, M096 — BUILT)
 
 The spine was too thin: `canonical_persons` is flat — birth/death YEAR only (**10% / 3%
