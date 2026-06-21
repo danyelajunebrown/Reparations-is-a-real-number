@@ -1,6 +1,23 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-12 (Session 63 — probate LLM extraction pipeline: free multi-provider router, segmentation v2, financial forensic accounting, self-running drip)_
+_Last updated: 2026-06-13 (Session 64 — NY probate scraper session-loss resilience: pause/auto-resume + watchdog auto-pause backstop)_
+
+---
+
+## Session 64 — NY Probate Scraper Session-Loss Resilience (2026-06-12→13; verified live 06-21)
+
+Branch: `audit/probate-classifier-and-source-documents` — committed `de940ebbf` (scraper + watchdog resilience) and `02db8e503` (watchdog false-positive fix). See [[project_ny_probate_run]].
+
+### The incident
+The NY full-state probate scrape (FS collection 1920234, pid 13669 on the Mini) entered a **captcha-hammering death spiral**. The FamilySearch session dropped mid-crawl (~00:38 UTC; "Execution context destroyed by a navigation"), FS began 302-redirecting every request to `ident.familysearch.org/identity/login` (hCaptcha-gated). Root cause: `scrapeOneRoll` (in `scripts/scrapers/georgia-probate-scraper.js`) had **no logged-out detection** — it read each login redirect as "No image thumbnail found", marked the roll failed, and immediately navigated to the next roll. ~3,000 rolls skipped in 3.5h; a fresh hCaptcha spawned on every ~4s navigation, so the operator could never finish logging in (each solve yanked away by the next `goto`) — the user's "passing the captcha twice." Diagnosed by reading `~/probate-newyork-full.log` + the Chrome debug port (`curl localhost:9222/json` showed the identity/login + hcaptcha frames).
+
+### The fix (resilience, not a band-aid — user's framing)
+- **Scraper**: `isSessionLostUrl()` + `waitForReauth()` — on logout, STOP navigating, write pause-sentinel `~/.probate-scraper-paused-<collection>.json`, ntfy-alert, then poll `page.url()` every 30s WITHOUT navigating (so the login page holds still to solve once) and auto-resume on re-auth. Wired into roll-index + mid-roll paths; mid-roll loss now marks the roll `failed` (re-scraped) instead of silently `complete` (a latent tail-truncation data-loss bug). Startup login-wait made captcha-aware (no reload while a challenge is on screen; 30m patient).
+- **Watchdog** (`scripts/scrapers/probate-scrape-watchdog.js`, PM2 `probate-watchdog-ny`): reads the sentinel (self-paused → `awaiting-reauth`, never frozen); **auto-pause backstop** SIGSTOPs a scraper only when it stalls >30m **and the log shows the real spiral signature** (`logShowsSpiral()`: many "No image thumbnail" skips with zero S3/person_documents/RESUME lines). A bare DB-write stall is NOT enough.
+- **Self-inflicted bug caught + fixed same session**: the first auto-pause cut froze a *healthy* scraper because it inherited a stale `lastProgressAt` and fired on pure DB-stall while the scraper was legitimately resume-SKIPPING 752 already-written images (~6s each ≈ 75m of no new rows). Fix = the spiral-signature gate above + reset the stall timer on watchdog startup.
+
+### Outcome (verified live 06-21)
+Failed rolls auto-retry (main loop skips only `status==='complete'`; per-image rows preserved → resume re-fetches only missing tails). Clean swap: kill old → clear sentinel → restart watchdog → relaunch `nohup /usr/local/bin/node ... --resume --apply`. The session-guard proved itself live (paused on logout → auto-recovered in 1m as valid cookies auto-redirected login→content). **8 days later the same pid 13669 is still running, DB written climbed 13,294 → 39,169, watchdog `stalled=0m incident=none` — zero false-freezes.**
 
 ---
 

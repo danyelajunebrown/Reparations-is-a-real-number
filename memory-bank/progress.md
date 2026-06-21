@@ -2,7 +2,21 @@
 
 **Project Start:** 2024
 **Current Phase:** Probate forensic-accounting extraction live — a free, self-running LLM pipeline (multi-provider router + header-driven segmentation + cron drip) extracting per-enslaved-person appraised valuations into `probate_estate_extractions`. First Liberty roll: 763 enslaved, 550 valued, $224,857 appraised.
-**Last Updated:** June 12, 2026 (Session 63 — probate LLM extraction pipeline + forensic accounting + cron drip)
+**Last Updated:** June 13, 2026 (Session 64 — NY probate scraper session-loss resilience + watchdog auto-pause backstop)
+
+---
+
+## Session 64 — NY Probate Scraper Session-Loss Resilience (June 12-13, 2026; verified live June 21)
+
+Branch `audit/probate-classifier-and-source-documents` — committed `de940ebbf` + `02db8e503`. Detail in [activeContext.md] Session 64 and memory `project_ny_probate_run`.
+
+**The incident:** the NY full-state probate scrape (FS collection 1920234, pid 13669 on the Mini) hit a captcha-hammering death spiral. FS session dropped mid-crawl → every request 302-redirected to the hCaptcha-gated login page; `scrapeOneRoll` had no logged-out detection, so it read each redirect as "No image thumbnail found", marked the roll failed, and navigated to the next — ~3,000 rolls skipped in 3.5h, a fresh hCaptcha on every ~4s nav, the operator unable to finish logging in.
+
+**The fix:**
+- Scraper (`georgia-probate-scraper.js`): `isSessionLostUrl()` + `waitForReauth()` — on logout, stop navigating, drop a pause-sentinel, ntfy-alert, poll `page.url()` without navigating, auto-resume on re-auth. Roll-index + mid-roll paths; truncated rolls now `failed` not silently `complete`. Startup login-wait made captcha-aware.
+- Watchdog (`probate-scrape-watchdog.js`): sentinel-aware (`awaiting-reauth`), plus an auto-pause backstop that SIGSTOPs the scraper **only on the real spiral signature** (`logShowsSpiral()`), never on a bare DB-stall. Caught + fixed a self-inflicted false-positive freeze (stale stall timer + pure-stall trigger vs a legitimate 75m resume-skip).
+
+**Outcome (verified June 21):** pid 13669 still running 8 days on, DB written 13,294 → 39,169 images, watchdog `stalled=0m incident=none`, zero false-freezes. Failed rolls auto-retry; per-image rows preserved.
 
 ---
 
