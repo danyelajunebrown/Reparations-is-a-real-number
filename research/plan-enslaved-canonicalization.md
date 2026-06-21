@@ -99,6 +99,46 @@ list / license NOT yet confirmed from the dump files — first execution step re
 Open before execution: confirm Enslaved.org dump schema + reuse license (academic LOD —
 likely CC, but verify); decide staging-table shape for the dump.
 
+## Identity model: multiple IDs and what happens when they DISAGREE
+
+Each canonical person will accumulate MANY external IDs (FS, SlaveVoyages, Enslaved.org
+Q-ID, Hall, Liberated Africans, eventually 10MN). They WILL disagree. The model mirrors
+the obligation reconciliation: disagreement is surfaced, not collapsed; no source is
+authoritative.
+
+**Principle.** `canonical_persons.id` is the stable internal spine, DEFINED by the
+kin-graph + primary-source evidence — NOT derived from any external ID. External IDs are
+attached EVIDENCE/anchors (in `person_external_ids`, each with confidence + match
+evidence), never competing masters. So there is no "which ID is real" — ours is; the rest
+corroborate.
+
+**Three disagreement types:**
+1. **Clustering disagreement (load-bearing — external IDs as ERROR DETECTORS):**
+   - two external IDs on one of our persons, but the source treats them as distinct → we
+     likely OVER-merged → flag + route to review.
+   - two of our persons share one external ID → UNDER-merged (or they over-merged) → review.
+   - transitivity violation (P=Q1 via Enslaved.org, P=F1 via FS, but Q1≠F1, OR a Biscoe
+     hard constraint forbids) → **hard constraint WINS**, soft external link demoted +
+     flagged. NO forced transitive closure.
+2. **Attribute disagreement** (birth year/place differ across sources): keep ALL values
+   with source + confidence; NEVER overwrite. Displayed value = reconciliation
+   (primary-source-wins → highest-confidence); alternatives stay visible.
+3. **Match-quality disagreement**: each external ID has a confidence + evidence; a
+   low-confidence link CANNOT drive a merge — it corroborates, it doesn't decide.
+
+**Governing rule:** no single source is authoritative; disagreement is surfaced not
+collapsed; hard constraints (parentage, census mutual-exclusion — the Biscoe rules)
+override soft external agreement; genuine conflicts route to a **"contested identity"
+review state** (they do not auto-resolve in either direction). This makes multiple
+disagreeing IDs a STRENGTH — external sources cross-check our merges (self-correcting),
+the same way the four obligation predictors cross-check each other (Reconcile, applied to
+identity).
+
+**Schema implications:** `person_external_ids` gets per-ID confidence + match-evidence +
+`agrees_with_canonical` / `contested` flags; a disagreement-detection pass writes
+many-to-one / one-to-many / transitivity-violation findings to a review queue; external
+agreement never auto-merges across a Biscoe hard constraint.
+
 ## Risks
 - Over-merge (common given-names like "Mary"/"Tom"): mitigated by owner+census mutual-exclusion + route-on-ambiguity.
 - Parallel-population double-canonicalization (epi vs unconfirmed same person twice): resolve both into the same blocks.
