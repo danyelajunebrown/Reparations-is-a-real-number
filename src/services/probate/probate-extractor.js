@@ -146,7 +146,8 @@ const ENSLAVED_LANGUAGE = /\b(negro|negroes|slave|slaves|enslaved|mulatto|bequea
 function regexExtract(text) {
   const m = text.match(WILL_HEADER);
   if (!m) return null;
-  const years = (text.match(/\b1[78]\d{2}\b/g) || []).map(Number);
+  // #67: widen 1700–1899 → 1600–1999 so colonial and 20th-c probate years register.
+  const years = (text.match(/\b1[6-9]\d{2}\b/g) || []).map(Number);
   return {
     document_type: 'will',
     testator_name: m[1].replace(/\s+/g, ' ').trim(),

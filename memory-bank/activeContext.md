@@ -1,6 +1,27 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-13 (Session 64 — NY probate scraper session-loss resilience: pause/auto-resume + watchdog auto-pause backstop)_
+_Last updated: 2026-06-22 (Session 65 — probate #67 year-extraction fix + estate-index spine + forensic-estate UI + migration-hygiene)_
+
+---
+
+## Session 65 — Probate Year-Extraction Fix (#67) + Estate-Index Spine + Forensic-Estate UI (2026-06-21→22)
+
+Branch: `audit/probate-classifier-and-source-documents`. This session's probate-layer work was found **applied-to-DB but uncommitted** after an interrupted prior session; this entry documents it and the cleanup. The Hall Louisiana ingest / Hall→canonical resolution / `chattel_transfer_events` work IS committed (`9938b98fa`, `c58ff3b6d`, `5b7eb996e`) but the whole branch is **22 commits unpushed**.
+
+### What was built (the probate connective layer)
+- **#67 year-extraction fix.** The scraper derived `document_year` with `/18\d{2}/` — matching ONLY 1800–1899, so every colonial (16xx/17xx) and 20th-c probate page was NULLed or clamped. Widened to `/1[6-9]\d{2}/` in `scripts/scrapers/georgia-probate-scraper.js` (`parseTranscript`) and `src/services/probate/probate-extractor.js` (`regexExtract`). `scripts/backfill-probate-document-year.mjs` re-derives the ~38k already-written pages with the corrected logic (Math.min = conservative earliest-stated-year proxy). **NY year coverage now 27,220/39,211 (69%), 11,879 slavery-era pages** (was ~63% NULL, the #67 symptom).
+- **Probate estate index (migration 099 + `scripts/build-probate-estate-index.mjs`).** The CHEAP, DETERMINISTIC spine: one row per (roll_group_id, decedent) built directly from already-scraped carry-forward testator + corrected year, turning the 83%-orphan page pile into a queryable estate registry NOW (the LLM forensic drip is months behind). Sanity columns make it a corroboration tool: `slavery_era` (NY-1827 gate), `year_plausible` (OCR-noise dates), `name_suspect` (place-word / OCR-junk decedents — FLAG for review, never auto-drop; Biscoe rule). **Built: 11,231 rows.** LLM extraction attaches later by (roll, decedent_key).
+- **Forensic estate accounting UI.** `src/api/routes/contribute.js` `GET /person/:id` now surfaces a `forensicEstate` payload (estate totals, enslaved-with-valuations, non-chattel assets, liabilities, heirs) from the latest non-rejected `will_extractions` row; `frontend/src/components/PersonModal/PersonProfile.jsx` renders it in a new "Forensic estate accounting" section.
+- **NY drip scoping.** `scripts/probate-drip.mjs` gained `--prefix` (scope to one region's collection_keys) and now prioritizes by the REAL earliest `document_year` (reliable post-#67) instead of a name-parsed year — colonial NY estates with enslaved valuations process before post-emancipation rolls.
+- **Hand-uploaded will re-extraction** (`scripts/reextract-hand-uploaded-wills.mjs`) — retro-applies the forensic extractor to curated hand-uploaded wills (Hopewell/Biscoe/Weaver) that predate the county pipeline and carry zero forensic financials. **Gemini OCR** (`src/services/probate/gemini-ocr.js`) — free Cloud-Vision replacement (Vision key suspended), uses `GEMINI_API_KEY`, gemini-2.5-flash vision.
+- **inheritance-edges backfill schema fixes** (`scripts/backfill-inheritance-edges-from-will-extractions.js`) — reads counts/year from `structured_extraction_jsonb`, drops the missing `heir_name_as_written`/`document_date` columns, hardcodes `evidence_tier=1`/`confidence=0.80`, filters `status <> 'rejected'`.
+
+### Migration hygiene (cleaned this session)
+- **098 collision resolved**: `098-probate-estate-index.sql` → **renumbered `099`** (collided with the committed `098-chattel-transfer-events.sql`, both Jun 21).
+- **schema_migrations drift fixed**: 093–099 objects all existed in the DB but were NOT recorded (the recurring applied-but-not-tracked issue). Backfilled all seven rows with correct `sha256` checksums of the final files, so `apply-migrations.js` won't re-run or abort on them. schema_migrations is now honest through 099.
+
+### Operational / access
+- **Pi is offline (last seen 31d ago)** → the `-J pi-ts` jump fallback is DEAD. The Mini (`danyelicas-mini`, 100.114.130.16) IS online on Tailscale, three FS tabs logged in. Laptop→Mini shell access is currently broken: direct SSH fails on `publickey` (laptop key not in the Mini's authorized_keys) and Tailscale SSH isn't enabled server-side (host-key fallback to OpenSSH). **To restore remote ops (read ntfy `OPS_NOTIFY_WEBHOOK`, check the scraper): either add the laptop pubkey to the Mini's `~/.ssh/authorized_keys`, or `tailscale set --ssh` on the Mini.** The NY scrape sitting at 39,211 imgs / 82 rolls is NOT "stalled" — it's between active write bursts (per the documented index-wall recover-on-VNC-relogin behavior); judge state by ntfy, not the DB row count.
 
 ---
 
@@ -18,6 +39,11 @@ The NY full-state probate scrape (FS collection 1920234, pid 13669 on the Mini) 
 
 ### Outcome (verified live 06-21)
 Failed rolls auto-retry (main loop skips only `status==='complete'`; per-image rows preserved → resume re-fetches only missing tails). Clean swap: kill old → clear sentinel → restart watchdog → relaunch `nohup /usr/local/bin/node ... --resume --apply`. The session-guard proved itself live (paused on logout → auto-recovered in 1m as valid cookies auto-redirected login→content). **8 days later the same pid 13669 is still running, DB written climbed 13,294 → 39,169, watchdog `stalled=0m incident=none` — zero false-freezes.**
+
+### Follow-up polish (06-21, committed `fec42350d`)
+Three scraper improvements: (1) **direct-jump resume** — `scrapeOneRoll` now builds the list of unwritten image numbers and jumps the viewer straight to each via the number-input, instead of stepping +1 through every already-written image (~6s each; a 750-img skip was ~75m dead time). Fully-written roll now ~0. (2) **Skip malformed sitemap rolls** — the stray `[https]` collection-level entry (first Albany roll) whose bad index URL redirected to login is now skipped (groupId not matching `^[0-9A-Z]{4}-[0-9A-Z]{2,5}$`). (3) **`waitForReauth` self-heal re-probe** — every 3m it gently navigates to `/home/portal/` to test+heal a transient redirect (the poll loop had no timeout → could hang forever).
+
+**LESSON / OPEN OPERATIONAL ISSUE (06-21):** restarting the scraper 3× in ~20m to deploy the polish **degraded the FS session into a content-OK / index-walled split** — `/home/portal/` and `ark:` image pages load fine, but every `search/image/index?owc=…` roll-index page 302-redirects to `ident.familysearch.org/en/identity/login`. The portal re-probe makes the scraper *think* it recovered, then it re-walls on the index and defers the roll. Result: it churns ~1 roll/3m marking rolls `failed` (all retryable), no real progress, but **not hammering** (safe). **Fix = a human VNC re-login** (refreshes index-endpoint auth); portal-loads ≠ index-accessible. Takeaway: **don't rapid-restart the FS scraper** — each relaunch re-navigates portal→waypoints→index and the burst trips FS's index/search auth. Coverage at the time: collection is **12,890 rolls** (~7.7M images potential → multi-MONTH crawl), 39,211 images written across only **82 touched rolls / 18 complete**; within touched rolls 39,211/40,113 ≈ 98%.
 
 ---
 

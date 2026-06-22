@@ -163,15 +163,16 @@ async function run() {
                 we.id AS will_extraction_id,
                 we.canonical_person_id AS testator_canonical_id,
                 we.structured_extraction_jsonb,
-                we.enslaved_persons_count,
-                we.document_date,
-                we.document_year,
-                pd.id AS source_document_id,
+                (we.structured_extraction_jsonb->>'enslaved_persons_count')::int AS enslaved_persons_count,
+                NULL::date AS document_date,
+                COALESCE((we.structured_extraction_jsonb->>'document_year')::int,
+                         (we.structured_extraction_jsonb->>'year')::int) AS document_year,
+                we.document_id AS source_document_id,
                 cp.canonical_name AS testator_name
             FROM will_extractions we
             JOIN canonical_persons cp ON cp.id = we.canonical_person_id
-            LEFT JOIN person_documents pd ON pd.will_extraction_id = we.id
             WHERE we.canonical_person_id IS NOT NULL
+              AND we.status <> 'rejected'
             ORDER BY we.id ASC
             LIMIT $1
         `, [LIMIT]);
@@ -209,19 +210,23 @@ async function run() {
                 }
 
                 try {
+                    const noteWithName = [
+                        edge.heir_name ? `heir as written: "${edge.heir_name}"` : null,
+                        edge.notes || null,
+                    ].filter(Boolean).join(' · ') || null;
                     const insertResult = await client.query(`
                         INSERT INTO inheritance_edges (
                             testator_id,
                             heir_id,
-                            heir_name_as_written,
                             asset_type,
                             enslaved_persons_count,
                             asset_value_usd_est,
                             value_methodology_note,
                             source_document_id,
                             will_extraction_id,
-                            document_date,
                             document_year,
+                            evidence_tier,
+                            confidence,
                             verified,
                             notes,
                             created_at,
@@ -229,9 +234,7 @@ async function run() {
                         )
                         VALUES (
                             $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                            $10, $11,
-                            false,
-                            $12,
+                            1, 0.80, false, $10,
                             NOW(), NOW()
                         )
                         ON CONFLICT (testator_id, heir_id, asset_type, source_document_id)
@@ -240,16 +243,14 @@ async function run() {
                     `, [
                         will.testator_canonical_id,
                         edge.heir_canonical_id,       // may be NULL for unresolved
-                        edge.heir_name,
                         edge.asset_type,
                         edge.enslaved_persons_count,
                         edge.asset_value_usd_est,
                         edge.value_methodology_note,
                         will.source_document_id,      // may be NULL
                         will.will_extraction_id,
-                        will.document_date,
                         will.document_year,
-                        edge.notes,
+                        noteWithName,
                     ]);
                     if (insertResult.rowCount > 0) edgesInserted++;
                     else edgesSkipped++;

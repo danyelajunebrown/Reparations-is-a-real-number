@@ -10,7 +10,14 @@
  * stopped (segmentation writes probate_estate_segments_v2, extraction writes
  * probate_estate_extractions, both keyed so re-runs skip finished work).
  *
- *   node scripts/probate-drip.mjs [--dry]   # --dry: print the plan, do nothing
+ *   node scripts/probate-drip.mjs [--dry]            # all probate collections
+ *   node scripts/probate-drip.mjs --prefix new-york-probate-   # scope to NY
+ *   node scripts/probate-drip.mjs --prefix georgia-probate-liberty-
+ *
+ * --dry: print the plan, do nothing. --prefix: restrict to collection_keys with
+ * that prefix (default: every '%-probate-%' collection). Rolls are prioritized by
+ * their REAL earliest document_year (antebellum/slavery-era first), so colonial
+ * NY estates with enslaved valuations are processed before post-emancipation rolls.
  */
 import path from 'node:path'; import fs from 'node:fs'; import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -41,16 +48,27 @@ function locked() {
   if (locked()) { log('another drip run is active — exiting.'); process.exit(0); }
   if (!DRY) fs.writeFileSync(LOCK, String(process.pid));
   try {
-    // All Liberty rolls with a roll_group_id + name + page count.
+    // Rolls in scope: a --prefix restricts to one region's collection_keys
+    // (e.g. 'new-york-probate-'); default covers every probate collection.
+    const PREFIX = (() => { const i = process.argv.indexOf('--prefix'); return i > -1 ? process.argv[i+1] : null; })();
+    const likePattern = PREFIX ? PREFIX + '%' : '%-probate-%';
     const rolls = (await pool.query(`
-      SELECT p.roll_group_id AS roll, MIN(pd.collection_name) AS name, COUNT(*) AS pages
+      SELECT p.roll_group_id AS roll, MIN(pd.collection_name) AS name, COUNT(*) AS pages,
+             MIN(pd.document_year) AS min_year,
+             COUNT(*) FILTER (WHERE pd.document_year < 1828) AS slavery_era_pages
       FROM probate_scrape_progress p JOIN person_documents pd ON pd.id = p.person_document_id
-      WHERE pd.collection_key LIKE 'georgia-probate-liberty-%' AND p.status='written' AND p.roll_group_id IS NOT NULL
-      GROUP BY 1`)).rows;
-    // antebellum = first year in the roll name < 1865 (where the enslaved valuations live)
-    for (const r of rolls) { const m = (r.name||'').match(/\b(1[678]\d\d)\b/); r.startYear = m ? +m[1] : 9999; r.antebellum = r.startYear < 1865; }
-    // antebellum first, then biggest rolls first (substantive books before 1-page stubs), then earliest.
-    rolls.sort((a,b) => (b.antebellum-a.antebellum) || (b.pages-a.pages) || (a.startYear-b.startYear));
+      WHERE pd.collection_key LIKE $1 AND p.status='written' AND p.roll_group_id IS NOT NULL
+      GROUP BY 1`, [likePattern])).rows;
+    // Prefer the REAL earliest document_year (now reliable post-#67 backfill); fall
+    // back to a year parsed from the roll name (widened to cover colonial 16xx/17xx).
+    for (const r of rolls) {
+      let start = r.min_year != null ? +r.min_year : null;
+      if (start == null) { const m = (r.name||'').match(/\b(1[5-9]\d\d)\b/); start = m ? +m[1] : 9999; }
+      r.startYear = start;
+      r.antebellum = start < 1865; // reaches into the slavery era (enslaved valuations live here)
+    }
+    // Slavery-era rolls first, then earliest, then biggest (substantive books before stubs).
+    rolls.sort((a,b) => (b.antebellum-a.antebellum) || (a.startYear-b.startYear) || (b.pages-a.pages));
 
     const segRolls = new Set((await pool.query(`SELECT DISTINCT roll_group_id FROM probate_estate_segments_v2`)).rows.map(x=>x.roll_group_id));
 
@@ -63,7 +81,7 @@ function locked() {
       if (+un > 0) { target = r; action = 'extract'; pending = +un; break; }
     }
 
-    if (!target) { log('✓ all Liberty rolls fully extracted — nothing to do.'); await notify('corpus complete — all rolls extracted'); return; }
+    if (!target) { log(`✓ all rolls in scope (${PREFIX || 'all probate'}) fully extracted — nothing to do.`); await notify('corpus complete — all rolls in scope extracted'); return; }
     log(`next: roll ${target.roll} "${(target.name||'').slice(0,55)}" [${target.pages}pp, ${target.antebellum?'ANTEBELLUM':'post-1865'}, start ${target.startYear}] → ${action}${pending?` (${pending} estates pending)`:''}`);
     if (DRY) { log('(dry run — not executing)'); return; }
 

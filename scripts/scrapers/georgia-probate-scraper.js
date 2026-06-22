@@ -1214,7 +1214,13 @@ function parseTranscript(rawText, imageNumber, arkId) {
     result.recordType = classified.recordType;
     result.classificationConfidence = classified.confidence;
 
-    const yearMatches = rawText.match(/\b(18\d{2})\b/g);
+    // #67: probate collections span well beyond the 19th century (NY = 1629–1971).
+    // The old /18\d{2}/ matched ONLY 1800–1899, so every colonial (16xx/17xx) and
+    // 20th-c document had its year NULLed, and the rest clamped to 1800–1899. Widen
+    // to the full plausible 4-digit range 1600–1999. Math.min keeps the earliest
+    // stated year as a conservative proxy for the document date (a will/inventory
+    // page's earliest token is usually its signing/recording year).
+    const yearMatches = rawText.match(/\b(1[6-9]\d{2})\b/g);
     if (yearMatches && yearMatches.length > 0) {
         result.recordYear = Math.min(...yearMatches.map(y => parseInt(y, 10)));
     }

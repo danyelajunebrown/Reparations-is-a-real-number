@@ -1989,6 +1989,49 @@ router.get('/person/:id', async (req, res) => {
             extraction_method: extractionMethod || null,
         };
 
+        // Forensic estate accounting — surface the structured will_extractions
+        // payload (estate totals, non-chattel assets, liabilities, heirs, and
+        // enslaved people with appraised values) for a testator whose will has
+        // been forensically extracted. Latest non-rejected extraction wins.
+        let forensicEstate = null;
+        try {
+            const canonicalId = tableSource === 'canonical_persons' ? parseInt(id, 10) : null;
+            if (canonicalId) {
+                const weRes = await pool.query(`
+                    SELECT we.id, we.document_id, we.extractor_version, we.status,
+                           we.structured_extraction_jsonb AS s, we.created_at
+                      FROM will_extractions we
+                     WHERE we.canonical_person_id = $1 AND we.status <> 'rejected'
+                     ORDER BY we.created_at DESC NULLS LAST, we.id DESC
+                     LIMIT 1
+                `, [canonicalId]);
+                if (weRes.rows[0]) {
+                    const row = weRes.rows[0];
+                    const s = typeof row.s === 'string' ? JSON.parse(row.s) : (row.s || {});
+                    const totals = s.estate_totals || {};
+                    forensicEstate = {
+                        will_extraction_id: row.id,
+                        document_id: row.document_id,
+                        extractor_version: row.extractor_version,
+                        testator: s.testator || s.testator_name || null,
+                        document_type: s.document_type || null,
+                        document_year: s.year || s.document_year || null,
+                        totals: {
+                            total_appraised_value_usd: totals.total_appraised_value_usd ?? null,
+                            enslaved_value_usd: totals.enslaved_value_usd ?? null,
+                            non_chattel_value_usd: totals.non_chattel_value_usd ?? null,
+                        },
+                        enslaved_persons: Array.isArray(s.enslaved_persons) ? s.enslaved_persons : [],
+                        non_chattel_assets: Array.isArray(s.non_chattel_assets) ? s.non_chattel_assets : [],
+                        liabilities: Array.isArray(s.liabilities) ? s.liabilities : [],
+                        heirs: Array.isArray(s.heirs) ? s.heirs : [],
+                    };
+                }
+            }
+        } catch (feErr) {
+            console.log('forensic estate query (non-fatal):', feErr.message?.substring(0, 100));
+        }
+
         res.json({
             success: true,
             person: {
@@ -2013,6 +2056,7 @@ router.get('/person/:id', async (req, res) => {
             ownerDocuments,
             documentCollections,
             enslavedPersons: normalizedEnslavedPersons,
+            forensicEstate,
             descendants: normalizedDescendants,
             rawData: {
                 contextText: person.context_text || null,

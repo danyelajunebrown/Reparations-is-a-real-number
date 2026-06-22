@@ -60,6 +60,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   const descendants = data.descendants || [];
   const links = data.links || {};
   const coverage = data.coverage || {};
+  const forensicEstate = data.forensicEstate || null;
 
   // Backend returns familyMembers as { parents: [], children: [], spouse }
   // NOT a flat array — guard against either shape for safety
@@ -274,6 +275,83 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
               </div>
             </div>
           )}
+        </Section>
+      )}
+
+      {forensicEstate && (
+        <Section title="Forensic estate accounting">
+          {(() => {
+            const usd = (n) => (n == null ? null : '$' + Number(n).toLocaleString());
+            const t = forensicEstate.totals || {};
+            const fe = forensicEstate;
+            const hasTotals = t.total_appraised_value_usd != null || t.enslaved_value_usd != null || t.non_chattel_value_usd != null;
+            return (
+              <div className="stack">
+                <div className="dim" style={{ fontSize: 12 }}>
+                  Extracted from {fe.document_type || 'probate document'}
+                  {fe.document_year ? ` (${fe.document_year})` : ''} · {fe.extractor_version}
+                </div>
+
+                {hasTotals && (
+                  <div className="box">
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Estate totals</div>
+                    {t.total_appraised_value_usd != null && <div>Total appraised value: {usd(t.total_appraised_value_usd)}</div>}
+                    {t.enslaved_value_usd != null && <div>Value attributed to enslaved people: {usd(t.enslaved_value_usd)}</div>}
+                    {t.non_chattel_value_usd != null && <div>Non-chattel value: {usd(t.non_chattel_value_usd)}</div>}
+                  </div>
+                )}
+
+                {fe.enslaved_persons.length > 0 && (
+                  <div className="box">
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+                      Enslaved people named ({fe.enslaved_persons.length})
+                    </div>
+                    {fe.enslaved_persons.slice(0, 60).map((e, i) => (
+                      <div key={i} className="dim" style={{ fontSize: 13 }}>
+                        {e.name || '(unnamed)'}
+                        {e.age != null && ` · age ${e.age}`}
+                        {e.appraised_value_usd != null && ` · ${usd(e.appraised_value_usd)}`}
+                        {e.kin_relation && ` · ${e.kin_relation}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {fe.heirs.length > 0 && (
+                  <div className="box">
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Heirs &amp; bequests ({fe.heirs.length})</div>
+                    {fe.heirs.map((h, i) => (
+                      <div key={i} className="dim" style={{ fontSize: 13 }}>
+                        {h.name}{h.relation && ` (${h.relation})`}{h.bequest && ` — ${h.bequest}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {fe.non_chattel_assets.length > 0 && (
+                  <div className="box">
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Non-chattel assets ({fe.non_chattel_assets.length})</div>
+                    {fe.non_chattel_assets.slice(0, 40).map((a, i) => (
+                      <div key={i} className="dim" style={{ fontSize: 13 }}>
+                        {a.description}{a.category && ` [${a.category}]`}{a.quantity && ` · ${a.quantity}`}{a.value_usd != null && ` · ${usd(a.value_usd)}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {fe.liabilities.length > 0 && (
+                  <div className="box">
+                    <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Liabilities ({fe.liabilities.length})</div>
+                    {fe.liabilities.map((l, i) => (
+                      <div key={i} className="dim" style={{ fontSize: 13 }}>
+                        {l.description}{l.creditor && ` · ${l.creditor}`}{l.amount_usd != null && ` · ${usd(l.amount_usd)}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </Section>
       )}
 
