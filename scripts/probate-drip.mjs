@@ -19,7 +19,7 @@
  * their REAL earliest document_year (antebellum/slavery-era first), so colonial
  * NY estates with enslaved valuations are processed before post-emancipation rolls.
  */
-import path from 'node:path'; import fs from 'node:fs'; import { fileURLToPath } from 'node:url';
+import path from 'node:path'; import fs from 'node:fs'; import os from 'node:os'; import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import dotenv from 'dotenv'; import pg from 'pg';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,28 +72,53 @@ function locked() {
 
     const segRolls = new Set((await pool.query(`SELECT DISTINCT roll_group_id FROM probate_estate_segments_v2`)).rows.map(x=>x.roll_group_id));
 
-    // find the first roll with outstanding work
+    // Rolls already segment-ATTEMPTED that produced ZERO segments (e.g. 1-page
+    // stubs / index pages with no estate header). Without remembering these, such a
+    // roll is never in segRolls, so it is re-picked every tick forever — and since
+    // it sorts to the front (antebellum), it blocks the WHOLE queue behind it (the
+    // 9SBF-N38 wheel-spin that kept the drip from ever reaching NY). Persisted on
+    // disk like the PID lock (operational state, host-local).
+    const EMPTY_FILE = path.join(os.homedir(), '.probate-drip-empty-rolls.json');
+    const emptyRolls = (() => { try { return new Set(JSON.parse(fs.readFileSync(EMPTY_FILE, 'utf8'))); } catch { return new Set(); } })();
+    const saveEmpty = () => { try { fs.writeFileSync(EMPTY_FILE, JSON.stringify([...emptyRolls])); } catch {} };
+    const execOpts = (roll) => { const f = path.resolve('/tmp', `drip-${roll}.log`); return { stdio: ['ignore', fs.openSync(f,'a'), fs.openSync(f,'a')], env: process.env }; };
+
+    // Walk the prioritized rolls, advancing past genuinely-empty ones within THIS
+    // run (bounded) so one tick can clear a cluster of stubs and still do real work.
     let target = null, action = null, pending = 0;
+    const MAX_EMPTY_SKIPS = 40; let skipped = 0;
     for (const r of rolls) {
-      if (!segRolls.has(r.roll)) { target = r; action = 'segment+extract'; break; }
+      if (emptyRolls.has(r.roll)) continue;                       // known-empty → skip
+      if (!segRolls.has(r.roll)) {
+        if (DRY) { target = r; action = 'segment+extract'; break; } // dry: don't actually segment
+        log(`segmenting ${r.roll} "${(r.name||'').slice(0,45)}" [${r.pages}pp]…`);
+        try {
+          execFileSync(NODE, [path.resolve(__dirname,'segment-probate-v2.mjs'), '--roll', r.roll, '--apply'], execOpts(r.roll));
+        } catch (segErr) {
+          log(`  segmentation FAILED for ${r.roll}: ${(segErr.message||'').slice(0,80)} — leaving for retry (not blacklisted)`);
+          continue;                                               // transient error → don't blacklist
+        }
+        const segCount = +(await pool.query(`SELECT COUNT(*) c FROM probate_estate_segments_v2 WHERE roll_group_id=$1`, [r.roll])).rows[0].c;
+        if (segCount === 0) {
+          emptyRolls.add(r.roll); saveEmpty();
+          log(`  ↪ ${r.roll} produced 0 segments — marked empty, advancing`);
+          if (++skipped > MAX_EMPTY_SKIPS) { log('hit empty-skip cap this tick — exiting, will resume next tick'); break; }
+          continue;
+        }
+        target = r; action = 'segment+extract'; break;            // now has segments → extract below
+      }
       const un = (await pool.query(`SELECT COUNT(*) c FROM probate_estate_segments_v2 s
         WHERE s.roll_group_id=$1 AND s.id NOT IN (SELECT segment_id FROM probate_estate_extractions WHERE segment_id IS NOT NULL)`, [r.roll])).rows[0].c;
       if (+un > 0) { target = r; action = 'extract'; pending = +un; break; }
     }
 
-    if (!target) { log(`✓ all rolls in scope (${PREFIX || 'all probate'}) fully extracted — nothing to do.`); await notify('corpus complete — all rolls in scope extracted'); return; }
+    if (!target) { log(`✓ all rolls in scope (${PREFIX || 'all probate'}) fully extracted${skipped?` (${skipped} empty rolls skipped this tick)`:''} — nothing to do.`); await notify('corpus complete — all rolls in scope extracted'); return; }
     log(`next: roll ${target.roll} "${(target.name||'').slice(0,55)}" [${target.pages}pp, ${target.antebellum?'ANTEBELLUM':'post-1865'}, start ${target.startYear}] → ${action}${pending?` (${pending} estates pending)`:''}`);
     if (DRY) { log('(dry run — not executing)'); return; }
 
     await notify(`${action} roll ${target.roll} (${target.antebellum?'antebellum':'post-1865'}, ${target.pages}pp)`);
-    const runLog = path.resolve('/tmp', `drip-${target.roll}.log`);
-    const opts = { stdio: ['ignore', fs.openSync(runLog,'a'), fs.openSync(runLog,'a')], env: process.env };
-    if (action === 'segment+extract') {
-      log('segmenting…');
-      execFileSync(NODE, [path.resolve(__dirname,'segment-probate-v2.mjs'), '--roll', target.roll, '--apply'], opts);
-    }
-    log('extracting…');
-    execFileSync(NODE, [path.resolve(__dirname,'extract-probate-estates.mjs'), '--roll', target.roll], opts);
+    log('extracting…');                                          // segmentation (if any) already done during selection
+    execFileSync(NODE, [path.resolve(__dirname,'extract-probate-estates.mjs'), '--roll', target.roll], execOpts(target.roll));
 
     const agg = (await pool.query(`SELECT COUNT(*) estates, SUM(enslaved_count) enslaved, SUM(enslaved_valued_count) valued, SUM(total_appraised_usd) usd FROM probate_estate_extractions WHERE roll_group_id=$1`, [target.roll])).rows[0];
     const summary = `roll ${target.roll} now: ${agg.estates} estates, ${agg.enslaved||0} enslaved, ${agg.valued||0} valued, $${Math.round(agg.usd||0).toLocaleString()}`;
