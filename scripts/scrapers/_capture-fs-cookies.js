@@ -2,7 +2,12 @@
 // and write it in puppeteer page.setCookie() format for FAMILYSEARCH_COOKIES.
 const puppeteer = require('puppeteer-extra');
 const fs = require('fs');
-const OUT = process.argv[2] || '/tmp/familysearch-cookies.json';
+const path = require('path');
+// Default to the repo's tmp/ — the SAME path the scraper injects from
+// (georgia-probate-scraper.js reads <repo>/tmp/familysearch-cookies.json). Writing
+// to /tmp/ instead meant a "fresh" capture silently never reached the scraper, so a
+// stale jar kept clobbering the live session on every launch (the NY index-wall).
+const OUT = process.argv[2] || path.resolve(__dirname, '../../tmp/familysearch-cookies.json');
 
 (async () => {
   const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null });
