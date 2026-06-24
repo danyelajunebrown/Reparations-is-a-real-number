@@ -61,9 +61,11 @@ COMMENT ON TABLE source_artifacts IS
 -- in `raw`. Resolved to canonical persons in the Phase-2 step (NOT here).
 CREATE TABLE IF NOT EXISTS slavevoyages_past_people (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    dataset       TEXT NOT NULL CHECK (dataset IN ('african_origins','oceans_of_kinfolk')),
-    record_index  INTEGER NOT NULL,        -- 0-based row in the source CSV (stable within dataset)
-    sv_id         TEXT,                     -- SlaveVoyages record id if present
+    dataset       TEXT NOT NULL,            -- label: african_origins | oceans_of_kinfolk | texas_bound
+                                            -- (no CHECK — PAST ships ≥3 datasets and adds more over time)
+    dataset_code  INTEGER,                  -- raw SlaveVoyages dataset enum (0=AfricanOrigins,1=OceansOfKinfolk,2=TexasBound)
+    record_index  INTEGER NOT NULL,        -- 0-based row in the source (stable within dataset)
+    sv_id         TEXT,                     -- SlaveVoyages enslaved_id
 
     -- person
     name              TEXT,
