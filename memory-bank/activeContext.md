@@ -1,6 +1,31 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-22 (Session 65 — probate #67 year-extraction fix + estate-index spine + forensic-estate UI + migration-hygiene)_
+_Last updated: 2026-06-24 (Session 66 — NY scraper recovery + SlaveVoyages PAST ingest (LEADS) + Canonical/Document-Gate standard)_
+
+---
+
+## Session 66 — NY Scraper Recovery + SlaveVoyages PAST (LEADS) + Canonical/Document-Gate Standard (2026-06-22→24)
+
+Branch: `audit/probate-classifier-and-source-documents`.
+
+### NY probate scraper — recovered (root cause: stale cookie jar)
+The scraper was frozen (SIGSTOP'd by a since-gone watchdog) and, on restart, kept hitting the "content-OK / index-walled" split (`SESSION LOST` → `ident.familysearch.org/login` on every roll-index). TRUE root cause: the scraper injects `<repo>/tmp/familysearch-cookies.json` at startup (`page.setCookie`, browser-wide), and that jar was 2 weeks stale — it OVERWROTE the live logged-in session every launch, re-walling the index endpoint. Fix: human VNC re-login on the Mini hitting an actual roll-index URL, re-capture the jar to the repo path (`_capture-fs-cookies.js` defaulted to `/tmp/` not repo `tmp/` — fixed + committed), relaunch → 0 SESSION LOST, marching Albany. Watchdog re-registered (pm2 `probate-watchdog-ny`), stale sentinel cleared. Also fixed the **drip wheel-spin** (`probate-drip.mjs`): old Mini drip was Liberty-only AND re-picked any 0-segment roll forever (blocked NY); new version covers all `%-probate-%`, prioritizes by real `document_year`, persists an empty-rolls set. Deployed.
+
+### SlaveVoyages PAST ingest — built, staged as LEADS (169K)
+First pre-1860 named-enslaved source (see `research/pre-1860-source-buildability.md`). PAST = African Origins/Trans-Atlantic + Oceans of Kinfolk + Texas Bound = **169,065 named records**, served by a paged token-authed API (no static file; the public frontend read token). Built: **M100** `slavevoyages_past_people` staging + reusable `source_artifacts` (S3 re-host + Wayback snapshot + sha256 + license + rehostable) archive registry; `scripts/lib/wayback.mjs`; `scripts/ingest-slavevoyages-past-api.mjs` (pages API → NDJSON → S3 + Wayback → staging, idempotent). Full pull run on the Mini → staged as LEADS with facts attached. Enslaved.org Q-ID cross-link deferred (its dump is NOT on the Mini — prior memory was wrong; fresh download later).
+
+### THE STANDARD — canonical + external-assertion document gate (user verdict Jun 24)
+**Overstep caught before damage:** `scripts/resolve-slavevoyages-past.mjs` would have minted ~169K **un-deduped, un-documented** canonical persons — violating the project's definition. It was only DRY-RUN; **nothing was minted**; resolver is SHELVED. The standard is now authoritative in **`memory-bank/standard-canonical-person-and-document-gate.md`**:
+- **Canonical = (1) verified DISCRETE UNIQUE human (deduped) AND (2) ≥ a verified secondary source.** Secondary IS enough to create a canonical.
+- **External-assertion GATE:** a secondary-only canonical exists + is fully usable INTERNALLY (DAA, climb, obligation) but is HIDDEN from front-end search, and we NEVER externally assert anyone was/wasn't a slaveowner / enslaved / prior-enslaved, until a **proposition-specific corroborating document is in S3** (`person_documents.s3_key`, a real file — not a URL pointer). Verifying doc types (so far): slave schedule · census-with-slaves · will/probate · Freedman's Bank deposit · DC compensated-emancipation petition · plantation records · correspondence from the person · slave/freedman narrative.
+- **Debt flagged:** Bucket C1 (51,017 SlaveVoyages, URL-only docs) + Hall (~100K, no docs + no dedup) are non-compliant under this standard — reconcile later, do not act unprompted.
+
+**Process failure + fix:** nothing forced reading the repo `memory-bank/` (Claude Code auto-loads only CLAUDE.md + `~/.claude` MEMORY.md; no CLAUDE.md existed; the repo memory bank where standards live was never auto-read — and `~/.claude/MEMORY.md` is over its size limit, loads partially). A CLAUDE.md was briefly created to enforce it; **user erased it — the memory bank is the SINGLE source of truth, no parallel rule surface.** Discipline adopted: read `memory-bank/` at the start of every task; ground decisions there, never in immediate context or model training; write project knowledge to the memory bank ONLY (not `~/.claude`).
+
+### NEXT (agreed sequence)
+1. **Dedup first** — design SlaveVoyages PAST lead dedup grounded in `plan-identity-resolution-completion.md` (tiered fingerprint; block on voyage_id + name, NOT bare first-names; Tier-3 never auto-merged; review queue, not auto-canonical). Bring for review before building.
+2. **Then the gate mechanism** — `externally_assertable` flag + search/API filter + internal-consumer bypass.
+3. Resume the ingestion under these rules (PAST stays LEADS with facts until dedup + a stored proposition-specific document promote + un-gate).
 
 ---
 

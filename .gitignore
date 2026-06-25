@@ -55,8 +55,9 @@ fs-climber-cookies.json
 # Generated output
 generated-daas/
 
-# Memory bank (AI context, not code)
-memory-bank/
+# Memory bank — project source-of-truth, VERSIONED on purpose (was ignored; un-ignored
+# Jun 2026 so it's durable, syncs to the Mini, and is shareable with collaborators).
+# (.DS_Store stays ignored via the global rule above.)
 
 # Tesseract training data (large, reinstallable)
 eng.traineddata
