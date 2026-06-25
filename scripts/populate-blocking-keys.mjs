@@ -36,10 +36,15 @@ async function flush(rows) {
   if (!rows.length) return;
   const pid = [], kt = [], kv = [], sn = [];
   for (const r of rows) { pid.push(r[0]); kt.push(r[1]); kv.push(r[2]); sn.push(r[3]); }
+  // M101: person_blocking_keys is now polymorphic (subject_table, subject_id) with
+  // those NOT NULL. Canonical rows write subject_table='canonical_persons',
+  // subject_id=canonical_person_id (kept for back-compat reads). Conflict target is
+  // the new PK (subject_table, subject_id, key_value).
   await pool.query(
-    `INSERT INTO person_blocking_keys (canonical_person_id, key_type, key_value, surname)
-     SELECT * FROM unnest($1::int[], $2::text[], $3::text[], $4::text[])
-     ON CONFLICT (canonical_person_id, key_value) DO NOTHING`, [pid, kt, kv, sn]);
+    `INSERT INTO person_blocking_keys (subject_table, subject_id, canonical_person_id, key_type, key_value, surname)
+     SELECT 'canonical_persons', u.p, u.p, u.kt, u.kv, u.sn
+       FROM unnest($1::int[], $2::text[], $3::text[], $4::text[]) AS u(p, kt, kv, sn)
+     ON CONFLICT (subject_table, subject_id, key_value) DO NOTHING`, [pid, kt, kv, sn]);
 }
 
 (async () => {
