@@ -77,6 +77,23 @@ item; findings feed back here.
 4. Surface in the `/review` UI. NO auto-merge, NO canonicalization.
 5. THEN (separate plan) the external-assertion gate mechanism.
 
+## MEASURED OUTCOME (Jun 25 2026 — measure-first paid off)
+M101 applied (blocking keys + cross_source_candidates polymorphic). PAST leads keyed:
+`scripts/populate-blocking-keys-slavevoyages-past.mjs` wrote **637,001 context keys
+across 165,715 leads** (voy/own/nmsx/nmsxb; never bare name). Intra-PAST dedup yield
+**measured and rejected**: name signals are ~all false positives — `nmsx` ~6.7M pairs,
+`nmsxb` ~1.2M (295 distinct "Mary/f/1810s", 239 "John"…); even **same-voyage** +
+name+sex is contaminated (voyage 131071: 83 "Joe", 78 "Boy/f"…) = distinct people with
+common/generic assigned names on large voyages. PAST is a CURATED source → no usable
+internal duplication. **Decision: build NO intra-PAST candidate/review queue** (it would
+be ~100% reviewer waste). The blocking keys' value is **discoverability for FUTURE
+cross-source matching + de-siloing readiness**, not intra-PAST merging. Biscoe rule
+empirically vindicated.
+
+So for SlaveVoyages PAST the dedup step is COMPLETE (nothing to merge; leads blockable).
+Next per the agreed sequence = the external-assertion GATE mechanism (separate plan);
+that is also where the C1/Hall secondary-only-canonical debt is addressed.
+
 ## Out of scope
 The gate mechanism; the broader codebase de-siloing assessment (tracked separately);
 any canonical creation/promotion.
