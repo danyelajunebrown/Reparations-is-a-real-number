@@ -77,4 +77,11 @@ its own commit + push (memory bank stays synced). No canonical minted outside `p
   cluster as candidates (s4:scoe bridges Biscoe~Briscoe). Has a CLI test mode.
   - Known refinement for later: name-frequency weighting (Fellegi-Sunter) + key-scheme
     harmonization so first-name leads can match first-name canonicals.
+- **BROAD VALIDATION (`tests/unit/test-person-resolve.js`, committed regression test):**
+  curated 10/10 (ambiguity, unique match, surname cluster, external-id Tier-1, no-match,
+  placeholder) + statistical self-match over 800 random real samples = 400 canonicals
+  (60.5% self / **0% false-pos** / 39.5% no-match) + 400 PAST first-name leads, the
+  riskiest population (58.5% self / **0% false-pos** / 41.5% no-match). **TOTAL false
+  positives across 800 = 0.** The ~40% no-match is the correct conservative behavior
+  (common-name cases → review candidates, never auto-link). Matcher is SAFE.
 - Step 2 (findOrCreateLead + rewire 2 live scrapers) — NEXT.
