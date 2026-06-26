@@ -95,5 +95,17 @@ its own commit + push (memory bank stays synced). No canonical minted outside `p
   Henderson/Anderson) crowd out a selective key's matches (`nmsx:harriswilliam`), causing a
   self-match miss + 1 false positive. Fixed with PER-KEY lookup + per-key cap. Re-validated:
   resolve curated 10/10 + 800-sample statistical = **0 false positives** (recall ~61%/62%).
-- Step 2b — rewire UnifiedScraper + distributed-scraper onto findOrCreateLead (kills 2 of 3
-  dead-`individuals` writes, adds ingest dedup) — NEXT.
+- **Step 2b — rewire the 2 live scrapers onto findOrCreateLead — DONE + verified, Jun 26 2026.**
+  - 2b/1 `distributed-scraper.js` `/submit-data` (live 1860 multi-device path): blind
+    unconfirmed_persons INSERT → `findOrCreateLead` (dedup + blocking keys), reports
+    dedupedCount. Committed `fb5c961ca`.
+  - 2b/2 `scraping/UnifiedScraper.js` `saveResults`: **dropped the dead `individuals` +
+    `slaveholder_records` writes**; owners + enslaved now route through `findOrCreateLead`
+    (enslaved carry the `enslaved_by` relationship via the new `relationships` JSONB on
+    `findOrCreateLead`'s INSERT). **Behavior change (deliberate, standard-compliant):** the
+    scraper no longer self-sets `status='confirmed'` for high-confidence owners — all leads are
+    `'pending'`; confirmation is the separate gated `promoteToCanonical` step. Verified
+    end-to-end: owner+enslaved created, relationship persisted, 5 blocking keys, re-ingest
+    LINKS (no dup), findOrCreate regression 7/7.
+  - **Kills 2 of the 3 live `individuals`-table writes.** The 3rd (OwnerPromotion) is fixed in
+    step 3 (`promoteToCanonical` + gate) — NEXT.

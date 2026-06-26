@@ -20,6 +20,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const puppeteer = require('puppeteer');
+const PersonService = require('../PersonService');
 
 class UnifiedScraper {
     constructor(database, config = {}) {
@@ -1966,106 +1967,55 @@ class UnifiedScraper {
         console.log('\n💾 Saving results to database...');
 
         try {
-            // For confirmed owners from primary sources (census data), save directly to individuals table
+            // Route owners + enslaved through PersonService.findOrCreateLead — dedup-before-create
+            // + writes blocking keys so each lead is discoverable. Replaces the dead `individuals`
+            // / `slaveholder_records` writes AND the blind unconfirmed_persons INSERTs (no matching,
+            // no keys → duplicates + orphaned leads). Leads land in unconfirmed_persons as 'pending';
+            // the scraper no longer self-sets 'confirmed' — confirmation is the separate, gated
+            // promoteToCanonical step (canonical/document-gate standard, M101 unified pool).
+            const personService = this._personService || (this._personService = new PersonService(this.db));
+            let linkedCount = 0;
+
             for (const owner of result.owners) {
-                const isConfirmed = owner.type === 'confirmed_owner' && owner.confidence >= 0.9;
-
-                if (isConfirmed) {
-                    // Save directly to individuals table (confirmed slaveholder)
-                    try {
-                        const insertResult = await this.db.query(`
-                            INSERT INTO individuals (
-                                full_name, birth_year, death_year, locations,
-                                source_documents, notes, created_at
-                            ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-                            ON CONFLICT DO NOTHING
-                            RETURNING individual_id
-                        `, [
-                            owner.fullName,
-                            owner.birthYear || null,
-                            owner.deathYear || null,
-                            owner.locations || [],
-                            JSON.stringify([{ url: owner.sourceUrl, type: owner.source, isPrimary: true }]),
-                            owner.notes
-                        ]);
-
-                        if (insertResult.rows.length > 0) {
-                            const individualId = insertResult.rows[0].individual_id;
-
-                            // Also record in slaveholder_records if we have slave count
-                            if (owner.slaveCount) {
-                                await this.db.query(`
-                                    INSERT INTO slaveholder_records (
-                                        individual_id, census_year, state, county,
-                                        total_enslaved, source_reference, created_at
-                                    ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-                                    ON CONFLICT DO NOTHING
-                                `, [
-                                    individualId,
-                                    1860,
-                                    owner.locations?.[0]?.split(',').pop()?.trim() || null,
-                                    owner.locations?.[0]?.split(',')[1]?.replace('County', '').trim() || null,
-                                    owner.slaveCount,
-                                    owner.censusReference || owner.sourceUrl
-                                ]).catch(() => {}); // Table might not exist yet
-                            }
-
-                            console.log(`   ✅ CONFIRMED owner saved to individuals: ${owner.fullName} (${owner.slaveCount || 'unknown'} enslaved)`);
-                        }
-                    } catch (err) {
-                        // If individuals insert fails, fall back to unconfirmed_persons
-                        console.log(`   ⚠️ Falling back to unconfirmed_persons for ${owner.fullName}: ${err.message}`);
-                    }
+                try {
+                    const r = await personService.findOrCreateLead({
+                        name: owner.fullName,
+                        personType: owner.type.includes('confirmed') ? 'owner' : 'suspected_owner',
+                        birthYear: owner.birthYear || null,
+                        deathYear: owner.deathYear || null,
+                        locations: owner.locations || [],
+                        sourceUrl: owner.sourceUrl,
+                        sourceType: owner.source,
+                        confidence: owner.confidence,
+                        context: owner.notes,
+                    });
+                    if (r.action === 'linked') linkedCount++;
+                    console.log(`   ✓ ${r.action === 'linked' ? 'Linked (deduped)' : 'Saved'} owner: ${owner.fullName} (${owner.type})`);
+                } catch (err) {
+                    console.log(`   ⚠️ Failed to save owner ${owner.fullName}: ${err.message}`);
                 }
-
-                // Always also save to unconfirmed_persons for tracking
-                await this.db.query(`
-                    INSERT INTO unconfirmed_persons (
-                        full_name, person_type, birth_year, death_year,
-                        locations, source_url, source_type, confidence_score,
-                        context_text, status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                    ON CONFLICT DO NOTHING
-                `, [
-                    owner.fullName,
-                    owner.type.includes('confirmed') ? 'owner' : 'suspected_owner',
-                    owner.birthYear || null,
-                    owner.deathYear || null,
-                    owner.locations || [],
-                    owner.sourceUrl,
-                    owner.source,
-                    owner.confidence,
-                    owner.notes,
-                    owner.confidence >= 0.9 ? 'confirmed' :
-                    owner.confidence >= 0.7 ? 'reviewing' : 'pending'
-                ]);
-                console.log(`   ✓ Saved owner: ${owner.fullName} (${owner.type})`);
             }
 
-            // Save enslaved people
+            // Save enslaved people (carry the enslaved_by relationship onto the lead)
             for (const enslaved of result.enslavedPeople) {
-                await this.db.query(`
-                    INSERT INTO unconfirmed_persons (
-                        full_name, person_type, birth_year, death_year,
-                        locations, source_url, source_type, confidence_score,
-                        context_text, relationships, status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                    ON CONFLICT DO NOTHING
-                `, [
-                    enslaved.fullName,
-                    enslaved.type.includes('confirmed') ? 'enslaved' : 'suspected_enslaved',
-                    enslaved.birthYear || null,
-                    enslaved.deathYear || null,
-                    enslaved.location ? [enslaved.location] : [],
-                    enslaved.sourceUrl,
-                    enslaved.source,
-                    enslaved.confidence,
-                    enslaved.notes,
-                    JSON.stringify([{ type: 'enslaved_by', name: enslaved.slaveholder }]),
-                    enslaved.confidence >= 0.9 ? 'confirmed' :
-                    enslaved.confidence >= 0.7 ? 'reviewing' : 'pending'
-                ]);
-                console.log(`   ✓ Saved enslaved: ${enslaved.fullName} (${enslaved.type})`);
+                try {
+                    const r = await personService.findOrCreateLead({
+                        name: enslaved.fullName,
+                        personType: enslaved.type.includes('confirmed') ? 'enslaved' : 'suspected_enslaved',
+                        birthYear: enslaved.birthYear || null,
+                        deathYear: enslaved.deathYear || null,
+                        locations: enslaved.location ? [enslaved.location] : [],
+                        sourceUrl: enslaved.sourceUrl,
+                        sourceType: enslaved.source,
+                        confidence: enslaved.confidence,
+                        context: enslaved.notes,
+                        relationships: [{ type: 'enslaved_by', name: enslaved.slaveholder }],
+                    });
+                    if (r.action === 'linked') linkedCount++;
+                    console.log(`   ✓ ${r.action === 'linked' ? 'Linked (deduped)' : 'Saved'} enslaved: ${enslaved.fullName} (${enslaved.type})`);
+                } catch (err) {
+                    console.log(`   ⚠️ Failed to save enslaved ${enslaved.fullName}: ${err.message}`);
+                }
             }
 
             // If category is beyondkin, also add to beyond_kin_review
@@ -2084,7 +2034,7 @@ class UnifiedScraper {
                 ]).catch(() => {}); // Table might not exist
             }
 
-            console.log(`   ✅ Saved ${result.owners.length} owners, ${result.enslavedPeople.length} enslaved`);
+            console.log(`   ✅ Saved ${result.owners.length} owners, ${result.enslavedPeople.length} enslaved (${linkedCount} linked to existing leads)`);
 
         } catch (error) {
             console.error(`   ❌ Database error: ${error.message}`);
