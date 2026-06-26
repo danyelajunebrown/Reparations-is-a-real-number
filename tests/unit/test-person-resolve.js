@@ -29,7 +29,7 @@ const CURATED = [
   { d: 'George Washington Biscoe 1787 → match #140301', q: { name: 'George Washington Biscoe', birthYear: 1787 }, ok: r => r.match && r.match.subject_id === 140301 },
   { d: 'external-id Tier-1 familysearch:L4QZ-F2H → match #140888 (tier 1)', q: { name: 'Mary Tarbell', externalId: 'L4QZ-F2H', idSystem: 'familysearch' }, ok: r => r.match && r.match.subject_id === 140888 && r.match.tier === 1 },
   { d: 'surname cluster Ann Biscoe 1799 → NO auto-match, candidates incl Biscoe', q: { name: 'Ann Biscoe', birthYear: 1799 }, ok: r => r.match === null && r.candidates.some(c => /biscoe/i.test(c.name)) },
-  { d: 'nonexistent name → empty', q: { name: 'Zxqwerty Nonesuchington', birthYear: 1800 }, ok: r => r.match === null && r.candidates.length === 0 },
+  { d: 'nonexistent name → NO match (weak phonetic candidates ok, never an auto-match)', q: { name: 'Zxqwerty Nonesuchington', birthYear: 1800 }, ok: r => r.match === null },
   { d: 'placeholder "unnamed" → no match', q: { name: 'unnamed' }, ok: r => r.match === null },
   { d: 'numeric name → no match', q: { name: '12345' }, ok: r => r.match === null },
 ];

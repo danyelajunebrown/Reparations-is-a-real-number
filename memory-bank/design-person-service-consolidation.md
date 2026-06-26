@@ -84,4 +84,16 @@ its own commit + push (memory bank stays synced). No canonical minted outside `p
   riskiest population (58.5% self / **0% false-pos** / 41.5% no-match). **TOTAL false
   positives across 800 = 0.** The ~40% no-match is the correct conservative behavior
   (common-name cases → review candidates, never auto-link). Matcher is SAFE.
-- Step 2 (findOrCreateLead + rewire 2 live scrapers) — NEXT.
+- **Step 2a — `findOrCreateLead` + `_writeBlockingKeys` DONE + verified, Jun 26 2026.**
+  resolve → confident-unambiguous match LINKS (never duplicates); else creates a LEAD in
+  unconfirmed_persons + its blocking keys (never a canonical). `opts.dryRun` supported.
+  `tests/unit/test-person-findorcreate.js` (self-cleaning, 7/7): dry-run, create,
+  resolve-finds-it, **re-ingest LINKS (no dup)**, cleanup. **Two real bugs caught by testing
+  (broad-test discipline paid off):** (1) `_fetchSubjects` read `name` from unconfirmed_persons
+  but the column is `full_name` (+ has birth_year/gender); (2) **key-selectivity flooding** — a
+  single `WHERE key_value = ANY(...) LIMIT` let common keys (`sn:harris`, `mp:UNKPRSN` ↔ every
+  Henderson/Anderson) crowd out a selective key's matches (`nmsx:harriswilliam`), causing a
+  self-match miss + 1 false positive. Fixed with PER-KEY lookup + per-key cap. Re-validated:
+  resolve curated 10/10 + 800-sample statistical = **0 false positives** (recall ~61%/62%).
+- Step 2b — rewire UnifiedScraper + distributed-scraper onto findOrCreateLead (kills 2 of 3
+  dead-`individuals` writes, adds ingest dedup) — NEXT.

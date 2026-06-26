@@ -1,6 +1,27 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-24 (Session 66 — NY scraper recovery + SlaveVoyages PAST ingest (LEADS) + Canonical/Document-Gate standard)_
+_Last updated: 2026-06-26 (Session 67 — de-siloing the person layer: audit + PersonService consolidation, step 1 resolve)_
+
+---
+
+## Session 67 — De-siloing the Person Layer: Audit + Unified PersonService (2026-06-25→26)
+
+Branch: `audit/probate-classifier-and-source-documents`. Follows the canonical/document-gate standard (Session 66). User priority: BEFORE exponential growth, fix orphaning/siloing so already-verified info (e.g. an enslaved ancestor's data) is never lost when future inflow (a descendant's document) arrives. Method (user-directed): focused research pass per component, findings to the memory bank, design → review → build → verify; NEVER decide from context — ground in the memory bank.
+
+### De-siloing assessment (read-only) → 3 structural orphaning risks
+`memory-bank/assessment-de-siloing-orphaning.md`: (1) relationship/lineage layer is canonical-(or-unconfirmed)-only → the 266K PAST+Hall leads can't carry ANY kin/lineage edge; (2) intake promotion bypasses the matcher (OwnerPromotion writes the DEAD `individuals` table by exact name); (3) no descendant→enslaved-ancestor traversal. Fixes sequenced **2→1→3** (`plan-de-siloing-fixes.md`).
+
+### M101 — polymorphic identity layer (fix-#1 foundation, DONE)
+`person_blocking_keys` + `cross_source_candidates` made polymorphic `(subject_table, subject_id)` so LEADS join canonicals in ONE dedup pool; 1.45M keys backfilled. PAST leads keyed (637K context keys, never bare-name; `populate-blocking-keys-slavevoyages-past.mjs`). Intra-PAST dedup measured ≈ all false (curated source) → NO review queue; value = discoverability for future cross-source matching.
+
+### Full person-layer audit (4 parallel passes) → deep-integration design
+`memory-bank/promotion-layer-component-map.md`: 5+ person tables (canonical 677K / unconfirmed 2.4M / enslaved 18K / `individuals` DEAD / PAST 169K / Hall 100K), 3 dedup systems (1 live spine, 1 live canonical-only NameResolver, 1 dead EntityDeduplicator), ~10 creation paths with NO consistent match-before-create or doc-gate, **3 LIVE writers of the dead `individuals` table** (OwnerPromotion, UnifiedScraper:1977, IndividualRepository = runtime bombs), many dead service classes.
+
+### PersonService consolidation (fix #2) — design + STEP 1 DONE
+`memory-bank/design-person-service-consolidation.md`: ONE `src/services/PersonService.js` every path routes through — `resolve / findOrCreateLead / promoteToCanonical(+gate) / merge / link`. **Step 1 `resolve` BUILT + broadly validated:** unified matcher over leads+canonicals (blocking keys + `find_person_match`), Biscoe **ambiguity guard** (never auto-match on common-name ties). `tests/unit/test-person-resolve.js` (committed regression): 10/10 curated + 800-sample statistical (400 canonical + 400 PAST first-name leads, the riskiest) = **0 false positives**. NEXT: step 2 `findOrCreateLead` + rewire UnifiedScraper/distributed-scraper (kills 2 of 3 dead-table writes, adds ingest dedup) → step 3 promoteToCanonical+gate → then #1 lead-aware relationships + #3 reverse traversal.
+
+### Memory bank un-ignored + versioned (process fix)
+`memory-bank/` was gitignored — 18 of 22 files (incl. projectbrief + the new standard) were local-only. Un-ignored + committed → durable, on GitHub for collaborators. Discipline: read memory-bank first; project knowledge → memory-bank ONLY (not `~/.claude`); CLAUDE.md was created then erased per user ("believe in the memory bank", no parallel rule surface).
 
 ---
 

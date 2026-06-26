@@ -80,7 +80,7 @@ class PersonService {
         : table === 'slavevoyages_past_people'
         ? `sv_id::text AS sid, name, (year - age)::int AS birth_year, disembark_port AS state, sex, 'enslaved' AS person_type`
         : table === 'unconfirmed_persons'
-        ? `lead_id::text AS sid, name, NULL::int AS birth_year, NULL AS state, NULL AS sex, person_type`
+        ? `lead_id::text AS sid, full_name AS name, birth_year, locations[1] AS state, gender AS sex, person_type`
         : `record_index::text AS sid, name, year::int AS birth_year, location AS state, sex, 'enslaved' AS person_type`;
       const rows = (await this.db.query(`SELECT ${sel} FROM ${table} WHERE ${idExpr} = ANY($1::int[])`, [ids])).rows;
       for (const row of rows) out.push({ subject_table: table, subject_id: Number(row.sid), kind: cfg.kind, ...row });
@@ -119,13 +119,25 @@ class PersonService {
       if (t1) { out.match = { subject_table: 'canonical_persons', subject_id: t1.canonical_person_id, kind: 'canonical', name: t1.canonical_name, tier: 1, confidence: Number(t1.match_confidence), signals: ['external_id'] }; return out; }
     }
 
-    // Gather candidate subjects from the unified blocking pool + find_person_match name tiers
+    // Gather candidate subjects from the unified blocking pool + find_person_match name tiers.
+    // Split keys by selectivity: STRONG (exact surname sn, name+sex nmsx/nmsxb) are selective
+    // and must always be included; WEAK phonetic bridges (s4 suffix, mp metaphone) collide with
+    // thousands (e.g. mp:UNKPRSN ↔ every Henderson/Anderson) so they're only a small capped
+    // supplement — otherwise they flood out the real selective matches under the LIMIT.
     const keys = await this._queryKeys(query);
-    let refs = [];
-    if (keys.length) {
-      refs = (await this.db.query(
-        `SELECT DISTINCT subject_table, subject_id FROM person_blocking_keys WHERE key_value = ANY($1::text[]) LIMIT 400`, [keys])).rows;
-    }
+    const strongKeys = keys.filter(k => /^(sn|nmsx|nmsxb):/.test(k));
+    const weakKeys = keys.filter(k => /^(s4|mp):/.test(k));
+    const refMap = new Map();
+    const addRefs = rows => rows.forEach(r => refMap.set(r.subject_table + ':' + r.subject_id, r));
+    // Per-key lookup with a per-key cap: a common key (sn:harris, mp:UNKPRSN) must not crowd
+    // out a SELECTIVE key's matches (nmsx:harriswilliam) under a shared LIMIT — that crowding
+    // caused both a self-match miss AND a false positive in testing (only one of two William
+    // Harrises survived, so the ambiguity guard never saw the tie).
+    for (const k of strongKeys) addRefs((await this.db.query(
+      `SELECT DISTINCT subject_table, subject_id FROM person_blocking_keys WHERE key_value = $1 LIMIT 200`, [k])).rows);
+    for (const k of weakKeys) addRefs((await this.db.query(
+      `SELECT DISTINCT subject_table, subject_id FROM person_blocking_keys WHERE key_value = $1 LIMIT 80`, [k])).rows);
+    let refs = [...refMap.values()];
     // include find_person_match name+date+loc canonical candidates
     if (query.name) {
       const fm = await this.db.query('SELECT * FROM find_person_match($1,$2,$3,$4,NULL,NULL)',
@@ -152,6 +164,59 @@ class PersonService {
       out.ambiguous = !!ambiguous; // signal to callers: needs review, do not auto-link
     }
     return out;
+  }
+
+  /** Write the appropriate blocking keys for a subject (surname scheme if a surname is
+   *  present; name+sex composite always) into the polymorphic person_blocking_keys. */
+  async _writeBlockingKeys(subjectTable, subjectId, record) {
+    const keys = await this._queryKeys({ name: record.name, sex: record.sex, birthYear: record.birthYear });
+    if (!keys.length) return 0;
+    const kt = keys.map(k => k.split(':')[0]);
+    const res = await this.db.query(
+      `INSERT INTO person_blocking_keys (subject_table, subject_id, key_type, key_value)
+       SELECT $1, $2, u.kt, u.kv FROM unnest($3::text[], $4::text[]) AS u(kt, kv)
+       ON CONFLICT (subject_table, subject_id, key_value) DO NOTHING`,
+      [subjectTable, subjectId, kt, keys]);
+    return res.rowCount;
+  }
+
+  /**
+   * findOrCreateLead(record, opts) — the ingest entry point. resolve() first; if a
+   * confident, unambiguous match exists, LINK to it (never duplicate). Otherwise create a
+   * LEAD in unconfirmed_persons (NEVER a canonical) + its blocking keys, so it's
+   * discoverable for future matching. opts.dryRun returns the decision without writing.
+   * record: { name, birthYear, sex, location|locations, sourceUrl, sourceType, personType,
+   *           confidence, context, externalId?, idSystem? }
+   */
+  async findOrCreateLead(record = {}, opts = {}) {
+    const dry = !!opts.dryRun;
+    const res = await this.resolve({
+      name: record.name, birthYear: record.birthYear, location: record.location || (record.locations && record.locations[0]),
+      sex: record.sex, externalId: record.externalId, idSystem: record.idSystem, personType: record.personType,
+    });
+    if (res.match) {
+      if (!dry && record.externalId && record.idSystem && res.match.subject_table === 'canonical_persons') {
+        await this.db.query(
+          `INSERT INTO person_external_ids (canonical_person_id, id_system, external_id, external_url, confidence)
+           VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id_system, external_id) DO NOTHING`,
+          [res.match.subject_id, record.idSystem, record.externalId, record.sourceUrl || null, 0.9]).catch(() => {});
+      }
+      return { ref: res.match, action: 'linked', candidates: res.candidates };
+    }
+    if (!record.name) return { ref: null, action: 'rejected_no_name', candidates: res.candidates };
+    if (dry) return { ref: { subject_table: 'unconfirmed_persons', subject_id: null }, action: 'would_create', candidates: res.candidates };
+
+    const ins = await this.db.query(
+      `INSERT INTO unconfirmed_persons (full_name, person_type, birth_year, gender, locations, source_url, source_type, confidence_score, context_text, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending') RETURNING lead_id`,
+      [record.name, record.personType || null, record.birthYear || null, record.sex || null,
+       record.locations || (record.location ? [record.location] : null), record.sourceUrl || '(unspecified)',
+       record.sourceType || 'secondary', record.confidence || null, record.context || null]);
+    const leadId = ins.rows[0].lead_id;
+    await this._writeBlockingKeys('unconfirmed_persons', leadId, record);
+    // NB: external ids for leads have no home yet (person_external_ids FK is canonical-only) —
+    // tracked as a follow-up (polymorphic external ids). Not dropped: kept in context if needed.
+    return { ref: { subject_table: 'unconfirmed_persons', subject_id: leadId }, action: 'created', candidates: res.candidates };
   }
 }
 
