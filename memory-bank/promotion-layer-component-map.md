@@ -85,3 +85,58 @@ Critical findings:
 (ii) unify the two internal matchers onto that blocking-backed matcher;
 (iii) `createCanonicalPerson` must honor the gate (create lead / gated-canonical until
 deduped + ≥secondary + proposition-doc); (iv) Tier-3/name-only never auto-match.
+
+## Findings (2)(3)(4) — full layer audit, DONE Jun 26 2026 (4 parallel passes, verified)
+
+### Person/identity tables (DB rowcounts, verified)
+canonical_persons 676,875 · unconfirmed_persons 2,425,341 · enslaved_individuals 18,272 ·
+**individuals MISSING (dead)** · free_persons 0 · person_external_ids 159,640 ·
+name_variants **4** (NameResolver variant store barely used) · name_match_queue 26 ·
+ancestor_climb_matches 582 · slavevoyages_past_people 169,065 · hall_slave_records 100,666 ·
+person_facts 497,697 · dedup_candidate_pairs 7,056 · cross_source_candidates 10,901 ·
+person_merge_log 18.
+
+### THREE dedup systems (only one is the live spine)
+1. **person_blocking_keys + resolve-canonical-dedup.mjs** — LIVE batch (Biscoe), 1.45M keys,
+   now lead-aware (M101). The spine. NOT wired into any ingest/intake.
+2. **NameResolver** — LIVE intake, JS soundex/lev, canonical-only, ignores blocking keys.
+3. **EntityDeduplicator** — DEAD (own Levenshtein system on `individuals.internal_id`); plus
+   **EntityManager** DEAD find-or-create. Conflicting ID schemes (uuid vs string).
+
+### The dead `individuals` table is written by LIVE code in 3 places (runtime bombs)
+- **OwnerPromotion** (LIVE via contribute /promote + /extraction/promote) → broken.
+- **UnifiedScraper:1977** (LIVE via UniversalRouter ← contribute) writes `individuals` for
+  ≥0.9-confidence owners → broken.
+- **IndividualRepository** (LIVE via /api/research) READS `individuals` → broken.
+- Plus DEAD writers: Orchestrator, EntityManager, EntityDeduplicator.
+
+### Person-creation paths — match-before-create + gate status
+- **Scrapers (UnifiedScraper, distributed-scraper, dead Orchestrators):** blind INSERT, NO
+  match (ON CONFLICT DO NOTHING at best). Duplication time-bomb. distributed-scraper (LIVE,
+  1860 multi-device) marks everything confidence 0.95 / source_type primary, no dedup.
+- **wills.js /ingest (LIVE):** the GOOD one — sophisticated location+year+name-variant match
+  before create; auto-creates canonical `verification_status='pending_review'` + person_documents
+  with evidence_strength. Gate = docType==='will' only (no secondary-source rule).
+- **review.js (LIVE, X-Admin-Token):** curator-driven. Creates canonical on approve
+  (enslaver_candidates:379, unresolved_petitions:455 — hardcoded state='District of Columbia'),
+  promotes unconfirmed (ambiguous), and has the FK-safe **merge** (duplicate_canonicals → merge
+  script, Biscoe) + **link** (cross_source_enslavers). No programmatic doc-gate; no
+  findCandidateMatches before create.
+- **names.js /resolve(-batch) (LIVE):** uses NameResolver.resolveOrCreate → can mint canonical at
+  conf 0.50, no doc-gate.
+- **contribute review-queue/approve(-all) (LIVE):** blind INSERT enslaved_individuals, random ids,
+  hardcoded Hopewell note, no match.
+- **OwnerPromotion (LIVE):** broken (individuals).
+
+### DEAD service classes (different/conflicting designs — remove or fold in)
+Orchestrator, IntelligentOrchestrator, EntityManager, EntityDeduplicator, EnslavedManager,
+DescendantCalculator (+ DocumentParser/LLMAssistant upstream).
+
+## WIDE-VIEW SYNTHESIS → integration direction
+The person layer has **5+ tables, 3 dedup systems, ~10 creation paths, 3 live writers of a dead
+table, and NO consistent match-before-create or document-gate.** Good patterns exist but are
+siloed: blocking-keys (lead-aware), wills.js location+year matcher, review.js FK-safe merge/link.
+**Deep integration target: ONE `PersonService` (createOrFind + gate)** that every path routes
+through — blocking-key match across leads+canonicals → link or create-as-lead → gate canonical
+promotion on dedup + ≥secondary + proposition-doc. Kill the dead `individuals` table + dead
+dedup/entity classes. This is the design to bring next (for review before build).
