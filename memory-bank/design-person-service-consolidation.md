@@ -63,3 +63,18 @@ can traverse to. So leads carry stable ids + blocking keys now (PAST already doe
 ## Guardrails
 Standard-compliant throughout (dedup + ≥secondary + gate; Tier-3 never auto-merged). Each step
 its own commit + push (memory bank stays synced). No canonical minted outside `promoteToCanonical`.
+
+## BUILD STATUS
+- **Step 1 — `PersonService.resolve` DONE + verified (read-only), Jun 26 2026.**
+  `src/services/PersonService.js`. Searches the unified pool (`person_blocking_keys` polymorphic
+  over leads+canonicals + `find_person_match` Tier-1 ext-id / Tier-2 name+date+loc), scores,
+  ranks. **Key correctness fix caught by read-only test:** common-name false positive — "Mary
+  f 1812" auto-matched one of SIX tied "Mary b.181x" PAST leads. Added an **ambiguity guard**:
+  never auto-match when ≥1 other candidate ties/near-ties the top score (within 0.05). A MATCH
+  now requires name_exact + a non-name corroborator (birth_year/location/external_id) AND no
+  near-tie. Verified: "Mary 1812" → no match (candidates only); "Ann Maria Biscoe 1799" → clean
+  unique match to canonical #141015; "Ann Biscoe" → no auto-match, surfaces the Biscoe/Briscoe
+  cluster as candidates (s4:scoe bridges Biscoe~Briscoe). Has a CLI test mode.
+  - Known refinement for later: name-frequency weighting (Fellegi-Sunter) + key-scheme
+    harmonization so first-name leads can match first-name canonicals.
+- Step 2 (findOrCreateLead + rewire 2 live scrapers) — NEXT.
