@@ -11,9 +11,12 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
+const PersonService = require('../../services/PersonService');
 
 // Get database connection from app context
 let db;
+let _personService;
+const getPersonService = () => (_personService || (_personService = new PersonService(db)));
 
 function initializeRouter(database) {
     db = database;
@@ -175,28 +178,30 @@ router.post('/submit-data', async (req, res) => {
 
         const state = deviceResult.rows[0].assigned_state;
 
-        // Insert each record
+        // Route each record through PersonService.findOrCreateLead — dedup-before-create +
+        // writes blocking keys so the lead is discoverable (was a blind INSERT with no
+        // matching or keys → duplicates + orphaned leads). Leads still land in
+        // unconfirmed_persons; we just link to an existing one when there's a confident
+        // unambiguous match (common 1860 first-names stay distinct — the matcher won't merge).
+        const personService = getPersonService();
+        let linkedCount = 0;
         for (const record of records) {
             try {
-                await db.query(`
-                    INSERT INTO unconfirmed_persons (
-                        full_name, person_type, birth_year, gender, locations,
-                        source_url, extraction_method, confidence_score,
-                        context_text, status, source_type, data_quality_flags
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', 'primary', $10)
-                `, [
-                    record.name || 'Unknown',
-                    record.type || 'enslaved', // 'enslaved' or 'slaveholder'
-                    record.birthYear || null,
-                    record.gender || null,
-                    JSON.stringify([`${location}, ${state}`]),
-                    imageUrl || record.sourceUrl,
-                    'browser_scraper',
-                    record.confidence || 0.95,
-                    `Extracted by browser scraper from ${state} 1860 Slave Schedule. Device: ${deviceId.substring(0, 8)}`,
-                    JSON.stringify({ deviceId: deviceId.substring(0, 8), extractedAt: new Date().toISOString() })
-                ]);
-                insertedCount++;
+                const result = await personService.findOrCreateLead({
+                    name: record.name || 'Unknown',
+                    personType: record.type || 'enslaved', // 'enslaved' or 'slaveholder'
+                    birthYear: record.birthYear || null,
+                    sex: record.gender || null,
+                    locations: [`${location}, ${state}`],
+                    sourceUrl: imageUrl || record.sourceUrl,
+                    sourceType: 'primary',
+                    extractionMethod: 'browser_scraper',
+                    confidence: record.confidence || 0.95,
+                    context: `Extracted by browser scraper from ${state} 1860 Slave Schedule. Device: ${deviceId.substring(0, 8)}`,
+                    dataQualityFlags: { deviceId: deviceId.substring(0, 8), extractedAt: new Date().toISOString() },
+                });
+                if (result.action === 'created') insertedCount++;
+                else if (result.action === 'linked') linkedCount++;
             } catch (e) {
                 errors.push({ record: record.name, error: e.message });
             }
@@ -215,6 +220,7 @@ router.post('/submit-data', async (req, res) => {
         res.json({
             success: true,
             insertedCount,
+            dedupedCount: linkedCount, // linked to an existing lead instead of duplicating
             errorsCount: errors.length,
             errors: errors.slice(0, 5) // Return first 5 errors only
         });
