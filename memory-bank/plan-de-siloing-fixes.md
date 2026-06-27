@@ -34,7 +34,24 @@ depends on #1.
   separate `individuals` table. (Decide: migrate `individuals` usage, or bridge it.)
 - Leverages M101 + the 637K PAST lead keys already written.
 
-### #1 — Lead-aware relationship/lineage layer (foundational, invasive)
+### #1 — Lead-aware relationship/lineage layer — DONE (M103, Jun 27 2026)
+**Built + verified.** Decision (user): M101 POLYMORPHIC `(subject_table, subject_id)` (not dual-id
+columns). **Migration 103** retrofitted `canonical_family_edges` (kinship, 1,658 rows backfilled),
+`person_relationships_verified` (kinship, 12 rows), and `enslaved_owner_relationships` (ownership,
+empty) with `*_subject_table`/`*_subject_id` columns + a BEFORE INSERT/UPDATE **sync trigger** per
+table (legacy canonical/unconfirmed id ⇄ polymorphic ref). Legacy `NOT NULL` on the canonical id
+columns relaxed so a lead-only endpoint is possible; legacy FKs KEPT (integrity for the canonical
+convenience columns); polymorphic partial-unique on cfe dedups lead edges. **Back-compat: the 5
+cfe writers + the live ancestor-climber (prv) keep working unchanged** (trigger fills the new cols);
+new polymorphic writers set `*_subject_*` directly and leave the legacy canonical id NULL for a lead.
+`tests/unit/test-lead-aware-edges.js` 6/6 (legacy-compat, PAST lead as kinship + ownership endpoint
+w/ no FK violation, queryable, legacy sync). **NOTE:** schema is now lead-CAPABLE; POPULATING lead
+edges (from PAST enslavers[], Hall transfers, unconfirmed_persons.relationships JSONB) is a separate
+producer step. `slaveholding_relationships` (redundant, empty, 1 writer) left as-is — reconcile/drop
+in step 4. `family_relationships` (2M, name+lead_id, no FK) deferred to its own later migration (add
+a `lead_table` qualifier) — the DAA reads it by name, so it needs a careful separate pass.
+
+### #1 (original sketch) — Lead-aware relationship/lineage layer (foundational, invasive)
 - Adopt the **M101 polymorphic person-ref** `(subject_table, subject_id)` for the
   kinship + ownership edge tables so ANY lead (PAST/Hall/unconfirmed) or canonical can
   be an endpoint. Tables: `canonical_family_edges`, `person_relationships_verified`
