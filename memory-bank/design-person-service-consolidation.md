@@ -109,3 +109,32 @@ its own commit + push (memory bank stays synced). No canonical minted outside `p
     LINKS (no dup), findOrCreate regression 7/7.
   - **Kills 2 of the 3 live `individuals`-table writes.** The 3rd (OwnerPromotion) is fixed in
     step 3 (`promoteToCanonical` + gate) — NEXT.
+- **Step 3 — `promoteToCanonical` + external-assertion gate + OwnerPromotion rewire — DONE +
+  verified, Jun 26 2026.**
+  - **M102** added `assertable_slaveowner` + `assertable_enslaved` booleans to canonical_persons
+    (default FALSE = conservatively gated; index `idx_canonical_assertable`). Operationally inert
+    until a consumer reads them (search filter = deliberate next step). All 676,881 existing
+    canonicals start gated; a measured recompute backfill un-gates the documented ones (NOT yet
+    run — flagged below).
+  - **`PersonService.promoteToCanonical(leadRef, evidence, opts)`**: dedup via resolve (unambiguous
+    existing canonical → LINK, never duplicate; ambiguous → `needs_review`, Biscoe); else CREATE
+    canonical (≥secondary; writes soundex/metaphone + blocking keys so it's discoverable — better
+    than the current `system` path which writes neither); writes person_documents (s3_key only for a
+    real stored file) + optional external id; `recomputeGate`; marks the source lead 'promoted' AND
+    deletes its blocking keys (so it stops competing with its own canonical → no false ambiguity).
+  - **`recomputeGate(canonicalId)`**: per-proposition booleans DERIVED from person_documents —
+    assertable only when a row has `s3_key` present AND a `document_type` in DOC_PROP_SLAVEOWNER /
+    DOC_PROP_ENSLAVED. Bare profiles (familysearch_record/tree_profile), 'other', and URL-only
+    secondary records substantiate NOTHING.
+  - **OwnerPromotion rewired**: keeps its confirmatory-channel/confidence gate; routes through
+    findOrCreateLead + promoteToCanonical (no more dead `individuals`/`slaveholder_records` writes);
+    `getStats` repointed to canonical_persons; `contribute.js /promote/:leadId` returns canonicalId
+    + gate. **3rd of 3 dead-`individuals` writes ELIMINATED.**
+  - Tests: `tests/unit/test-person-promote.js` 11/11 (gated-by-default mint, dedup-link no-dup,
+    blocking keys, lead-promoted, stored doc lifts slaveowner gate only). OwnerPromotion e2e 5/5.
+    resolve + findOrCreateLead regressions still green (0 false positives).
+  - **FLAGGED, not yet done (deliberate next steps):** (a) retroactive `recompute-assertion-gates`
+    backfill over all 677K canonicals — a measured, reported visibility flip; (b) wiring the public
+    search/API + "was a slaveowner/enslaved" UI strings to FILTER on the gate (the consumer side —
+    until then the gate columns exist but nothing reads them). NEXT after these: step 4 merge/link +
+    delete dead `individuals` table/classes; then #1 lead-aware relationships + #3 reverse traversal.

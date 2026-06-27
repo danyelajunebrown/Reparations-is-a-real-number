@@ -20,6 +20,26 @@ const SUBJECT_TABLES = {
   hall_slave_records:       { idCol: 'record_index', nameCol: 'name',      kind: 'lead' },
 };
 
+// External-assertion gate (M102 / standard-canonical-person-and-document-gate.md): which
+// document_type values substantiate which proposition. A STORED doc (s3_key present) of one of
+// these types lifts that proposition's gate. Bare profiles (familysearch_record, tree_profile),
+// 'other', 'research_report', and URL-only secondary records (slavevoyages_record) substantiate
+// NOTHING — they are deliberately absent. Extensible: add a type as new sources are vetted.
+const DOC_PROP_SLAVEOWNER = [
+  'census_slave_schedule', 'slave_schedule', 'census', 'will', 'will_testament',
+  'estate_inventory', 'estate_account', 'guardian_account', 'compensated_emancipation_petition',
+  'compensation_petition', 'emancipation_petition', 'plantation_record', 'bill_of_sale',
+  'slave_manifest', 'tax_record', 'court_record', 'insurance_register', 'government_disclosure',
+  'corporate_disclosure', 'correspondence',
+];
+const DOC_PROP_ENSLAVED = [
+  'will', 'will_testament', 'estate_inventory', 'estate_account',
+  'compensated_emancipation_petition', 'emancipation_petition', 'plantation_record',
+  'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
+  'narrative', 'evacuation_roll', 'enslaved_census_brazil', 'enslaved_census',
+  'probate_enslaved_records', 'bill_of_sale', 'slave_manifest', 'correspondence',
+];
+
 class PersonService {
   constructor(db) { this.db = db; }
 
@@ -219,6 +239,114 @@ class PersonService {
     // NB: external ids for leads have no home yet (person_external_ids FK is canonical-only) —
     // tracked as a follow-up (polymorphic external ids). Not dropped: kept in context if needed.
     return { ref: { subject_table: 'unconfirmed_persons', subject_id: leadId }, action: 'created', candidates: res.candidates };
+  }
+
+  // ---- promotion + external-assertion gate (step 3) ----
+
+  /** Load identity fields for any subject ref (lead or canonical). */
+  async _loadSubject(ref) {
+    if (!ref || !ref.subject_table || ref.subject_id == null) return null;
+    const rows = await this._fetchSubjects([{ subject_table: ref.subject_table, subject_id: Number(ref.subject_id) }]);
+    return rows[0] || null;
+  }
+
+  /**
+   * recomputeGate(canonicalId) — derive the external-assertion gate from STORED documents.
+   * A proposition becomes assertable ONLY when a person_documents row exists with s3_key
+   * present (a real archived file, not a URL pointer) AND a document_type that substantiates
+   * that proposition (DOC_PROP_*). Returns { assertable_slaveowner, assertable_enslaved }.
+   */
+  async recomputeGate(canonicalId) {
+    const r = await this.db.query(
+      `UPDATE canonical_persons SET
+         assertable_slaveowner = EXISTS (SELECT 1 FROM person_documents d
+            WHERE d.canonical_person_id = $1 AND d.s3_key IS NOT NULL AND d.document_type = ANY($2)),
+         assertable_enslaved   = EXISTS (SELECT 1 FROM person_documents d
+            WHERE d.canonical_person_id = $1 AND d.s3_key IS NOT NULL AND d.document_type = ANY($3)),
+         updated_at = now()
+       WHERE id = $1
+       RETURNING assertable_slaveowner, assertable_enslaved`,
+      [canonicalId, DOC_PROP_SLAVEOWNER, DOC_PROP_ENSLAVED]);
+    return r.rows[0] || { assertable_slaveowner: false, assertable_enslaved: false };
+  }
+
+  /**
+   * promoteToCanonical(leadRef, evidence, opts) — mint/attach a canonical under the standard.
+   * - DEDUPES first (resolve): an unambiguous existing-canonical match is REUSED (link), never
+   *   duplicated; an AMBIGUOUS match refuses → needs_review (Biscoe, no auto-merge).
+   * - Creates a canonical only when no existing match (requires ≥ a secondary source; gate
+   *   booleans default FALSE — a secondary-only canonical exists + works internally but stays
+   *   GATED). Writes soundex/metaphone + blocking keys so it's discoverable in the unified pool.
+   * - Writes a person_documents row (s3_key only if a real stored file is supplied) + optional
+   *   external id, then recomputeGate (gate lifts only for a proposition with a qualifying
+   *   STORED doc). Marks the source lead 'promoted'. NEVER asserts anything externally.
+   * evidence: { sourceType?, confidence?, personType?, externalId?, idSystem?, createdBy?,
+   *   document?: { documentType, sourceUrl, s3Url, s3Key, evidenceStrength, documentYear, nameAsAppears } }
+   */
+  async promoteToCanonical(leadRef, evidence = {}, opts = {}) {
+    const dry = !!opts.dryRun;
+    const subj = await this._loadSubject(leadRef);
+    if (!subj) return { ref: null, action: 'subject_not_found' };
+    if (!subj.name) return { ref: null, action: 'rejected_no_name' };
+
+    const personType = evidence.personType || subj.person_type || null;
+    const res = await this.resolve({ name: subj.name, birthYear: subj.birth_year, location: subj.state, sex: subj.sex, externalId: evidence.externalId, idSystem: evidence.idSystem, personType });
+    if (res.ambiguous) return { ref: null, action: 'needs_review', candidates: res.candidates };
+
+    let canonicalId, action;
+    if (res.match && res.match.subject_table === 'canonical_persons') {
+      canonicalId = res.match.subject_id; action = 'linked';
+      if (dry) return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, candidates: res.candidates };
+    } else {
+      if (dry) return { ref: { subject_table: 'canonical_persons', subject_id: null }, action: 'would_create', candidates: res.candidates };
+      const { first, last } = this._parseName(subj.name);
+      const sx = this._sex1(subj.sex); const sex = sx === 'u' ? null : sx;
+      const ins = await this.db.query(
+        `INSERT INTO canonical_persons
+           (canonical_name, first_name, last_name, first_name_soundex, last_name_soundex, last_name_metaphone,
+            sex, person_type, birth_year_estimate, primary_state, confidence_score, verification_status, created_by)
+         VALUES ($1, $2::text, $3::text, soundex($2::text), soundex($3::text), metaphone($3::text,8), $4,$5,$6,$7,$8,'promoted',$9)
+         RETURNING id`,
+        [subj.name, first || null, last || null, sex, personType, subj.birth_year || null, subj.state || null,
+         evidence.confidence || 0.70, evidence.createdBy || 'person_service']);
+      canonicalId = ins.rows[0].id; action = 'created';
+      await this._writeBlockingKeys('canonical_persons', canonicalId, { name: subj.name, sex: subj.sex, birthYear: subj.birth_year });
+    }
+
+    // Evidence document (≥ secondary; s3_key only when a real stored file is supplied).
+    const doc = evidence.document || {};
+    await this.db.query(
+      `INSERT INTO person_documents
+         (canonical_person_id, name_as_appears, document_type, source_url, source_type, s3_url, s3_key, evidence_strength, document_year, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (COALESCE(canonical_person_id, '-1'::integer), COALESCE(unconfirmed_person_id, '-1'::integer), COALESCE(s3_url, ''::text), name_as_appears) DO NOTHING`,
+      [canonicalId, doc.nameAsAppears || subj.name, doc.documentType || null, doc.sourceUrl || evidence.sourceUrl || null,
+       evidence.sourceType || 'secondary', doc.s3Url || null, doc.s3Key || null,
+       doc.evidenceStrength || (doc.s3Key ? 'primary' : 'secondary_database'), doc.documentYear || null,
+       evidence.createdBy || 'person_service']);
+
+    if (evidence.externalId && evidence.idSystem) {
+      await this.db.query(
+        `INSERT INTO person_external_ids (canonical_person_id, id_system, external_id, external_url, confidence)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id_system, external_id) DO NOTHING`,
+        [canonicalId, evidence.idSystem, evidence.externalId, doc.sourceUrl || evidence.sourceUrl || null, 0.9]).catch(() => {});
+    }
+
+    const gate = await this.recomputeGate(canonicalId);
+
+    if (leadRef.subject_table === 'unconfirmed_persons') {
+      await this.db.query(
+        `UPDATE unconfirmed_persons SET status='promoted', reviewed_at=now(), reviewed_by=$2,
+           review_notes = COALESCE(review_notes,'') || $3 WHERE lead_id=$1`,
+        [leadRef.subject_id, evidence.createdBy || 'person_service', ` [promoted→canonical#${canonicalId}]`]).catch(() => {});
+      // The lead's identity now lives in the canonical — drop its blocking keys so it stops
+      // competing as a separate subject in the unified pool (otherwise a future resolve sees
+      // BOTH the promoted lead and its canonical → false ambiguity, breaking dedup-on-ingest).
+      await this.db.query(
+        `DELETE FROM person_blocking_keys WHERE subject_table='unconfirmed_persons' AND subject_id=$1`,
+        [leadRef.subject_id]).catch(() => {});
+    }
+    return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, gate, candidates: res.candidates };
   }
 }
 

@@ -3860,8 +3860,9 @@ router.post('/promote/:leadId', async (req, res) => {
         if (result.success) {
             res.json({
                 success: true,
-                message: `Promoted ${result.person} to confirmed individuals`,
-                individualId: result.individualId,
+                message: `Promoted ${result.person} to canonical person #${result.canonicalId}${result.gate && !result.gate.assertable_slaveowner ? ' (gated — needs a stored document to assert publicly)' : ''}`,
+                canonicalId: result.canonicalId,
+                gate: result.gate,
                 action: result.action
             });
         } else {

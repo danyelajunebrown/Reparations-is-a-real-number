@@ -13,9 +13,16 @@
  *
  * The source domain (government archive, genealogy site, etc.) provides CONTEXT
  * about where to look for documents, but does NOT confirm the data itself.
+ *
+ * STEP 3 REWIRE (de-siloing): this class's valuable confirmatory-channel/confidence gate is
+ * preserved, but promotion now routes through PersonService.promoteToCanonical — minting into
+ * the deduped, gated `canonical_persons` (NOT the dead `individuals` table). The external-
+ * assertion gate stays FALSE until a proposition-specific STORED (s3_key) document is attached
+ * (canonical/document-gate standard). This fixes the 3rd of the 3 live dead-`individuals` writes.
  */
 
 const { v4: uuidv4 } = require('uuid');
+const PersonService = require('../PersonService');
 
 class OwnerPromotion {
     constructor(database) {
@@ -175,7 +182,9 @@ class OwnerPromotion {
     }
 
     /**
-     * Promote a single owner to the individuals table
+     * Promote a single owner to a (deduped, gated) canonical_persons row via PersonService.
+     * The confirmatory-channel/confidence gate above still decides WHETHER to promote; the
+     * minting, dedup, document-attach, and external-assertion gate are PersonService's job.
      */
     async promoteOwner(person, sourceMetadata, confirmationChannel, extractionId = null) {
         const qualification = this.qualifiesForPromotion(person, sourceMetadata, confirmationChannel);
@@ -191,93 +200,70 @@ class OwnerPromotion {
         }
 
         try {
-            // Generate unique ID
-            const individualId = `owner_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+            const ps = this._personService || (this._personService = new PersonService(this.db));
+            const srcUrl = sourceMetadata?.url || person.source_url;
+            const isPrimary = this.isGovernmentArchive(srcUrl);
 
-            // Parse name components
-            const nameParts = this.parseName(person.full_name);
-
-            // Check for existing individual with same name
-            const existingCheck = await this.db.query(`
-                SELECT individual_id, full_name
-                FROM individuals
-                WHERE LOWER(full_name) = LOWER($1)
-                LIMIT 1
-            `, [person.full_name]);
-
-            if (existingCheck.rows.length > 0) {
-                // Update existing instead of creating duplicate
-                const existingId = existingCheck.rows[0].individual_id;
-
-                await this.db.query(`
-                    UPDATE individuals SET
-                        notes = COALESCE(notes, '') || E'\n' || $1,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE individual_id = $2
-                `, [
-                    `Additional source (${new Date().toISOString()}): ${sourceMetadata?.url || person.source_url}\nConfirmation: ${qualification.channelName}`,
-                    existingId
-                ]);
-
-                console.log(`    ✓ Updated existing individual: ${person.full_name} (${existingId})`);
-
-                return {
-                    success: true,
-                    action: 'updated',
-                    individualId: existingId,
-                    person: person.full_name
-                };
+            // Resolve to a lead ref to promote: use an existing lead_id, else find-or-create one
+            // (which dedups + writes blocking keys). findOrCreateLead may itself LINK directly to
+            // an existing canonical — promoteToCanonical handles a canonical ref too (attaches
+            // evidence + recomputes the gate rather than minting a duplicate).
+            let leadRef;
+            if (person.lead_id) {
+                leadRef = { subject_table: 'unconfirmed_persons', subject_id: person.lead_id };
+            } else {
+                const loc = await ps.findOrCreateLead({
+                    name: person.full_name,
+                    personType: 'owner',
+                    birthYear: person.birth_year || null,
+                    deathYear: person.death_year || null,
+                    locations: Array.isArray(person.locations) ? person.locations : (person.location ? [person.location] : []),
+                    sourceUrl: srcUrl,
+                    sourceType: isPrimary ? 'primary' : 'secondary',
+                    confidence: qualification.confidence,
+                });
+                if (!loc.ref) {
+                    return { success: false, reason: 'could not create/resolve a lead for promotion', person: person.full_name };
+                }
+                leadRef = loc.ref;
             }
 
-            // Build notes with confirmation details
-            const notes = [
-                `Confirmed via: ${qualification.channelName}`,
-                `Source: ${sourceMetadata?.url || person.source_url}`,
-                `Confidence: ${(qualification.confidence * 100).toFixed(0)}%`,
-                `Extraction ID: ${extractionId || 'N/A'}`,
-                `Promoted: ${new Date().toISOString()}`
-            ].join('\n');
+            // The confirmatory document → a person_documents row. s3_key only when a REAL stored
+            // file is supplied (sourceMetadata.s3Key) — a bare URL does NOT lift the gate.
+            const evidence = {
+                personType: 'enslaver',
+                sourceType: isPrimary ? 'primary' : 'secondary',
+                confidence: qualification.confidence,
+                createdBy: `owner_promotion:${confirmationChannel}`,
+                document: {
+                    documentType: sourceMetadata?.documentType || person.document_type || null,
+                    sourceUrl: srcUrl,
+                    s3Key: sourceMetadata?.s3Key || null,
+                    s3Url: sourceMetadata?.s3Url || null,
+                    evidenceStrength: sourceMetadata?.s3Key ? 'direct_primary' : 'secondary_database',
+                },
+            };
 
-            // Insert new individual
-            await this.db.query(`
-                INSERT INTO individuals (
-                    individual_id,
-                    full_name,
-                    first_name,
-                    last_name,
-                    birth_year,
-                    death_year,
-                    location,
-                    notes,
-                    source_url,
-                    confidence_score,
-                    verified,
-                    created_at,
-                    updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            `, [
-                individualId,
-                person.full_name,
-                nameParts.firstName,
-                nameParts.lastName,
-                person.birth_year || null,
-                person.death_year || null,
-                Array.isArray(person.locations) ? person.locations.join(', ') : (person.location || null),
-                notes,
-                sourceMetadata?.url || person.source_url,
-                qualification.confidence,
-                true  // Verified because it passed confirmatory channel
-            ]);
+            const r = await ps.promoteToCanonical(leadRef, evidence);
 
-            // Log the promotion
-            await this.logPromotion(person, individualId, qualification, extractionId);
+            if (r.action === 'needs_review') {
+                console.log(`    ⏸  ${person.full_name}: ambiguous identity match — routed to human review (Biscoe rule, no auto-merge)`);
+                return { success: false, reason: 'ambiguous identity match — needs human review', candidates: r.candidates, person: person.full_name };
+            }
+            if (!r.ref) {
+                return { success: false, reason: r.action || 'promotion failed', person: person.full_name };
+            }
 
-            console.log(`    ✓ Promoted to individuals: ${person.full_name} (${individualId})`);
+            await this.logPromotion(person, r.ref.subject_id, qualification, extractionId);
+
+            const gate = r.gate || {};
+            console.log(`    ✓ Promoted to canonical #${r.ref.subject_id} (${r.action}); slaveowner-assertable=${!!gate.assertable_slaveowner}: ${person.full_name}`);
 
             return {
                 success: true,
-                action: 'created',
-                individualId,
+                action: r.action,
+                canonicalId: r.ref.subject_id,
+                gate,
                 person: person.full_name,
                 confidence: qualification.confidence,
                 confirmationChannel: qualification.confirmationChannel
@@ -512,27 +498,30 @@ class OwnerPromotion {
         try {
             const stats = await this.db.query(`
                 SELECT
-                    COUNT(*) FILTER (WHERE verified = true) as verified_count,
-                    COUNT(*) as total_individuals
-                FROM individuals
+                    COUNT(*) FILTER (WHERE verification_status = 'promoted') as promoted_count,
+                    COUNT(*) FILTER (WHERE assertable_slaveowner OR assertable_enslaved) as assertable_count,
+                    COUNT(*) as total_canonical
+                FROM canonical_persons
             `);
 
             const recentPromotions = await this.db.query(`
                 SELECT COUNT(*) as count
                 FROM promotion_log
                 WHERE promoted_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
-            `);
+            `).catch(() => ({ rows: [{ count: 0 }] }));
 
             return {
-                totalIndividuals: parseInt(stats.rows[0]?.total_individuals || 0),
-                verifiedCount: parseInt(stats.rows[0]?.verified_count || 0),
+                totalCanonical: parseInt(stats.rows[0]?.total_canonical || 0),
+                promotedCount: parseInt(stats.rows[0]?.promoted_count || 0),
+                assertableCount: parseInt(stats.rows[0]?.assertable_count || 0),
                 promotedLast24h: parseInt(recentPromotions.rows[0]?.count || 0),
                 availableChannels: Object.keys(this.confirmatoryChannels)
             };
         } catch (error) {
             return {
-                totalIndividuals: 0,
-                verifiedCount: 0,
+                totalCanonical: 0,
+                promotedCount: 0,
+                assertableCount: 0,
                 promotedLast24h: 0,
                 availableChannels: Object.keys(this.confirmatoryChannels),
                 error: error.message
