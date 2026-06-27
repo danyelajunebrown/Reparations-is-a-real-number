@@ -350,6 +350,11 @@ class PersonService {
   }
 }
 
+// Export the proposition→document-type lists so the gate backfill (scripts/recompute-assertion-
+// gates.mjs) and recomputeGate share ONE source of truth.
+PersonService.DOC_PROP_SLAVEOWNER = DOC_PROP_SLAVEOWNER;
+PersonService.DOC_PROP_ENSLAVED = DOC_PROP_ENSLAVED;
+
 module.exports = PersonService;
 
 // ---- CLI test (read-only): node src/services/PersonService.js --name "Mary" --sex f --birth 1812 ----

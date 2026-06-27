@@ -133,8 +133,15 @@ its own commit + push (memory bank stays synced). No canonical minted outside `p
   - Tests: `tests/unit/test-person-promote.js` 11/11 (gated-by-default mint, dedup-link no-dup,
     blocking keys, lead-promoted, stored doc lifts slaveowner gate only). OwnerPromotion e2e 5/5.
     resolve + findOrCreateLead regressions still green (0 false positives).
-  - **FLAGGED, not yet done (deliberate next steps):** (a) retroactive `recompute-assertion-gates`
-    backfill over all 677K canonicals — a measured, reported visibility flip; (b) wiring the public
-    search/API + "was a slaveowner/enslaved" UI strings to FILTER on the gate (the consumer side —
-    until then the gate columns exist but nothing reads them). NEXT after these: step 4 merge/link +
-    delete dead `individuals` table/classes; then #1 lead-aware relationships + #3 reverse traversal.
+  - **Gate backfill DONE (Jun 26):** `scripts/recompute-assertion-gates.mjs` (dry-run + --apply,
+    set-based, idempotent with downgrade safety) recomputed all 676,885 canonicals from stored docs
+    → **40,989 assertable (6.1%) [40,868 slaveowner / 7,465 enslaved], 635,896 gated (93.9%)**;
+    verification matched projection. The gate columns are now TRUTHFUL. Still operationally inert —
+    no consumer reads them yet (only 227,900 of 602,170 person_documents have an s3_key; 374,270 are
+    URL-only, the C1 debt — hence so few lift the gate).
+  - **STILL FLAGGED, held by user decision (consequential/outward-facing):** wiring the public
+    search/API + "was a slaveowner/enslaved" UI strings to FILTER on the gate — this is the real
+    visibility flip (public search 676,885 → ~40,989, a 94% drop). To be designed as its own
+    reviewed step, likely a 'public assertion' vs 'research' mode rather than a hard hide.
+    NEXT after that decision: step 4 merge/link + delete dead `individuals` table/classes; then
+    #1 lead-aware relationships + #3 reverse traversal.
