@@ -45,24 +45,26 @@ const ps = new PersonService(pool);
 const stats = { statements: 0, edges: 0, ownersLinked: 0, ownersCreated: 0, skippedNoOwner: 0, dupEdges: 0 };
 const ownerCache = new Map();
 
-/** Resolve an owner name → a subject ref (reuse existing owner lead by exact name, else create). */
+/** Preload ALL owner-type leads (normalized name → ref) ONCE, so owner resolution is an O(1)
+ *  memory lookup instead of a per-owner unindexed seq-scan over 2.4M unconfirmed_persons (which
+ *  made the first runs grind). New owners created during the run are added to the same cache. */
+async function preloadOwners() {
+  const res = await pool.query(
+    `SELECT lead_id, lower(regexp_replace(full_name,'[^a-zA-Z0-9]','','g')) AS k
+     FROM unconfirmed_persons WHERE person_type IN ('owner','suspected_owner','enslaver')`);
+  for (const r of res.rows) if (r.k && !ownerCache.has(r.k)) ownerCache.set(r.k, { subject_table: 'unconfirmed_persons', subject_id: r.lead_id });
+  console.log(`preloaded ${ownerCache.size.toLocaleString()} owner-name → lead refs`);
+}
+
+/** Resolve an owner name → a subject ref (cache/preload reuse, else create a name-only lead). */
 async function getOwnerRef(name, sourceUrl) {
   const key = norm(name);
   if (!key) return null;
-  if (ownerCache.has(key)) return ownerCache.get(key);
-  // reuse an existing owner LEAD with this exact normalized name (cross-run idempotency for owners)
-  const ex = await pool.query(
-    `SELECT lead_id FROM unconfirmed_persons
-     WHERE lower(regexp_replace(full_name,'[^a-zA-Z0-9]','','g')) = $1
-       AND person_type IN ('owner','suspected_owner','enslaver') LIMIT 1`, [key]);
-  let ref;
-  if (ex.rows.length) { ref = { subject_table: 'unconfirmed_persons', subject_id: ex.rows[0].lead_id }; stats.ownersLinked++; }
-  else {
-    const r = await ps.findOrCreateLead({ name, personType: 'suspected_owner', sourceType: 'secondary', sourceUrl, context: 'owner inferred from an enslaved→owner statement (name-only; pending identity resolution)' });
-    ref = r.ref; if (r.action === 'created') stats.ownersCreated++; else stats.ownersLinked++;
-  }
-  ownerCache.set(key, ref);
-  return ref;
+  if (ownerCache.has(key)) { stats.ownersLinked++; return ownerCache.get(key); }
+  const r = await ps.findOrCreateLead({ name, personType: 'suspected_owner', sourceType: 'secondary', sourceUrl, context: 'owner inferred from an enslaved→owner statement (name-only; pending identity resolution)' });
+  ownerCache.set(key, r.ref);
+  if (r.action === 'created') stats.ownersCreated++; else stats.ownersLinked++;
+  return r.ref;
 }
 
 async function writeEdge(enslavedRef, enslavedName, ownerRef, ownerName, relSource, sourceUrl, conf) {
@@ -127,6 +129,7 @@ async function runPast() {
 (async () => {
   try {
     console.log(`=== build-enslaved-owner-edges ${APPLY ? '(APPLY)' : '(DRY-RUN)'} source=${SOURCE}${LIMIT ? ' limit=' + LIMIT : ''} ===`);
+    if (APPLY) await preloadOwners();
     if (SOURCE === 'unconfirmed' || SOURCE === 'all') await runUnconfirmed();
     if (SOURCE === 'past' || SOURCE === 'all') await runPast();
     console.log('\n=== result ===');

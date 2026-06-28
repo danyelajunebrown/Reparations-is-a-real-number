@@ -71,9 +71,12 @@ sources, keeping the enslaved person a LEAD: (1) `unconfirmed_persons.relationsh
 name-only: reuse an existing owner lead by exact normalized name, else create one
 (findOrCreateLead — lead + blocking keys, NEVER a canonical); distinct same-name owner splitting +
 owner-lead→canonical-enslaver linking DEFERRED to identity resolution. Dry-run measured **24,814
-ownership statements** (≈14K unconfirmed + ≈10K PAST ownership-role). **Bug fixed mid-run:**
-`person_blocking_keys.key_value` is varchar(64); long owner names overflowed → capped every key at
-64 in `PersonService._queryKeys` (symmetric read/write, matching preserved). Idempotent re-run.
+ownership statements** (≈14K unconfirmed + ≈10K PAST ownership-role). **Two bugs fixed during the run:** (1) `person_blocking_keys.key_value` is varchar(64); long owner
+names overflowed → capped every key at 64 in `PersonService._queryKeys` (symmetric read/write,
+matching preserved). (2) PERF: `getOwnerRef` did an unindexed `lower(regexp_replace(full_name))=$1`
+per owner → a 2.4M-row seq-scan each → grindingly slow; replaced with a ONE-TIME preload of all
+~371K owner-type leads into an in-memory Map (308,478 distinct names) → O(1) owner resolution.
+Idempotent re-run (edge unique skips written edges; preload reuses prior owner leads → no dup leads).
 **DATA-QUALITY NOTE:** the unconfirmed enslaved_by source carries pre-existing OCR/parse junk
 (owner "William H.", enslaved "Act"/"And I") — surfaced, not introduced; MatchVerifier re-checks
 before payment; these are gated leads.
@@ -94,6 +97,27 @@ owner name (mechanism proven against the populated edges). Same name-ambiguity c
   enslaved ancestors (lead or canonical), replacing the enslaver-NAME-string lookups in
   `DAAOrchestrator.aggregateEnslavedData`. So a descendant's document reaches enslaved
   ancestors that are leads.
+
+## Next-item lineup (prioritized backlog, after 2→1→3 done — Jun 27 2026)
+The full de-siloing arc (#2 PersonService consolidation + gate; #1 lead-aware edges; producer + #3
+reverse reach) is COMMITTED. Remaining, in recommended order:
+
+1. **Owner-lead → canonical-enslaver linking** (upgrades #3 from name-match to FK; the principled
+   robustness win). Resolve the ~name-only owner leads the producer created to existing canonical
+   enslavers via the cross-source layer (cross_source_candidates / resolve-cross-source-enslavers /
+   issue #63), review-gated + Biscoe-safe. Then #3's Source 4 can also traverse by owner subject ref,
+   not just name. **RECOMMENDED NEXT** — it makes the just-built #3 reliable and is squarely the
+   identity-resolution spine the project prioritizes.
+2. **Step 4 cleanup** — fold `merge`/`link` into PersonService; verify-then-DELETE the dead
+   `individuals` table + dead classes (EntityDeduplicator, EntityManager, Orchestrator,
+   IntelligentOrchestrator, EnslavedManager, DescendantCalculator, DocumentParser, LLMAssistant);
+   reconcile/drop the redundant empty `slaveholding_relationships`. Hard-to-reverse deletions — verify
+   each is truly unused first.
+3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
+4. **Gate search-wiring** — the held outward 94% visibility flip (public search/API + UI filter on
+   `assertable_*`); product decision, likely a 'public-assertion vs research' mode.
+5. **Data-quality pass** — the unconfirmed `enslaved_by` OCR/parse junk (owner "William H.", enslaved
+   "Act"/"And I") surfaced by the producer/#3; clean or quarantine (these are gated leads).
 
 ## Guardrails
 - No canonical minted without the standard (dedup + ≥secondary; gated until S3 doc).
