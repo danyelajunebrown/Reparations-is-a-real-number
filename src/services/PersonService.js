@@ -83,7 +83,10 @@ class PersonService {
       keys.push('nmsx:' + nm + ':' + sx);
       if (query.birthYear) keys.push('nmsxb:' + nm + ':' + sx + ':' + (Math.floor(query.birthYear / 10) * 10));
     }
-    return keys;
+    // person_blocking_keys.key_value is varchar(64); a long name (e.g. an estate-style owner
+    // string) would overflow. Cap every key at 64 — applied here so READ and WRITE truncate
+    // identically (matching is preserved; only pathologically long names collide, → candidates).
+    return keys.map(k => (k.length > 64 ? k.slice(0, 64) : k));
   }
 
   /** Fetch display rows for a set of {subject_table, subject_id} refs. */

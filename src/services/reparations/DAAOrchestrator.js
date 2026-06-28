@@ -1069,22 +1069,56 @@ class DAAOrchestrator {
                     NULL as film_number,
                     NULL as image_number
                 FROM unconfirmed_persons up
-                WHERE up.person_type = 'enslaved'
-                AND up.relationships->>'enslaved_by' IS NOT NULL
+                WHERE up.person_type IN ('enslaved','suspected_enslaved')
+                AND jsonb_typeof(up.relationships) = 'array'
                 AND EXISTS (
-                    SELECT 1 FROM canonical_persons cp
+                    SELECT 1 FROM jsonb_array_elements(up.relationships) e, canonical_persons cp
                     WHERE cp.id = $1
-                    AND LOWER(up.relationships->>'enslaved_by') = LOWER(cp.canonical_name)
+                    AND e->>'type' = 'enslaved_by'
+                    AND LOWER(COALESCE(e->>'name', e->>'related_to')) = LOWER(cp.canonical_name)
                 )
                 ORDER BY up.full_name
                 LIMIT 100
             `, [slaveholder.slaveholder_id]);
+            // NB (fixed): unconfirmed_persons.relationships is a JSONB ARRAY of {type,name|related_to};
+            // the prior query read it as an OBJECT (relationships->>'enslaved_by'), so it silently
+            // matched ZERO array-shaped rows. Now matches array elements by type + owner name.
+
+            // Source 4: the lead-aware ownership edge table (M103/M104, populated by
+            // build-enslaved-owner-edges). Reaches enslaved persons that are LEADS (SlaveVoyages
+            // PAST / Hall / unconfirmed) linked enslaved_by an owner whose name matches this
+            // enslaver — the de-siloing payoff (#3). Internal-only use (the external-assertion
+            // gate doesn't apply to DAA computation). Owner matched by name, same accepted
+            // ambiguity caveat as Source 2, until owner-lead→canonical linking lands.
+            const ownerEdgeResult = await this.db.query(`
+                SELECT DISTINCT ON (eor.enslaved_name)
+                    eor.enslaved_subject_id as enslaved_id,
+                    eor.enslaved_name as enslaved_name,
+                    NULL as birth_year,
+                    NULL as death_year,
+                    NULL as freedom_year,
+                    NULL as gender,
+                    'enslaved_owner_relationships:' || eor.enslaved_subject_table as data_source,
+                    eor.source_url as document_source_url,
+                    NULL as s3_url,
+                    NULL as document_type,
+                    NULL as collection_name,
+                    NULL as film_number,
+                    NULL as image_number,
+                    eor.confidence_score as match_confidence
+                FROM enslaved_owner_relationships eor
+                WHERE eor.relationship_type = 'enslaved_by'
+                AND eor.enslaved_name IS NOT NULL
+                AND LOWER(eor.owner_name) = LOWER($1)
+                ORDER BY eor.enslaved_name
+                LIMIT 500
+            `, [slaveholder.slaveholder_name]);
 
             // Merge all sources, deduplicate by name
             const allEnslaved = [...enslavedResult.rows];
             const seenNames = new Set(allEnslaved.map(e => (e.enslaved_name || '').toLowerCase()));
 
-            for (const row of [...relResult.rows, ...uncResult.rows]) {
+            for (const row of [...relResult.rows, ...uncResult.rows, ...ownerEdgeResult.rows]) {
                 const nameKey = (row.enslaved_name || '').toLowerCase();
                 if (nameKey && !seenNames.has(nameKey)) {
                     seenNames.add(nameKey);

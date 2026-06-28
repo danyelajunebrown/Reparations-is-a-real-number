@@ -62,7 +62,34 @@ a `lead_table` qualifier) — the DAA reads it by name, so it needs a careful se
   Decision to surface: polymorphic columns vs keep the dual-id-column style already in
   the unused ownership tables.
 
-### #3 — Reverse descendant→enslaved-ancestor traversal (needs #1)
+### Producer (between #1 and #3) — enslaved→owner edges — DONE (Jun 27 2026)
+`scripts/build-enslaved-owner-edges.mjs` materializes `enslaved_owner_relationships` (the M103
+lead-aware ownership table; M104 added a polymorphic unique for idempotent ON CONFLICT) from two
+sources, keeping the enslaved person a LEAD: (1) `unconfirmed_persons.relationships` enslaved_by
+(name OR related_to owner); (2) PAST `raw->enslavers`, **role-filtered to Owner/Buyer/Seller only**
+(Captain/Shipper/Investor/Consignor excluded — a captain is not the owner). Owner resolution is
+name-only: reuse an existing owner lead by exact normalized name, else create one
+(findOrCreateLead — lead + blocking keys, NEVER a canonical); distinct same-name owner splitting +
+owner-lead→canonical-enslaver linking DEFERRED to identity resolution. Dry-run measured **24,814
+ownership statements** (≈14K unconfirmed + ≈10K PAST ownership-role). **Bug fixed mid-run:**
+`person_blocking_keys.key_value` is varchar(64); long owner names overflowed → capped every key at
+64 in `PersonService._queryKeys` (symmetric read/write, matching preserved). Idempotent re-run.
+**DATA-QUALITY NOTE:** the unconfirmed enslaved_by source carries pre-existing OCR/parse junk
+(owner "William H.", enslaved "Act"/"And I") — surfaced, not introduced; MatchVerifier re-checks
+before payment; these are gated leads.
+
+### #3 — Reverse descendant→enslaved-ancestor traversal — DONE (name-matched Source 4, Jun 27 2026)
+Decision (user): name-matched Source 4 now (proper owner-lead→canonical linking is the follow-up).
+`DAAOrchestrator.aggregateEnslavedData` gained **Source 4**: reads `enslaved_owner_relationships`
+WHERE `lower(owner_name)=lower(slaveholder_name)` AND `relationship_type='enslaved_by'`, returning
+enslaved persons that are LEADS (SlaveVoyages PAST / Hall / unconfirmed) — the de-siloing payoff,
+internal-only (the external-assertion gate doesn't apply to DAA computation). Merged + deduped by
+name with Sources 1–3. **Also fixed Source 3's latent bug:** it read `relationships->>'enslaved_by'`
+as an OBJECT, but the column is a JSONB ARRAY of `{type,name|related_to}` → it silently matched ZERO
+array-shaped rows; now matches array elements. Verified: Source 4 returns enslaved leads for an
+owner name (mechanism proven against the populated edges). Same name-ambiguity caveat as Source 2.
+
+### #3 (original sketch) — Reverse descendant→enslaved-ancestor traversal (needs #1)
 - Add an FK-graph path from a canonical descendant → (lead-aware) relationship edges →
   enslaved ancestors (lead or canonical), replacing the enslaver-NAME-string lookups in
   `DAAOrchestrator.aggregateEnslavedData`. So a descendant's document reaches enslaved
