@@ -117,11 +117,27 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
    enslaved by FK, not name. REMAINING DATA STEPS: (i) re-run the resolver after the producer fully
    completes (to include PAST owners); (ii) human review of the candidates confirms the links →
    activates FK traversal. NEVER auto-links (Biscoe).
-2. **Step 4 cleanup** — fold `merge`/`link` into PersonService; verify-then-DELETE the dead
-   `individuals` table + dead classes (EntityDeduplicator, EntityManager, Orchestrator,
-   IntelligentOrchestrator, EnslavedManager, DescendantCalculator, DocumentParser, LLMAssistant);
-   reconcile/drop the redundant empty `slaveholding_relationships`. Hard-to-reverse deletions — verify
-   each is truly unused first.
+2. **Step 4 cleanup — VERIFICATION DONE (Jun 27 2026); deletions awaiting user confirmation.**
+   Read-only audit findings:
+   - **The `individuals` TABLE ALREADY DOES NOT EXIST** in the DB (dropped previously). So there is
+     NOTHING to drop. The audit's "3 live writers" were runtime BOMBS (would error — table absent).
+     The 2 reachable writers were rewired (OwnerPromotion step 3, UnifiedScraper step 2b/2);
+     `IndividualRepository.saveWithDocument` is the 3rd but is **never called** (dormant). No live
+     `individuals` write can execute. **No views/FKs depend on `individuals`.** (Correction to the
+     earlier "eliminated all 3 writers" wording: precisely, the 2 reachable writers were rewired; the
+     table itself was already gone.)
+   - **Dead classes — SAFE to delete now (required by ZERO files):** `EntityDeduplicator`,
+     `EnslavedManager`, `DescendantCalculator`, `NLPAssistant`.
+   - **Dead classes — REQUIRE-CHAINED (cut the require first):** `IndividualRepository` ← LIVE
+     `ResearchService` (but ResearchService's getStatistics uses the `stats_dashboard` view, not the
+     repo — the require looks UNUSED; confirm, then drop the require + the file). `EntityManager` ←
+     `LLMAssistant` + demo. `LLMAssistant` ← `DocumentParser`. `DocumentParser` ← train-parser test.
+     `Orchestrator` ← 2 scraper scripts. `IntelligentOrchestrator` ← `scraping/index.js` (itself
+     required by nothing). These are all DEAD from the live server (only standalone scripts/tests
+     reach them); deleting requires removing those script requires too.
+   - STILL TODO in step 4: **fold `merge`/`link` into PersonService** (additive — `merge` from
+     `scripts/merge-canonical-persons.mjs` + review.js merge; `link` = person_external_ids upsert);
+     reconcile/drop redundant empty `slaveholding_relationships`.
 3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
 4. **Gate search-wiring** — the held outward 94% visibility flip (public search/API + UI filter on
    `assertable_*`); product decision, likely a 'public-assertion vs research' mode.
