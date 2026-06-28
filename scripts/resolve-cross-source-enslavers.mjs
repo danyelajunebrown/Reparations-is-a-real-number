@@ -82,7 +82,7 @@ function score(lead, cand, blockSize) {
   // 2) unlinked enslaver leads
   const leads = (await pool.query(`
     SELECT lead_id, full_name, locations FROM unconfirmed_persons
-    WHERE person_type IN ('enslaver','slaveholder') AND confirmed_individual_id IS NULL
+    WHERE person_type IN ('enslaver','slaveholder','owner','suspected_owner') AND confirmed_individual_id IS NULL
       AND status = 'pending' AND full_name ~ '\\S+ \\S+'`)).rows;
   console.log(`  ${leads.length} unlinked enslaver leads`);
 
@@ -139,9 +139,12 @@ function score(lead, cand, blockSize) {
     await pool.query(`
       INSERT INTO cross_source_candidates (canonical_person_id, unconfirmed_lead_id, entity_kind, score, route, evidence, blocking_keys, canonical_name, unconfirmed_name, location)
       VALUES ${tuples.join(',')}
-      ON CONFLICT (canonical_person_id, unconfirmed_lead_id) DO UPDATE SET
+      ON CONFLICT (canonical_person_id, lead_table, unconfirmed_lead_id) DO UPDATE SET
         score=EXCLUDED.score, route=EXCLUDED.route, evidence=EXCLUDED.evidence, location=EXCLUDED.location
       WHERE cross_source_candidates.status='pending'`, params);
+      // NB: ON CONFLICT target updated for M101 (cross_source_candidates went polymorphic — unique is
+      // now (canonical_person_id, lead_table, unconfirmed_lead_id); lead_table defaults to
+      // 'unconfirmed_persons'). The old 2-col target no longer matched an arbiter index.
     written += chunk.length;
   }
   console.log(`  wrote ${written} cross-source candidate links.`);

@@ -1107,12 +1107,24 @@ class DAAOrchestrator {
                     NULL as image_number,
                     eor.confidence_score as match_confidence
                 FROM enslaved_owner_relationships eor
+                LEFT JOIN unconfirmed_persons o
+                    ON eor.owner_subject_table = 'unconfirmed_persons' AND eor.owner_subject_id = o.lead_id
                 WHERE eor.relationship_type = 'enslaved_by'
                 AND eor.enslaved_name IS NOT NULL
-                AND LOWER(eor.owner_name) = LOWER($1)
+                AND (
+                    -- FK path (#1 owner-lead→canonical linking): owner is/links to THIS canonical.
+                    -- $2 bound as TEXT (confirmed_individual_id is varchar); cast per column.
+                    (eor.owner_subject_table = 'canonical_persons' AND eor.owner_subject_id = $2::int)
+                    OR eor.owner_canonical_id = $2::int
+                    OR o.confirmed_individual_id = $2::text
+                    -- name path (until the owner lead is review-confirmed): same accepted ambiguity as Source 2
+                    OR LOWER(eor.owner_name) = LOWER($1)
+                )
                 ORDER BY eor.enslaved_name
                 LIMIT 500
-            `, [slaveholder.slaveholder_name]);
+            `, [slaveholder.slaveholder_name, String(slaveholder.slaveholder_id)]);
+            // FK path resolves owner identity properly (confirmed_individual_id set when a
+            // cross_source_candidates link is human-reviewed); name path is the fallback until then.
 
             // Merge all sources, deduplicate by name
             const allEnslaved = [...enslavedResult.rows];

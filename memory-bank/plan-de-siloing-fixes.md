@@ -102,12 +102,21 @@ owner name (mechanism proven against the populated edges). Same name-ambiguity c
 The full de-siloing arc (#2 PersonService consolidation + gate; #1 lead-aware edges; producer + #3
 reverse reach) is COMMITTED. Remaining, in recommended order:
 
-1. **Owner-lead → canonical-enslaver linking** (upgrades #3 from name-match to FK; the principled
-   robustness win). Resolve the ~name-only owner leads the producer created to existing canonical
-   enslavers via the cross-source layer (cross_source_candidates / resolve-cross-source-enslavers /
-   issue #63), review-gated + Biscoe-safe. Then #3's Source 4 can also traverse by owner subject ref,
-   not just name. **RECOMMENDED NEXT** — it makes the just-built #3 reliable and is squarely the
-   identity-resolution spine the project prioritizes.
+1. **Owner-lead → canonical-enslaver linking — DONE (Jun 27 2026).** Turned out to be largely the
+   PRE-EXISTING `resolve-cross-source-enslavers.mjs` (name+location scoring, Jaro-Winkler, multi-match
+   → review, Biscoe-safe, writes `cross_source_candidates`, links via
+   `unconfirmed_persons.confirmed_individual_id`). Two changes: (a) extended its person_type filter to
+   include `owner`/`suspected_owner` (it only covered `enslaver`/`slaveholder` → missed the producer's
+   owner leads); (b) fixed an **M101 fallout** — `cross_source_candidates` went polymorphic so its
+   unique is now `(canonical_person_id, lead_table, unconfirmed_lead_id)`; the resolver's old 2-col
+   ON CONFLICT no longer matched an arbiter index (errored). Applied: **10,902 candidates (5,159
+   review + 5,743 auto_link_candidate)** to the `cross_source_enslavers` review queue. **#3 Source 4
+   upgraded** (DAAOrchestrator): now matches owner by the FK link too —
+   `owner_subject=canonical` / `owner_canonical_id` / `o.confirmed_individual_id = slaveholder_id` —
+   in addition to name; so once a candidate is human-reviewed/confirmed, the DAA reaches that owner's
+   enslaved by FK, not name. REMAINING DATA STEPS: (i) re-run the resolver after the producer fully
+   completes (to include PAST owners); (ii) human review of the candidates confirms the links →
+   activates FK traversal. NEVER auto-links (Biscoe).
 2. **Step 4 cleanup** — fold `merge`/`link` into PersonService; verify-then-DELETE the dead
    `individuals` table + dead classes (EntityDeduplicator, EntityManager, Orchestrator,
    IntelligentOrchestrator, EnslavedManager, DescendantCalculator, DocumentParser, LLMAssistant);
