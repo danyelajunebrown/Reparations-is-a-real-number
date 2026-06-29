@@ -351,6 +351,77 @@ class PersonService {
     }
     return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, gate, candidates: res.candidates };
   }
+
+  /** link(ref, externalId, idSystem, opts) — attach an external id to a CANONICAL person.
+   *  (person_external_ids is canonical-only; leads can't carry external ids yet.) */
+  async link(ref, externalId, idSystem, opts = {}) {
+    if (!ref || ref.subject_table !== 'canonical_persons') return { ok: false, reason: 'link requires a canonical ref (person_external_ids is canonical-only)' };
+    if (!externalId || !idSystem) return { ok: false, reason: 'externalId + idSystem required' };
+    if (opts.dryRun) return { ok: true, action: 'would_link' };
+    await this.db.query(
+      `INSERT INTO person_external_ids (canonical_person_id, id_system, external_id, external_url, confidence)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id_system, external_id) DO NOTHING`,
+      [ref.subject_id, idSystem, externalId, opts.url || null, opts.confidence || 0.9]);
+    return { ok: true, action: 'linked' };
+  }
+
+  /**
+   * merge(survivorId, victimId, opts) — FK-safe merge of two canonical_persons (folded in from
+   * scripts/merge-canonical-persons.mjs). Enrich survivor with victim's non-null fields, re-point
+   * EVERY FK referencing canonical_persons from victim→survivor (row-walk + drop on unique
+   * collision), mark victim person_type='merged' (kept, excluded from search), log to
+   * person_merge_log. HAND-CONFIRMED only (never auto-called — Biscoe). opts.dryRun reports the
+   * FK refs without writing.
+   */
+  async merge(survivorId, victimId, opts = {}) {
+    survivorId = Number(survivorId); victimId = Number(victimId);
+    if (!Number.isInteger(survivorId) || !Number.isInteger(victimId) || survivorId === victimId) return { ok: false, reason: 'need two distinct canonical ids' };
+    const both = (await this.db.query('SELECT id FROM canonical_persons WHERE id IN ($1,$2)', [survivorId, victimId])).rows;
+    if (both.length !== 2) return { ok: false, reason: 'one or both ids not in canonical_persons' };
+    const fks = (await this.db.query(`
+      SELECT tc.table_name, kcu.column_name FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name
+       WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'canonical_persons'`)).rows;
+    const work = [];
+    for (const fk of fks) { let n; try { n = Number((await this.db.query(`SELECT COUNT(*) c FROM ${fk.table_name} WHERE ${fk.column_name} = $1`, [victimId])).rows[0].c); } catch { continue; } if (n > 0) work.push({ ...fk, n }); }
+    if (opts.dryRun) return { ok: true, action: 'would_merge', fkRefs: work.map(w => `${w.table_name}.${w.column_name}:${w.n}`) };
+
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        UPDATE canonical_persons sv SET
+          primary_county = COALESCE(sv.primary_county, vc.primary_county),
+          primary_state = COALESCE(sv.primary_state, vc.primary_state),
+          birth_year_estimate = COALESCE(sv.birth_year_estimate, vc.birth_year_estimate),
+          death_year_estimate = COALESCE(sv.death_year_estimate, vc.death_year_estimate),
+          sex = COALESCE(sv.sex, vc.sex),
+          notes = COALESCE(sv.notes,'') || ' [merged from #' || vc.id || ' "' || vc.canonical_name || '"]',
+          updated_at = NOW()
+        FROM canonical_persons vc WHERE sv.id = $1 AND vc.id = $2`, [survivorId, victimId]);
+      for (const w of work) {
+        try {
+          await client.query(`UPDATE ${w.table_name} SET ${w.column_name} = $1 WHERE ${w.column_name} = $2`, [survivorId, victimId]);
+        } catch (e) {
+          if (!/unique constraint/i.test(e.message)) throw e;
+          await client.query('SAVEPOINT s');
+          const dups = await client.query(`SELECT ctid FROM ${w.table_name} WHERE ${w.column_name} = $1`, [victimId]);
+          for (const d of dups.rows) {
+            await client.query('SAVEPOINT r');
+            try { await client.query(`UPDATE ${w.table_name} SET ${w.column_name} = $1 WHERE ctid = $2`, [survivorId, d.ctid]); await client.query('RELEASE SAVEPOINT r'); }
+            catch { await client.query('ROLLBACK TO SAVEPOINT r'); await client.query(`DELETE FROM ${w.table_name} WHERE ctid = $1`, [d.ctid]); }
+          }
+          await client.query('RELEASE SAVEPOINT s');
+        }
+      }
+      await client.query(`UPDATE canonical_persons SET person_type='merged', notes=COALESCE(notes,'') || ' [merged into #' || $1 || ']', updated_at=NOW() WHERE id=$2`, [survivorId, victimId]);
+      await client.query(`INSERT INTO person_merge_log (surviving_person_id, merged_person_id, merge_reason, merged_by, merged_at) VALUES ($1,$2,$3,$4,NOW())`, [survivorId, victimId, opts.reason || 'PersonService.merge', opts.mergedBy || 'person_service']);
+      await client.query('COMMIT');
+      return { ok: true, action: 'merged', survivorId, victimId, fkRefs: work.length };
+    } catch (e) { await client.query('ROLLBACK'); return { ok: false, reason: e.message }; }
+    finally { client.release(); }
+  }
 }
 
 // Export the proposition→document-type lists so the gate backfill (scripts/recompute-assertion-

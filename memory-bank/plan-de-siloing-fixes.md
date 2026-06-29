@@ -135,8 +135,18 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
      `Orchestrator` ← 2 scraper scripts. `IntelligentOrchestrator` ← `scraping/index.js` (itself
      required by nothing). These are all DEAD from the live server (only standalone scripts/tests
      reach them); deleting requires removing those script requires too.
-   - STILL TODO in step 4: **fold `merge`/`link` into PersonService** (additive — `merge` from
-     `scripts/merge-canonical-persons.mjs` + review.js merge; `link` = person_external_ids upsert);
+   - **DONE (Jun 27-28, user chose "safe deletes + merge/link"):** Deleted the 4 zero-reference dead
+     classes (`EntityDeduplicator`, `EnslavedManager`, `DescendantCalculator`, `NLPAssistant`) — no
+     dangling refs remain in src/. Folded **`PersonService.merge(survivorId, victimId, {dryRun})`**
+     (FK-safe: enrich survivor, re-point every FK canonical_persons ref victim→survivor with
+     unique-collision row-walk, mark victim person_type='merged', log to person_merge_log) +
+     **`PersonService.link(ref, externalId, idSystem)`** (person_external_ids upsert, canonical-only).
+     `scripts/merge-canonical-persons.mjs` is now a thin CLI wrapper around PersonService.merge (one
+     implementation). Tested 6/6 (dry-run, apply, FK re-point, victim merged, log, link). The
+     individuals TABLE needed no drop (already absent).
+   - **STILL TODO (deferred, needs require-cuts first / own pass):** the require-chained dead cluster
+     (`IndividualRepository`←ResearchService unused require; `EntityManager`/`LLMAssistant`/
+     `DocumentParser`/`Orchestrator`/`IntelligentOrchestrator` + their standalone scripts);
      reconcile/drop redundant empty `slaveholding_relationships`.
 3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
 4. **Gate search-wiring** — the held outward 94% visibility flip (public search/API + UI filter on
