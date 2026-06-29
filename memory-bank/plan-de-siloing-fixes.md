@@ -150,7 +150,23 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
      reconcile/drop redundant empty `slaveholding_relationships`.
 3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
 4. **Gate search-wiring** — the held outward 94% visibility flip (public search/API + UI filter on
-   `assertable_*`); product decision, likely a 'public-assertion vs research' mode.
+   `assertable_*`). SCOPED Jun 28 (read-only map). **Backend public paths to filter** (add
+   `AND (assertable_slaveowner OR assertable_enslaved)`): `contribute.js` `GET /search/:query`
+   (id query ~L190, text query WHERE ~L305) + `GET /person/:id` (~L858); `NameResolver.js`
+   searchSimilarNames (~L546) via `names.js` `/search`,`/candidates`; `names.js` `GET /canonical/:id`
+   (~L280). **Already excludes** person_type IN (descendant,modern_person,participant,merged) —
+   same pattern. **Frontend**: `client.js isVerified()` (~L193) treats ALL canonical as verified →
+   must AND the gate; `SearchPage.jsx` (~L164) + `PersonProfile.jsx` person_type header (~L101) +
+   enslaved-persons list (~L170) must render per-proposition (PersonProfile already has an
+   `adminOverride` prop ~L26 to bypass). **Do NOT gate** (internal): DAAOrchestrator, ancestor-climber,
+   wills.js lookupCanonicalByName, review.js (admin-token). **OPEN QUESTIONS (await user):**
+   (Q1) direct public `/person/:id` to a gated person → 404/"unavailable" vs name-only neutral stub
+   w/ "documentation pending"; (Q2) authenticated research/curator view that bypasses the gate (via
+   existing admin token / a researcher role) so the team can see gated persons internally; (Q3)
+   confirm per-proposition display (show only the documented proposition, suppress the other);
+   (Q4) make `isVerified()` treat gated canonicals as NOT publicly-verified (align verified-only
+   filters with the gate). Standard MANDATES: hidden from public search + never externally assert
+   until a stored proposition-specific doc; internal/authenticated use is fine.
 5. **Data-quality pass** — the unconfirmed `enslaved_by` OCR/parse junk (owner "William H.", enslaved
    "Act"/"And I") surfaced by the producer/#3; clean or quarantine (these are gated leads).
 
