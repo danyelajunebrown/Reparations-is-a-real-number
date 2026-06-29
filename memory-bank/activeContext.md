@@ -30,7 +30,12 @@ User decisions: Q1 neutral-stub for gated direct links; Q2 authenticated researc
 
 ④ FRONTEND POLISH DONE (Jun 28): PersonProfile renders the `{gated:true,gatedMessage}` stub; client.js isVerified() gates canonicals (gated/assertable_*); SearchPage needed no change; build ✓. **Leads-in-public-search RESOLVED:** public text search already hid leads via filterVerified(); user chose "close id-search gap only" → SearchPage now always filterVerified (id-search no longer bypasses the gate, still bypasses the classification toggle); backend /search still returns leads in payload (frontend is the public guard, accepted). ④ COMPLETE (backend + frontend + leads gap).
 
-**REMAINING LINEUP: ③ family_relationships (2M) lead_table qualifier / ⑤ enslaved_by data-quality / require-chained dead-class purge / human review of the 10,902 owner candidates.**
+### ③/⑤/dead-purge DONE (Jun 28)
+- **③** M105: family_relationships person1_lead_table/person2_lead_table (default 'unconfirmed_persons') — lead-aware qualifier on the 2M table (metadata-only, instant). Completes #1 lead-awareness.
+- **Dead-class purge:** verification corrected the assumption — only **IndividualRepository** was safely deletable (ResearchService require unused; DELETED). The rest are NOT dead: Orchestrator ← continuous-scraper.js (LIVE `npm run worker`); UnifiedScraper ← UniversalRouter ← contribute (live); EntityManager/LLMAssistant/DocumentParser chain through test scripts. KEPT.
+- **⑤** data-quality: `flag-junk-enslaved-names.mjs` flagged 1,095 enslaved leads (71 distinct names, all doc/OCR artifacts — Note/Estate/Act/months/…; descriptor-placeholders deliberately excluded per prior-mistake lesson) with `data_quality_flags->'name_artifact'`. DAA Source 4 guarded to exclude them (1,170 edges excluded, 29,397 legit remain). Reversible.
+
+**REMAINING (curation/team, not code): human review of the 10,902 owner→canonical candidates (activates #3 FK path) + attach documents to lift gates. The whole de-siloing program (#2→#1→producer→#3→①→②→④→③→⑤) is COMPLETE in code.**
 
 ### Memory bank un-ignored + versioned (process fix)
 `memory-bank/` was gitignored — 18 of 22 files (incl. projectbrief + the new standard) were local-only. Un-ignored + committed → durable, on GitHub for collaborators. Discipline: read memory-bank first; project knowledge → memory-bank ONLY (not `~/.claude`); CLAUDE.md was created then erased per user ("believe in the memory bank", no parallel rule surface).

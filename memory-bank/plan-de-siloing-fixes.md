@@ -195,6 +195,17 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
 5. **Data-quality pass** — the unconfirmed `enslaved_by` OCR/parse junk (owner "William H.", enslaved
    "Act"/"And I") surfaced by the producer/#3; clean or quarantine (these are gated leads).
 
+### ⑤ enslaved_by data-quality — DONE (Jun 28)
+`scripts/flag-junk-enslaved-names.mjs` FLAGS (reversible, never deletes) unconfirmed enslaved leads
+whose name is a clear document/OCR ARTIFACT via a NARROW high-precision exact-match blocklist
+(legal/estate/accounting words, titles, month abbrevs, connectors: Note/Estate/Executors/Act/Lot/
+Item/Cash/Bond/Heirs/Esq/Jan…). **Deliberately EXCLUDES descriptor-placeholders** (Boy/Girl/Woman/
+Unknown/Negro/Infant) which are REAL unnamed enslaved — avoiding the documented prior mistake where
+a `NOT LIKE 'Unknown%'` filter dropped Charles Brown's 5 enslaved. Dry-run reviewed: 1,095 leads /
+71 distinct names, ALL artifacts, zero real-name false positives. Applied → `data_quality_flags->
+'name_artifact'=true`. **DAAOrchestrator Source 4 guarded** to exclude flagged leads (1,170 edges
+excluded; 29,397 legit remain). Reversible (clear the flag to undo).
+
 ### Leads-in-public-search — RESOLVED (Jun 28)
 Finding: public TEXT search already hides unconfirmed leads via `SearchPage.jsx` `filterVerified()`
 (leads aren't "verified") — so the producer's `suspected_owner` leads never showed in normal public

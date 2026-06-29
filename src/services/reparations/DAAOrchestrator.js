@@ -1111,6 +1111,13 @@ class DAAOrchestrator {
                     ON eor.owner_subject_table = 'unconfirmed_persons' AND eor.owner_subject_id = o.lead_id
                 WHERE eor.relationship_type = 'enslaved_by'
                 AND eor.enslaved_name IS NOT NULL
+                -- ⑤ data-quality: skip enslaved leads flagged as document/OCR artifacts (not people)
+                AND NOT EXISTS (
+                    SELECT 1 FROM unconfirmed_persons ej
+                    WHERE eor.enslaved_subject_table = 'unconfirmed_persons'
+                      AND ej.lead_id = eor.enslaved_subject_id
+                      AND ej.data_quality_flags->>'name_artifact' = 'true'
+                )
                 AND (
                     -- FK path (#1 owner-lead→canonical linking): owner is/links to THIS canonical.
                     -- $2 bound as TEXT (confirmed_individual_id is varchar); cast per column.
