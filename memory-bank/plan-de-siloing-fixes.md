@@ -164,10 +164,12 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
    (neither flag) is the decisive guarantee — partial cases are self-consistent (slaveowner-only
    33,524; enslaved-only 121). enslaved_individuals + unconfirmed LEADS are a separate tier (NOT
    gated by these canonical flags — NOTE: producer's `suspected_owner` leads still show in public
-   search; flag for the leads-visibility question). **FRONTEND FOLLOW-UP (deferred per Q4):**
-   `client.js isVerified()` AND the gate; `PersonProfile.jsx` render the `gated` stub's gatedMessage
-   gracefully + per-proposition labels; `SearchPage.jsx`. The public API already strips gated
-   persons, so these are defense-in-depth + UX. **Backend public paths to filter** (add
+   search; flag for the leads-visibility question). **FRONTEND POLISH — DONE (Jun 28):**
+   `PersonProfile.jsx` renders the `{gated:true}` stub (name + gatedMessage, no claim) before the
+   verified check; `client.js isVerified()` treats a canonical as not-public-verified when
+   `gated===true` or `assertable_*` present-and-false (defense-in-depth; public API already filters).
+   `SearchPage.jsx` needed NO change (API-filtered results are inherently safe). Frontend `npm run
+   build` ✓. ④ COMPLETE (backend + frontend). **Backend public paths to filter** (add
    `AND (assertable_slaveowner OR assertable_enslaved)`): `contribute.js` `GET /search/:query`
    (id query ~L190, text query WHERE ~L305) + `GET /person/:id` (~L858); `NameResolver.js`
    searchSimilarNames (~L546) via `names.js` `/search`,`/candidates`; `names.js` `GET /canonical/:id`

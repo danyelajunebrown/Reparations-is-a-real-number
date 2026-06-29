@@ -34,6 +34,22 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
   if (error) return <div className="state err">Error: {error.message}</div>;
   if (!data?.person) return <div className="state err">Person not found.</div>;
 
+  // External-assertion gate (M102): the backend returns a name-only STUB ({gated:true, gatedMessage})
+  // for a canonical person with no stored proposition-specific document. Show the explanatory note —
+  // we make NO slaveholder/enslaved claim. (Admin/research callers get full data and never hit this.)
+  if (data.gated || data.person.gated) {
+    return (
+      <div className="stack-xl">
+        <header>
+          <h1 style={{ fontSize: 22, fontWeight: 'normal' }}>{data.person.full_name || data.person.name || 'Unknown'}</h1>
+        </header>
+        <div className="state">
+          {data.gatedMessage || 'A record exists for this name, but we cannot publicly state whether this person was a slaveholder or was enslaved until a qualifying primary-source document is archived.'}
+        </div>
+      </div>
+    );
+  }
+
   const p = data.person;
   const verified = adminOverride || isVerified({
     verification_status: p.verification_status,

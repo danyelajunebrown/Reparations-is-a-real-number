@@ -189,8 +189,16 @@ export const VERIFIED_CLASSES = new Set([
 
 export function isVerified(item) {
   if (!item) return false;
-  // Any record from a promoted/confirmed table is verified.
-  if (item.table_source === 'canonical_persons') return true;
+  // External-assertion gate (M102): a canonical person is NOT publicly verified unless it has a
+  // stored proposition-specific document. The public API already filters gated canonicals out, so
+  // this is defense-in-depth: respect an explicit gated flag / the assertable_* booleans when present.
+  if (item.table_source === 'canonical_persons') {
+    if (item.gated === true) return false;
+    if ('assertable_slaveowner' in item || 'assertable_enslaved' in item) {
+      return !!(item.assertable_slaveowner || item.assertable_enslaved);
+    }
+    return true;
+  }
   if (item.table_source === 'enslaved_individuals') return true;
   if (item.table_source === 'individuals') return true;
   // Explicit confirmed status (e.g. documents table)
