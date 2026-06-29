@@ -189,6 +189,15 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
 5. **Data-quality pass** — the unconfirmed `enslaved_by` OCR/parse junk (owner "William H.", enslaved
    "Act"/"And I") surfaced by the producer/#3; clean or quarantine (these are gated leads).
 
+### Leads-in-public-search — RESOLVED (Jun 28)
+Finding: public TEXT search already hides unconfirmed leads via `SearchPage.jsx` `filterVerified()`
+(leads aren't "verified") — so the producer's `suspected_owner` leads never showed in normal public
+search; the canonical Q3 `isVerified` change reinforces this. The one real public-UI gap was
+id-search bypassing the filter (`isIdSearch ? allPersons : ...`). **User chose "close id-search gap
+only":** `SearchPage.jsx` now always `filterVerified(allPersons)` (id-search still bypasses the
+CLASSIFICATION toggle but no longer the verified/gate). Backend `/search` still returns leads in the
+API payload (frontend is the public guard) — accepted; admin/curation unaffected. Build ✓.
+
 ## Guardrails
 - No canonical minted without the standard (dedup + ≥secondary; gated until S3 doc).
 - Dry-run + measure before each apply. Each fix its own commit, pushed (memory bank +

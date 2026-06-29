@@ -29,13 +29,14 @@ export default function SearchPage() {
   );
 
   const allPersons = personsState.data?.results || [];
-  // An explicit person-ID lookup (query was a bare number / #id / id:) returns
-  // exact matches — show them as-is, bypassing the verified + classification
-  // filters so the record the user asked for always appears.
+  // An explicit person-ID lookup (query was a bare number / #id / id:) returns exact matches.
+  // It bypasses the user's CLASSIFICATION toggle (so the asked-for record appears), but it must
+  // STILL respect the verified/external-assertion gate (M102) — an undocumented lead or gated
+  // canonical must never surface to the public even via an exact-id lookup.
   const isIdSearch = personsState.data?.idSearch === true;
-  const verifiedPersons = isIdSearch ? allPersons : filterVerified(allPersons);
-  // Additional user filter on classification
-  const shownPersons = isIdSearch ? allPersons : verifiedPersons.filter(p => {
+  const verifiedPersons = filterVerified(allPersons);
+  // Additional user filter on classification (skipped for id-search)
+  const shownPersons = isIdSearch ? verifiedPersons : verifiedPersons.filter(p => {
     if (showAll) return true;
     if (!p.verification_status) return true; // canonical/individuals table rows
     return activeClasses.has(p.verification_status);
