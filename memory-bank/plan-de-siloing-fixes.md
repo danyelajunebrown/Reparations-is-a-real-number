@@ -144,10 +144,16 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
      `scripts/merge-canonical-persons.mjs` is now a thin CLI wrapper around PersonService.merge (one
      implementation). Tested 6/6 (dry-run, apply, FK re-point, victim merged, log, link). The
      individuals TABLE needed no drop (already absent).
-   - **STILL TODO (deferred, needs require-cuts first / own pass):** the require-chained dead cluster
-     (`IndividualRepository`←ResearchService unused require; `EntityManager`/`LLMAssistant`/
-     `DocumentParser`/`Orchestrator`/`IntelligentOrchestrator` + their standalone scripts);
-     reconcile/drop redundant empty `slaveholding_relationships`.
+   - **Dead-cluster purge — DONE + RE-SCOPED (Jun 28).** Verification corrected the earlier
+     assumption: most of the "require-chained cluster" is NOT actually dead. **`IndividualRepository`
+     DELETED** (ResearchService's require was unused — no method calls; nothing else referenced it;
+     ResearchService still loads). **KEPT (not dead):** `Orchestrator` ← `continuous-scraper.js`
+     which is a **LIVE worker** (`package.json` `"worker": "node continuous-scraper.js"`);
+     `UnifiedScraper` ← `UniversalRouter` ← contribute (LIVE); `IntelligentOrchestrator`/scraping/index
+     entangled with those; `EntityManager`/`LLMAssistant`/`DocumentParser` chain through test scripts
+     (train-parser, demo) — deleting them would break the worker + tests. So the cluster stays. Only
+     `IndividualRepository` was safely removable. `slaveholding_relationships` (redundant empty) left
+     as-is (harmless; 1 script writer).
 3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
 4. **Gate search-wiring — BACKEND DONE (Jun 28); frontend polish follows.** User decisions:
    Q1=neutral stub for gated direct links; Q2=yes authenticated research/curator bypass (admin

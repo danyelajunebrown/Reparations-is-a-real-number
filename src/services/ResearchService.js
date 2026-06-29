@@ -6,7 +6,6 @@
 
 const DocumentRepository = require('../repositories/DocumentRepository');
 const EnslavedRepository = require('../repositories/EnslavedRepository');
-const IndividualRepository = require('../repositories/IndividualRepository');
 const logger = require('../utils/logger');
 
 class ResearchService {
