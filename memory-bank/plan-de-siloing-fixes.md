@@ -149,8 +149,25 @@ reverse reach) is COMMITTED. Remaining, in recommended order:
      `DocumentParser`/`Orchestrator`/`IntelligentOrchestrator` + their standalone scripts);
      reconcile/drop redundant empty `slaveholding_relationships`.
 3. **`family_relationships` (2M) lead_table qualifier** — its own migration; the DAA reads it by name.
-4. **Gate search-wiring** — the held outward 94% visibility flip (public search/API + UI filter on
-   `assertable_*`). SCOPED Jun 28 (read-only map). **Backend public paths to filter** (add
+4. **Gate search-wiring — BACKEND DONE (Jun 28); frontend polish follows.** User decisions:
+   Q1=neutral stub for gated direct links; Q2=yes authenticated research/curator bypass (admin
+   token); Q3=yes isVerified treats gated as not-public; Q4=backend-first. **Implemented (backend):**
+   `middleware/admin-auth.js` gained non-blocking `isAdmin(req)` (research-view bypass; dev w/o
+   ADMIN_TOKEN = open). `contribute.js`: `canonicalGateClause(req)` appended to the search id-query
+   + text-search canonical WHERE; `GET /person/:id` returns a name-only NEUTRAL STUB
+   (`{gated:true, gatedMessage}`) for a fully-gated canonical to non-admin. `names.js` `/search` +
+   `/candidates` pass `includeGated: isAdmin(req)`; `/canonical/:id` returns the stub. `NameResolver`
+   `searchSimilarNames`/`findCandidateMatches` got an `includeGated` option (default = internal sees
+   all; `false` = public filter; WHERE OR-groups wrapped so the AND binds correctly). **Verified:**
+   public search hides gated / admin sees all; isAdmin token logic; NameResolver internal-vs-public.
+   Insight: the assertable flag that's true matches the person's role, so the fully-gated stub
+   (neither flag) is the decisive guarantee — partial cases are self-consistent (slaveowner-only
+   33,524; enslaved-only 121). enslaved_individuals + unconfirmed LEADS are a separate tier (NOT
+   gated by these canonical flags — NOTE: producer's `suspected_owner` leads still show in public
+   search; flag for the leads-visibility question). **FRONTEND FOLLOW-UP (deferred per Q4):**
+   `client.js isVerified()` AND the gate; `PersonProfile.jsx` render the `gated` stub's gatedMessage
+   gracefully + per-proposition labels; `SearchPage.jsx`. The public API already strips gated
+   persons, so these are defense-in-depth + UX. **Backend public paths to filter** (add
    `AND (assertable_slaveowner OR assertable_enslaved)`): `contribute.js` `GET /search/:query`
    (id query ~L190, text query WHERE ~L305) + `GET /person/:id` (~L858); `NameResolver.js`
    searchSimilarNames (~L546) via `names.js` `/search`,`/candidates`; `names.js` `GET /canonical/:id`

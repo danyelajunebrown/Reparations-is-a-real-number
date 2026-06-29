@@ -301,6 +301,8 @@ class NameResolver {
         // Get first letter for fuzzy matching (OCR often gets first letter right)
         const lastNameFirstLetter = parsed.last ? parsed.last[0].toUpperCase() : '';
         const firstNameFirstLetter = parsed.first ? parsed.first[0].toUpperCase() : '';
+        // External-assertion gate (M102): applied only for explicit anonymous-public requests.
+        const gate = options.includeGated === false ? ' AND (cp.assertable_slaveowner OR cp.assertable_enslaved)' : '';
 
         // Search by multiple criteria including fuzzy matching
         const candidates = await this.db.query(`
@@ -326,12 +328,13 @@ class NameResolver {
                     CASE WHEN UPPER(LEFT(cp.first_name, 1)) = $9 THEN 15 ELSE 0 END
                 ) as match_score
             FROM canonical_persons cp
-            WHERE
+            WHERE (
                 LOWER(cp.canonical_name) = LOWER($1)
                 OR cp.last_name_soundex = $2
                 OR cp.last_name_metaphone = $4
                 OR LOWER(cp.last_name) = LOWER($6)
                 OR (UPPER(LEFT(cp.last_name, 1)) = $8 AND UPPER(LEFT(cp.first_name, 1)) = $9 AND LENGTH(cp.last_name) BETWEEN LENGTH($6) - 2 AND LENGTH($6) + 2)
+            )${gate}
             ORDER BY match_score DESC
             LIMIT 20
         `, [
@@ -540,15 +543,20 @@ class NameResolver {
     async searchSimilarNames(query, options = {}) {
         const parsed = this.parseName(query);
         const limit = options.limit || 20;
+        // External-assertion gate (M102): only when a caller explicitly asks (includeGated:false,
+        // i.e. an anonymous public request) do we hide canonicals with no stored proposition-specific
+        // document. Internal callers (no option) are unaffected.
+        const gate = options.includeGated === false ? ' AND (cp.assertable_slaveowner OR cp.assertable_enslaved)' : '';
 
         // Search canonical persons
         const canonical = await this.db.query(`
             SELECT cp.*, 'canonical' as source_type
             FROM canonical_persons cp
-            WHERE
+            WHERE (
                 cp.canonical_name ILIKE $1
                 OR cp.last_name_soundex = $2
                 OR cp.first_name_soundex = $3
+            )${gate}
             LIMIT $4
         `, [
             `%${query}%`,

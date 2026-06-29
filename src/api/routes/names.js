@@ -16,6 +16,7 @@
 const express = require('express');
 const router = express.Router();
 const NameResolver = require('../../services/NameResolver');
+const { isAdmin } = require('../../middleware/admin-auth');
 
 let nameResolver = null;
 
@@ -59,7 +60,8 @@ router.get('/search/:query', async (req, res) => {
             });
         }
 
-        const results = await nameResolver.searchSimilarNames(query, { limit });
+        // External-assertion gate: anonymous public callers don't see gated canonicals; admin bypasses.
+        const results = await nameResolver.searchSimilarNames(query, { limit, includeGated: isAdmin(req) });
 
         res.json({
             success: true,
@@ -99,7 +101,8 @@ router.get('/candidates/:name', async (req, res) => {
         const candidates = await nameResolver.findCandidateMatches(name, {
             state,
             county,
-            personType
+            personType,
+            includeGated: isAdmin(req)
         });
 
         // Add phonetic analysis to response
@@ -290,6 +293,17 @@ router.get('/canonical/:id', async (req, res) => {
         }
 
         const person = result.rows[0];
+
+        // External-assertion gate (M102): a canonical with no stored proposition-specific document
+        // is not publicly assertable — return a name-only neutral stub to anonymous callers.
+        if (!isAdmin(req) && !person.assertable_slaveowner && !person.assertable_enslaved) {
+            return res.json({
+                success: true,
+                gated: true,
+                canonical: { id: person.id, canonical_name: person.canonical_name, gated: true },
+                gatedMessage: 'A record exists for this name, but we cannot publicly state slaveholder/enslaved status until a qualifying primary-source document is archived.'
+            });
+        }
 
         // Get associated name variants
         const variants = await nameResolver.db.query(

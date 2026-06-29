@@ -78,4 +78,21 @@ function adminVerify(req, res) {
   res.json({ success: true, admin: true });
 }
 
-module.exports = { requireAdmin, adminVerify };
+/**
+ * Non-blocking admin check — returns a boolean instead of short-circuiting the request.
+ * Used by the external-assertion gate (M102): an authenticated curator/research caller sees
+ * GATED canonical persons (internal use is allowed by the standard); anonymous public callers
+ * do not. Mirrors requireAdmin's token logic. In dev (no ADMIN_TOKEN) this returns TRUE so local
+ * work sees everything — production (ADMIN_TOKEN set) gates anonymous callers.
+ */
+function isAdmin(req) {
+  const expected = process.env.ADMIN_TOKEN;
+  if (!expected) return process.env.NODE_ENV !== 'production';
+  const headerToken = req && req.headers && req.headers['x-admin-token'];
+  const authHeader = (req && req.headers && req.headers['authorization']) || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const provided = headerToken || bearerToken;
+  return !!provided && safeEqual(provided, expected);
+}
+
+module.exports = { requireAdmin, adminVerify, isAdmin };

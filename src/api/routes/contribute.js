@@ -15,6 +15,11 @@ const SourceClassifier = require('../../services/SourceClassifier');
 const SourceAnalyzer = require('../../services/SourceAnalyzer');
 const FamilySearchCatalogProcessor = require('../../services/FamilySearchCatalogProcessor');
 const UniversalRouter = require('../../services/UniversalRouter');
+const { isAdmin } = require('../../middleware/admin-auth');
+// External-assertion gate (M102): public callers see only canonical persons with a stored
+// proposition-specific document (assertable_slaveowner OR assertable_enslaved). Authenticated
+// curator/research callers (admin token) bypass it. Returns a SQL fragment for canonical WHERE.
+const canonicalGateClause = (req) => (isAdmin(req) ? '' : ' AND (assertable_slaveowner OR assertable_enslaved)');
 
 // Use centralized database connection (Neon serverless HTTP)
 const { query: dbQuery, pool: sharedPool } = require('../../database/connection');
@@ -193,7 +198,7 @@ router.get('/search/:query', async (req, res) => {
                        COALESCE(confidence_score, 1.0) AS confidence_score,
                        CONCAT_WS(', ', primary_county, primary_state) AS locations,
                        notes AS context_text, created_at, 'canonical_persons' AS table_source
-                FROM canonical_persons WHERE id = $1::int
+                FROM canonical_persons WHERE id = $1::int${canonicalGateClause(req)}
                 UNION ALL
                 SELECT lead_id::text, full_name, person_type, source_url, source_type,
                        confidence_score, array_to_string(locations, ', '), context_text,
@@ -305,6 +310,10 @@ router.get('/search/:query', async (req, res) => {
         let canonicalWhere = hasTextSearch
             ? `(${words.map((_, i) => `canonical_name ILIKE $${i + 1}`).join(' AND ')}) AND person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`
             : `person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`;
+        // External-assertion gate: hide canonicals with no stored proposition-specific document
+        // from public search (admin/research token bypasses). enslaved_individuals + unconfirmed
+        // leads are a separate tier (not gated by these canonical flags).
+        canonicalWhere += canonicalGateClause(req);
 
         // Handle source filter
         if (source) {
@@ -878,6 +887,8 @@ router.get('/person/:id', async (req, res) => {
                     notes,
                     confidence_score,
                     verification_status,
+                    assertable_slaveowner,
+                    assertable_enslaved,
                     created_at,
                     'canonical_persons' as table_source
                 FROM canonical_persons
@@ -887,6 +898,24 @@ router.get('/person/:id', async (req, res) => {
             if (canonicalResult.rows.length > 0) {
                 person = canonicalResult.rows[0];
                 tableSource = 'canonical_persons';
+                // External-assertion gate (M102): a canonical with NO stored proposition-specific
+                // document is hidden from public search; a DIRECT link returns a name-only NEUTRAL
+                // STUB (no slaveowner/enslaved assertion, no enslaved list / forensic estate) with a
+                // "documentation pending" note — honest, and makes no external claim. Authenticated
+                // curator/research callers (admin token) bypass and get the full profile.
+                if (!isAdmin(req) && !person.assertable_slaveowner && !person.assertable_enslaved) {
+                    return res.json({
+                        success: true,
+                        gated: true,
+                        person: {
+                            id: person.id,
+                            full_name: person.full_name,
+                            table_source: 'canonical_persons',
+                            gated: true,
+                        },
+                        gatedMessage: 'A record exists for this name, but we cannot publicly state whether this person was a slaveholder or was enslaved until a qualifying primary-source document is archived. This record is used internally for research and remains available to verify against documents.',
+                    });
+                }
             }
         }
 
