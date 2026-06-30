@@ -31,7 +31,18 @@ caught: `person/canonical_persons/487165` showed a **FamilySearch login wall as 
   fallback, robust S3 via objectExists, self-contained ntfy on critical/high), deployed to the Mini,
   and added a **cron `0 */6 * * *`** (`--s3 --s3-sample 300`, logs `/tmp/retrieval-health.log`, ntfy
   via OPS_NOTIFY_WEBHOOK). Verified on the Mini: gate sound, S3 200/200, ledger written, ntfy sent.
-- **#1 MERGE RESOLVED (awaiting production push):** merged `origin/main` (9 divergent commits — primary/
+- **#1 DEPLOYED + VERIFIED LIVE (Jun 30):** pushed `main` (fast-forward `ae15828fd..4b237fbb8`) →
+  render auto-deployed the backend; redeployed the frontend from main. **Gate VERIFIED live in prod:**
+  the render backend returns `{gated:true, gatedMessage}` for a gated canonical (Edwin Cowles
+  /person/826229?table=canonical_persons). The 94% public-search visibility flip + the whole
+  de-siloing+gate program are LIVE. Added CLAUDE.md RULE 0 (re-read memory bank before anything, per
+  user) on main's project-doc (kept, not the erased rules-file). **STILL USER ACTION: set `ADMIN_TOKEN`
+  on render** — without it the gate's research/curator bypass is off in prod (`isAdmin`=false for all);
+  public gating works, but the team can't see gated persons via the API to curate until it's set.
+  NOTE: `/person/:id` without a `table` param checks unconfirmed first → for an id that's both a lead
+  and a canonical it returns the (un-gated) lead; the frontend always passes table=canonical_persons,
+  so the public UI is correctly gated. (Detail of the pre-deploy merge below.)
+- **#1 MERGE RESOLVED (pre-deploy detail):** merged `origin/main` (9 divergent commits — primary/
   secondary doc classification, inheritance_edges→cfe bridge, wills dedup fixes) into the branch. The
   `ort` strategy auto-resolved ALL 11 overlapping files (incl. contribute.js, PersonProfile.jsx) with
   NO conflicts. Verified: both sides survived (gate `canonicalGateClause` + main doc-tier refs both in
