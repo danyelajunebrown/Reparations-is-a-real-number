@@ -4,6 +4,29 @@ _Last updated: 2026-06-28 (Session 67–68 — de-siloing the person layer: COMP
 
 ---
 
+## Phase-1 Retrieval-Integrity Harness + deploy gate (2026-06-29→30)
+User directive: before merging/deploying the de-siloing+gate branch, build a system that "ongoingly
+computes consistency/accessibility/availability of all persons and documents" (automated epistemology;
+RAG-Ops framing) — suspicion of hidden bugs after the heavy churn. **Triggered by a live bug** the user
+caught: `person/canonical_persons/487165` showed a **FamilySearch login wall as the "document."**
+- **#1 (done):** the DocumentViewer external-URL guard already existed on `main` but the live github.io
+  build was STALE → **redeployed frontend from main via an isolated git worktree** (didn't disturb the
+  audit branch or the running climb session). Login-wall iframe gone; docs WITH an s3_key now serve the
+  presigned S3 image. 487165 anomaly = stale deploy, not bad data (it has a real s3_key census image;
+  live presign works). My earlier "0 docs" was an audit query bug.
+- **Phase-1 design = integrity auditor first (chosen over full RAG now); RAG/pgvector feedback loop =
+  Phase 2, later.** Built **M106 `retrieval_health_ledger`** + **`scripts/retrieval-health-audit.mjs`**
+  (exercises the real frontend path; exits non-zero on any CRITICAL so deploy can gate). **Results:**
+  `gate_assert_without_doc`=**0** (CRITICAL — gate sound), `doc_s3_unfetchable`=**0/400** on the Mini
+  (CRITICAL — S3 archive intact), `doc_dead`=0; `gate_stale_lift`=160→**fixed to 0** (re-ran
+  recompute-assertion-gates, +166 newly-documented assertable, now 41,155 assertable). **DEPLOY GATE:
+  PASS (0 critical).** Non-blocking findings surfaced: **174,732 named canonicals with 0 blocking keys**
+  (orphaned from the dedup/resolve pool — silo at scale, fix = blocking-key backfill across all
+  canonicals like reconcile-climb did for 992) and **316,938 FS-only docs** (the #2 archiving gap).
+- **NEXT:** (a) optional pre-deploy de-silo: blocking-key backfill for the 174,732 orphans; (b) the
+  merge/deploy itself (branch → main + render backend + frontend) — gate is GREEN, awaiting user go;
+  (c) schedule the harness on a cron (continuous) once the branch is on the Mini; (d) Phase-2 RAG.
+
 ## Session 67 — De-siloing the Person Layer: Audit + Unified PersonService (2026-06-25→26)
 
 Branch: `audit/probate-classifier-and-source-documents`. Follows the canonical/document-gate standard (Session 66). User priority: BEFORE exponential growth, fix orphaning/siloing so already-verified info (e.g. an enslaved ancestor's data) is never lost when future inflow (a descendant's document) arrives. Method (user-directed): focused research pass per component, findings to the memory bank, design → review → build → verify; NEVER decide from context — ground in the memory bank.
