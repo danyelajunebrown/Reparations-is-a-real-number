@@ -1,7 +1,15 @@
 # CLAUDE.md
 
 > Loaded at the start of every session. Keep under 220 lines. Prune ruthlessly when adding.
-> Last reviewed: 2026-05-25.
+> Last reviewed: 2026-06-30.
+
+## RULE 0 — Read the memory bank BEFORE doing anything (non-negotiable)
+
+Before acting on ANY task, **re-read the relevant `memory-bank/` files** (start with `activeContext.md`,
+the relevant `plan-*.md` / `standard-*.md`, and `interpretive-framework.md`). **The memory bank is the
+source of truth.** Do NOT decide from immediate context or from model/training knowledge — ground every
+decision in the memory bank, and write project knowledge back to `memory-bank/` (not `~/.claude`). This
+file is only a pointer; the memory bank governs.
 
 ## What this project actually is
 
