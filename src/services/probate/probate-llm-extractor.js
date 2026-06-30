@@ -134,4 +134,4 @@ async function extractEstatesBatch(estates, { maxTokens } = {}) {
   return { results, provider, usage };
 }
 
-module.exports = { extractEstate, extractEstatesBatch, MODEL, PROVIDERS };
+module.exports = { extractEstate, extractEstatesBatch, callLLM, MODEL, PROVIDERS };

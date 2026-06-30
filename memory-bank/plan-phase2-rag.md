@@ -26,12 +26,21 @@ index. `content_kind` ∈ {`doc_ocr`, `person_profile`, …}. `model` records wh
 in one space (semantic dedup across the unified pool).
 
 ## STATUS (Jun 30)
-- **DECISIONS (user):** embedding source = **Mini/ollama `nomic-embed-text`** (768-dim, free/self-hosted);
-  v1 corpus = **doc_ocr** (75,479 docs).
-- **2a IN PROGRESS:** M107 applied (pgvector 0.8.0 + `embeddings` table). `nomic-embed-text` pulled on
-  the Mini. `scripts/embed-documents.mjs` (idempotent, Mini ollama) smoke-tested 10/10, **full ~75K
-  run launched detached on the Mini** (`/tmp/embed-docs.log`; monitor via DB count). Cosine `<=>` +
-  HNSW verified working. NEXT: let the corpus finish, then 2b.
+- **DECISIONS (user):** v1 corpus = **doc_ocr** (75,479). Embedding source: started Mini/ollama, but
+  the **Mini is Intel (no GPU) → ollama ~3/min (17 days)** → switched bulk to **Gemini free tier
+  `gemini-embedding-001` @ outputDimensionality 768** (~900/min, free; cosine is scale-invariant so no
+  normalize). Zero-cost as long as the Gemini project has no billing attached (free tier rate-limits,
+  never charges). EMBED_SOURCE=ollama retained for Apple-Silicon/offline.
+- **2a IN PROGRESS:** M107 applied. `embed-documents.mjs` (gemini default: concurrent CONC=8 + 429
+  backoff + bulk insert; idempotent) **full ~75K run detached on the Mini** (nohup; /tmp/embed-docs.log;
+  monitor via `count(*) WHERE model='gemini-embedding-001'`). Cosine + HNSW verified. ~332 nomic
+  embeddings are a separate (superseded) model-space; retrieval uses gemini-embedding-001.
+- **2b DONE + verified:** `src/services/rag/RagService.js` (+ `scripts/rag-query.cjs`): embed question
+  (gemini-embedding-001, same space) → cosine top-k person_documents → ground the free LLM router
+  (`callLLM`, now exported; falls through non-Gemini providers so generation survives the bulk-embed
+  rate-limit) → structured `{answer, citations:[document_id]}` (audit rule: every claim cites a row).
+  Verified on the Mini: a slave-schedule query returned enslaved names grounded in retrieved docs.
+  NEXT: wire a live `/api/rag/query` route (additive) + deploy; quality improves as the corpus fills.
 
 ## Sub-phases (incremental)
 - **2a — foundation + first corpus.** pgvector extension + `embeddings` table (M107). Embedding
