@@ -25,6 +25,14 @@ index. `content_kind` ∈ {`doc_ocr`, `person_profile`, …}. `model` records wh
 (so a re-embed with a different model coexists). Polymorphic subject = embeds leads AND canonicals
 in one space (semantic dedup across the unified pool).
 
+## STATUS (Jun 30)
+- **DECISIONS (user):** embedding source = **Mini/ollama `nomic-embed-text`** (768-dim, free/self-hosted);
+  v1 corpus = **doc_ocr** (75,479 docs).
+- **2a IN PROGRESS:** M107 applied (pgvector 0.8.0 + `embeddings` table). `nomic-embed-text` pulled on
+  the Mini. `scripts/embed-documents.mjs` (idempotent, Mini ollama) smoke-tested 10/10, **full ~75K
+  run launched detached on the Mini** (`/tmp/embed-docs.log`; monitor via DB count). Cosine `<=>` +
+  HNSW verified working. NEXT: let the corpus finish, then 2b.
+
 ## Sub-phases (incremental)
 - **2a — foundation + first corpus.** pgvector extension + `embeddings` table (M107). Embedding
   pipeline (source-agnostic: `--source ollama|gemini`, batched, content_hash skip, idempotent).
