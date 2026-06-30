@@ -49,9 +49,12 @@ in one space (semantic dedup across the unified pool).
 - **2b — RAG grounding.** Hybrid retrieve (keyword + vector top-k + simple rerank) → ground the
   free LLM router's answer for the Q&A surface; cite the retrieved rows (every claim traces to a
   row — the audit rule). Add groundedness to the existing answer path.
-- **2c — retrieval-feedback loop ("improves from every retrieval").** Log every retrieval (query,
-  top-k, scores, chosen, groundedness) to a `retrieval_log`; periodic metrics (recall proxy,
-  groundedness, latency) → re-rank weights / flag weak queries. RAG-Ops hill-climb.
+- **2c — retrieval-feedback loop — DONE + verified (Jun 30).** M108 `retrieval_log`; `RagService.query`
+  logs every retrieval (retrieved docs+sims, top_similarity, citations, grounded, provider, latency).
+  `scripts/rag-metrics.cjs` aggregates: groundedness %, avg top-similarity, latency, and the WEAKEST
+  retrievals (low top-sim = corpus gaps → what to ingest next). Verified: 3 queries → avg top-sim 0.69,
+  67% grounded; surfaced "freedmens bank depositor" (0.63) as the thinnest coverage. This is the
+  measurement that drives improvement (+ a future re-ranker reads these signals).
 - **2d — semantic dedup.** person_profile embeddings → cosine-nearest pairs as dedup candidates
   (complement blocking keys; Biscoe — review, never auto-merge).
 

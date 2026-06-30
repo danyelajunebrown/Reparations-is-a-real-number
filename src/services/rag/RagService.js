@@ -46,10 +46,15 @@ class RagService {
     return rows;
   }
 
-  /** Grounded answer: retrieve → LLM answers ONLY from retrieved docs → {answer, citations}. */
-  async query(question, { k = 6 } = {}) {
+  /** Grounded answer: retrieve → LLM answers ONLY from retrieved docs → {answer, citations}.
+   *  Logs the retrieval to retrieval_log (Phase 2c) for the feedback loop. opts.log=false to skip. */
+  async query(question, { k = 6, log = true } = {}) {
+    const t0 = Date.now();
     const ctx = await this.retrieve(question, k);
-    if (!ctx.length) return { answer: 'No documents are indexed yet for this query.', citations: [], retrieved: [] };
+    if (!ctx.length) {
+      if (log) await this._log(question, k, [], [], null, Date.now() - t0).catch(() => {});
+      return { answer: 'No documents are indexed yet for this query.', citations: [], retrieved: [] };
+    }
     const corpus = ctx.map(c => `[doc ${c.document_id}] (${c.document_type || 'document'}; sim ${(+c.similarity).toFixed(2)})\n${c.snippet}`).join('\n\n');
     const prompt =
       `You answer questions about historical slavery records STRICTLY from the provided documents.\n` +
@@ -58,9 +63,20 @@ class RagService {
       `QUESTION: ${question}\n\nDOCUMENTS:\n${corpus}`;
     const { json, provider } = await callLLM(prompt, { maxTokens: 1500 });
     const citeIds = Array.isArray(json?.citations) ? json.citations.map(String) : [];
-    const citations = ctx.filter(c => citeIds.includes(String(c.document_id)))
-      .map(c => ({ document_id: c.document_id, source_url: c.source_url, document_type: c.document_type }));
-    return { answer: json?.answer || '(no answer)', citations: citations.length ? citations : ctx.slice(0, 3).map(c => ({ document_id: c.document_id, source_url: c.source_url, document_type: c.document_type })), retrieved: ctx.map(c => ({ document_id: c.document_id, similarity: c.similarity })), provider };
+    const citedCtx = ctx.filter(c => citeIds.includes(String(c.document_id)));
+    const citations = (citedCtx.length ? citedCtx : ctx.slice(0, 3)).map(c => ({ document_id: c.document_id, source_url: c.source_url, document_type: c.document_type }));
+    if (log) await this._log(question, k, ctx, citeIds, provider, Date.now() - t0).catch(() => {});
+    return { answer: json?.answer || '(no answer)', citations, retrieved: ctx.map(c => ({ document_id: c.document_id, similarity: c.similarity })), provider };
+  }
+
+  async _log(question, k, ctx, citeIds, provider, latencyMs) {
+    const topSim = ctx.length ? Math.max(...ctx.map(c => +c.similarity)) : null;
+    await this.db.query(
+      `INSERT INTO retrieval_log (query_text, k, retrieved, top_similarity, cited, cited_count, grounded, provider, latency_ms)
+       VALUES ($1,$2,$3::jsonb,$4,$5::jsonb,$6,$7,$8,$9)`,
+      [String(question).slice(0, 1000), k,
+       JSON.stringify(ctx.map(c => ({ document_id: c.document_id, similarity: +(+c.similarity).toFixed(4) }))),
+       topSim, JSON.stringify(citeIds), citeIds.length, citeIds.length > 0, provider || null, latencyMs]);
   }
 }
 
