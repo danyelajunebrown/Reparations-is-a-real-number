@@ -31,8 +31,16 @@ caught: `person/canonical_persons/487165` showed a **FamilySearch login wall as 
   fallback, robust S3 via objectExists, self-contained ntfy on critical/high), deployed to the Mini,
   and added a **cron `0 */6 * * *`** (`--s3 --s3-sample 300`, logs `/tmp/retrieval-health.log`, ntfy
   via OPS_NOTIFY_WEBHOOK). Verified on the Mini: gate sound, S3 200/200, ledger written, ntfy sent.
-- **#1 NEXT (the merge/deploy):** branch → main + render backend auto-deploy + frontend from branch.
-  Gate is GREEN. This is the 94% public-search visibility flip going LIVE — awaiting user go.
+- **#1 MERGE RESOLVED (awaiting production push):** merged `origin/main` (9 divergent commits — primary/
+  secondary doc classification, inheritance_edges→cfe bridge, wills dedup fixes) into the branch. The
+  `ort` strategy auto-resolved ALL 11 overlapping files (incl. contribute.js, PersonProfile.jsx) with
+  NO conflicts. Verified: both sides survived (gate `canonicalGateClause` + main doc-tier refs both in
+  contribute.js), syntax OK, harness gate GREEN post-merge, frontend builds. Merge commit pushed to the
+  BRANCH (not main). **GO-LIVE CHECKLIST (user):** (1) decide on `CLAUDE.md` — main re-created it; user
+  had erased it ("no parallel rule surface") — surfaced, NOT re-erased unilaterally; (2) set
+  `ADMIN_TOKEN` on render (else the gate's research/curator bypass is off in prod — public gating still
+  works); (3) confirm render auto-deploys on push to `main`; (4) final go → push `main` (the 94% public
+  visibility flip + backend gate go live).
 - **Phase-2 (later):** pgvector RAG + retrieval-feedback loop.
 
 ## Session 67 — De-siloing the Person Layer: Audit + Unified PersonService (2026-06-25→26)
