@@ -11,7 +11,7 @@
 import dotenv from 'dotenv'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-const MODEL = 'gemini-embedding-001';
+const MODEL = process.env.EMBED_MODEL || 'nomic-embed-text';   // must match the corpus' embedding model
 const THRESHOLD = parseFloat(process.env.THRESHOLD || '0.90');
 const LIMIT = parseInt(process.env.LIMIT || '30', 10);
 

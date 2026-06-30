@@ -12,25 +12,35 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Same two free sources as embed-documents.mjs (both 768-dim). Default ollama nomic-embed-text
+// (self-hosted, no daily cap, ~100/min on the Mini) — must match the doc corpus + RagService space.
+const SOURCE = process.env.EMBED_SOURCE || 'ollama';
 const GKEY = process.env.GEMINI_API_KEY;
-const MODEL = 'gemini-embedding-001';
+const MODEL = SOURCE === 'gemini' ? 'gemini-embedding-001' : (process.env.EMBED_MODEL || 'nomic-embed-text');
+const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
-const BATCH = 200, CONC = parseInt(process.env.CONC || '8', 10);
+const BATCH = 200, CONC = parseInt(process.env.CONC || (SOURCE === 'gemini' ? '8' : '3'), 10);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function embed(text, attempt = 0) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:embedContent?key=${GKEY}`,
+async function embedGemini(text, attempt = 0) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${GKEY}`,
     { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: `models/${MODEL}`, content: { parts: [{ text: text.slice(0, 4000) }] }, outputDimensionality: 768 }) });
-  if ((r.status === 429 || r.status === 503) && attempt < 6) { await sleep(2000 * (attempt + 1)); return embed(text, attempt + 1); }
+      body: JSON.stringify({ model: `models/gemini-embedding-001`, content: { parts: [{ text: text.slice(0, 4000) }] }, outputDimensionality: 768 }) });
+  if ((r.status === 429 || r.status === 503) && attempt < 6) { await sleep(2000 * (attempt + 1)); return embedGemini(text, attempt + 1); }
   if (!r.ok) throw new Error('embed ' + r.status);
   return (await r.json())?.embedding?.values;
 }
+async function embedOllama(text) {
+  const r = await fetch(OLLAMA, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, prompt: text.slice(0, 4000) }) });
+  if (!r.ok) throw new Error('embed ' + r.status);
+  return (await r.json()).embedding;
+}
+const embed = SOURCE === 'gemini' ? embedGemini : embedOllama;
 const profileText = (p) => [p.canonical_name, p.person_type, p.primary_state, p.primary_county,
   p.birth_year_estimate ? 'b.' + p.birth_year_estimate : null, p.sex].filter(Boolean).join(' | ');
 
 (async () => {
-  if (!GKEY) { console.error('GEMINI_API_KEY not set'); process.exit(2); }
+  if (SOURCE === 'gemini' && !GKEY) { console.error('GEMINI_API_KEY not set'); process.exit(2); }
   let lastId = 0, done = 0, skip = 0, err = 0, batches = 0;
   console.log(`embed-persons: model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
   for (;;) {

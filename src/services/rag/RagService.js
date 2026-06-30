@@ -9,9 +9,25 @@
  */
 const { callLLM } = require('../probate/probate-llm-extractor');
 
-const EMBED_MODEL = 'gemini-embedding-001';
+// Query must embed in the SAME space as the corpus. The bulk corpus is built with self-hosted
+// ollama nomic-embed-text (free, no daily cap) — so that is the default. EMBED_SOURCE=gemini stays
+// available for the gemini-embedding-001 space. OLLAMA_URL points at the host running ollama (the
+// Mini); a live render route would set it to the Mini's Tailscale address.
+const EMBED_SOURCE = process.env.EMBED_SOURCE || 'ollama';
+const EMBED_MODEL = EMBED_SOURCE === 'gemini'
+  ? 'gemini-embedding-001'
+  : (process.env.EMBED_MODEL || 'nomic-embed-text');
+const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';
 
 async function embedQuery(text, attempt = 0) {
+  if (EMBED_SOURCE === 'ollama') {
+    const r = await fetch(OLLAMA_URL, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: EMBED_MODEL, prompt: String(text).slice(0, 6000) }) });
+    if (!r.ok) throw new Error('embed ' + r.status);
+    const v = (await r.json())?.embedding;
+    if (!Array.isArray(v) || v.length !== 768) throw new Error('bad embedding');
+    return v;
+  }
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not set');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${key}`;
