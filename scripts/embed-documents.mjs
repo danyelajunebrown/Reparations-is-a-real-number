@@ -1,31 +1,48 @@
 #!/usr/bin/env node
 /**
- * Phase-2 (2a): embed person_documents OCR text into the pgvector `embeddings` table (M107) via the
- * Mini's local ollama (nomic-embed-text, 768-dim) — free, self-hosted, no rate limits. Idempotent:
- * skips docs already embedded for (content_kind='doc_ocr', model); content_hash stored so a future
- * pass can detect changed text. Run ON THE MINI (ollama is local there).
+ * Phase-2 (2a): embed person_documents OCR text into the pgvector `embeddings` table (M107).
+ * Two free sources (both 768-dim → identical schema):
+ *   EMBED_SOURCE=gemini  (default) — Gemini text-embedding-004 via GEMINI_API_KEY (free tier;
+ *        network-bound, fast; concurrent + 429 backoff). Run where the key + egress live (the Mini).
+ *   EMBED_SOURCE=ollama  — local nomic-embed-text (free/self-hosted, but CPU-bound on an Intel Mini
+ *        it is ~3/min → impractical for 75K; kept for an Apple-Silicon host / offline use).
+ * Idempotent: skips docs already embedded for (content_kind='doc_ocr', model); stores content_hash.
  *
- *   LIMIT=20 node scripts/embed-documents.mjs        # smoke test
- *   nohup node scripts/embed-documents.mjs &          # full ~75K drip
+ *   LIMIT=20 node scripts/embed-documents.mjs                 # smoke test (gemini)
+ *   nohup node scripts/embed-documents.mjs > /tmp/embed-docs.log 2>&1 &   # full ~75K
+ *   EMBED_SOURCE=ollama node scripts/embed-documents.mjs      # local model instead
  */
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';
-const MODEL = process.env.EMBED_MODEL || 'nomic-embed-text';
+const SOURCE = process.env.EMBED_SOURCE || 'gemini';
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
-const BATCH = 500;
+const BATCH = 200;
+const CONC = parseInt(process.env.CONC || (SOURCE === 'gemini' ? '8' : '1'), 10);
+const MODEL = SOURCE === 'gemini' ? 'gemini-embedding-001' : (process.env.EMBED_MODEL || 'nomic-embed-text');
+const GKEY = process.env.GEMINI_API_KEY;
+const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function embed(text) {
+async function embedGemini(text, attempt = 0) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${GKEY}`;
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'models/gemini-embedding-001', content: { parts: [{ text: text.slice(0, 8000) }] }, outputDimensionality: 768 }) });
+  if (r.status === 429 || r.status === 503) { if (attempt > 6) throw new Error('rate-limited'); await sleep(2000 * (attempt + 1)); return embedGemini(text, attempt + 1); }
+  if (!r.ok) throw new Error('gemini ' + r.status);
+  return (await r.json())?.embedding?.values;
+}
+async function embedOllama(text) {
   const r = await fetch(OLLAMA, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, prompt: text.slice(0, 6000) }) });
   if (!r.ok) throw new Error('ollama ' + r.status);
-  const j = await r.json();
-  return j.embedding;
+  return (await r.json()).embedding;
 }
+const embed = SOURCE === 'gemini' ? embedGemini : embedOllama;
 
 (async () => {
+  if (SOURCE === 'gemini' && !GKEY) { console.error('GEMINI_API_KEY not set'); process.exit(2); }
+  console.log(`embed-documents: source=${SOURCE} model=${MODEL} conc=${CONC} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
   let lastId = 0, done = 0, skip = 0, err = 0, batches = 0;
-  console.log(`embed-documents: model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
   for (;;) {
     const { rows } = await pool.query(
       `SELECT id, ocr_text FROM person_documents
@@ -33,30 +50,39 @@ async function embed(text) {
        ORDER BY id LIMIT $2`, [lastId, BATCH]);
     if (!rows.length) break;
     lastId = rows[rows.length - 1].id;
-    const existing = new Set((await pool.query(
+    const have = new Set((await pool.query(
       `SELECT subject_id FROM embeddings WHERE subject_table='person_documents' AND content_kind='doc_ocr' AND model=$1
        AND subject_id = ANY($2::text[])`, [MODEL, rows.map(r => String(r.id))])).rows.map(r => r.subject_id));
-    for (const d of rows) {
-      if (existing.has(String(d.id))) { skip++; continue; }
-      try {
-        const emb = await embed(d.ocr_text);
-        if (!Array.isArray(emb) || emb.length !== 768) { err++; continue; }
-        const vec = '[' + emb.join(',') + ']';
-        const hash = crypto.createHash('sha256').update(d.ocr_text).digest('hex');
-        await pool.query(
-          `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
-           VALUES ('person_documents', $1, 'doc_ocr', $2, $3::vector, $4)
-           ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`,
-          [String(d.id), MODEL, vec, hash]);
-        done++;
-      } catch (e) { err++; }
-      if (LIMIT && done >= LIMIT) break;
+    const todo = rows.filter(d => !have.has(String(d.id)));
+    skip += rows.length - todo.length;
+
+    // concurrent embed
+    const results = [];
+    for (let i = 0; i < todo.length; i += CONC) {
+      const chunk = todo.slice(i, i + CONC);
+      const embs = await Promise.all(chunk.map(async d => {
+        try { const e = await embed(d.ocr_text); return (Array.isArray(e) && e.length === 768) ? { d, e } : null; }
+        catch { return null; }
+      }));
+      for (const x of embs) { if (x) results.push(x); else err++; }
+      if (LIMIT && done + results.length >= LIMIT) break;
+    }
+    // bulk insert
+    if (results.length) {
+      const sids = [], models = [], vecs = [], hashes = [];
+      for (const { d, e } of results) { sids.push(String(d.id)); models.push(MODEL); vecs.push('[' + e.join(',') + ']'); hashes.push(crypto.createHash('sha256').update(d.ocr_text).digest('hex')); }
+      await pool.query(
+        `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
+         SELECT 'person_documents', u.sid, 'doc_ocr', u.m, u.v::vector, u.h
+           FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS u(sid, m, v, h)
+         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, models, vecs, hashes]);
+      done += results.length;
     }
     batches++;
-    if (batches % 4 === 0) console.log(`  ...id<=${lastId} embedded=${done} skipped=${skip} err=${err}`);
+    if (batches % 3 === 0) console.log(`  ...id<=${lastId} embedded=${done} skipped=${skip} err=${err}`);
     if (LIMIT && done >= LIMIT) break;
   }
   const tot = (await pool.query(`SELECT count(*) c FROM embeddings WHERE content_kind='doc_ocr' AND model=$1`, [MODEL])).rows[0].c;
-  console.log(`done: embedded ${done}, skipped ${skip}, err ${err}. total doc_ocr embeddings: ${(+tot).toLocaleString()}`);
+  console.log(`done: embedded ${done}, skipped ${skip}, err ${err}. total doc_ocr(${MODEL}): ${(+tot).toLocaleString()}`);
   await pool.end();
 })();
