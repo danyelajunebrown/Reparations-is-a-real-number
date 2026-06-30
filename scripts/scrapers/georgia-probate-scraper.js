@@ -847,10 +847,10 @@ async function processImage(countyObj, roll, imageNumber, currentArkId, isDryRun
             log('    Enslaved:', parsedData.enslavedPersons.map(e => `${e.name} [to: ${e.bequestRecipientName || 'unknown'}]`).join(', ') || 'none');
         }
         // Still record progress in dry-run mode so status is visible
-        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId, countyObj.county);
     } else {
         // status === 'failed'
-        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId, countyObj.county);
     }
 }
 
@@ -935,7 +935,7 @@ async function writeToDbAndS3(
         if (!pdResult.rows[0]) {
             await client.query('COMMIT');
             log(`  person_documents: duplicate for image ${imageNumber}, skipping.`);
-            await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, null, s3Key, roll.groupId);
+            await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, null, s3Key, roll.groupId, county);
             return;
         }
         const personDocumentId = pdResult.rows[0].id;
@@ -1104,21 +1104,21 @@ async function writeToDbAndS3(
         }
 
         await client.query('COMMIT');
-        await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, personDocumentId, s3Key, roll.groupId);
+        await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, personDocumentId, s3Key, roll.groupId, county);
     } catch (e) {
         await client.query('ROLLBACK');
         log(`  ERROR writing image ${imageNumber}: ${e.message}`);
-        await updateProgress(imageNumber, baseArkId, 'failed', e.message, recordType, testatorName, enslavedCount, null, null, roll.groupId);
+        await updateProgress(imageNumber, baseArkId, 'failed', e.message, recordType, testatorName, enslavedCount, null, null, roll.groupId, county);
     } finally {
         client.release();
     }
 }
 
-// --- Progress tracking (updated for roll_group_id) ---
+// --- Progress tracking ---
 async function updateProgress(
     imageNumber, arkId, status, errorText = null,
     recordType = null, testatorName = null, enslavedCount = 0,
-    personDocumentId = null, s3Key = null, rollGroupId = null
+    personDocumentId = null, s3Key = null, rollGroupId = null, county = null
 ) {
     const client = await pool.connect();
     try {
@@ -1140,8 +1140,7 @@ async function updateProgress(
                 processed_at       = NOW();
         `, [
             COLLECTION_ID,
-            // county and state are not available here without extra params — use defaults
-            rollGroupId || 'unknown', STATE,
+            county || 'unknown', STATE,
             imageNumber, arkId, rollGroupId, status, recordType,
             testatorName, enslavedCount, personDocumentId, s3Key, errorText
         ]);
