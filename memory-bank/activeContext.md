@@ -23,9 +23,17 @@ caught: `person/canonical_persons/487165` showed a **FamilySearch login wall as 
   PASS (0 critical).** Non-blocking findings surfaced: **174,732 named canonicals with 0 blocking keys**
   (orphaned from the dedup/resolve pool — silo at scale, fix = blocking-key backfill across all
   canonicals like reconcile-climb did for 992) and **316,938 FS-only docs** (the #2 archiving gap).
-- **NEXT:** (a) optional pre-deploy de-silo: blocking-key backfill for the 174,732 orphans; (b) the
-  merge/deploy itself (branch → main + render backend + frontend) — gate is GREEN, awaiting user go;
-  (c) schedule the harness on a cron (continuous) once the branch is on the Mini; (d) Phase-2 RAG.
+- **#3 DONE (de-silo at scale):** `scripts/backfill-orphan-canonical-keys.mjs` keyed the 174,732
+  orphaned canonicals (81% first-name-only Hall/LA/SV imports the surname-only populator couldn't key)
+  with the `_queryKeys` scheme (nmsx/nmsxb + surname keys, cap 64) → **174,732 → 8 remaining** (the 8
+  have no usable name). They now answer resolve()/find_person_match.
+- **#2 DONE (continuous harness):** made `retrieval-health-audit.mjs` self-contained (inline DOC_PROP
+  fallback, robust S3 via objectExists, self-contained ntfy on critical/high), deployed to the Mini,
+  and added a **cron `0 */6 * * *`** (`--s3 --s3-sample 300`, logs `/tmp/retrieval-health.log`, ntfy
+  via OPS_NOTIFY_WEBHOOK). Verified on the Mini: gate sound, S3 200/200, ledger written, ntfy sent.
+- **#1 NEXT (the merge/deploy):** branch → main + render backend auto-deploy + frontend from branch.
+  Gate is GREEN. This is the 94% public-search visibility flip going LIVE — awaiting user go.
+- **Phase-2 (later):** pgvector RAG + retrieval-feedback loop.
 
 ## Session 67 — De-siloing the Person Layer: Audit + Unified PersonService (2026-06-25→26)
 

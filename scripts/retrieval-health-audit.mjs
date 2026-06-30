@@ -35,8 +35,15 @@ import pg from 'pg';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const require = createRequire(import.meta.url);
-const PersonService = require('../src/services/PersonService');
-const SO = PersonService.DOC_PROP_SLAVEOWNER, EN = PersonService.DOC_PROP_ENSLAVED;
+// Proposition→doc-type lists: prefer PersonService's (single source of truth) when present; fall back
+// to an inline copy so this harness runs standalone on hosts with an older checkout (e.g. the Mini
+// cron). Keep in sync with PersonService.DOC_PROP_* if those change.
+let SO, EN;
+try { const PS = require('../src/services/PersonService'); SO = PS.DOC_PROP_SLAVEOWNER; EN = PS.DOC_PROP_ENSLAVED; } catch { /* older checkout */ }
+if (!SO || !EN) {
+  SO = ['census_slave_schedule','slave_schedule','census','will','will_testament','estate_inventory','estate_account','guardian_account','compensated_emancipation_petition','compensation_petition','emancipation_petition','plantation_record','bill_of_sale','slave_manifest','tax_record','court_record','insurance_register','government_disclosure','corporate_disclosure','correspondence'];
+  EN = ['will','will_testament','estate_inventory','estate_account','compensated_emancipation_petition','emancipation_petition','plantation_record','freedmens_bank','certificate_of_freedom','slave_narrative','freedman_narrative','narrative','evacuation_roll','enslaved_census_brazil','enslaved_census','probate_enslaved_records','bill_of_sale','slave_manifest','correspondence'];
+}
 
 const DRY = process.argv.includes('--dry');
 const DO_S3 = process.argv.includes('--s3');
@@ -104,14 +111,23 @@ async function dbCheck(name, severity, subjectType, sql, params = []) {
       const sample = (await pool.query(
         `SELECT id, s3_key FROM person_documents WHERE s3_key IS NOT NULL AND s3_key<>'' ORDER BY random() LIMIT $1`, [S3_SAMPLE])).rows;
       let checked = 0, broken = 0, skipped = 0;
-      let S3Service; try { S3Service = require('../src/services/storage/S3Service'); } catch { S3Service = null; }
-      for (const d of sample) {
+      let S3; try { S3 = require('../src/services/storage/S3Service'); } catch { S3 = null; }
+      if (S3 && typeof S3.init === 'function') { try { await S3.init(); } catch { /* noop */ } }
+      // present(key): true | false | null(unknown). Prefer objectExists (direct HEAD); else presign+HEAD.
+      const present = async (key) => {
+        if (!S3) return null;
         try {
-          const url = await (S3Service.getSignedUrl ? S3Service.getSignedUrl(d.s3_key, 60) : S3Service.getPresignedUrl(d.s3_key, 60));
-          const resp = await fetch(url, { method: 'HEAD' });
-          checked++;
-          if (!resp.ok) { broken++; note('person_document', d.id, 'doc_s3_unfetchable', 'fail', 'critical', { s3_key: d.s3_key, http: resp.status }); }
-        } catch (e) { skipped++; }
+          if (typeof S3.objectExists === 'function') return await S3.objectExists(key);
+          const getUrl = S3.getViewUrl || S3.getSignedUrl || S3.getPresignedUrl;
+          if (getUrl) { const u = await getUrl.call(S3, key, 60); const r = await fetch(u, { method: 'HEAD' }); return r.ok; }
+        } catch { return null; }
+        return null;
+      };
+      for (const d of sample) {
+        const ok = await present(d.s3_key);
+        if (ok === null) { skipped++; continue; }
+        checked++;
+        if (!ok) { broken++; note('person_document', d.id, 'doc_s3_unfetchable', 'fail', 'critical', { s3_key: d.s3_key }); }
       }
       summary.doc_s3_unfetchable = { severity: 'critical', count: broken, checked, skipped, sampleOf: S3_SAMPLE };
       console.log(`  ${broken === 0 ? 'OK  ' : 'FAIL'} doc_s3_unfetchable (critical): ${broken} broken of ${checked} checked (${skipped} skipped/no-network)`);
@@ -127,6 +143,14 @@ async function dbCheck(name, severity, subjectType, sql, params = []) {
     console.log(`\nCRITICAL failures: ${critical.toLocaleString()} | HIGH: ${high.toLocaleString()}`);
     const deployOk = critical === 0;
     console.log(`DEPLOY GATE: ${deployOk ? 'PASS (no critical retrieval failures)' : 'BLOCK (critical retrieval failures present)'}`);
+
+    // ntfy (self-contained) — alert when the continuous cron finds critical/high failures.
+    const hook = process.env.OPS_NOTIFY_WEBHOOK;
+    if (hook && (critical > 0 || high > 0)) {
+      const detail = Object.entries(summary).filter(([, v]) => v.count > 0).map(([k, v]) => `${k}=${v.count}`).join(' ');
+      const msg = `retrieval-health: ${critical} CRITICAL, ${high} high | gate=${deployOk ? 'PASS' : 'BLOCK'} | ${detail}`;
+      try { await fetch(hook, { method: 'POST', body: msg.slice(0, 400) }); console.log('  (ntfy alert sent)'); } catch { /* noop */ }
+    }
 
     if (!DRY) {
       for (let i = 0; i < rows.length; i += 1000) {
