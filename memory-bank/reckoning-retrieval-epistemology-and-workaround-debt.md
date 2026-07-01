@@ -91,6 +91,17 @@ candidates feed the `/review` queue. **BOUNDARY (audit rule):** RAG/inference mu
 computation or any aggregated number — it may assist a HUMAN reviewer, but deterministic code + citations
 compute the instrument. Keep RAG on the read/exploration side of the line.
 
+## Debt-registry entry #2 — the PM2 "worker" has been silently broken (found Jul 1)
+
+`src/services/scraping/Orchestrator.js:16` requires `./autonomous-web-scraper`, a file that **does not
+exist and was NEVER tracked in git**. So Orchestrator has never been `require()`-able, and the PM2 `worker`
+(`scripts/scrapers/continuous-scraper.js` requires it at :11, instantiates at :18) crashes on startup —
+undetected. This reclassifies the "live worker bypass writer" (door A2) as effectively DEAD. Root cause is
+the same fail-quiet pattern: no startup assertion, no health signal, so a crashing worker is invisible.
+Fixes: (a) fail-loud startup + worker health in the ops endpoint (part of C); (b) decide whether the worker
+is wanted — if yes, restore/rewrite `autonomous-web-scraper`; if no, delete Orchestrator + continuous-scraper
+so the dead path can't mislead future audits. (A2's routing edit is committed regardless — future-proof.)
+
 ## The meta-rule to adopt
 
 **When you catch yourself building a corrective/workaround layer, stop and log it as debt with its root
