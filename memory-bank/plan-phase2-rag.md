@@ -55,10 +55,12 @@ appraised values" → slave-property inventories, sims 0.68–0.74; (2) full gro
 child, $10.00 (Doc 184706, 184705)"*, citations trace to rows, generation provider=gemini (LLM free tier is
 separate from the embed cap). Doc drip live on Mini pid (relaunch w/ `EMBED_SOURCE=ollama` — the env var is
 REQUIRED or it silently falls back to the 429-capped gemini).
-**OPEN — live `/api/rag/query` topology:** query must embed in nomic space → needs an ollama. render has no
-ollama and can't reach the Mini's Tailscale localhost; can't mix gemini-query with nomic-corpus (space
-mismatch). Options: run the RAG route on the Mini's Express (has ollama + Tailscale) and proxy, expose
-ollama, or host a free embedding endpoint. USER DECISION before wiring the public route. CLI works today.
+**DEFERRED (user, Jun 30) — live `/api/rag/query` route:** revisit in ~1 week once the corpus is populated
+(wiring a public endpoint over a ~2%-full index is premature). RAG works TODAY via CLI on the Mini
+(`EMBED_SOURCE=ollama node scripts/rag-query.cjs "<question>"`). When we do wire it: query must embed in
+nomic space → needs an ollama; render is NOT on the tailnet, so the path is Tailscale Funnel — either
+expose the Mini's ollama (set render `OLLAMA_URL`, +header auth) or Funnel the RAG route off the Mini's own
+Express (has local ollama; no raw-ollama exposure). No mixing gemini-query with nomic-corpus (space mismatch).
 
 ## STATUS (Jun 30)
 - **DECISIONS (user):** v1 corpus = **doc_ocr** (75,479). Embedding source: started Mini/ollama, but
