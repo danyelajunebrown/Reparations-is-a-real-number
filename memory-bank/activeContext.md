@@ -4,6 +4,26 @@ _Last updated: 2026-06-30 (Session 69 — climb-as-gated-lead-source + contamina
 
 ---
 
+## A/B/C refactor merged + identity spine completed (2026-07-01, branch audit/probate-classifier)
+Continuation of the reckoning ([[reckoning-retrieval-epistemology-and-workaround-debt]]). Executed A→B→C:
+- **A — PersonService is now the ONE door: ALL 7/7 live bypass writers routed** (ExtractionWorker,
+  Orchestrator, NameResolver, wills.js, review.js, contribute.js, and **door 7 the climb** — closed Jul 1,
+  commit 007141de3, inline blocking keys via a neon-`sql` adapter). No identity born a silo anymore.
+- **B — deploy/versioning:** frontend bakes git SHA + `version.json` + `VersionGate` stale-client banner
+  (deployed to gh-pages-react); "Mini runs from git not scp" → [[standard-deployment-and-versioning]].
+- **C — fail-loud:** embed runners warn on implicit EMBED_SOURCE + preflight-abort on a dead/capped provider.
+- **Merged to main:** PR #94 (Phase 2 RAG) + PR #93 (A/B/C). Render backend auto-deployed + verified healthy.
+  ADMIN_TOKEN rotated (Render + local .env). Frontend live.
+- **IDENTITY SPINE (the D item) — foundation DONE.** The old `identity_fingerprint` plan is SUPERSEDED by
+  blocking keys. Built `scripts/backfill-unconfirmed-blocking-keys.mjs` (retry + START_ID resume) →
+  **lead keying 0.13% → 99.9%** (2.43M leads, ~5.0M keys). `person_blocking_keys` = **10.88M rows**;
+  whole ~3.25M-subject pool now dedup-visible. **Dedup dry-run finding:** naive key-clustering is NOT a
+  dedup tool — clusters are dominated by DISTINCT same-name people (common first names, French compound
+  given names, `no name` placeholders); true duplication is LOW; Biscoe holds. See
+  [[plan-identity-resolution-completion]]. NEXT (in progress): re-run the SCORED resolver over newly-keyed
+  leads → real candidates into /review; extend placeholder-name exclusion to canonicals; deprecate
+  identity_fingerprint. Debt registry parks: enslaved_individuals migrate-vs-deprecate, broken PM2 worker.
+
 ## Phase 2 RAG live + RECKONING on workaround-debt (2026-06-30, branch audit/probate-classifier)
 Parallel thread to Session 69. Two things:
 - **Phase 2 RAG validated + self-hosted.** Switched the embedding space from Gemini (hard 1,000/day
