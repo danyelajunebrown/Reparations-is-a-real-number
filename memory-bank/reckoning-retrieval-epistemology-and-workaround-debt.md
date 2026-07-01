@@ -102,6 +102,25 @@ Fixes: (a) fail-loud startup + worker health in the ops endpoint (part of C); (b
 is wanted — if yes, restore/rewrite `autonomous-web-scraper`; if no, delete Orchestrator + continuous-scraper
 so the dead path can't mislead future audits. (A2's routing edit is committed regardless — future-proof.)
 
+## Debt-registry entry #3 — `enslaved_individuals` legacy silo + real `individuals` bombs (Jul 1)
+
+Found while routing door A6 (`contribute.js` review-queue approve):
+- **`enslaved_individuals` (18,272 rows) is a legacy standalone table**, NOT in PersonService's unified
+  pool (SUBJECT_TABLES = canonical/unconfirmed/PAST/Hall). Approvals write it directly. A6 now ALSO
+  registers the person via `findOrCreateLead` (additive de-silo) so they're discoverable — but the real
+  question is a DESIGN DECISION (user): migrate `enslaved_individuals` into the unified model (canonical/
+  lead) and make it a read-view, or formally deprecate the approve→enslaved_individuals path. Half-state
+  (dual-write) is transitional, not the destination.
+- **`enslaved_by_individual_id` (varchar, NO FK) references the dropped `individuals` table** — writing
+  `context.owner_id` there is harmless-but-stale dead data (won't throw). Left as-is (understand-before-
+  delete); should be re-pointed to a canonical owner ref or dropped in the migration.
+- **The genuine `individuals` latent BOMBS are the DORMANT writers** that INSERT the dropped table itself:
+  `Orchestrator.addToConfirmedDB` (:423), `EntityManager` (:110/:171/:309), `LLMAssistant` (:777),
+  `scripts/promote-primary-sources.js` (:201). They have no live callers now, but will THROW the instant
+  one is wired. Action: delete or guard this dead code (ties to the A2 Orchestrator dead-worker finding).
+- **Latent no-op bug (noted, not fixed):** `contribute.js` `review-queue/approve-all` filters
+  `queue_status='pending_review'` but pending rows use `'pending'` → matches zero.
+
 ## The meta-rule to adopt
 
 **When you catch yourself building a corrective/workaround layer, stop and log it as debt with its root
