@@ -1,5 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, NavLink, Link, useLocation } from 'react-router-dom';
+import VersionGate, { BUILD_SHA } from './components/VersionGate.jsx';
 
 // Backend root (Render). Used for links to non-SPA pages (review.html, connect.html).
 // In dev: empty string → Vite proxy handles /api and /review paths on localhost:3000.
@@ -26,6 +27,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <VersionGate />
       <header className="app-header">
         {/* On the home page, the title lives in the page body (Google-style).
             On all other pages, show the full title + subtitle in the header. */}
@@ -92,6 +94,13 @@ export default function App() {
             Source on GitHub
           </a>
           {' — '}Every line open for collaboration.
+        </div>
+        <div
+          className="build-sha"
+          title="Deployed build (git SHA) — quote this when reporting an issue"
+          style={{ color: 'var(--dim)', fontFamily: 'var(--font-mono, monospace)', fontSize: '0.75rem', marginTop: 4 }}
+        >
+          build {BUILD_SHA}
         </div>
       </footer>
     </div>
