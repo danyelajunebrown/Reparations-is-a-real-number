@@ -35,6 +35,18 @@ function parseName(full) {
 }
 const cap = (k) => (k.length > 64 ? k.slice(0, 64) : k);
 
+// Retry transient Neon network drops (ETIMEDOUT/ECONNRESET) so a long run survives a blip.
+async function q(text, params, tries = 5) {
+  for (let i = 0; ; i++) {
+    try { return await pool.query(text, params); }
+    catch (e) {
+      if (i >= tries || !/ETIMEDOUT|ECONNRESET|socket|termination|timeout|Connection terminated/i.test(e.message)) throw e;
+      console.warn(`  (transient: ${e.message} — retry ${i + 1}/${tries})`);
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
+}
+
 // Shared WHERE so the count and the batch loop select exactly the same population.
 const FILTER = `full_name IS NOT NULL AND length(trim(full_name)) > 1
   AND (status IS NULL OR status NOT IN ('promoted','merged'))
@@ -44,14 +56,16 @@ const FILTER = `full_name IS NOT NULL AND length(trim(full_name)) > 1
   try {
     console.log(`=== backfill-unconfirmed-blocking-keys ${APPLY ? '(APPLY)' : '(DRY-RUN)'} ===`);
     // Full magnitude up front so a dry-run reports the real scale, not just a sample.
-    const todo = (await pool.query(
+    const todo = (await q(
       `SELECT count(*) c FROM unconfirmed_persons up WHERE ${FILTER}
          AND NOT EXISTS (SELECT 1 FROM person_blocking_keys k WHERE k.subject_table='unconfirmed_persons' AND k.subject_id=up.lead_id)`)).rows[0].c;
     console.log(`unkeyed leads to process: ${(+todo).toLocaleString()}`);
 
-    let lastId = 0, people = 0, keys = 0, batches = 0;
+    // START_ID skips an already-keyed prefix so a resume doesn't re-scan millions of NOT EXISTS rows.
+    let lastId = parseInt(process.env.START_ID || '0', 10), people = 0, keys = 0, batches = 0;
+    if (lastId) console.log(`resuming from lead_id > ${lastId.toLocaleString()}`);
     for (;;) {
-      const { rows } = await pool.query(`
+      const { rows } = await q(`
         SELECT up.lead_id AS id, up.full_name AS name, up.gender AS sex, up.birth_year
         FROM unconfirmed_persons up
         WHERE ${FILTER} AND up.lead_id > $1
@@ -70,7 +84,7 @@ const FILTER = `full_name IS NOT NULL AND length(trim(full_name)) > 1
       }
       const mpOf = {};
       if (distinct.size) {
-        for (const c of (await pool.query(`SELECT s, metaphone(s,8) mp FROM unnest($1::text[]) s`, [[...distinct]])).rows) mpOf[c.s] = c.mp;
+        for (const c of (await q(`SELECT s, metaphone(s,8) mp FROM unnest($1::text[]) s`, [[...distinct]])).rows) mpOf[c.s] = c.mp;
       }
 
       const sid = [], kt = [], kv = [];
@@ -86,7 +100,7 @@ const FILTER = `full_name IS NOT NULL AND length(trim(full_name)) > 1
       }
       keys += kv.length;
       if (APPLY && kv.length) {
-        await pool.query(`
+        await q(`
           INSERT INTO person_blocking_keys (subject_table, subject_id, key_type, key_value)
           SELECT 'unconfirmed_persons', u.p, u.kt, u.kv FROM unnest($1::int[], $2::text[], $3::text[]) AS u(p, kt, kv)
           ON CONFLICT (subject_table, subject_id, key_value) DO NOTHING`, [sid, kt, kv]);
