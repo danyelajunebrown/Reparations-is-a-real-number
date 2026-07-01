@@ -42,7 +42,22 @@ const profileText = (p) => [p.canonical_name, p.person_type, p.primary_state, p.
 (async () => {
   if (SOURCE === 'gemini' && !GKEY) { console.error('GEMINI_API_KEY not set'); process.exit(2); }
   let lastId = 0, done = 0, skip = 0, err = 0, batches = 0;
-  console.log(`embed-persons: model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
+  console.log(`embed-persons: source=${SOURCE} model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
+  // Fail-loud config (reckoning item C): warn on an implicit source default + preflight one embed so a
+  // wrong/unreachable provider aborts with a clear message instead of silently producing zero progress
+  // (or an unqueryable second embedding space).
+  if (!process.env.EMBED_SOURCE) {
+    console.warn(`⚠ EMBED_SOURCE not set — defaulting to '${SOURCE}'.` +
+      (SOURCE === 'gemini' ? ' NOTE: gemini free tier caps at 1,000 embeds/DAY; set EMBED_SOURCE=ollama for the bulk corpus.' : ''));
+  }
+  try {
+    const v = await embed('preflight');
+    if (!Array.isArray(v) || v.length !== 768) throw new Error(`bad embedding (dim ${Array.isArray(v) ? v.length : 'n/a'})`);
+  } catch (e) {
+    console.error(`FATAL preflight: source='${SOURCE}' model='${MODEL}' failed a test embed: ${e.message}.` +
+      (SOURCE === 'gemini' ? ' (gemini rate-limited/capped? set EMBED_SOURCE=ollama)' : ` (is ollama up at ${OLLAMA}?)`));
+    process.exit(3);
+  }
   for (;;) {
     const { rows } = await pool.query(
       `SELECT id, canonical_name, person_type, primary_state, primary_county, birth_year_estimate, sex

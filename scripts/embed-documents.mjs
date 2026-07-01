@@ -42,9 +42,30 @@ async function embedOllama(text) {
 }
 const embed = SOURCE === 'gemini' ? embedGemini : embedOllama;
 
+// Fail-loud config (reckoning item C): the silent EMBED_SOURCE fallback masqueraded as a "stall"
+// twice on Jun 30 (dropped env var -> capped Gemini -> zero progress). Warn on an implicit default,
+// then PREFLIGHT one embed and abort with a clear message if the resolved provider is unreachable/
+// rate-limited — instead of grinding to no effect. The corpus space is model-specific, so a wrong
+// source silently produces an unqueryable second space; better to stop now.
+async function preflight() {
+  if (!process.env.EMBED_SOURCE) {
+    console.warn(`⚠ EMBED_SOURCE not set — defaulting to '${SOURCE}'.` +
+      (SOURCE === 'gemini' ? ' NOTE: gemini free tier caps at 1,000 embeds/DAY; set EMBED_SOURCE=ollama for the bulk corpus.' : ''));
+  }
+  try {
+    const v = await embed('preflight');
+    if (!Array.isArray(v) || v.length !== 768) throw new Error(`bad embedding (dim ${Array.isArray(v) ? v.length : 'n/a'})`);
+  } catch (e) {
+    console.error(`FATAL preflight: source='${SOURCE}' model='${MODEL}' failed a test embed: ${e.message}.` +
+      (SOURCE === 'gemini' ? ' (gemini rate-limited/capped? set EMBED_SOURCE=ollama)' : ` (is ollama up at ${OLLAMA}?)`));
+    process.exit(3);
+  }
+}
+
 (async () => {
   if (SOURCE === 'gemini' && !GKEY) { console.error('GEMINI_API_KEY not set'); process.exit(2); }
   console.log(`embed-documents: source=${SOURCE} model=${MODEL} conc=${CONC} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
+  await preflight();
   let lastId = 0, done = 0, skip = 0, err = 0, batches = 0;
   for (;;) {
     const { rows } = await pool.query(
