@@ -17,6 +17,7 @@ const { v4: uuidv4 } = require('uuid');
 const OCRProcessor = require('../document/OCRProcessor');
 const NarrativeExtractor = require('./NarrativeExtractor');
 const TableExtractor = require('./TableExtractor');
+const PersonService = require('../PersonService');
 const logger = require('../../utils/logger');
 
 // Playwright is optional - may not be installed on all systems
@@ -45,6 +46,10 @@ class ExtractionWorker {
         this.ocrProcessor = new OCRProcessor();
         this.narrativeExtractor = new NarrativeExtractor();
         this.tableExtractor = new TableExtractor();
+        // Route every person-lead write through the single PersonService gate: dedup-before-insert
+        // (Biscoe-safe) + blocking keys, so extracted leads are never born a silo (see
+        // memory-bank/reckoning-retrieval-epistemology-and-workaround-debt.md, debt registry).
+        this.personService = new PersonService(database);
 
         // Debug log buffer - stores detailed diagnostic info
         this.debugLog = [];
@@ -1525,52 +1530,34 @@ class ExtractionWorker {
                     }
                     const contextText = contextParts.join('; ') || row.rawText || null;
 
-                    // Insert enslaved person record
-                    const result = await this.db.query(`
-                        INSERT INTO unconfirmed_persons (
-                            full_name,
-                            person_type,
-                            birth_year,
-                            death_year,
-                            gender,
-                            source_url,
-                            source_page_title,
-                            extraction_method,
-                            context_text,
-                            confidence_score,
-                            relationships,
-                            status,
-                            source_type,
-                            created_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-                        RETURNING lead_id
-                    `, [
-                        enslavedName,
-                        recordType,
+                    // Route through the PersonService gate (dedup-before-insert + blocking keys).
+                    const res = await this.personService.findOrCreateLead({
+                        name: enslavedName,
+                        personType: recordType,
                         birthYear,
                         deathYear,
-                        gender,
+                        sex: gender,
                         sourceUrl,
-                        null, // source_page_title - could be extracted from metadata
-                        isSuspected ? 'narrative_count' : 'ocr_extraction',
-                        contextText,
-                        parseFloat(confidence.toFixed(2)),
-                        JSON.stringify(relationships),
-                        'pending',
-                        sourceType
-                    ]);
+                        sourceType,
+                        extractionMethod: isSuspected ? 'narrative_count' : 'ocr_extraction',
+                        confidence: parseFloat(confidence.toFixed(2)),
+                        context: contextText,
+                        relationships,
+                    });
 
                     inserted.push({
                         type: recordType,
                         name: enslavedName,
-                        leadId: result.rows[0]?.lead_id
+                        leadId: res.ref?.subject_id,
+                        action: res.action
                     });
 
-                    this.debug('PERSIST_ENSLAVED', 'Inserted enslaved person record', {
+                    this.debug('PERSIST_ENSLAVED', 'Persisted enslaved person lead', {
                         name: enslavedName,
                         isSuspected,
                         owner: ownerName,
-                        leadId: result.rows[0]?.lead_id
+                        leadId: res.ref?.subject_id,
+                        action: res.action
                     });
                 }
 
@@ -1587,40 +1574,28 @@ class ExtractionWorker {
                     }
                     const contextText = contextParts.join('; ') || row.rawText || null;
 
-                    // Insert slaveholder record
-                    const result = await this.db.query(`
-                        INSERT INTO unconfirmed_persons (
-                            full_name,
-                            person_type,
-                            source_url,
-                            extraction_method,
-                            context_text,
-                            confidence_score,
-                            status,
-                            source_type,
-                            created_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-                        RETURNING lead_id
-                    `, [
-                        ownerName,
-                        'slaveholder',
+                    // Route through the PersonService gate (dedup-before-insert + blocking keys).
+                    const res = await this.personService.findOrCreateLead({
+                        name: ownerName,
+                        personType: 'slaveholder',
                         sourceUrl,
-                        'narrative_extraction',
-                        contextText,
-                        parseFloat(confidence.toFixed(2)),
-                        'pending',
-                        sourceType
-                    ]);
+                        sourceType,
+                        extractionMethod: 'narrative_extraction',
+                        confidence: parseFloat(confidence.toFixed(2)),
+                        context: contextText,
+                    });
 
                     inserted.push({
                         type: 'slaveholder',
                         name: ownerName,
-                        leadId: result.rows[0]?.lead_id
+                        leadId: res.ref?.subject_id,
+                        action: res.action
                     });
 
-                    this.debug('PERSIST_SLAVEHOLDER', 'Inserted slaveholder record', {
+                    this.debug('PERSIST_SLAVEHOLDER', 'Persisted slaveholder lead', {
                         name: ownerName,
-                        leadId: result.rows[0]?.lead_id
+                        leadId: res.ref?.subject_id,
+                        action: res.action
                     });
                 }
 
