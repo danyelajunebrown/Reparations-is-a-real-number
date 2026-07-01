@@ -144,6 +144,18 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
+// ── View a document via a PRESIGNED S3 url (bucket is private; raw s3_url 403s) ────────
+async function viewPdf(ev, pdId) {
+  if (ev) ev.preventDefault();
+  try {
+    const r = await fetch('/api/documents/person-doc/' + pdId + '/access');
+    const j = await r.json();
+    if (j && j.success && j.viewUrl) { window.open(j.viewUrl, '_blank', 'noopener'); }
+    else { alert('Could not open document: ' + ((j && j.error) || 'no presignable file for this record')); }
+  } catch (e) { alert('Error opening document: ' + e.message); }
+  return false;
+}
+
 // ── Generic fetch for public will routes ──────────────────────────────────────
 async function willApi(path, opts = {}) {
   const r = await fetch('/api/wills' + path, {
@@ -241,8 +253,10 @@ function renderWillItem(item) {
       title="id=${c.id}">${escapeHtml(label)}</span>`;
   }).join('');
 
-  const s3Url = item.s3_url || '';
-  const pdfLink = s3Url ? `<a href="${escapeHtml(s3Url)}" target="_blank" rel="noopener" style="color:#60a5fa; font-size:12px;">📄 View PDF</a>` : '';
+  // View PDF must use a PRESIGNED url — the S3 bucket is private, so linking the raw s3_url 403s.
+  // viewPdf() fetches /api/documents/person-doc/:id/access (presigned) and opens it.
+  const pdId = item.person_doc_id;
+  const pdfLink = pdId ? `<a href="#" onclick="viewPdf(event, ${pdId})" style="color:#60a5fa; font-size:12px;">📄 View PDF</a>` : '';
 
   return `<div class="item will-item" id="${id}" data-pdid="${item.person_doc_id}" data-extid="${item.extraction_id || ''}">
     <h3>${escapeHtml(item.title || item.name_as_appears || '(untitled)')}<span class="badge-amber">unlinked</span></h3>

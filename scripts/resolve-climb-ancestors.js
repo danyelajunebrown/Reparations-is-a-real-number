@@ -39,6 +39,12 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 
 const sql = neon(process.env.DATABASE_URL);
+// De-silo (door 7): write blocking keys for the canonicals this climb-resolver mints so they're
+// discoverable in the unified pool (PersonService.resolve / find_person_match) instead of born a silo
+// — the same fix doors 3–5 use, now inline at write time (replacing the after-the-fact reconcile).
+// Thin adapter maps the neon `sql` tagged client to PersonService's db.query(text,params)->{rows} shape.
+const PersonService = require('../src/services/PersonService');
+const personService = new PersonService({ query: async (t, p) => ({ rows: await sql.query(t, p) }) });
 const SID = process.env.SID || 'f4a5b049-30dc-437f-8d55-fe5d68d42115';
 const FS_ID = process.env.FS_ID || 'P4RF-PFQ';
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
@@ -232,6 +238,9 @@ async function upsert(fsId, p, known) {
     INSERT INTO person_external_ids (canonical_person_id, id_system, external_id, external_url, confidence, discovered_by, session_id)
     VALUES (${cid}, 'familysearch', ${fsId}, ${PERSON_URL + fsId}, 0.90, 'climb_name_resolver', ${SID}::uuid)
     ON CONFLICT (id_system, external_id) DO NOTHING`;
+  // Close the silo: make this canonical discoverable in the unified matching pool.
+  try { await personService._writeBlockingKeys('canonical_persons', cid, { name: p.name, birthYear: p.birth_year }); }
+  catch (e) { /* non-fatal — reconcile-climb-minted.js sweep remains the net */ }
   return 'inserted';
 }
 

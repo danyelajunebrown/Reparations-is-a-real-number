@@ -3,6 +3,46 @@
 _Scoping document, May 21 2026. Written off the back of the canonical-person
 source-document audit._
 
+## STATUS UPDATE (Jul 1 2026) — this plan is largely SUPERSEDED by blocking keys
+
+The `identity_fingerprint` approach below was overtaken by `person_blocking_keys` + `PersonService.resolve`
+(built after this doc). The spine is now essentially complete via KEYS, not the fingerprint:
+- **canonical_persons: 97.9% keyed** (663,889/678,412); **unconfirmed_persons: 99.9% keyed**
+  (2,426,030/2,428,450 — the lead-side backfill `scripts/backfill-unconfirmed-blocking-keys.mjs`, Jul 1,
+  wrote ~5.0M keys); SlaveVoyages-PAST 165,715. `person_blocking_keys` total **10.88M rows**.
+- `identity_fingerprint` is at **0.2%** and is now **dead weight — deprecate, do not fix** (the tiered
+  formula below is unnecessary; the blocking-key scheme sn/s4/mp/nmsx/nmsxb IS the tiered fingerprint).
+
+**Dedup dry-run report (Jul 1, read-only) — key finding:** naive key-clustering is NOT a dedup tool.
+Raw `nmsxb` clusters = 20,757 / 166K subjects, but dominated by DISTINCT people sharing a common first
+name (Marie×492, Mary, John…). Restricting to surname-bearing subjects drops it to **598 clusters /
+3,861 subjects**, and even those top out as FALSE positives: placeholder names (`no name`/`none given` —
+step-4 problem, still unaddressed for CANONICALS) and French compound GIVEN names (Jean Baptiste, Jean
+Louis, Marie Louise) mis-parsed as surnames. So **true canonical duplication is LOW**, and auto-merge on
+keys would be catastrophic — the Biscoe rule holds hard.
+
+**Therefore, remaining identity work (revised):**
+1. Real dedup = the SCORED resolver, not key-clustering. **Verified Jul 1:** the two existing scored
+   resolvers do NOT consume the bulk newly-keyed ENSLAVED leads:
+   - `resolve-canonical-dedup.mjs` — canonical↔canonical only (already run: 7,056 pairs).
+   - `resolve-cross-source-enslavers.mjs` — enslaver-lead↔canonical; **already complete**: 10,902
+     candidates (5,743 auto-link + 5,159 review) already in `cross_source_candidates` — re-running is a
+     no-op (it reads leads directly + blocks on canonical keys, so the lead-keying didn't add candidates).
+     REMAINING here is HUMAN review of those 10,902, not a code run.
+   - **THE actual build the lead-keying unblocks = issue #63: the enslaved-lead resolver** (1.6M+ enslaved
+     leads ↔ canonicals + lead↔lead), owner-anchored blocking via relationships JSONB + the now-populated
+     `person_blocking_keys`. DESIGNED, not built. This is the real next execution step.
+   - Meanwhile the keying already pays off on every future `PersonService.findOrCreateLead` (resolve()
+     now blocks on lead keys → new inflows dedup against the 2.4M leads).
+2. **Placeholder-name decision (step 4 below) — now applies to CANONICALS too:** exclude `no name`/
+   `none given`/`unnamed` rows from dedup (they'd collapse together). Extend the ⑤ name-artifact
+   flagging (currently leads-only) to canonicals, or exclude at resolve time.
+3. **Name-parse edge case:** `parseName` treats the last token of a 2-given-name as a surname (Jean
+   Baptiste → surname "Baptiste"). Low-harm for keys (still Biscoe-gated), but note it.
+4. Deprecate `identity_fingerprint` + its trigger (migration) — superseded.
+
+The tiered-fingerprint plan below is retained for history but should be read as SUPERSEDED.
+
 ## Problem
 
 "Canonical" is supposed to mean **a verified, discrete, unique human being not
