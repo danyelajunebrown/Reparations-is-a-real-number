@@ -698,7 +698,14 @@ router.get('/unlinked', async (req, res) => {
        FROM person_documents pd
        LEFT JOIN will_extractions we ON we.document_id = pd.id
        WHERE pd.canonical_person_id IS NULL
-         AND ($1::text IS NULL OR pd.document_type = $1)
+         -- "Unlinked Wills" queue: default to will-like docs (a single testator to link); an explicit
+         -- ?type= still overrides. Previously returned ALL doc types -> mostly un-linkable non-wills.
+         AND (CASE WHEN $1::text IS NULL THEN pd.document_type IN ('will','estate_inventory','estate_account')
+                   ELSE pd.document_type = $1 END)
+         -- Hide un-linkable placeholder testators ("Image 666" etc.) + blanks: their real name was
+         -- never extracted (NY-probate failed-extraction, #67-70), so there is nothing to link to.
+         AND coalesce(pd.name_as_appears,'') !~* '^\\s*image[ _-]?[0-9]'
+         AND length(trim(coalesce(pd.name_as_appears,''))) > 1
        ORDER BY pd.created_at DESC
        LIMIT $2 OFFSET $3`,
       [type, limit, offset]
@@ -749,7 +756,10 @@ router.get('/unlinked', async (req, res) => {
     const countRes = await db.query(
       `SELECT COUNT(*) FROM person_documents
        WHERE canonical_person_id IS NULL
-         AND ($1::text IS NULL OR document_type = $1)`,
+         AND (CASE WHEN $1::text IS NULL THEN document_type IN ('will','estate_inventory','estate_account')
+                   ELSE document_type = $1 END)
+         AND coalesce(name_as_appears,'') !~* '^\\s*image[ _-]?[0-9]'
+         AND length(trim(coalesce(name_as_appears,''))) > 1`,
       [type]
     );
 
