@@ -22,9 +22,18 @@ Louis, Marie Louise) mis-parsed as surnames. So **true canonical duplication is 
 keys would be catastrophic — the Biscoe rule holds hard.
 
 **Therefore, remaining identity work (revised):**
-1. Real dedup = the SCORED resolver, not key-clustering: re-run `scripts/resolve-canonical-dedup.mjs --all`
-   + `resolve-cross-source-enslavers.mjs` now that leads are keyed → surfaces lead↔canonical + lead↔lead
-   candidates into the `/review` queues (Biscoe-safe, never auto-merges). This is the next execution step.
+1. Real dedup = the SCORED resolver, not key-clustering. **Verified Jul 1:** the two existing scored
+   resolvers do NOT consume the bulk newly-keyed ENSLAVED leads:
+   - `resolve-canonical-dedup.mjs` — canonical↔canonical only (already run: 7,056 pairs).
+   - `resolve-cross-source-enslavers.mjs` — enslaver-lead↔canonical; **already complete**: 10,902
+     candidates (5,743 auto-link + 5,159 review) already in `cross_source_candidates` — re-running is a
+     no-op (it reads leads directly + blocks on canonical keys, so the lead-keying didn't add candidates).
+     REMAINING here is HUMAN review of those 10,902, not a code run.
+   - **THE actual build the lead-keying unblocks = issue #63: the enslaved-lead resolver** (1.6M+ enslaved
+     leads ↔ canonicals + lead↔lead), owner-anchored blocking via relationships JSONB + the now-populated
+     `person_blocking_keys`. DESIGNED, not built. This is the real next execution step.
+   - Meanwhile the keying already pays off on every future `PersonService.findOrCreateLead` (resolve()
+     now blocks on lead keys → new inflows dedup against the 2.4M leads).
 2. **Placeholder-name decision (step 4 below) — now applies to CANONICALS too:** exclude `no name`/
    `none given`/`unnamed` rows from dedup (they'd collapse together). Extend the ⑤ name-artifact
    flagging (currently leads-only) to canonicals, or exclude at resolve time.
