@@ -46,6 +46,17 @@ puppeteer.use(StealthPlugin());
 
 const sql = neon(process.env.DATABASE_URL);
 
+// De-silo (door 7): the climber mints canonicals; write their blocking keys inline so they're
+// discoverable in the unified pool (PersonService.resolve / find_person_match) instead of born a
+// silo — the same fix doors 3–5 use, replacing the after-the-fact reconcile-climb-minted.js sweep.
+// Thin adapter maps the neon `sql` client to PersonService's db.query(text,params)->{rows} shape.
+const PersonService = require('../../src/services/PersonService');
+const personService = new PersonService({ query: async (t, p) => ({ rows: await sql.query(t, p) }) });
+async function writeClimbKeys(cid, name, birthYear) {
+  try { await personService._writeBlockingKeys('canonical_persons', cid, { name, birthYear: birthYear || null }); }
+  catch (e) { /* non-fatal — reconcile-climb-minted.js remains the safety net */ }
+}
+
 // Initialize DocumentVerifier
 const documentVerifier = new DocumentVerifier(process.env.DATABASE_URL, {
     bucket: process.env.S3_BUCKET_NAME,
@@ -2101,6 +2112,7 @@ async function findOrCreatePerson(name, birthYear, location, source) {
             RETURNING id, uuid
         `;
 
+        await writeClimbKeys(result[0].id, name, birthYear);
         return {
             id: result[0].id,
             uuid: result[0].uuid,
@@ -2125,6 +2137,7 @@ async function findOrCreatePerson(name, birthYear, location, source) {
                 )
                 RETURNING id
             `;
+            await writeClimbKeys(result[0].id, name, birthYear);
             return { id: result[0].id, uuid: null, isNew: true, matchTier: 3 };
         }
         console.log(`   [Identity] Error in findOrCreatePerson: ${err.message.substring(0, 80)}`);
@@ -3349,7 +3362,7 @@ async function saveResults(startFsId, result) {
                 RETURNING id
             `;
 
-            if (result.length > 0) saved++;
+            if (result.length > 0) { saved++; await writeClimbKeys(result[0].id, ancestor.name, ancestor.birth_year); }
         } catch (e) {
             // Ignore duplicates
         }
