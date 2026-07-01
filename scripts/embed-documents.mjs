@@ -32,8 +32,11 @@ async function embedGemini(text, attempt = 0) {
   if (!r.ok) throw new Error('gemini ' + r.status);
   return (await r.json())?.embedding?.values;
 }
+// CONC=1 for ollama: 0.24.0 wedges under concurrent requests. Slice 2000 chars (well within nomic's
+// window; the OCR header + first entries carry the strongest retrieval signal) → ~15 docs/min clean.
+const OLLAMA_MAXCHARS = parseInt(process.env.OLLAMA_MAXCHARS || '2000', 10);
 async function embedOllama(text) {
-  const r = await fetch(OLLAMA, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, prompt: text.slice(0, 6000) }) });
+  const r = await fetch(OLLAMA, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: MODEL, prompt: text.slice(0, OLLAMA_MAXCHARS) }) });
   if (!r.ok) throw new Error('ollama ' + r.status);
   return (await r.json()).embedding;
 }

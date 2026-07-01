@@ -25,6 +25,43 @@ index. `content_kind` ∈ {`doc_ocr`, `person_profile`, …}. `model` records wh
 (so a re-embed with a different model coexists). Polymorphic subject = embeds leads AND canonicals
 in one space (semantic dedup across the unified pool).
 
+## BLOCKER FOUND (Jun 30) — Gemini free-tier embedding cap = 1,000 req/DAY (hard)
+The bulk embed is NOT speed-throttled — it hits a hard daily ceiling: HTTP 429
+`embed_content_free_tier_requests, limit: 1000`. So at zero budget via Gemini:
+doc_ocr 76,958 ÷ 1,000/day ≈ **11 weeks**; person_profile 678K ≈ **~2 years** (2d bulk infeasible this way).
+Current: 929 doc_ocr + 3 person_profile embedded. Three zero-budget paths (USER DECISION):
+1. **Gemini trickle** — leave the idempotent run; ~1,000 docs/day auto, zero-touch; architecture unchanged
+   (RagService already uses gemini-embedding-001). Doc corpus full in ~11wk; person corpus never.
+2. **Mini ollama `nomic-embed-text`** — free, NO daily cap, ~3/min (≈4,300/day) → docs ~18 days, and the
+   ONLY path that can ever reach the 678K person corpus. Cost: different 768-dim space → switch RagService
+   query-embed to nomic + re-embed the 929 (one model swap). Fits the plan's "free/self-hosted first" ethos.
+3. **Lazy / demo-only** — stop bulk; RAG answers over the 929 already embedded; question-embed is 1 call/query
+   (cheap). Corpus grows opportunistically. Lowest effort, thinnest coverage.
+RECOMMEND (2) for the bulk foundation — sustainable + unbounded; keep Gemini for the low-volume query path
+only if staying on path 1. **2d scripts are DONE + committed** (`embed-persons.mjs`, `find-semantic-dup-candidates.mjs`),
+report-only/Biscoe-safe; they just need a filled person corpus to surface pairs.
+
+## SWITCHED TO OLLAMA + VALIDATED (Jun 30, later)
+User chose Mini-ollama. Reality check corrected the plan's numbers: nomic-embed-text on the Mini does
+**~104/min on short text, ~15/min on real OCR docs** (NOT 3/min) → doc corpus ~3–4 days, person corpus
+~4–5 days. Zero budget, no daily cap. **Gotcha: ollama 0.24.0 WEDGES under concurrency — pin CONC=1**
+(CONC=3 hung it, 0 rows in minutes at 571% CPU). Slice trimmed to 2000 chars (`OLLAMA_MAXCHARS`).
+RagService/embed-persons/dup-finder now default `EMBED_SOURCE=ollama` (model `nomic-embed-text`, via
+`OLLAMA_URL`); gemini retained via env. The old 929 gemini + 332 stray nomic embeddings coexist harmlessly
+(retrieval filters by model). Commits `9c273373b`, `9dea4fa34`.
+**END-TO-END VALIDATED in nomic space:** (1) retrieval — "enslaved persons in an estate inventory with
+appraised values" → slave-property inventories, sims 0.68–0.74; (2) full grounded query via `rag-query.cjs`
+— "Which enslaved people in James Mikell's inventory + values?" → *"Taman, negro woman, $400.00; Cosser,
+child, $10.00 (Doc 184706, 184705)"*, citations trace to rows, generation provider=gemini (LLM free tier is
+separate from the embed cap). Doc drip live on Mini pid (relaunch w/ `EMBED_SOURCE=ollama` — the env var is
+REQUIRED or it silently falls back to the 429-capped gemini).
+**DEFERRED (user, Jun 30) — live `/api/rag/query` route:** revisit in ~1 week once the corpus is populated
+(wiring a public endpoint over a ~2%-full index is premature). RAG works TODAY via CLI on the Mini
+(`EMBED_SOURCE=ollama node scripts/rag-query.cjs "<question>"`). When we do wire it: query must embed in
+nomic space → needs an ollama; render is NOT on the tailnet, so the path is Tailscale Funnel — either
+expose the Mini's ollama (set render `OLLAMA_URL`, +header auth) or Funnel the RAG route off the Mini's own
+Express (has local ollama; no raw-ollama exposure). No mixing gemini-query with nomic-corpus (space mismatch).
+
 ## STATUS (Jun 30)
 - **DECISIONS (user):** v1 corpus = **doc_ocr** (75,479). Embedding source: started Mini/ollama, but
   the **Mini is Intel (no GPU) → ollama ~3/min (17 days)** → switched bulk to **Gemini free tier
