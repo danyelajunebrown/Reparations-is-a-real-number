@@ -156,6 +156,40 @@ async function viewPdf(ev, pdId) {
   return false;
 }
 
+// ── Inspect a person record inline (admin, same-origin → bypasses the gate) ───────────
+async function personDetail(id, table) {
+  const r = await fetch(`/api/contribute/person/${id}?table=${table}`, { headers: { 'X-Admin-Token': TOKEN || '' } });
+  return r.json();
+}
+async function inspectPerson(elId, id, table) {
+  const el = document.getElementById(elId);
+  if (!el) return false;
+  if (el.dataset.loaded) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; return false; }
+  el.style.display = 'block'; el.innerHTML = 'loading…';
+  try {
+    const d = await personDetail(id, table);
+    const p = d.person || d || {};
+    const docs = d.ownerDocuments || d.documents || p.documents || [];
+    const L = [];
+    L.push('<b>' + escapeHtml(p.canonical_name || p.full_name || p.name || '(no name)') + '</b> · ' + escapeHtml(p.person_type || '?'));
+    const by = p.birth_year_estimate || p.birth_year, dy = p.death_year_estimate || p.death_year;
+    if (by || dy) L.push('years: ' + (by || '?') + '–' + (dy || '?'));
+    const loc = [p.primary_county, p.primary_state, p.primary_plantation].filter(Boolean).join(', ')
+      || (p.locations ? (Array.isArray(p.locations) ? p.locations.join('; ') : String(p.locations)) : '');
+    if (loc) L.push('location: ' + escapeHtml(loc));
+    if (p.source_url) L.push('source: ' + escapeHtml(String(p.source_url).slice(0, 160)));
+    if (p.source_type) L.push('source_type: ' + escapeHtml(p.source_type));
+    if (p.context_text) L.push('context: ' + escapeHtml(String(p.context_text).slice(0, 400)));
+    if (p.relationships) L.push('relationships: ' + escapeHtml(JSON.stringify(p.relationships).slice(0, 400)));
+    if (docs.length) L.push('documents (' + docs.length + '): ' + escapeHtml(docs.map(x => x.document_type || x.type || '?').join(', ')));
+    if (p.notes) L.push('notes: ' + escapeHtml(String(p.notes).slice(0, 300)));
+    if (p.gated) L.push('(gated — no proposition-specific document yet)');
+    el.innerHTML = L.join('<br>');
+    el.dataset.loaded = '1';
+  } catch (e) { el.innerHTML = 'inspect error: ' + escapeHtml(e.message); }
+  return false;
+}
+
 // ── Generic fetch for public will routes ──────────────────────────────────────
 async function willApi(path, opts = {}) {
   const r = await fetch('/api/wills' + path, {
@@ -412,6 +446,13 @@ function renderActions(item) {
           ${card('unconfirmed lead #' + ld.id, ld.name, `${ld.location || ''} · ${ld.source || ''}`)}
           ${card('canonical cp=' + cp.id, cp.name, `${cp.state || ''} ${cp.county || ''} · ${cp.docs || 0} docs`)}
         </div>
+        <div style="font-size:12px; margin:.25rem 0;">
+          <a href="#" style="color:#60a5fa;" onclick="return inspectPerson('insp-l-${item.id}', ${ld.id}, 'unconfirmed_persons')">🔍 inspect lead #${ld.id}</a>
+          &nbsp;·&nbsp;
+          <a href="#" style="color:#60a5fa;" onclick="return inspectPerson('insp-c-${item.id}', ${cp.id}, 'canonical_persons')">🔍 inspect canonical cp=${cp.id}</a>
+        </div>
+        <div id="insp-l-${item.id}" style="display:none; font-size:12px; background:#111827; border:1px solid var(--border,#333); border-radius:6px; padding:.5rem; margin:.25rem 0; color:var(--muted);"></div>
+        <div id="insp-c-${item.id}" style="display:none; font-size:12px; background:#111827; border:1px solid var(--border,#333); border-radius:6px; padding:.5rem; margin:.25rem 0; color:var(--muted);"></div>
         ${evChips ? `<div class="evidence">${evChips}</div>` : ''}
         <div class="actions">
           <button class="action approve" onclick="linkXsrc('${item.id}', ${cp.id}, ${ld.id})">⛓ Link lead → cp=${cp.id}</button>
