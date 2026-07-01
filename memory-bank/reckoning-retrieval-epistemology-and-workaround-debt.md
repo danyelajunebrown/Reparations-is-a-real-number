@@ -54,8 +54,8 @@ hides the real problem. Evidence, grounded:
 ## Are we overdue for downstream-aware refactoring? — Yes, in specific, nameable places.
 
 > **STATUS (Jul 1, 2026): A, B, C executed this session** (commits 71892b69c → bf38dd3e6).
-> A — 6/7 live bypass doors routed through PersonService (climb = door 7, handed off — see
-> [[note-climb-resolution-producer-jun27]]). B — frontend build-version surfacing + stale-client
+> A — ALL 7/7 live bypass doors routed through PersonService (climb door 7 closed Jul 1, commit
+> 007141de3 — inline blocking keys via a neon-sql adapter; see [[note-climb-resolution-producer-jun27]]). B — frontend build-version surfacing + stale-client
 > detection shipped; Mini-runs-from-git codified in [[standard-deployment-and-versioning]] (physical
 > cleanup deferred — don't clobber the Mini's uncommitted work). C — embed fail-loud preflight shipped.
 > REMAINING under D/E + C's broader half: enslaved_individuals migrate-vs-deprecate decision (entry #3),
