@@ -68,6 +68,29 @@ Not a grand rewrite (that would be its own anti-pattern). The high-leverage cons
 - **E. A standing workaround/debt registry.** When a corrective layer is built, log it here with its root
   cause and a trigger for paying it down — so layers are tracked as debt, not silently normalized.
 
+## Debt-registry entry #1 — RAG/inference built but adopted NOWHERE (grounded Jun 30)
+
+Direct code audit (the reckoning made concrete):
+- **RagService is imported by ZERO live code** — only `scripts/rag-query.cjs` (CLI). No `/api/rag` route
+  is mounted (`server.js`). The capability is validated and orphaned.
+- **Every user-facing read surface is keyword `ILIKE`, no inference, no retrieval grounding:**
+  `/api/chat` (`chat.js` — literally the Q&A surface — `full_name/canonical_name ILIKE`), `/api/research`
+  (`ResearchService.js:236` `owner_name ILIKE`), `/api/contribute/search` (`contribute.js:311`),
+  `/api/names` (soundex/keyword). The place a user asks a question grounds on nothing.
+- **We call LLM inference for EXTRACTION only** (`probate-llm-extractor.callLLM` — OCR→fields), never to
+  ANSWER or to ground user retrieval. The entire read/query side is inference-free string matching.
+- **Embeddings also aren't in entity resolution** — 2d semantic dedup is report-only scripts, not wired
+  into the `/review` dedup flow.
+
+Partly deliberate (the public route was DEFERRED today until the corpus fills — correct). But the deeper
+issue is the reckoning pattern: the capability was built as a side-service with **no adoption plan** — no
+step says "replace ILIKE in chat/research/search with hybrid keyword+grounded retrieval." Adoption targets,
+when the corpus is full: (1) `/api/chat` grounded RAG (highest — it's the Q&A surface); (2) `/api/research`
++ `/api/contribute/search` add a semantic option alongside keyword (hybrid, not replace); (3) semantic-dedup
+candidates feed the `/review` queue. **BOUNDARY (audit rule):** RAG/inference must NEVER feed DAA
+computation or any aggregated number — it may assist a HUMAN reviewer, but deterministic code + citations
+compute the instrument. Keep RAG on the read/exploration side of the line.
+
 ## The meta-rule to adopt
 
 **When you catch yourself building a corrective/workaround layer, stop and log it as debt with its root
