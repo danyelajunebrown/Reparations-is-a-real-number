@@ -3,6 +3,37 @@
 _Scoping document, May 21 2026. Written off the back of the canonical-person
 source-document audit._
 
+## STATUS UPDATE (Jul 1 2026) — this plan is largely SUPERSEDED by blocking keys
+
+The `identity_fingerprint` approach below was overtaken by `person_blocking_keys` + `PersonService.resolve`
+(built after this doc). The spine is now essentially complete via KEYS, not the fingerprint:
+- **canonical_persons: 97.9% keyed** (663,889/678,412); **unconfirmed_persons: 99.9% keyed**
+  (2,426,030/2,428,450 — the lead-side backfill `scripts/backfill-unconfirmed-blocking-keys.mjs`, Jul 1,
+  wrote ~5.0M keys); SlaveVoyages-PAST 165,715. `person_blocking_keys` total **10.88M rows**.
+- `identity_fingerprint` is at **0.2%** and is now **dead weight — deprecate, do not fix** (the tiered
+  formula below is unnecessary; the blocking-key scheme sn/s4/mp/nmsx/nmsxb IS the tiered fingerprint).
+
+**Dedup dry-run report (Jul 1, read-only) — key finding:** naive key-clustering is NOT a dedup tool.
+Raw `nmsxb` clusters = 20,757 / 166K subjects, but dominated by DISTINCT people sharing a common first
+name (Marie×492, Mary, John…). Restricting to surname-bearing subjects drops it to **598 clusters /
+3,861 subjects**, and even those top out as FALSE positives: placeholder names (`no name`/`none given` —
+step-4 problem, still unaddressed for CANONICALS) and French compound GIVEN names (Jean Baptiste, Jean
+Louis, Marie Louise) mis-parsed as surnames. So **true canonical duplication is LOW**, and auto-merge on
+keys would be catastrophic — the Biscoe rule holds hard.
+
+**Therefore, remaining identity work (revised):**
+1. Real dedup = the SCORED resolver, not key-clustering: re-run `scripts/resolve-canonical-dedup.mjs --all`
+   + `resolve-cross-source-enslavers.mjs` now that leads are keyed → surfaces lead↔canonical + lead↔lead
+   candidates into the `/review` queues (Biscoe-safe, never auto-merges). This is the next execution step.
+2. **Placeholder-name decision (step 4 below) — now applies to CANONICALS too:** exclude `no name`/
+   `none given`/`unnamed` rows from dedup (they'd collapse together). Extend the ⑤ name-artifact
+   flagging (currently leads-only) to canonicals, or exclude at resolve time.
+3. **Name-parse edge case:** `parseName` treats the last token of a 2-given-name as a surname (Jean
+   Baptiste → surname "Baptiste"). Low-harm for keys (still Biscoe-gated), but note it.
+4. Deprecate `identity_fingerprint` + its trigger (migration) — superseded.
+
+The tiered-fingerprint plan below is retained for history but should be read as SUPERSEDED.
+
 ## Problem
 
 "Canonical" is supposed to mean **a verified, discrete, unique human being not
