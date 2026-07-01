@@ -231,12 +231,13 @@ class PersonService {
 
     const ins = await this.db.query(
       `INSERT INTO unconfirmed_persons (full_name, person_type, birth_year, death_year, gender, locations, source_url, source_type, extraction_method, confidence_score, context_text, data_quality_flags, relationships, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending') RETURNING lead_id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING lead_id`,
       [record.name, record.personType || null, record.birthYear || null, record.deathYear || null, record.sex || null,
        record.locations || (record.location ? [record.location] : null), record.sourceUrl || '(unspecified)',
        record.sourceType || 'secondary', record.extractionMethod || 'ml', record.confidence || null, record.context || null,
        record.dataQualityFlags ? JSON.stringify(record.dataQualityFlags) : '{}',
-       record.relationships ? JSON.stringify(record.relationships) : '[]']);
+       record.relationships ? JSON.stringify(record.relationships) : '[]',
+       record.status || 'pending']);
     const leadId = ins.rows[0].lead_id;
     await this._writeBlockingKeys('unconfirmed_persons', leadId, record);
     // NB: external ids for leads have no home yet (person_external_ids FK is canonical-only) —

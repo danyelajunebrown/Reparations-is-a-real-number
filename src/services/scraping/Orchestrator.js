@@ -16,6 +16,7 @@
 const AutonomousWebScraper = require('./autonomous-web-scraper');
 const GenealogyEntityExtractor = require('./genealogy-entity-extractor');
 const LLMPageAnalyzer = require('./llm-page-analyzer');
+const PersonService = require('../PersonService');
 const FormData = require('form-data');
 const fs = require('fs');
 
@@ -25,6 +26,8 @@ class AutonomousResearchOrchestrator {
         this.scraper = new AutonomousWebScraper(database);
         this.extractor = new GenealogyEntityExtractor();
         this.pageAnalyzer = new LLMPageAnalyzer();
+        // Single person gate: dedup-before-insert + blocking keys (no born-a-silo leads).
+        this.personService = new PersonService(database);
 
         this.config = {
             autoDownloadDocuments: config.autoDownloadDocuments !== false,
@@ -446,26 +449,22 @@ class AutonomousResearchOrchestrator {
         // Classify source type based on LLM analysis (or URL as fallback)
         const sourceType = this.classifySourceType(sourceUrl, pageAnalysis);
 
-        await this.db.query(`
-            INSERT INTO unconfirmed_persons (
-                full_name, person_type, birth_year, death_year, gender,
-                locations, source_url, source_type, context_text, confidence_score,
-                relationships, status
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        `, [
-            person.fullName,
-            person.type,
-            person.birthYear,
-            person.deathYear,
-            person.gender,
-            person.locations,
+        // Route through the PersonService gate (dedup-before-insert + blocking keys) instead of a
+        // direct INSERT that would be born a silo. Preserves the confidence→status convention.
+        return this.personService.findOrCreateLead({
+            name: person.fullName,
+            personType: person.type,
+            birthYear: person.birthYear,
+            deathYear: person.deathYear,
+            sex: person.gender,
+            locations: person.locations,
             sourceUrl,
             sourceType,
-            person.evidence,
-            person.confidence,
-            JSON.stringify(person.relationships || []),
-            person.confidence >= 0.7 ? 'reviewing' : 'pending'
-        ]);
+            context: person.evidence,
+            confidence: person.confidence,
+            relationships: person.relationships || [],
+            status: person.confidence >= 0.7 ? 'reviewing' : 'pending',
+        });
     }
 
     /**
