@@ -41,6 +41,25 @@ RECOMMEND (2) for the bulk foundation — sustainable + unbounded; keep Gemini f
 only if staying on path 1. **2d scripts are DONE + committed** (`embed-persons.mjs`, `find-semantic-dup-candidates.mjs`),
 report-only/Biscoe-safe; they just need a filled person corpus to surface pairs.
 
+## SWITCHED TO OLLAMA + VALIDATED (Jun 30, later)
+User chose Mini-ollama. Reality check corrected the plan's numbers: nomic-embed-text on the Mini does
+**~104/min on short text, ~15/min on real OCR docs** (NOT 3/min) → doc corpus ~3–4 days, person corpus
+~4–5 days. Zero budget, no daily cap. **Gotcha: ollama 0.24.0 WEDGES under concurrency — pin CONC=1**
+(CONC=3 hung it, 0 rows in minutes at 571% CPU). Slice trimmed to 2000 chars (`OLLAMA_MAXCHARS`).
+RagService/embed-persons/dup-finder now default `EMBED_SOURCE=ollama` (model `nomic-embed-text`, via
+`OLLAMA_URL`); gemini retained via env. The old 929 gemini + 332 stray nomic embeddings coexist harmlessly
+(retrieval filters by model). Commits `9c273373b`, `9dea4fa34`.
+**END-TO-END VALIDATED in nomic space:** (1) retrieval — "enslaved persons in an estate inventory with
+appraised values" → slave-property inventories, sims 0.68–0.74; (2) full grounded query via `rag-query.cjs`
+— "Which enslaved people in James Mikell's inventory + values?" → *"Taman, negro woman, $400.00; Cosser,
+child, $10.00 (Doc 184706, 184705)"*, citations trace to rows, generation provider=gemini (LLM free tier is
+separate from the embed cap). Doc drip live on Mini pid (relaunch w/ `EMBED_SOURCE=ollama` — the env var is
+REQUIRED or it silently falls back to the 429-capped gemini).
+**OPEN — live `/api/rag/query` topology:** query must embed in nomic space → needs an ollama. render has no
+ollama and can't reach the Mini's Tailscale localhost; can't mix gemini-query with nomic-corpus (space
+mismatch). Options: run the RAG route on the Mini's Express (has ollama + Tailscale) and proxy, expose
+ollama, or host a free embedding endpoint. USER DECISION before wiring the public route. CLI works today.
+
 ## STATUS (Jun 30)
 - **DECISIONS (user):** v1 corpus = **doc_ocr** (75,479). Embedding source: started Mini/ollama, but
   the **Mini is Intel (no GPU) → ollama ~3/min (17 days)** → switched bulk to **Gemini free tier
