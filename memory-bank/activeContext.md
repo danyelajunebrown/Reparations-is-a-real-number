@@ -1,8 +1,49 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-28 (Session 67–68 — de-siloing the person layer: COMPLETE in code, #2→#1→producer→#3→①→②→④→③→⑤)_
+_Last updated: 2026-06-30 (Session 69 — climb-as-gated-lead-source + contamination audit; issue #92)_
 
 ---
+
+## Phase 2 RAG live + RECKONING on workaround-debt (2026-06-30, branch audit/probate-classifier)
+Parallel thread to Session 69. Two things:
+- **Phase 2 RAG validated + self-hosted.** Switched the embedding space from Gemini (hard 1,000/day
+  free-tier cap — infeasible for 77K+678K) to **self-hosted ollama `nomic-embed-text` on the Mini**
+  (free, no cap, ~15 docs/min real / ~104/min short). Gotcha: ollama 0.24.0 **wedges under concurrency
+  → CONC=1**; `EMBED_SOURCE=ollama` is REQUIRED or it silently falls back to the capped Gemini.
+  Retrieval + full grounded query VALIDATED in nomic space (Mikell inventory → cited enslaved persons +
+  values). Doc→person embed drip chained + unattended on the Mini (~1 week). Public `/api/rag/query`
+  DEFERRED until the corpus fills. Detail: [[plan-phase2-rag]]. Also: today's "search shows nothing"
+  crisis was a **stale GitHub Pages cache** (hard-refresh fixed it) — NOT a code bug.
+- **RECKONING written** ([[reckoning-retrieval-epistemology-and-workaround-debt]]): user asked why we ran
+  keyword search without RAG, what else we're papering over, and whether downstream-aware refactoring is
+  overdue. Answer: retrieval was built as UI (ILIKE) not epistemology; the recurring pattern is corrective
+  layers over root causes (climb-as-second-door, the gate, blocking-keys-vs-broken-spine, silent config
+  fallbacks, scp-deploys from a dirty Mini checkout, data quarantines). Refactoring IS overdue in named
+  places — finish PersonService as the ONE door (A), deploy/versioning discipline (B), fail-loud config
+  (C), pay down the identity spine before more ingest (D), keep a debt registry (E). READ that file.
+
+## Climb-as-gated-lead-source + contamination audit (2026-06-30, Session 69)
+Building Adrian Brown lineage worksheets, the user caught the climb asserting slaveholding it
+can't stand behind (Elizabeth Parker, NJ d.1793, marked an 1860 Georgia slaveholder via a
+name-only doc link). Root issue is ARCHITECTURAL: the climb is a second, uncontrolled door —
+it scrapes FamilySearch's raw collaborative tree and bypasses identity resolution, the
+canonical/document gate, and source-tier classification.
+- **Worksheet fixed:** ⚖ confirmations now source ONLY from the verified layer
+  (`enslaver_evidence_compendium` direct_primary) by resolved identity — 4 real (Biscoe×2,
+  Hopewell×2), not the 106 name-match false-positives. Lineage tree audited
+  (`scripts/audit-lineages.mjs`): 86% of connected ancestors born pre-1700, 96% of lines
+  SPECULATIVE (FamilySearch deep-graft); worksheet now grades SOLID/MODERATE/SPECULATIVE.
+- **DAA is PROTECTED:** `_enforceProbateGate` blocks any DAA whose slaveholders don't resolve
+  to a canonical with TIER A/B/C evidence; the name-only climb-match fallback (null ids) can't
+  pass. Exposure is research/UI surfaces + the identity store, not the instrument.
+- **Existing tooling reconciled:** `audit-climb-contamination.js` / `rescan-climb-matches.js`
+  / `re-evaluate-matches.js` / `clean-climb-match-data-quality.mjs` already implement most of
+  the filter — never run/wired. Climber cutoff already fixed in code (1450→1600); contaminated
+  data is pre-fix. Dry-run quantified: 9,730 modern canonicals + 316,938 FS-URL "documents" +
+  20 false enslavers → **GitHub issue #92** (sequence into de-siloing Step 4).
+- **New memory-bank docs:** `assessment-climb-architecture-gap-jun30.md`,
+  `plan-climb-as-gated-lead-source.md`, `finding-census-namematch-falsepositives-jun30.md`,
+  `note-climb-resolution-producer-jun27.md`.
 
 ## Phase-1 Retrieval-Integrity Harness + deploy gate (2026-06-29→30)
 User directive: before merging/deploying the de-siloing+gate branch, build a system that "ongoingly

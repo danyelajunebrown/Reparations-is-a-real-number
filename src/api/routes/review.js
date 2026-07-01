@@ -28,6 +28,11 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../database/connection');
 const S3Service = require('../../services/storage/S3Service');
+const PersonService = require('../../services/PersonService');
+
+// Shared identity gate — write blocking keys for canonicals approved via the review queue so
+// they're discoverable in the unified pool (no born-a-silo canonical). See the debt registry.
+const personService = new PersonService(db);
 
 // GET /api/review/queues — list all queues + pending counts
 router.get('/queues', async (req, res) => {
@@ -384,6 +389,7 @@ router.post('/enslaver_candidates/:id/approve', async (req, res) => {
                 `Approved via review queue. Original candidate: "${c.proposed_name}". ${c.corroborating_depositor_count} corroborating Freedmens depositors.`,
             ]);
             cpId = ins.rows[0].id;
+            try { await personService._writeBlockingKeys('canonical_persons', cpId, { name: finalName, birthYear: null }); } catch (e) { /* non-fatal */ }
         }
 
         // Create family_relationships edges for each depositor
@@ -458,6 +464,7 @@ router.post('/unresolved_petitions/:id/approve', async (req, res) => {
                 RETURNING id
             `, [edit_claimant]);
             cpId = ins.rows[0].id;
+            try { await personService._writeBlockingKeys('canonical_persons', cpId, { name: edit_claimant, birthYear: null }); } catch (e) { /* non-fatal */ }
         }
         if (!cpId) return res.status(400).json({ success: false, error: 'Provide winner_canonical_id or edit_claimant' });
 

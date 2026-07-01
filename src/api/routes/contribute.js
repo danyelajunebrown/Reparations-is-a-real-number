@@ -15,6 +15,7 @@ const SourceClassifier = require('../../services/SourceClassifier');
 const SourceAnalyzer = require('../../services/SourceAnalyzer');
 const FamilySearchCatalogProcessor = require('../../services/FamilySearchCatalogProcessor');
 const UniversalRouter = require('../../services/UniversalRouter');
+const PersonService = require('../../services/PersonService');
 const { isAdmin } = require('../../middleware/admin-auth');
 // External-assertion gate (M102): public callers see only canonical persons with a stored
 // proposition-specific document (assertable_slaveowner OR assertable_enslaved). Authenticated
@@ -4512,6 +4513,19 @@ router.post('/review-queue/:id/approve', async (req, res) => {
             context.owner_id || null
         ]);
 
+        // De-silo: also register the approved person in the unified pool (dedup + blocking keys)
+        // so they're discoverable beyond the legacy enslaved_individuals table. Additive/non-fatal.
+        try {
+            await new PersonService(pool).findOrCreateLead({
+                name: full_name || item.unconfirmed_name,
+                personType: 'enslaved',
+                sex: gender || context.gender || null,
+                sourceUrl: context.source_url || '(review-queue approval)',
+                sourceType: 'secondary',
+                extractionMethod: 'human_approved',
+            });
+        } catch (e) { /* non-fatal — legacy row already written */ }
+
         // Update queue status
         await pool.query(`
             UPDATE name_match_queue
@@ -4592,6 +4606,18 @@ router.post('/review-queue/approve-all', async (req, res) => {
                 `From James Hopewell will (1811). ${context.notes || ''}`,
                 context.owner_id || null
             ]);
+
+            // De-silo: register in the unified pool too (additive/non-fatal).
+            try {
+                await new PersonService(pool).findOrCreateLead({
+                    name: item.unconfirmed_name,
+                    personType: 'enslaved',
+                    sex: context.gender || null,
+                    sourceUrl: context.source_url || '(review-queue bulk approval)',
+                    sourceType: 'secondary',
+                    extractionMethod: 'human_approved',
+                });
+            } catch (e) { /* non-fatal */ }
 
             await pool.query(`
                 UPDATE name_match_queue

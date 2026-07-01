@@ -27,7 +27,12 @@ const multer = require('multer');
 const crypto = require('crypto');
 const db = require('../../database/connection');
 const S3Service = require('../../services/storage/S3Service');
+const PersonService = require('../../services/PersonService');
 const logger = require('../../utils/logger');
+
+// Shared identity gate — write blocking keys for canonicals this route mints so they're
+// discoverable in the unified pool (no born-a-silo canonical). See the debt registry.
+const personService = new PersonService(db);
 
 // ── Valid document types ───────────────────────────────────────────────────────
 const VALID_DOC_TYPES = new Set([
@@ -366,6 +371,11 @@ router.post('/ingest', upload.single('willPdf'), async (req, res) => {
             canonical_name: newPerson.rows[0].canonical_name,
             created: true,
           };
+          // Close the silo: make this canonical discoverable in the unified matching pool.
+          try {
+            await personService._writeBlockingKeys('canonical_persons', resolvedPersonId,
+              { name: displayName, birthYear: null });
+          } catch (e) { /* non-fatal — key-backfill sweep is the net */ }
           logger.info('Auto-created canonical_persons row from will upload', {
             displayName, resolvedPersonId,
           });

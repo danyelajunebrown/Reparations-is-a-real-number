@@ -10,10 +10,16 @@
  */
 
 const { isValidPersonName } = require('../utils/person-name-validator');
+const PersonService = require('./PersonService');
 
 class NameResolver {
     constructor(db) {
         this.db = db;
+        // Shared identity gate — used to write blocking keys for canonicals this resolver mints,
+        // so they're discoverable in the unified pool (PersonService.resolve / other producers)
+        // instead of being born a silo. NameResolver already dedups via find_person_match before
+        // creating; this closes the remaining discoverability gap.
+        this.personService = new PersonService(db);
     }
 
     // ============================
@@ -226,7 +232,15 @@ class NameResolver {
             'auto_created'
         ]);
 
-        return result.rows[0];
+        const created = result.rows[0];
+        // Close the silo: write blocking keys so this canonical answers PersonService.resolve /
+        // the unified matching pool (createCanonicalPerson previously wrote none).
+        try {
+            await this.personService._writeBlockingKeys('canonical_persons', created.id,
+                { name: fullName, sex: metadata.sex, birthYear: metadata.birthYear });
+        } catch (e) { /* non-fatal — a periodic key-backfill sweep is the safety net */ }
+
+        return created;
     }
 
     /**

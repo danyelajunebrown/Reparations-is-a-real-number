@@ -48,6 +48,25 @@ edges still only in `inferred_parent_links`, not `canonical_family_edges`.
    `canonical_family_edges` (polymorphic subject ref) so #3 reaches them.
 4. Re-run the lineage worksheet after reconciliation.
 
+## DE-SILOING STATUS — climb is the LAST bypass door (Jul 1, 2026) — COORDINATE
+
+The "finish PersonService as the ONE door" refactor (A of
+[[reckoning-retrieval-epistemology-and-workaround-debt]]) routed **6 of 7 live bypass writers** through
+PersonService: ExtractionWorker, Orchestrator, NameResolver, wills.js, review.js, contribute.js
+(commits 71892b69c → 44d40d384). **The climb writers are the ONLY remaining live silo**, left UNTOUCHED
+on purpose because they're the parallel climb session's active files (avoid collision).
+
+**When the climb work next pauses, close the door here** (the forward-fix from the FIX list above):
+- `scripts/resolve-climb-ancestors.js:220` — mints `canonical_persons` directly (created_by=
+  'climb_name_resolver'), no blocking keys → born a silo. Route through PersonService: prefer minting a
+  LEAD (findOrCreateLead) unless a gate-qualifying document exists; if a canonical is genuinely warranted,
+  at minimum call `PersonService._writeBlockingKeys('canonical_persons', id, {name,sex,birthYear})` right
+  after insert (the pattern doors 3–5 use).
+- `scripts/scrapers/familysearch-ancestor-climber.js:2091/2116/3317` — same: canonical INSERTs with no
+  keys (uses find_person_match but that doesn't write keys). Same fix.
+- Mirror parent edges into `canonical_family_edges` (polymorphic ref) so #3 reverse-traversal reaches them.
+- Interim safety-net remains `scripts/reconcile-climb-minted.js` (backfills keys after the fact).
+
 ## "How to be aware everywhere" (the mechanism, for future producers)
 - **Single source of truth = the Neon DB**, but only if writes go through the shared
   identity layer: `PersonService` → `find_person_match` + `person_blocking_keys`
