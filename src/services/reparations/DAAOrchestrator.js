@@ -18,6 +18,7 @@ const WealthGapCalculator = require('./WealthGapCalculator');
 const MACRO = require('./macro-config');
 const ObligationReconciler = require('./ObligationReconciler');
 const CorporateSuccessionTracer = require('./CorporateSuccessionTracer');
+const { OWNER_ROLE_TYPES, isOwnerType } = require('../person-roles');
 const DisgorgementCalculator = require('./DisgorgementCalculator');
 const FamilySearchClimberAgent = require('../../../scripts/agents/FamilySearchClimberAgent');
 
@@ -694,14 +695,15 @@ class DAAOrchestrator {
                 cp.primary_county,
                 cp.person_type
             FROM canonical_persons cp
-            WHERE cp.person_type IN ('enslaver', 'descendant')
+            WHERE cp.person_type = ANY($3::text[])
               AND (
                   LOWER(cp.canonical_name) ILIKE ANY($1::text[])
                   OR cp.id = ANY($2::int[])
               )
             ORDER BY cp.canonical_name ASC
             LIMIT 10000
-        `, [tokenPatterns.length ? tokenPatterns : ['__no_match__'], idsFromFsLookup]);
+        `, [tokenPatterns.length ? tokenPatterns : ['__no_match__'], idsFromFsLookup,
+            [...OWNER_ROLE_TYPES, 'descendant']]);
         // Index by id and (normalized) canonical_name for quick lookup
         const byId = new Map();
         const byName = new Map();
@@ -712,7 +714,7 @@ class DAAOrchestrator {
             byName.get(key).push(sh);
         }
 
-        console.log(`   → ${documentedSlaveholders.rows.length} canonical_persons in scope (enslaver or descendant)`);
+        console.log(`   → ${documentedSlaveholders.rows.length} canonical_persons in scope (owner-side or descendant)`);
 
         // Step 3: Resolve each climb ancestor to a canonical_persons row.
         // Priority: (1) FS ID via person_external_ids, (2) existing_match_id,
@@ -754,8 +756,9 @@ class DAAOrchestrator {
                 const key = (ancestor.slaveholder_name || '').toLowerCase().trim();
                 const candidates = byName.get(key);
                 if (candidates && candidates.length > 0) {
-                    // Prefer enslaver over descendant
-                    matched = candidates.find(c => c.person_type === 'enslaver') || candidates[0];
+                    // Prefer an owner-side match (enslaver / slaveholder / free_poc_slaveholder / …)
+                    // over a descendant on a name collision.
+                    matched = candidates.find(c => isOwnerType(c.person_type)) || candidates[0];
                     matchType = 'name_exact';
                     matchConf = 0.85;
                 }
