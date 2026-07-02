@@ -1,6 +1,46 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-01 (NY probate exhaustive validity/consistency audit)_
+_Last updated: 2026-07-02 (#96 person-status model P0–P3 core — CHECKPOINT/PAUSE)_
+
+---
+
+## #96 person_type false binary → status-as-facts — P0–P3 core DONE (2026-07-02) → [[plan-96-person-status-model]]
+Triggered by the William Ellison reframe (born enslaved → major SC slaveholder; the binary can't
+hold him). Full design + two research findings in the plan doc. Executed, tested, committed on
+`audit/probate-classifier-and-source-documents` (paused before P4):
+- **P0 `723d5d8cc`** — new `src/services/person-roles.js` (owner/enslaved/descendant GROUPS +
+  roleGroup/isOwnerType); DAA owner universe (`DAAOrchestrator` step 2b) routed through it so
+  `free_poc_slaveholder`/`slaveholder`/`owner` are no longer dropped from obligations. 9/9.
+- **P1 `36b8fe507`** (migration 110) — soft CHECK guardrail on `person_type` (both tables); free-text
+  column can no longer take junk values. Applied NOT VALID→VALIDATE (live-scraper-safe; 3.1M passed).
+- **P2 `36b8fe507`** — status modeled as time-bounded evidenced FACTS in `person_facts` (not the enum).
+  `scripts/backfill-status-facts.mjs` seeded the validation cohort: 122 DC certificate_of_freedom →
+  `free_status`, 7 NY testators → dated `slaveholding`. Grounded + idempotent.
+- **P3 core `ef2bbd9a2`** (migration 111) — `person_role_group()` SQL fn (mirror of person-roles.js);
+  `reconcile-lineage-obligations.js` DEBIT ledger now scopes on `person_role_group='owner'` (debit-side
+  twin of the P0 fix); `scripts/derive-dual-status-summary.mjs` upgrades a canonical with BOTH a
+  slaveholding fact AND a free/enslaved-status fact → `free_poc_slaveholder` (0 real candidates yet —
+  cohorts disjoint; forward machinery). 7/7.
+- **Decision-3 research (foundational):** the obligation model is ALREADY directed party→party and
+  NEVER nets a person's credit against their debit (separate tables/keys; explicit in migration 083).
+  A dual-status Ellison → two separate directed obligations, never a blend. #96 preserves this (no
+  per-person status balance). **Decision-2 research:** lead-capable person_facts = M103 polymorphic
+  mirror, but GATED on a 3-part safety net (cascade-on-delete trigger, `migrateLeadFacts()`, extend
+  `PersonService.merge` for polymorphic cols) that must land atomically — person_facts has NO readers
+  yet, so the schema change is cheap.
+- **REMAINING (not started):** **P4** lead-capable person_facts (the heavy one — safety net above);
+  **P3 tail** route the 2 stored SQL matcher fns (M033/M035) + `DocumentVerifier.js:239` + contribute
+  search filters through `person_role_group()` (behavior-changing — needs tests + a quiet window);
+  **P5** deprecate empty `free_persons` + surface facts/dual-status on the profile UI. **Separate issue
+  to file:** `USE_LINE_ITEM_METHODOLOGY` labels the acknowledger's CREDIT line-items as "debt"
+  (`DAAOrchestrator.js:242-245`) — directional mismatch, dormant in prod.
+- **#95 gate follow-up carried:** the earlier role-aware gate recompute is applied + idempotent
+  (34,586 slaveowner / 122 enslaved / 1 dual-status); `#95` closed + annotated (commit `13f359950`,
+  which was mislabeled `fix(#70)` by a shared-index race — content intact). Mini deploy verified
+  byte-identical to git (scp stopgap per standard-deployment-and-versioning).
+- **Watch-out:** intermittent CONCURRENT commits observed on this branch (e.g. `9f7d2b947`,
+  `793b1b310`) — a parallel session/user. My commits are clean + correctly labeled; coordinate before
+  large edits to avoid the shared-git-index race that absorbed the #95 commit.
 
 ---
 
