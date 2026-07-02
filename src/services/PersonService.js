@@ -463,18 +463,26 @@ class PersonService {
           updated_at = NOW()
         FROM canonical_persons vc WHERE sv.id = $1 AND vc.id = $2`, [survivorId, victimId]);
       for (const w of work) {
+        // SAVEPOINT BEFORE the risky UPDATE. A unique-constraint collision aborts the (sub)transaction,
+        // and you CANNOT then create a savepoint on an aborted tx — the old code did `SAVEPOINT s` in the
+        // catch, which itself failed with "current transaction is aborted" (the dedup-Merge 500). Setting
+        // the savepoint first lets ROLLBACK TO recover, then we re-point row-by-row (delete on collision).
+        await client.query('SAVEPOINT fk');
         try {
           await client.query(`UPDATE ${w.table_name} SET ${w.column_name} = $1 WHERE ${w.column_name} = $2`, [survivorId, victimId]);
+          await client.query('RELEASE SAVEPOINT fk');
         } catch (e) {
-          if (!/unique constraint/i.test(e.message)) throw e;
-          await client.query('SAVEPOINT s');
+          // unique OR check-constraint (e.g. dedup_candidate_pairs.dedup_pair_order — re-pointing
+          // victim→survivor can create a self-pair) → recover + re-point row-by-row, deleting the
+          // rows that can't move (they're now redundant/invalid post-merge).
+          if (!/(unique|check) constraint/i.test(e.message)) throw e;
+          await client.query('ROLLBACK TO SAVEPOINT fk');
           const dups = await client.query(`SELECT ctid FROM ${w.table_name} WHERE ${w.column_name} = $1`, [victimId]);
           for (const d of dups.rows) {
             await client.query('SAVEPOINT r');
             try { await client.query(`UPDATE ${w.table_name} SET ${w.column_name} = $1 WHERE ctid = $2`, [survivorId, d.ctid]); await client.query('RELEASE SAVEPOINT r'); }
             catch { await client.query('ROLLBACK TO SAVEPOINT r'); await client.query(`DELETE FROM ${w.table_name} WHERE ctid = $1`, [d.ctid]); }
           }
-          await client.query('RELEASE SAVEPOINT s');
         }
       }
       await client.query(`UPDATE canonical_persons SET person_type='merged', notes=COALESCE(notes,'') || ' [merged into #' || $1 || ']', updated_at=NOW() WHERE id=$2`, [survivorId, victimId]);
