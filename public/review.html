@@ -108,14 +108,32 @@ let currentQueue = null;
 let currentItems = [];
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+// VALIDATE the token against the server before trusting it. Previously a stored/entered token was
+// declared "authenticated" without a check, so a rotated/stale/mistyped token looked fine while every
+// admin action 401'd silently (the "submissions not received" bug). /api/admin/verify is the check.
+async function verifyAndActivate(token, { fromInput = false } = {}) {
+  try {
+    const r = await fetch('/api/admin/verify', { headers: { 'X-Admin-Token': token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    TOKEN = token;
+    localStorage.setItem('adminToken', token);
+    document.getElementById('auth-modal').style.display = 'none';
+    document.getElementById('reviewer-info').textContent = '🔑 authenticated ✓';
+    loadAdminQueues();
+    return true;
+  } catch (e) {
+    TOKEN = null;
+    localStorage.removeItem('adminToken');
+    document.getElementById('reviewer-info').textContent = '✗ token rejected — re-enter';
+    document.getElementById('auth-modal').style.display = 'flex';
+    if (fromInput) alert('Admin token REJECTED by the server (' + e.message + ').\n\nIt must exactly match ADMIN_TOKEN on Render (you rotated it). Paste the current value — no spaces.');
+    return false;
+  }
+}
 function submitAuth() {
   const v = document.getElementById('auth-input').value.trim();
   if (!v) { skipAuth(); return; }
-  TOKEN = v;
-  localStorage.setItem('adminToken', v);
-  document.getElementById('auth-modal').style.display = 'none';
-  document.getElementById('reviewer-info').textContent = '🔑 authenticated';
-  loadAdminQueues();
+  verifyAndActivate(v, { fromInput: true });
   loadUnlinkedCount();
 }
 
@@ -218,7 +236,7 @@ async function loadAdminQueues() {
         <span class="count">${q.count}</span>
       </button>
     `).join('');
-  } catch (e) { /* token invalid or admin routes down */ }
+  } catch (e) { toast('Admin queues failed to load: ' + e.message + ' (token/route issue)', true); }
 }
 
 async function selectQueue(name) {
@@ -614,9 +632,10 @@ function escapeAttr(s) { return (s ?? '').toString().replace(/'/g, "\\'"); }
 loadUnlinkedCount();
 
 if (TOKEN) {
-  document.getElementById('auth-modal').style.display = 'none';
-  document.getElementById('reviewer-info').textContent = '🔑 authenticated';
-  loadAdminQueues();
+  // Validate the STORED token on load — don't assume a saved token is still valid (it may be stale
+  // after an ADMIN_TOKEN rotation). verifyAndActivate shows the auth modal if it's rejected.
+  document.getElementById('reviewer-info').textContent = 'checking token…';
+  verifyAndActivate(TOKEN);
 } else {
   // Check if the user came from a will upload (URL param auto-opens the queue)
   const params = new URLSearchParams(location.search);
