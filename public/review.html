@@ -157,9 +157,14 @@ async function api(path, opts = {}) {
   if (r.status === 401) {
     localStorage.removeItem('adminToken');
     document.getElementById('auth-modal').style.display = 'flex';
-    throw new Error('Auth failed');
+    throw new Error('Auth failed — re-enter admin token');
   }
-  return r.json();
+  // CRITICAL: throw on ANY non-OK status (404/409/500), not just 401. Previously this returned the
+  // error JSON silently, so handlers toasted a FALSE "✓" and removed the card while nothing persisted
+  // (the "accepted 3 times but it keeps coming back" bug). Now the real error surfaces.
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data && data.error) ? data.error : ('request failed: HTTP ' + r.status));
+  return data;
 }
 
 // ── View a document via a PRESIGNED S3 url (bucket is private; raw s3_url 403s) ────────
