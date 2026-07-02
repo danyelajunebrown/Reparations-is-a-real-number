@@ -681,9 +681,11 @@ router.post('/cross_source_enslavers/:id/link', async (req, res) => {
         if (!c) return res.status(404).json({ success: false, error: 'candidate not found' });
         if (c.status !== 'pending') return res.status(409).json({ success: false, error: `already ${c.status}` });
         // link the lead to the canonical person (confirmed_individual_id is varchar)
-        await db.query(`UPDATE unconfirmed_persons SET confirmed_individual_id=$2, status='confirmed',
+        // $2 cast to text in BOTH the assignment AND the concat — otherwise Postgres deduces
+        // inconsistent types for $2 (varchar vs text) and throws 42P08 (the 500 that ate every link).
+        await db.query(`UPDATE unconfirmed_persons SET confirmed_individual_id=$2::text, status='confirmed',
             reviewed_by=$3, reviewed_at=NOW(),
-            review_notes=COALESCE(review_notes,'') || ' | linked to canonical cp=' || $2 || ' (cross-source resolver)'
+            review_notes=COALESCE(review_notes,'') || ' | linked to canonical cp=' || $2::text || ' (cross-source resolver)'
             WHERE lead_id=$1`, [c.unconfirmed_lead_id, String(c.canonical_person_id), reviewer]);
         await db.query(`UPDATE cross_source_candidates SET status='linked', reviewed_by=$2, reviewed_at=NOW() WHERE id=$1`, [id, reviewer]);
         // other pending candidates for the same lead are now moot
