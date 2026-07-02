@@ -530,9 +530,9 @@ router.post('/ambiguous_unconfirmed/:id/approve', async (req, res) => {
             UPDATE unconfirmed_persons
             SET status = 'confirmed', person_type = $2, full_name = COALESCE($3, full_name),
                 reviewed_by = $4, reviewed_at = NOW(),
-                review_notes = COALESCE(review_notes, '') || ' | Approved via review UI as ' || $2
+                review_notes = COALESCE(review_notes, '') || ' | Approved via review UI as ' || $5
             WHERE lead_id = $1 RETURNING lead_id
-        `, [id, target_type, edit_name || null, req.headers['x-reviewer'] || 'admin']);
+        `, [id, target_type, edit_name || null, req.headers['x-reviewer'] || 'admin', target_type]);
         res.json({ success: true, updated: upd.rowCount });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -548,9 +548,9 @@ router.post('/ambiguous_unconfirmed/:id/reject', async (req, res) => {
             UPDATE unconfirmed_persons
             SET status = 'rejected', rejection_reason = $2,
                 reviewed_by = $3, reviewed_at = NOW(),
-                review_notes = COALESCE(review_notes, '') || ' | Rejected via review UI: ' || $2
+                review_notes = COALESCE(review_notes, '') || ' | Rejected via review UI: ' || $4
             WHERE lead_id = $1
-        `, [id, reason || 'not_a_person', req.headers['x-reviewer'] || 'admin']);
+        `, [id, reason || 'not_a_person', req.headers['x-reviewer'] || 'admin', reason || 'not_a_person']);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
