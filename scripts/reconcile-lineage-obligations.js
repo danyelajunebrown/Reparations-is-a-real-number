@@ -108,8 +108,12 @@ async function main() {
 
     // ── Build evidenced units: enslavers with Craemer (name) or disgorgement (id) ──
     console.log('[4/4] Assembling evidenced lineages…');
+    // #96 P3: use the owner ROLE GROUP, not the bare 'enslaver' label — otherwise a dual-status
+    // owner (free_poc_slaveholder, e.g. William Ellison) or a 'slaveholder'/'owner' canonical is
+    // dropped from the DEBIT ledger and never owes. Their reparations CREDIT stays a separate
+    // directed obligation (reparations_line_items) and is never netted here (plan-96 decision 3).
     const enslavers = await pool.query(`
-        SELECT id, canonical_name FROM canonical_persons WHERE person_type = 'enslaver'
+        SELECT id, canonical_name FROM canonical_persons WHERE person_role_group(person_type) = 'owner'
     `);
     const baseShare = MACRO.WEALTH_GAP.estimated_slaveholder_descendants
         ? MACRO.deriveWealthGap().baseSharePerDescendant : 0;

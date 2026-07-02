@@ -234,8 +234,18 @@ Phased, each shippable + tested; nothing breaks existing behavior:
   idempotent (NOT EXISTS guard; re-run = 0). Status layer now: manumission 221 (existing) + free_status
   122 + slaveholding 7. Dual-status EMERGENCE proven separately by test-gate-role-aware (a person CAN
   hold both). WIDEN beyond the cohort after review. [decision 4]
-- **P3 (role-group centralization):** `person_role_group()` SQL fn + JS mirror; route the 5 high-risk
-  consumers + the 2 stored SQL matcher fns through it; dual-status summary derivation.
+- **P3 — CORE DONE (2026-07-02); consumer-routing tail DEFERRED.** Migration **111**
+  `person_role_group()` SQL fn (mirror of person-roles.js; IMMUTABLE). Debit ledger
+  `scripts/reconcile-lineage-obligations.js` now scopes on `person_role_group(person_type)='owner'`
+  (parallel to P0's DAA fix → dual-status owners' DEBIT computes; credit stays separate).
+  `scripts/derive-dual-status-summary.mjs` — reads the status facts and upgrades a canonical with
+  BOTH a `slaveholding` fact AND a `free_status`/`enslavement`/`manumission` fact to
+  `free_poc_slaveholder` (Biscoe-safe, additive, dry-run/apply; 0 real candidates yet — cohorts
+  disjoint, forward machinery). Test `tests/unit/test-dual-status-derivation.js` 7/7.
+  **DEFERRED (behavior-changing, need dedicated tests + a quiet window):** route the 2 stored SQL
+  matcher fns (M033 person_type bonus, M035 owner-scope), `DocumentVerifier.js:239`
+  (enslaved-side IN-list), and the contribute.js public-search filters through person_role_group().
+  The function is deployed and ready for them.
 - **P4 (lead-capable person_facts):** M103-mirror migration + the safety net (cascade trigger +
   migrateLeadFacts + merge extension + re-expressed unique). Schema first; producers later.
 - **P5:** deprecate `free_persons`; surface facts + dual-status on the person profile UI.
