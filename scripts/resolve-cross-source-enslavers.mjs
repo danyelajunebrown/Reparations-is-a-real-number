@@ -148,5 +148,22 @@ function score(lead, cand, blockSize) {
     written += chunk.length;
   }
   console.log(`  wrote ${written} cross-source candidate links.`);
+
+  // Auto-apply the unambiguous tier so humans never have to hand-click obvious matches: an
+  // 'auto_link_candidate' is a SINGLE-match with exact/near name + same state + same county (name-only
+  // and multi-match were routed to 'review', which is left untouched for humans). Same op as the Link
+  // endpoint. Reversible (clear confirmed_individual_id). See scripts/bulk-link-auto-enslaver-candidates.mjs.
+  const autoLinked = (await pool.query(`
+    UPDATE unconfirmed_persons u
+       SET confirmed_individual_id = x.canonical_person_id::text, status='confirmed',
+           reviewed_by='cross_source_auto', reviewed_at=NOW(),
+           review_notes = COALESCE(u.review_notes,'') || ' | auto-linked to cp=' || x.canonical_person_id || ' (auto_link_candidate)'
+      FROM cross_source_candidates x
+      WHERE x.entity_kind='enslaver' AND x.route='auto_link_candidate' AND x.status='pending'
+        AND u.lead_id = x.unconfirmed_lead_id
+      RETURNING u.lead_id`)).rowCount;
+  await pool.query(`UPDATE cross_source_candidates SET status='linked', reviewed_by='cross_source_auto', reviewed_at=NOW()
+                    WHERE entity_kind='enslaver' AND route='auto_link_candidate' AND status='pending'`);
+  console.log(`  auto-linked ${autoLinked} unambiguous leads; the 'review' tier stays for humans.`);
   await pool.end();
 })();
