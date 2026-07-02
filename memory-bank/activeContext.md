@@ -4,6 +4,34 @@ _Last updated: 2026-07-01 (NY probate exhaustive validity/consistency audit)_
 
 ---
 
+## Review-UX + data-quality cluster + issue triage (2026-07-01/02, branch audit/probate-classifier)
+Continuation. Human-review made usable + a data-quality sweep; GitHub issues 78→69 open.
+- **Review UX (merged to main → Render live):** View PDF now uses a PRESIGNED url (raw private-S3 link
+  was 403); "Unlinked Wills" queue scoped to will-like docs + placeholder-testator filter (175K→4,710
+  linkable; the rest were "Image NNN" NY-probate failed-extraction); **inline "🔍 inspect"** on
+  cross-source cards (fetches /api/contribute/person/:id same-origin, admin token bypasses gate) so a
+  reviewer sees both records before linking. NOTE: /review is served by RENDER
+  (reparations-platform.onrender.com/review), NOT github.io; requireAdmin returns 401 not 403.
+- **Bulk auto-link:** the cross-source enslaver `auto_link_candidate` tier (single-match, exact
+  name+state+county — mostly same-1860-schedule owner recorded per enslaved person) forced humans to
+  click thousands of obvious matches. `scripts/bulk-link-auto-enslaver-candidates.mjs` linked **5,743**;
+  queue 10,902→5,159 (ambiguous 'review' tier only). Resolver now AUTO-APPLIES that tier on --apply so
+  it never recurs. Reversible (clear confirmed_individual_id).
+- **DATA-QUALITY CLUSTER (closed #95/#68/#69/#99):** **#95** recomputeGate is now ROLE-AWARE
+  (OWNER_NAMED/OWNER_CONTENT + ENSLAVED_NAMED/ENSLAVED_CONTENT; a shared doc type asserts a proposition
+  only when the person's ROLE is corroborated in the estate graph) — recompute removed **7,509 false
+  "was enslaved" assertions**, both-flags 7,510→1, ~6,446 unsupported slaveowner assertions cleared. The
+  durable fix for the "rampant errors" concern: junk can no longer be externally assertable. **#68/#69**
+  `scripts/clean-ny-probate-enslaved-flags.mjs` cleared 8 false + quarantined 201 post-1827 enslaved_count
+  docs (NY abolished slavery 1827; originals in error_text). **#99** `scripts/flag-junk-enslaver-entities.mjs`
+  reclassified 37 place-word/boilerplate junk (Sole/Albany/Deceased/Image...) enslaver→unknown + de-asserted.
+  **#70 PARTIAL (open):** flagged 1,267 clear OCR/legal-junk enslaved names, but wrong-token noise +
+  uniform-0.85 confidence need an EXTRACTOR fix. **#100 PARTIAL (open):** 260 leads from ONE Ellison
+  rootsweb page — the Ellison family (William Ellison, free Black slaveholder, Sumter SC) is REAL → needs
+  parser segmentation + careful triage, NOT a blanket sweep. **Triage also closed** #36/#48/#67/#83/#97
+  (already-done). Still genuinely open: research (#19-25), calibration/anchors (#79-90), de-siloing edges
+  (#71-78), #70/#100 extractor+parser work.
+
 ## NY probate exhaustive validity audit (2026-07-01) → see [[finding-ny-probate-audit-jul01]]
 Read-only audit of the live NY scrape (collection 1920234, now 71,944 written) via new
 `scripts/audit-ny-probate-quality.js`. Acquisition is excellent (S3 100%, OCR 95%, 0
