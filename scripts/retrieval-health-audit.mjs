@@ -38,8 +38,14 @@ const require = createRequire(import.meta.url);
 // Proposition→doc-type lists: prefer PersonService's (single source of truth) when present; fall back
 // to an inline copy so this harness runs standalone on hosts with an older checkout (e.g. the Mini
 // cron). Keep in sync with PersonService.DOC_PROP_* if those change.
-let SO, EN;
-try { const PS = require('../src/services/PersonService'); SO = PS.DOC_PROP_SLAVEOWNER; EN = PS.DOC_PROP_ENSLAVED; } catch { /* older checkout */ }
+let SO, EN, SO_SQL = null, EN_SQL = null;
+try {
+  const PS = require('../src/services/PersonService');
+  SO = PS.DOC_PROP_SLAVEOWNER; EN = PS.DOC_PROP_ENSLAVED;
+  // Role-aware predicates (#95): a will alone no longer implies both propositions. Prefer these;
+  // fall back to the coarse doc-type check on hosts with an older checkout.
+  if (PS.assertableSlaveownerSQL) { SO_SQL = PS.assertableSlaveownerSQL('cp.id'); EN_SQL = PS.assertableEnslavedSQL('cp.id'); }
+} catch { /* older checkout */ }
 if (!SO || !EN) {
   SO = ['census_slave_schedule','slave_schedule','census','will','will_testament','estate_inventory','estate_account','guardian_account','compensated_emancipation_petition','compensation_petition','emancipation_petition','plantation_record','bill_of_sale','slave_manifest','tax_record','court_record','insurance_register','government_disclosure','corporate_disclosure','correspondence'];
   EN = ['will','will_testament','estate_inventory','estate_account','compensated_emancipation_petition','emancipation_petition','plantation_record','freedmens_bank','certificate_of_freedom','slave_narrative','freedman_narrative','narrative','evacuation_roll','enslaved_census_brazil','enslaved_census','probate_enslaved_records','bill_of_sale','slave_manifest','correspondence'];
@@ -72,19 +78,23 @@ async function dbCheck(name, severity, subjectType, sql, params = []) {
   try {
     console.log(`=== retrieval-health-audit run ${RUN_ID} ${DRY ? '(DRY)' : ''} ===`);
 
-    // ── GATE INTEGRITY ──────────────────────────────────────────────────────
+    // ── GATE INTEGRITY (role-aware, #95) ────────────────────────────────────
+    // over-assertion: a flag is set that the role-aware predicate would NOT set.
+    const soHasDoc = SO_SQL ? SO_SQL : `EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($1))`;
+    const enHasDoc = EN_SQL ? EN_SQL : `EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($2))`;
     await dbCheck('gate_assert_without_doc', 'critical', 'canonical_person', `
       SELECT id, jsonb_build_object('assertable_slaveowner',assertable_slaveowner,'assertable_enslaved',assertable_enslaved) detail
       FROM canonical_persons cp
-      WHERE (assertable_slaveowner AND NOT EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($1)))
-         OR (assertable_enslaved   AND NOT EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($2)))`,
-      [SO, EN]);
+      WHERE (assertable_slaveowner AND NOT ${soHasDoc})
+         OR (assertable_enslaved   AND NOT ${enHasDoc})`,
+      SO_SQL ? [] : [SO, EN]);
 
+    // under-lift: the role-aware predicate holds but the flag is off (a gate that should be lifted).
     await dbCheck('gate_stale_lift', 'low', 'canonical_person', `
       SELECT id FROM canonical_persons cp
-      WHERE (NOT assertable_slaveowner AND EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($1)))
-         OR (NOT assertable_enslaved   AND EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL AND d.document_type = ANY($2)))`,
-      [SO, EN]);
+      WHERE (NOT assertable_slaveowner AND ${soHasDoc})
+         OR (NOT assertable_enslaved   AND ${enHasDoc})`,
+      SO_SQL ? [] : [SO, EN]);
 
     // Orphan from the dedup/resolve pool: a named canonical with zero blocking keys.
     await dbCheck('person_no_blocking_keys', 'warn', 'canonical_person', `

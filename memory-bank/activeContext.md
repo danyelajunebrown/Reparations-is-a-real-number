@@ -1,6 +1,69 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-06-30 (Session 69 — climb-as-gated-lead-source + contamination audit; issue #92)_
+_Last updated: 2026-07-01 (NY probate exhaustive validity/consistency audit)_
+
+---
+
+## NY probate exhaustive validity audit (2026-07-01) → see [[finding-ny-probate-audit-jul01]]
+Read-only audit of the live NY scrape (collection 1920234, now 71,944 written) via new
+`scripts/audit-ny-probate-quality.js`. Acquisition is excellent (S3 100%, OCR 95%, 0
+count/extraction mismatch). Three NEW high-severity findings: (1) **gate over-assertion** —
+4,910/5,301 NY testators are `assertable_slaveowner` AND `assertable_enslaved` simultaneously
+but only 9 have enslaved evidence (recomputeGate keys off doc-type not proposition → violates
+the canonical/document-gate STANDARD); (2) **junk enslavers** — "Albany"/"New York"/"Sole"/
+"Deceased" minted person_type=enslaver + assertable; (3) **#67 year-extraction REGRESSING live**
+(newest week 93.3% NULL — the Mini runs a stale pre-#67 scraper). Known #68/#69/#70 re-measured
+(smaller than feared, still open). Structural: **89% doc orphan rate** + **person-lead PARITY
+deficiency** (user's concern, CONFIRMED) — only enslaver/enslaved/heir roles built; DB-wide
+97%+ of persons are perpetrator/victim classes, connective free-person tissue under-built.
+Forensic financial extraction has reached only 1 of ~176 NY rolls. Fix order in the finding.
+
+### #95 gate over-assertion — FIXED + APPLIED + VERIFIED (2026-07-01)
+Root cause: `PersonService.recomputeGate` set each flag from `document_type` membership only, and
+`will`/`estate_inventory`/`bill_of_sale`/`correspondence` are in BOTH proposition lists → any
+stored will flipped both. Fix (role-aware, #95): partitioned DOC_PROP into OWNER_NAMED / OWNER_CONTENT
+/ ENSLAVED_NAMED / ENSLAVED_CONTENT + shared SQL predicate builders (`assertableSlaveownerSQL` /
+`assertableEnslavedSQL`, exported). *_NAMED types assert on linkage; *_CONTENT (probate) types
+assert ONLY when the person's ROLE is corroborated in the estate graph — slaveowner: owner in
+`enslaved_owner_relationships` OR a linked probate doc `enslaved_count>0`; enslaved: enslaved SUBJECT
+in eor, NEVER the will's owner-linked testator. Enumeration (unnamed count) supports the OWNER's
+flag, never an individual "was enslaved". **Applied (idempotent, +0/-0 on re-run): assertable
+`slaveowner 41,034→34,588`, `enslaved 7,631→122`, `both 7,510→1`** (the surviving both = Ann E. Jones
+MD, certificate_of_freedom + compensation petition = genuine dual-status). Health audit
+`gate_assert_without_doc`=**0 critical**. Migration **109** indexed `probate_scrape_progress.person_document_id`
+(the role predicate join; was unindexed → hung the recompute). Regression **`tests/unit/test-gate-role-aware.js`
+14/14** incl. the Ellison dual-status fixture (slave_schedule + certificate_of_freedom → BOTH; a
+mutual-exclusion fix would have erased him) + enumeration≠named. Files (UNCOMMITTED): PersonService.js,
+recompute-assertion-gates.mjs, retrieval-health-audit.mjs (role-aware), migration 109, the test.
+**DEPLOY GAP (like #67):** the Mini's scraper promotes via OLD coarse PersonService → new promotions
+re-introduce over-assertions (visible as ~2 stale-lift drift); scp PersonService.js to the Mini +
+it takes effect on next scraper restart. **Ellison reframe (complicated the whole audit):** he's NOT
+absent — present as ≥3 unlinked clusters (`William Ellerson`+sons in the 1860 Sumter District SC slave
+schedule as enslaver leads; 35 shredded `unknown` leads from the rootsweb graveyard page #100;
+enslaved origin "April" nowhere), none canonical, `free_persons` empty. Refuted my "both flags
+impossible" premise — dual status is VALID; a mutual-exclusion fix would ERASE Ellison-class people.
+
+**Filed issues #95–#101** (A–G): #95 recomputeGate over-assertion (critical), #96 person_type
+false binary (high/design), #97 #67-regression, #98 cross-source identity (Ellerson↔Ellison),
+#99 junk enslaver entities, #100 rootsweb narrative-parser shredding, #101 #68/#69/#70.
+**Ellison reframe:** he's NOT absent — present as ≥3 unlinked clusters (`William Ellerson`+sons
+in 1860 slave schedule Sumter District SC; 35 shredded leads from the rootsweb graveyard page;
+enslaved origin "April" nowhere), none canonical, `free_persons` table empty. Refutes my "both
+assertable flags impossible" premise — dual status (born enslaved → major slaveowner) is VALID;
+the gate bug is proposition-specificity, and a mutual-exclusion fix would ERASE Ellison-class
+people. **#97 EXECUTED (data side):** ran `backfill-probate-document-year.mjs --prefix
+new-york-probate- --apply` → 12,811 NULL→year, 0 regressions, NY year-NULL 54.2%→36.8%; NULLed
+234 impossible >1971 (microfilm-stamp) years. **Mini deploy DONE (staged):** confirmed Mini ran
+stale `18\d{2}` scraper (proof of the live regression); backed up + scp'd the fixed
+georgia-probate-scraper.js + probate-extractor.js (`1[6-9]\d{2}`, syntax OK). **RESTART DONE
+(controlled, user standing by on VNC/ntfy):** killed pid 98915 → re-captured a FRESH cookie jar
+from the live logged-in Chrome (59 FS cookies, fssessionid present — the KEY step that prevents
+the Jun-23 stale-jar index-wall clobber; the on-Mini jar was 8d stale from Jun 23) → reset
+watchdog → relaunched pid 42233 on the fixed code. Verified authed + healthy: reading per-roll
+Image-1 ARKs (index endpoint authed), direct-jump RESUME working, 0 SESSION LOST, NO VNC re-login
+needed. Scraper now derives years at scrape-time. Restart RECIPE that avoids the wall: re-capture
+the jar from live Chrome BEFORE relaunch (don't let the stale file inject). Follow-up on #97:
+generic per-collection max-year clamp (currentYear guard won't catch 1972–1998 microfilm stamps).
 
 ---
 

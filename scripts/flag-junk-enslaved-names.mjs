@@ -39,6 +39,12 @@ const ARTIFACTS = new Set([
   'jan', 'feb', 'mar', 'apl', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
   // connectors / fragments
   'and', 'the', 'of', 'to', 'and i', 'do',
+  // OCR mis-reads + legal/connective fragments grabbed as a name (#70 NY-probate noise):
+  // "Likewife"=OCR of "Likewise", "On" stop-word, and will-boilerplate connectives. Still NEVER a
+  // descriptor (boy/girl/negro stay real). Wrong-TOKEN noise (e.g. "Gessenar" for "Phebie") and the
+  // uniform-0.85 confidence are extractor-quality issues, not blocklistable here.
+  'likewise', 'likewife', 'on', 'only', 'excepted', 'namely', 'aforesaid', 'whereas', 'whereof',
+  'viz', 'wit', 'unto', 'therein', 'thereof', 'hereby', 'said', 'whereupon', 'hereof', 'nevertheless',
 ]);
 
 const norm = (s) => (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
