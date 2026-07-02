@@ -21,24 +21,85 @@ const SUBJECT_TABLES = {
 };
 
 // External-assertion gate (M102 / standard-canonical-person-and-document-gate.md): which
-// document_type values substantiate which proposition. A STORED doc (s3_key present) of one of
-// these types lifts that proposition's gate. Bare profiles (familysearch_record, tree_profile),
-// 'other', 'research_report', and URL-only secondary records (slavevoyages_record) substantiate
-// NOTHING — they are deliberately absent. Extensible: add a type as new sources are vetted.
-const DOC_PROP_SLAVEOWNER = [
-  'census_slave_schedule', 'slave_schedule', 'census', 'will', 'will_testament',
-  'estate_inventory', 'estate_account', 'guardian_account', 'compensated_emancipation_petition',
-  'compensation_petition', 'emancipation_petition', 'plantation_record', 'bill_of_sale',
-  'slave_manifest', 'tax_record', 'court_record', 'insurance_register', 'government_disclosure',
-  'corporate_disclosure', 'correspondence',
+// document_type values substantiate which proposition, AND for which the document TYPE alone is
+// enough vs. those that require the person's ROLE/CONTENT to be corroborated (issue #95).
+//
+// The bug (#95): a will/inventory can substantiate EITHER "was a slaveowner" (if it bequeaths
+// enslaved) OR "was enslaved" (if it names the person as property) — so those types sit in both
+// proposition lists. Keying the gate on document_type ALONE flipped BOTH flags for every testator
+// with a stored will (7,510 canonicals; 7,419 typed enslaver got a false "was enslaved" flag; 92
+// enslaved-typed got a false "slaveowner" flag). The fix splits each proposition into:
+//   *_NAMED   — the person is inherently the subject of this doc type (a slave schedule names the
+//               OWNER; a Freedman's deposit names the DEPOSITOR) → linkage alone asserts.
+//   *_CONTENT — a shared/probate type where the same document can be about either party → assert
+//               ONLY when the person's ROLE is corroborated in the estate graph:
+//                 slaveowner: person is an owner in enslaved_owner_relationships, or a linked
+//                             probate doc has enslaved_count>0 (the estate evidences holding).
+//                 enslaved:   person is the enslaved SUBJECT in enslaved_owner_relationships
+//                             (never the owner-linked testator of the will).
+// Enumeration (a count of unnamed enslaved) therefore supports the OWNER's flag, never an
+// individual "was enslaved" assertion — there is no identified person to attach it to.
+// Bare profiles (familysearch_record, tree_profile), 'other', 'research_report', and URL-only
+// secondary records substantiate NOTHING. Extensible: add a type as new sources are vetted.
+const OWNER_NAMED = [
+  'census_slave_schedule', 'slave_schedule', 'compensated_emancipation_petition',
+  'compensation_petition', 'emancipation_petition', 'plantation_record', 'insurance_register',
+  'government_disclosure', 'corporate_disclosure', 'bill_of_sale', 'slave_manifest',
 ];
-const DOC_PROP_ENSLAVED = [
+const OWNER_CONTENT = [
+  'will', 'will_testament', 'estate_inventory', 'estate_account', 'guardian_account',
+  'tax_record', 'court_record', 'correspondence', 'census',
+];
+const ENSLAVED_NAMED = [
+  'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
+  'narrative', 'evacuation_roll', 'enslaved_census', 'enslaved_census_brazil',
+  'probate_enslaved_records',
+];
+const ENSLAVED_CONTENT = [
   'will', 'will_testament', 'estate_inventory', 'estate_account',
   'compensated_emancipation_petition', 'emancipation_petition', 'plantation_record',
-  'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
-  'narrative', 'evacuation_roll', 'enslaved_census_brazil', 'enslaved_census',
-  'probate_enslaved_records', 'bill_of_sale', 'slave_manifest', 'correspondence',
+  'bill_of_sale', 'slave_manifest', 'correspondence',
 ];
+// Back-compat unions (coarse "does the person have ANY qualifying doc type" — a SUPERSET of the
+// role-aware rule; kept for consumers that only need doc-type membership).
+const DOC_PROP_SLAVEOWNER = [...new Set([...OWNER_NAMED, ...OWNER_CONTENT])];
+const DOC_PROP_ENSLAVED = [...new Set([...ENSLAVED_NAMED, ...ENSLAVED_CONTENT])];
+
+// Doc-type lists are hardcoded constants (no injection) → safe to inline as SQL literals so the
+// SAME role-aware predicate is reused by recomputeGate (single id) and the bulk/audit scripts.
+const _sqlArr = (a) => `ARRAY[${a.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')}]::text[]`;
+// `cp` is the alias/expression for the canonical id being tested (e.g. 'cp.id').
+function assertableSlaveownerSQL(cp) {
+  return `(
+    EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=${cp}
+              AND d.s3_key IS NOT NULL AND d.document_type = ANY(${_sqlArr(OWNER_NAMED)}))
+    OR (
+      EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=${cp}
+                AND d.s3_key IS NOT NULL AND d.document_type = ANY(${_sqlArr(OWNER_CONTENT)}))
+      AND (
+        EXISTS (SELECT 1 FROM enslaved_owner_relationships eor
+                  WHERE (eor.owner_subject_table='canonical_persons' AND eor.owner_subject_id=${cp})
+                     OR eor.owner_canonical_id=${cp})
+        OR EXISTS (SELECT 1 FROM person_documents pd JOIN probate_scrape_progress p
+                     ON p.person_document_id=pd.id
+                   WHERE pd.canonical_person_id=${cp} AND p.enslaved_count > 0)
+      )
+    )
+  )`;
+}
+function assertableEnslavedSQL(cp) {
+  return `(
+    EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=${cp}
+              AND d.s3_key IS NOT NULL AND d.document_type = ANY(${_sqlArr(ENSLAVED_NAMED)}))
+    OR (
+      EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=${cp}
+                AND d.s3_key IS NOT NULL AND d.document_type = ANY(${_sqlArr(ENSLAVED_CONTENT)}))
+      AND EXISTS (SELECT 1 FROM enslaved_owner_relationships eor
+                    WHERE (eor.enslaved_subject_table='canonical_persons' AND eor.enslaved_subject_id=${cp})
+                       OR eor.enslaved_canonical_id=${cp})
+    )
+  )`;
+}
 
 class PersonService {
   constructor(db) { this.db = db; }
@@ -255,22 +316,22 @@ class PersonService {
   }
 
   /**
-   * recomputeGate(canonicalId) — derive the external-assertion gate from STORED documents.
-   * A proposition becomes assertable ONLY when a person_documents row exists with s3_key
-   * present (a real archived file, not a URL pointer) AND a document_type that substantiates
-   * that proposition (DOC_PROP_*). Returns { assertable_slaveowner, assertable_enslaved }.
+   * recomputeGate(canonicalId) — derive the external-assertion gate from STORED documents,
+   * ROLE-AWARE (#95). A proposition becomes assertable ONLY when a person_documents row exists
+   * with s3_key present (a real archived file) of a substantiating type AND — for shared/probate
+   * types (OWNER_CONTENT / ENSLAVED_CONTENT) — the person's ROLE is corroborated in the estate
+   * graph (owner vs enslaved subject in enslaved_owner_relationships / enslaved_count). A stored
+   * will alone no longer flips both flags. Returns { assertable_slaveowner, assertable_enslaved }.
    */
   async recomputeGate(canonicalId) {
     const r = await this.db.query(
-      `UPDATE canonical_persons SET
-         assertable_slaveowner = EXISTS (SELECT 1 FROM person_documents d
-            WHERE d.canonical_person_id = $1 AND d.s3_key IS NOT NULL AND d.document_type = ANY($2)),
-         assertable_enslaved   = EXISTS (SELECT 1 FROM person_documents d
-            WHERE d.canonical_person_id = $1 AND d.s3_key IS NOT NULL AND d.document_type = ANY($3)),
+      `UPDATE canonical_persons cp SET
+         assertable_slaveowner = ${assertableSlaveownerSQL('cp.id')},
+         assertable_enslaved   = ${assertableEnslavedSQL('cp.id')},
          updated_at = now()
-       WHERE id = $1
+       WHERE cp.id = $1
        RETURNING assertable_slaveowner, assertable_enslaved`,
-      [canonicalId, DOC_PROP_SLAVEOWNER, DOC_PROP_ENSLAVED]);
+      [canonicalId]);
     return r.rows[0] || { assertable_slaveowner: false, assertable_enslaved: false };
   }
 
@@ -425,10 +486,17 @@ class PersonService {
   }
 }
 
-// Export the proposition→document-type lists so the gate backfill (scripts/recompute-assertion-
-// gates.mjs) and recomputeGate share ONE source of truth.
-PersonService.DOC_PROP_SLAVEOWNER = DOC_PROP_SLAVEOWNER;
-PersonService.DOC_PROP_ENSLAVED = DOC_PROP_ENSLAVED;
+// Export the proposition→document-type lists + the ROLE-AWARE SQL predicate builders so the gate
+// backfill (scripts/recompute-assertion-gates.mjs), the retrieval-health audit, and recomputeGate
+// all share ONE source of truth (#95).
+PersonService.DOC_PROP_SLAVEOWNER = DOC_PROP_SLAVEOWNER; // coarse union (back-compat)
+PersonService.DOC_PROP_ENSLAVED = DOC_PROP_ENSLAVED;     // coarse union (back-compat)
+PersonService.OWNER_NAMED = OWNER_NAMED;
+PersonService.OWNER_CONTENT = OWNER_CONTENT;
+PersonService.ENSLAVED_NAMED = ENSLAVED_NAMED;
+PersonService.ENSLAVED_CONTENT = ENSLAVED_CONTENT;
+PersonService.assertableSlaveownerSQL = assertableSlaveownerSQL; // (cpIdExpr) => SQL boolean
+PersonService.assertableEnslavedSQL = assertableEnslavedSQL;
 
 module.exports = PersonService;
 
