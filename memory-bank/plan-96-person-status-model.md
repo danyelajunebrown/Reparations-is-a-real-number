@@ -222,11 +222,18 @@ Phased, each shippable + tested; nothing breaks existing behavior:
   enslaver_lineage_ledger (the DEBIT) from `person_type='enslaver'` — must also use OWNER_ROLE_TYPES
   so a dual-status owner's debit computes; also `DocumentVerifier.js:239`, contribute.js search
   filters, the 2 stored SQL matcher fns (M033/M035). [decision 1]
-- **P1 (guardrail):** soft CHECK/domain on person_type (allow the known value set; block new junk).
-  [decision 5]
-- **P2 (truth layer, no schema change):** define status fact_types (enslavement/free_status/
-  slaveholding/free_birth; manumission exists); backfill from gate evidence for the VALIDATION COHORT
-  first (DC certificate-of-freedom + NY testators), verify, then widen. [decision 4]
+- **P1 — DONE (2026-07-02).** Migration **110** — soft CHECK guardrail on person_type (both tables),
+  allowlist = union of both vocabularies' in-use values + de-facto code enum + #96 forward values
+  (free_poc_slaveholder/formerly_enslaved_slaveholder). Applied ADD…NOT VALID then VALIDATE (brief
+  lock; all 3.1M rows passed). Verified: junk 'Albany' REJECTED, 'enslaver' + 'free_poc_slaveholder'
+  accepted. NULL allowed. Keep in sync with person-roles.js; new role = ALTER both. [decision 5]
+- **P2 — DONE (2026-07-02).** `scripts/backfill-status-facts.mjs` seeds the status layer in
+  person_facts from gate evidence, VALIDATION COHORT first: A) 122 DC certificate_of_freedom →
+  `free_status` (conservative: free status, NOT prior enslavement — real-or-absent); B) 7 NY testators
+  (assertable_slaveowner) → dated `slaveholding`. Grounded (source_url + citation + conf 0.85),
+  idempotent (NOT EXISTS guard; re-run = 0). Status layer now: manumission 221 (existing) + free_status
+  122 + slaveholding 7. Dual-status EMERGENCE proven separately by test-gate-role-aware (a person CAN
+  hold both). WIDEN beyond the cohort after review. [decision 4]
 - **P3 (role-group centralization):** `person_role_group()` SQL fn + JS mirror; route the 5 high-risk
   consumers + the 2 stored SQL matcher fns through it; dual-status summary derivation.
 - **P4 (lead-capable person_facts):** M103-mirror migration + the safety net (cascade trigger +
