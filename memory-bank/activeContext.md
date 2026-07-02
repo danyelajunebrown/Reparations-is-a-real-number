@@ -4,6 +4,27 @@ _Last updated: 2026-07-02 (#96 person-status model P0–P3 core — CHECKPOINT/P
 
 ---
 
+## Review pipeline SHORED UP + backlog roadmap (2026-07-02, branch audit/probate-classifier)
+**Review pipeline — all fail-loud now, merged to main/Render:** #106 auth VALIDATES token (verifyAndActivate
+via /api/admin/verify; bad token → "✗ rejected"); #108 review.html api() THROWS on any non-OK (killed the
+false-"✓"/card-vanish-but-nothing-persists bug); #109 cross-source Link 42P08 (cast $2::text in assignment+concat);
+#110 ambiguous approve/reject 42P08 (separate concat param); **#111 PersonService.merge** — SAVEPOINT-before +
+ROLLBACK-TO (was SAVEPOINT-after-abort = "current transaction is aborted" 500) AND handles unique OR CHECK
+constraint (dedup_pair_order self-pair) by row-by-row delete-on-collision. Merge primitive now works for real dupes.
+**Running:** `merge-climb-duplicate-clusters.mjs --apply` (folds 363 anchored climb re-import clusters / ~649 dupes,
+person_merge_log; resumable/idempotent) + doc-embed drip (~15%).
+**BACKLOG ROADMAP (workflow wf_a3ff131b-1f2, 12 areas scoped, full in task w2agk9xpx.output):**
+QUICK WINS (DB-only, dry-run-first): QW-1 segment-probate-v2 over all rolls; QW-2 over-consolidation READ-only audit
+(574 clusters: 4,369 cross-role, 267 null-state, rest Trask-absentee/human); QW-3 inheritance asset-detail backfill
+(~178 monetary+342 enslaved+390 heir, feeds land); QW-4 enslaved-lead confidence scoring (replace flat 0.85);
+QW-5 Ellison rootsweb triage (260 leads). BIG BETS (dep order): BB-1 land-bequest→land_transfer_events (NORTH STAR,
+M038/M067 schema built, grantee=0); BB-2 non-enslaver producer (#96 enables); BB-3 forensic scaling (roll claim-lock);
+BB-4 #63 approach B (new enslaved_candidate_pairs table, name+county block); BB-5 dedup clustering UI; BB-6 RAG adoption
+(Tailscale Funnel topology); BB-7 forward descendancy (blocked on identity fingerprint); BB-8 #55/#100 producers.
+NOW EXECUTING quick wins (QW-2/3/4 dry-runs). Data-quality cluster #68/#69/#95/#99 CLOSED earlier today; #105 filed.
+
+---
+
 ## #96 person_type false binary → status-as-facts — P0–P3 core DONE (2026-07-02) → [[plan-96-person-status-model]]
 Triggered by the William Ellison reframe (born enslaved → major SC slaveholder; the binary can't
 hold him). Full design + two research findings in the plan doc. Executed, tested, committed on
