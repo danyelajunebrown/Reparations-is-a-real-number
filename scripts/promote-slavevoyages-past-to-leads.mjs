@@ -72,8 +72,13 @@ for (const r of rows) {
     idSystem: r.sv_id ? 'slavevoyages' : null,
   };
   try {
+    // NB: do NOT pass externalId/idSystem here. slavevoyages_past_people.sv_id (African-Origins
+    // PERSON ids) collides numerically with the canonical `slavevoyages` external-ids (voyage-level
+    // ENSLAVER/trader ids) — a different namespace. resolve()'s tier-1 external match ignores the
+    // name, so passing it bolted enslaved Africans onto unrelated enslaver canonicals (5,275 false
+    // links, all enslaved→enslaver). Match on NAME + location only (Biscoe-safe); sv_id stays in context.
     const res = await svc.resolve({ name: record.name, birthYear: record.birthYear, location: record.location,
-      sex: record.sex, externalId: record.externalId, idSystem: record.idSystem, personType: 'enslaved' });
+      sex: record.sex, personType: 'enslaved' });
     const m = res.match;
     // ONLY accept a match that lands on the real spine. A match to another orphaned
     // slavevoyages_past_people row (siblings share common African names) is NOT a promotion —
