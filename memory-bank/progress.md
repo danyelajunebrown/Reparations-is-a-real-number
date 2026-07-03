@@ -2377,6 +2377,34 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 6. **Living descendants inherit an unpaid debt** — they are not being debited retroactively for crimes they weren't party to. The architecture must consistently reflect this.
 7. **Brattle Group $100-131T** is the macro ceiling — individual DAA methodology should not exceed this when extrapolated
 
+## Session 2026-07-02 — review pipeline hardened, quick wins, BB-1 deed/parcel pivot
+
+**Review pipeline made fail-loud (6 fixes, merged to main/Render):** #106 auth validates token;
+#108 `review.html api()` throws on any non-OK (killed the false-"✓"/nothing-persists bug); #109
+cross-source Link 42P08 (`$2::text` in assignment+concat); #110 ambiguous approve/reject 42P08
+(separate concat param); #111 `PersonService.merge` SAVEPOINT-before + ROLLBACK-TO and unique-OR-check
+constraint handling (was SAVEPOINT-after-abort → "current transaction is aborted" 500). Root cause of
+"submissions not received" = false-success client + 42P08/savepoint server bugs, not auth.
+
+**Climb-dedup:** `merge-climb-duplicate-clusters.mjs` folded 648 anchored climb re-import duplicates
+(the "Jennie Goodwin ×6" pattern) → dedup-queue pairwise explosion collapsed at the source (#92).
+
+**Quick wins (all dry-run-first; each dry-run caught a real bug):** QW-2 unwound 5,697 cross-role false
+identity links (enslaved/freedperson → enslaver canonical; #105, Trask-safe/reversible). QW-4
+`score-enslaved-lead-confidence.mjs` re-scored 2,663 flat-0.85 leads (869 OCR/secondary→0.72; scholarly
+Santos kept 0.85 — dry-run caught an 11,887-row over-penalization of Brazilian mononyms; #70). QW-5
+`triage-ellison-rootsweb-leads.js` triaged the 260-lead Ellison narrative shred (13 fragments rejected,
+97→reviewing; #100). QW-3 `backfill-inheritance-asset-detail-from-probate.mjs` — inheritance_edges typed
+3→96, valued 0→20 (audit rule #1: never sums; count-not-sum; heir fail-closed). QW-1 deferred (Mini collision).
+
+**BB-1 pivot to a DEED/parcel spine** — see [[finding-bb1-deed-parcel-spine]]. Wills give heirship
+provenance, not parcel identity; deeds carry legal descriptions + liber/folio. Migration 112 `properties`
+parcel anchor + wired `land_transfer_events.property_id` FK; anchored the 1 real deed. Follow-ups filed:
+#112 (deed/parcel spine: corpus, parser, county forward-trace, georeference) + #113 (probate extractor
+captures no devisee per land item → 0/280 land items name a heir).
+
+Backlog roadmap produced by a 12-area read-only scoping workflow; remaining big bets BB-2..BB-7.
+
 ---
 
 *This document tracks development progress and is updated regularly as features are completed.*
