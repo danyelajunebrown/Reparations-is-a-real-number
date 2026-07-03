@@ -76,6 +76,48 @@ This file is the "outside" record; the schema mandates the "inside" per-row prov
 - The SlaveVoyages named cohort (#117) is the NUMERATOR inside these denominators (e.g. ~9,531 Cuba
   disembarkations within Cuba's 436,495).
 
+---
+
+## PERSON-LEVEL SCRAPE TARGETS (their own pipelines — beyond aggregate benchmarks)
+These are PRIMARY, person-level sources: they yield the numerator (named enslaved) AND named
+enslavers AND transfers — not just denominators. Each needs its own scrape (Mini, not MacBook).
+
+### A. British Caribbean Slave Registers, 1817–1834 — **TIER-1 target** (numerator + denominator + dual ledger)
+- **PRIMARY:** The National Archives (UK) record group **T 71** — Office of Registry of Colonial Slaves
+  & Slave Compensation Commission. UNESCO **Memory of the World** register (2009, +Bermuda addendum 2011):
+  "Registry of Slaves of the British Caribbean 1817–1834." Tier ~0.95 (government registry; Higman rates
+  it "generally standing up to quite strict tests of reliability").
+- **Scope (TNA T 71 volume counts):** Jamaica 249 vols + 6 indexes · Barbados 37 + 7 · Grenada 67 + 2 ·
+  Demerara 37 + 6 · Trinidad 8 + 10 (surnames indexed) · Tobago 30 · Berbice 8 + 2 · Dominica 26 ·
+  St Vincent 6 + 2 · St Lucia 12 + 2 (from 1815) · St Kitts 8 · Antigua 7 · Nevis 6 · Montserrat 5 ·
+  Anguilla 3 · Bahamas 5 · Bermuda 4 · Honduras/Belize 2. (Higman 1995, p.8.) Also island archives
+  (Bahamas, Belize, Dominica, Jamaica, St Kitts, Trinidad).
+- **Fields (per enslaved person):** name (rarely surnames), sex, age, colour, place of birth
+  (Creole/African + sometimes ethnic origin — Ebo/Mande/Bambara/Fulani/Congo/Senegal), physical
+  condition, occupation, manumission; subsequent triennial returns record births/deaths/manumissions/
+  sales/marronage. **Also names ENSLAVERS** (+ gender, white/free-person-of-colour status).
+- **Why Tier-1:** closes denominators for a whole cluster of British colonies, IS the numerator (every
+  enslaved person named), AND pairs with the **1834 Slave Compensation** (£20M paid to owners = dual
+  ledger, compensation-to-enslavers = evidence of debt). Maps to enslaved leads + enslaver canonicals +
+  `chattel_transfer_events` (sales in the returns). We already touch **UCL Legacies of British Slave-
+  ownership** (`ucl_lbs`, 861 leads) — underexploited.
+- **Access:** TNA T 71 microfilmed; **Ancestry** licensed to digitize (ancestry.co.uk). No copyright
+  restriction on the records themselves (gov records); respect Ancestry's ToS for their images.
+- **Note:** few slave INDEXES exist in T 71 (owners/plantations indexed at front, but "pages of Williams
+  and Marys" made slave indexes impractical) → scrape the registers themselves, not an index.
+
+### B. Brazil — Pombos (Pernambuco) slave deeds, 1863–1890 (chattel transfers)
+- **PRIMARY:** District notary registrations, municipality of **Pombos, Pernambuco, Brazil** —
+  "Slave deeds 1863–1890 (without index)." FamilySearch **DGS 4144740** (film 1532441 Item 2; filmed by
+  the Genealogical Society of Utah 1988, Granite Mountain Record Vault). Portuguese. Tier ~0.95 (notarial
+  primary). Part of the Brazil, Pernambuco civil-registration collection.
+- **Content:** notarial slave-deed registrations (escrituras de escravos) — **CHATTEL TRANSFERS** (sales,
+  transfers of enslaved persons) → `chattel_transfer_events` + named enslavers/enslaved. Late-slavery
+  Brazil (post-1850 trade ban, pre-1888 abolition).
+- **Access:** FamilySearch (film may be Family-History-Center/affiliate restricted — check). Its own
+  scrape; a template for other Brazilian notarial-district slave-deed films.
+
 ## See also
 [[assessment-macgregor-cuba-source-and-benchmark-scope]] · [[plan-ipums-census-benchmark]] ·
-[[interpretive-framework]] · [[bibliography-index]] · `migrations/090-secondary-source-compilations.sql`
+[[interpretive-framework]] · [[wealth-tracing-framework]] · [[bibliography-index]] ·
+`migrations/090-secondary-source-compilations.sql`

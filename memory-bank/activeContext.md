@@ -1,6 +1,58 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-02 (#96 person-status model P0–P3 core — CHECKPOINT/PAUSE)_
+_Last updated: 2026-07-03 (reference-class benchmark layer + SlaveVoyages PAST de-siloing)_
+
+---
+
+## Reference-class benchmark layer + SlaveVoyages PAST de-siloing (2026-07-03, branch audit/probate-classifier)
+Multi-national slave-population BENCHMARK denominators (calibration #90 reference classes) +
+de-siloing the orphaned SlaveVoyages named-enslaved cohort. Origin: user asked whether IPUMS/other-
+country aggregates could be voraciously intaken now that a lead table exists.
+
+- **US census benchmark (M113→M114, DONE):** `census_holding_benchmarks` = IPUMS complete-count
+  county-year enslaved/free/pop denominators. AGGREGATE layer, NOT persons (no placeholder rows).
+  M113 keyed on `stateicp` (household files) was CORRUPT — stateicp is IPUMS-uncertified and
+  TRANSPOSES VA↔TN 1810-1840 (VA's ~450k enslaved landed under "Tennessee"); a swap conserves the
+  national total so it passed the national gate while per-state strata were 60-200% wrong. Caught by a
+  per-state control-total audit; rolled back 1830/1840. **Fix (M114): rebuild on the COUNTY file's
+  validated `statefip`** (1840 GA/MD/SC/TN match published 0.0%). LOADED **4,297 county-years, 31
+  states, 1790-1840**, national totals within 0.5%. Ingest hardened: per-state corruption tripwire +
+  breakdown-absent skip (no false 0s). `scripts/ingest-ipums-census-benchmark.mjs` · `plan-ipums-census-benchmark.md`.
+- **Cuba source assessment (6-agent fan-out, 1,062 OCR pages):** the "Cuba book" = John MacGregor,
+  *Commercial Statistics* Vol IV (1850) — a macro trade/customs digest, NOT a Cuba monograph (Cuba
+  ~50pp; back 2/3 = British East Indies). Person value ~ZERO; macro value REAL — cited la Sagra
+  aggregates: 436,495 enslaved (1841), capitalized-enslaved **$41.7M within $507M colonial capital**
+  (1830 dual-ledger balance sheet). `assessment-macgregor-cuba-source-and-benchmark-scope.md`.
+- **Citation discipline (`reference-benchmark-sources-register.md`):** primary-first for every figure —
+  Cuba (la Sagra/censuses 1775-1841), Jamaica 1788 (**TNA CO 137/87**), British+French W.I. 1773-88
+  (**Privy Council Slave-Trade Committee minutes** + Necker, via 1790 Almanac), Brazil 1872 (**DGE**).
+  Conduits (MacGregor, Jamaican Family Search, Wikipedia) named ONLY where figures enter the class.
+  Licensing (JFS no-repost → cite the primary).
+- **Issues filed: #116** reference-class benchmark layer (generalized `slave_economy_benchmarks`,
+  polity discriminator, aggregates-only); **#117** de-silo the SlaveVoyages PAST cohort.
+- **SlaveVoyages PAST de-siloing (#117, Cuba pilot):** `slavevoyages_past_people` = 169,065 named
+  enslaved Africans, ALL orphaned (canonical_person_id=0 linked); the thin SV→canonical ingest put
+  51,111 names into canonical_persons with `primary_state` NULL, geography stranded in the side table.
+  **~9,531 disembarked Havana/Cuba/Matanzas** (african_origins = Havana Mixed Commission liberated
+  Africans) = the NUMERATOR inside Cuba's 436,495. Promoter `scripts/promote-slavevoyages-past-to-leads.mjs`
+  (M115 back-link cols) routes each via `PersonService.resolve` → link-to-spine or GATED secondary lead.
+  **BUG caught by spot-check: externalId=sv_id fired resolve tier-1 (name-blind), and sv_id (African-
+  Origins PERSON ids) collides numerically with canonical `slavevoyages` external-ids (voyage ENSLAVER
+  ids) → 5,275 enslaved bolted onto enslaver canonicals.** No canonical/external-id mutated (ON CONFLICT
+  DO NOTHING); rolled back back-links; **fixed to NAME+location (Biscoe).** 4,256 correct new gated
+  leads preserved; re-run landing the rest. Lesson (twin of the stateicp catch): a plausible match rate
+  masking systematic corruption — the spot-check gate is why we scale safely.
+- **Country coverage scoping:** HAVE US/Cuba/Jamaica/Brazil-1872/BWI-1790/FWI-1770s. NEED (tier-1):
+  British 1817-34 Slave Registers + 1834 compensation (denominator + dual-ledger enslaver debt in one),
+  Brazil provincial/earlier, Puerto Rico, Suriname. Recaptive sites (Freetown 62k, St Helena) = a
+  different reference class.
+- **NEW SCRAPE TARGETS (user-supplied, in the register):** (1) **British Caribbean Slave Registers
+  1817-1834** (UNESCO Memory of the World; **TNA T 71**, ~700+ vols — Jamaica 249/Barbados 37/Grenada
+  67/Demerara 37/Trinidad/Berbice/Dominica/St Kitts/Bahamas/Bermuda…; Ancestry-digitized). Person-level
+  name/sex/age/colour/birthplace(creole|African+ethnic)/occupation/manumission + NAMED ENSLAVERS — the
+  Tier-1 target (numerator+denominator+dual-ledger in one). Its own scrape. (2) **Brazil, Pombos
+  (Pernambuco) slave deeds 1863-1890** (FamilySearch DGS **4144740**, film 1532441 Item 2; notarial
+  registrations) → chattel-transfer records for `chattel_transfer_events`. Its own scrape.
 
 ---
 
