@@ -28,8 +28,17 @@ fragments rejected, 97→reviewing; Ellisons kept). QW-3 APPLYING in bg (`backfi
 — 725 testators, 426 candidate asset edges from probate_estate_extractions per-heir JSONB; AUDIT RULE #1: never sums values
 (count-not-sum, value NULL when >1 valued item collapses); Biscoe: skip if heir not a single canonical (heir_id NOT NULL);
 SLOW — resolveHeir ILIKE full-scan). QW-1 (segment sweep) DEFERRED — collision risk w/ live Mini drip, needs roll claim-lock.
-Climb-merge DONE (648 folds). NEXT: BB-1 land-bequest→land_transfer_events (north star, unblocked by QW-3). Review-pipeline
-PRs #106/#108/#109/#110/#111 merged. #68/#69/#95/#99 CLOSED; #105 partially executed (QW-2).
+Climb-merge DONE (648 folds). Review-pipeline PRs #106/#108/#109/#110/#111 merged. #68/#69/#95/#99 CLOSED; #105 partially executed (QW-2).
+QW-3 APPLIED: inheritance_edges typed 3→96, valued 0→20 (108 from-probate; 272 skipped fail-closed).
+**BB-1 PIVOTED to a DEED/parcel spine** (user Q "how would parcels even be IDed?" — a WILL bequest isn't parcel-identifying;
+a DEED carries a recorded legal description + liber/folio, traceable via county grantor-grantee index). DONE: migration 112
+`properties` parcel anchor (legal_description/lot/block/subdivision/liber_folio/metes_and_bounds + nullable modern_parcel_apn/
+geometry) + wired the dangling land_transfer_events.property_id FK; anchored the 1 real deed (Biscoe 1858 DC Lots 47&48
+Holmead's addition + Liber J.A.S.104 f.124-128). `build-inheritance-land-transfers.mjs` = heirship-PROVENANCE producer, NOT
+applied (wills feed heirship graph not parcels; 7 vague will land-bequests). NEXT for the parcel spine: deed legal-description
+parser at scale (deed corpus THIN — 1 row now), county grantor-grantee forward-trace (manual/browser/Mini), metes-and-bounds→
+modern APN georeferencing. Remaining big bets: BB-2 non-enslaver producer, BB-3 forensic scaling, BB-4 #63 cross-source,
+BB-5 dedup-clustering UI, BB-6 RAG adoption, BB-7 forward descendancy. QW-1 (segment sweep) still deferred (Mini collision).
 
 ---
 
