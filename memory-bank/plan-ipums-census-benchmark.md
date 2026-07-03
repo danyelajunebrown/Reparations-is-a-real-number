@@ -171,19 +171,37 @@ match published). It is the ONLY trustworthy year right now, and it is total-onl
 state-sanity probe all work; the fault is the SOURCE geography variable. Cost was low: rolled
 back cleanly, nothing downstream consumed the corrupt rows.
 
-### PATH FORWARD (geography must be fixed before re-ingesting 1810–1840)
-1. **Re-pull via the IPUMS extract builder** selecting a VALIDATED geography — `STATEFIP`
-   (FIPS, certified) + `COUNTYICP` with the codebook — instead of these pre-built household
-   CSVs whose `stateicp` is uncertified. Preferred fix.
-2. OR obtain the ICPSR county→state crosswalk/codebook and remap the VA-coded st40 counties
-   (forensic; only if a re-pull isn't possible).
-3. Re-ingest 1810–1840 keyed on the validated state var; **run the state-sanity probe as a
-   MANDATORY pre-apply gate** (fold VA/TN + a few control states into the script itself).
-4. 1800 CSV: do NOT apply on a national-total pass alone — same state-check first.
+### ✅ RESOLVED (Jul 3) — rebuilt on the COUNTY file's `statefip`; full 6-year frame LIVE
+The fix was the **IPUMS COUNTY file** (`C_1790_1840.csv`): it carries **`statefip`** (validated
+FIPS) AND is already county-aggregated. Under statefip, VA/TN are correct — 1840 GA/MD/SC/TN
+match published to **0.0%**, and the icp54/icp40 numbers proved the mechanism (VA and TN's
+ICPSR codes are literally TRANSPOSED in the household files). Bonus: with correct geography,
+**1810/1820 are ~complete, not corrupt** — the −17%/−7% "gaps" were entirely the stateicp bug.
 
-**Script hardening TODO:** add the per-state control-total check (VA/TN/SC/MD vs published)
-INTO `ingest-ipums-census-benchmark.mjs` as a blocking pre-apply gate, so "national total OK"
-can never again wave through scrambled strata.
+- **M114** DROP+CREATE'd `census_holding_benchmarks` keyed on `(census_year, statefip,
+  countyicp)`; added `statefip`, `region`, `county_pop_free/slave`; `stateicp` retained
+  reference-only (flagged known-corrupt). Household-distribution stats (slaveholding-hh count,
+  max holding) DROPPED — the C file is county-aggregate; recover later via the H file + the
+  statefip↔stateicp crosswalk the C file provides.
+- **Ingest rewritten** to consume the C file (row=county-year, no aggregation) with two new
+  gates: per-row integrity (`pop==free+enslaved`) AND a **per-state corruption tripwire**
+  (VA/TN/SC/MD/GA vs published; blocks on the >20%-inflation / intact-year-gutting signature).
+  **Breakdown-absent rows** (pop>0 but free/enslaved split missing — 8×1790 + 4×1800 TN/territory
+  counties) are SKIPPED + logged, never stored as a false `enslaved=0`.
+- **LOADED:** **4,297 county-years, 31 states, 1790–1840.** National totals: 1790 −0.5%,
+  1800 −0.0%, 1810 **0.0%**, 1820 −0.3%, 1830 **0.0%**, 1840 **0.0%**. VA 1790 = 292,173
+  (pub 292,627). The #90 control-total frame now rests on correct geography for the full span.
+
+**Lessons banked:** (1) use IPUMS's CERTIFIED variable (statefip), never a physically-present-
+but-uncertified column (stateicp); (2) a national total conserves swaps — per-state checks are
+the real integrity gate, now enforced IN the script; (3) skip-and-log beats fabricating zeros.
+
+### Remaining / next
+- Wire the frame into #90 (swap the reconciler's demo `controlTotal` for these census cells +
+  a coverage layer). This was always the point.
+- (Optional) recover household-distribution stats via the H file + statefip↔stateicp crosswalk.
+- (Optional) map statefip/countyicp → our `primary_state`/`primary_county` for joins to the
+  documented corpus (the coverage metric `documented / enslaved_total` per county-year).
 
 ## See also
 [[project_calibration_first_architecture]] · [[finding-census-namematch-falsepositives-jun30]] ·

@@ -93,5 +93,4 @@ scratch_q*.mjs
 # of the repo; ingest reads them from a local path (see plan-ipums-census-benchmark).
 data/ipums/
 *.sas7bdat
-H_[0-9]*.csv
-h_[0-9]*.csv
+[HhCc]_[0-9]*.csv
