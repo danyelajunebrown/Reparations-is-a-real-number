@@ -62,6 +62,13 @@ leads) and is promoted only by the same rules every other source obeys.
 - Retire direct `INSERT INTO canonical_persons` in `resolve-climb-ancestors.js` /
   `scrape-parents.js` / the climber. **Dry-run**: count leads-created vs links-reused.
 
+> **Evidentiary spec for this filter: `standard-genealogical-edge-evidence.md` (Jul 3 2026).**
+> That standard defines the kinship proposition, per-edge evidence tiers, the FS-Sources harvest, and the
+> DAA chain-of-custody rule. Phase B's structural/temporal checks are the CHEAP half; the standard is the
+> DOCUMENTARY half (an edge is assertable only with a proposition-specific kinship document). "Unreliable
+> before X date" is retired there in favor of per-edge evidence — the depth cutoff becomes an emergent
+> statistic, not a rule. Wire Phase B to SET `canonical_family_edges.evidence_tier`/`verified` per that standard.
+
 ### Phase B — Genealogical-production filter (MOSTLY ALREADY BUILT — run + wire, don't rebuild)
 **Firsthand read (Jun 30): the project already built these validators.** Phase B is to
 CONSOLIDATE them, WIRE them as an ingest gate (they are currently retroactive/ad-hoc), and
