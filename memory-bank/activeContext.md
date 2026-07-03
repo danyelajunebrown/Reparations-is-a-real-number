@@ -29,6 +29,10 @@ would fail every current DAA incl. the Hopewell fixture; flip to `enforce` once 
 `tests/unit/test-daa-kinship-gate.js` (fake-db, 7/7: audit-no-throw, enforce-throws, first-gap-generation,
 all-proven-passes, no-FS-path-blocks). STILL TODO (mechanism 1/2/4): FS Sources-tab harvest → populate
 canonical_family_edges tier/source_document_id; edge-gate lift; deprecate discovery-method confidence constants.
+**Harvest SCOPED → [[plan-fs-source-harvest-for-kinship-edges]]:** pure classifier (MacBook) → edge writer → Mini
+live harvest at `/tree/person/sources/{FS_ID}`; reuses S3StorageAdapter + `plan-fs-image-archiving` (gate needs
+s3_key, not a URL); reuses climber's ARK record-parse (:1236/:1500). 3 open decisions (D1 auto-verify tier-1?,
+D2 leads-vs-canonical edge ends → write M103-polymorphic, D3 conflicting-parents → flag never overwrite).
 
 ## Reference-class benchmark layer + SlaveVoyages PAST de-siloing (2026-07-03, branch audit/probate-classifier)
 Multi-national slave-population BENCHMARK denominators (calibration #90 reference classes) +

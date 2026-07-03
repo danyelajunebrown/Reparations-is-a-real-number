@@ -1,0 +1,98 @@
+[
+  {
+    "name": "will names subject as son → tier-1 stated, auto-verify",
+    "source": {
+      "collectionTitle": "Georgia, Wills and Probate Records, 1742-1992",
+      "eventYear": 1817,
+      "subject": { "name": "James Hopewell Jr", "fsId": "AAAA-001" },
+      "relationships": [{ "role": "father", "name": "James Hopewell", "fsId": "AAAA-000" }]
+    },
+    "expect": {
+      "documentType": "will", "evidenceTier": 1, "evidences": "child_of",
+      "verifiedEligible": true, "parentFsId": "AAAA-000"
+    }
+  },
+  {
+    "name": "death certificate names parents → tier-1 stated, auto-verify",
+    "source": {
+      "collectionTitle": "Virginia, Death Records, 1912-2014",
+      "eventYear": 1930,
+      "subject": { "name": "Mary Weaver", "fsId": "BBBB-001" },
+      "relationships": [{ "role": "mother", "name": "Ann Weaver", "fsId": "BBBB-000" }]
+    },
+    "expect": {
+      "documentType": "death_certificate", "evidenceTier": 1, "evidences": "child_of",
+      "verifiedEligible": true, "parentFsId": "BBBB-000"
+    }
+  },
+  {
+    "name": "post-1850 census co-residence → tier-1 inferential, needs review",
+    "source": {
+      "collectionTitle": "United States Census, 1860",
+      "eventYear": 1860,
+      "householdCoResidence": true,
+      "subject": { "name": "Ann Maria Biscoe", "fsId": "CCCC-001" },
+      "relationships": [{ "role": "father", "name": "Walter Biscoe", "fsId": "CCCC-000" }]
+    },
+    "expect": {
+      "documentType": "census", "evidenceTier": 1, "evidences": "child_of",
+      "verifiedEligible": false, "parentFsId": "CCCC-000"
+    }
+  },
+  {
+    "name": "pre-1850 census head-only → dropped (no named child)",
+    "source": {
+      "collectionTitle": "United States Census, 1840",
+      "eventYear": 1840,
+      "householdCoResidence": true,
+      "subject": { "name": "Hugh Hopewell", "fsId": "DDDD-001" },
+      "relationships": [{ "role": "father", "name": "Hugh Hopewell V", "fsId": "DDDD-000" }]
+    },
+    "expect": { "documentType": null, "evidenceTier": null, "evidences": null }
+  },
+  {
+    "name": "will attached but names no parent → dropped",
+    "source": {
+      "collectionTitle": "Maryland Register of Wills",
+      "eventYear": 1799,
+      "subject": { "name": "Unrelated Testator", "fsId": "EEEE-001" },
+      "relationships": [{ "role": "spouse", "name": "Someone Else", "fsId": "EEEE-002" }]
+    },
+    "expect": { "documentType": null, "evidenceTier": null, "evidences": null }
+  },
+  {
+    "name": "deed naming a parent → tier-2 correlated, needs review",
+    "source": {
+      "collectionTitle": "South Carolina Land Deeds and Grantor Index",
+      "eventYear": 1855,
+      "subject": { "name": "William Ellison Jr", "fsId": "FFFF-001" },
+      "relationships": [{ "role": "father", "name": "William Ellison", "fsId": "FFFF-000" }]
+    },
+    "expect": {
+      "documentType": "deed", "evidenceTier": 2, "evidences": "child_of",
+      "verifiedEligible": false, "parentFsId": "FFFF-000"
+    }
+  },
+  {
+    "name": "bare FamilySearch tree link → no kinship document type, dropped",
+    "source": {
+      "collectionTitle": "FamilySearch Family Tree",
+      "subject": { "name": "Speculative Graft", "fsId": "GGGG-001" },
+      "relationships": [{ "role": "father", "name": "Medieval Lord", "fsId": "GGGG-000" }]
+    },
+    "expect": { "documentType": null, "evidenceTier": null, "evidences": null }
+  },
+  {
+    "name": "marriage record naming parents → tier-1 stated, auto-verify",
+    "source": {
+      "collectionTitle": "North Carolina Marriage Records, 1741-2011",
+      "eventYear": 1848,
+      "subject": { "name": "Nancy Brown", "fsId": "HHHH-001" },
+      "relationships": [{ "role": "parent", "name": "Elias Brown", "fsId": "HHHH-000" }]
+    },
+    "expect": {
+      "documentType": "marriage_record", "evidenceTier": 1, "evidences": "child_of",
+      "verifiedEligible": true, "parentFsId": "HHHH-000"
+    }
+  }
+]

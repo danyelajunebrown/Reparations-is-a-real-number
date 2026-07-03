@@ -151,6 +151,7 @@ falls out of the data instead of being hardcoded, and it is falsifiable one docu
 4. **Deprecate** discovery-method confidence constants as assertability signals.
 
 ## See also
+`plan-fs-source-harvest-for-kinship-edges.md` (mechanism step 1 — the harvest producer) ·
 `standard-canonical-person-and-document-gate.md` (the person-level twin; add the kinship
 column to its document table) · `assessment-climb-architecture-gap-jun30.md` ·
 `plan-climb-as-gated-lead-source.md` · `note-climb-resolution-producer-jun27.md` ·
