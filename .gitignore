@@ -79,3 +79,12 @@ tmp-*.js
 scripts/_tmp_*.mjs
 test-results/
 test-barnard-extract.js
+
+# Generated worksheets — contain opted-in participant lineage PII (real names,
+# genealogy) + large binaries. NEVER commit: this repo publishes to public Pages.
+worksheets/
+
+# Root-level scratch probes (one-off DB/S3 queries, size checks)
+db-size.mjs
+s3-size.mjs
+scratch_q*.mjs
