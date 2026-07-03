@@ -78,11 +78,17 @@ connection lifecycle as the climber (connect to 9222, per-image ARK from `page.u
 unicode sanitize, SAVEPOINT-scoped writes). Respects the one-FS-scraper-at-a-time rule.
 
 ## Phasing
-1. **A — classifier + fixtures + unit test** (MacBook; no deps). Deliverable: tiering is
-   correct and reviewable in isolation.
-2. **B — edge writer + a small integration test** against a transaction-rolled-back DB
-   (MacBook; pattern of `test-gate-role-aware.js`). Deliverable: one hand-fed source →
-   one tier-1 `canonical_family_edges` row with `s3_key`.
+1. **A — classifier + fixtures + unit test** (MacBook; no deps). ✅ DONE (`993d497ff`)
+   `src/services/climb/kinship-source-classifier.js`, 11/11.
+2. **B — edge writer + integration test** against a transaction-rolled-back DB
+   (MacBook; pattern of `test-gate-role-aware.js`). ✅ DONE
+   `src/services/climb/kinship-edge-writer.js` (resolve FS→canonical, ensure
+   person_documents, D3 conflict flag, SELECT-first upsert with D1 verify), 11/11 live-DB.
+   Confirmed: census co-res → verified=false, stated will+s3_key → verified=true, stated
+   without s3_key → not verified, conflict → both edges unverified+flagged, M103 trigger
+   syncs polymorphic cols. NOTE: person_documents unique index is (canonical_person_id,
+   unconfirmed_person_id, s3_url, name_as_appears) — pre-archive s3_url is NULL so the
+   per-source identity is carried in name_as_appears (`kinship:<type>:<sourceUrl>`).
 3. **C — wire into the climber's loop** behind a flag (e.g. `CLIMB_HARVEST_SOURCES`), dry-run
    on ONE fixture lineage (Hopewell / Nancy Brown G21N-4JF) on the Mini, measure edges/person.
 4. **Flip** `DAA_KINSHIP_GATE=enforce` for that lineage once its path is edge-to-edge
