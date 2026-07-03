@@ -141,10 +141,37 @@ There is no 1790 VA/GA/KY denominator because the census itself is gone — VA c
 assume every state×1790 exists. This is exactly the benchmark earning its keep: it records
 what the census actually holds, so absence-of-source is attributed correctly.
 
-### 1800–1840 — PENDING (download the remaining household CSVs)
-Same script, one invocation per file (`--apply`). These years are largely intact, so the >5%
-strict coverage gate is live and meaningful. 1830/1840 carry the enslaved age/sex buckets →
-`bucket_sums` fills out (1790 is total-only). Expect strong control-total matches.
+### 1830 — DONE (989 county-year rows), 1840 — DONE (1,276 rows)
+Both intact-census years, strict >5% gate live. 1840 matched published to **−0.3%**
+(2,480,265 vs 2,487,355 enslaved); 1830 clean, integrity 0-violation. `bucket_sums` fills
+out (age/sex enslaved buckets present 1830/1840; 1790 was total-only). Top cell both years =
+Charleston District SC (~61k enslaved). These are the solid core of the frame.
+
+### 1820 — QUARANTINED (state-code corruption; NOT ingested) ⚠
+The strict gate BLOCKED 1820 (enslaved −6.9%, pop −7.4% vs published). Investigation
+(temp state-breakdown probe) found it is NOT simple coverage loss:
+- **Genuine missing states** (known 1820 losses): AL, MO, NJ, AR all −100%. Expected.
+- **State-attribution corruption:** **Virginia −84%** (66,825 vs published 425,153) while
+  **stateicp=40 ("Tennessee") +403%** (402,837 vs 80,107 — TN never exceeded ~275k in its
+  history). The two nearly offset (~358k missing from VA ≈ ~322k excess in st40). County
+  probe confirmed: st40 holds **81 counties** (TN had ~40) and VA-scale enslaved, while st54
+  holds only 48 counties. **Virginia's 1820 households bled into stateicp=40.** Every other
+  state matches published closely (MD 0%, SC −2%, KY −1%, GA −8%).
+- **Why it matters / why quarantined:** the benchmark's entire value is the county×year
+  GEOGRAPHIC stratification for reference-class calibration (#90). A ~93%-correct national
+  total with scrambled VA/TN strata is worse than useless here — it would silently corrupt the
+  reference classes. National-total-fine ≠ safe when the product IS the stratification.
+- **To un-quarantine (follow-up, not done):** (a) check IPUMS's documented 1820 known-issues
+  (the download page flagged "Known issues… are documented") — may be a documented STATEICP
+  defect + a corrected extract; (b) re-pull 1820 and diff STATEICP against a second geo
+  variable; (c) if only STATEICP is wrong, remap the VA-coded counties under st40 back to
+  st54 by county-code identification (forensic; risky). Until one of these, 1820 stays OUT.
+
+### 1800 / 1810 — PENDING (download remaining CSVs)
+Same script. Given 1820's anomaly, **eyeball the state-level breakdown before applying** —
+don't trust a passing national total alone. 1800/1810 are total-only (like 1790, no age/sex
+enslaved buckets). The 1820 lesson: the strict national gate is necessary but not sufficient;
+per-state sanity is the real check for the stratification's integrity.
 
 ## See also
 [[project_calibration_first_architecture]] · [[finding-census-namematch-falsepositives-jun30]] ·
