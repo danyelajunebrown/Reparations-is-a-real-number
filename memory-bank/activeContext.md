@@ -21,7 +21,15 @@ QW-5 Ellison rootsweb triage (260 leads). BIG BETS (dep order): BB-1 land-beques
 M038/M067 schema built, grantee=0); BB-2 non-enslaver producer (#96 enables); BB-3 forensic scaling (roll claim-lock);
 BB-4 #63 approach B (new enslaved_candidate_pairs table, name+county block); BB-5 dedup clustering UI; BB-6 RAG adoption
 (Tailscale Funnel topology); BB-7 forward descendancy (blocked on identity fingerprint); BB-8 #55/#100 producers.
-NOW EXECUTING quick wins (QW-2/3/4 dry-runs). Data-quality cluster #68/#69/#95/#99 CLOSED earlier today; #105 filed.
+QUICK WINS DONE: QW-2 ✅ (5,697 cross-role false links unwound, #105, reversible); QW-4 ✅ (`score-enslaved-lead-confidence.mjs`
+— 2,663 re-scored: 869 OCR/secondary→0.72, flagged santos→0.75, junk→0.30; 9,479 scholarly santos correctly KEPT 0.85 —
+dry-run caught an 11,887-row over-penalization of Brazilian mononyms); QW-5 ✅ (`triage-ellison-rootsweb-leads.js` — 13
+fragments rejected, 97→reviewing; Ellisons kept). QW-3 APPLYING in bg (`backfill-inheritance-asset-detail-from-probate.mjs`
+— 725 testators, 426 candidate asset edges from probate_estate_extractions per-heir JSONB; AUDIT RULE #1: never sums values
+(count-not-sum, value NULL when >1 valued item collapses); Biscoe: skip if heir not a single canonical (heir_id NOT NULL);
+SLOW — resolveHeir ILIKE full-scan). QW-1 (segment sweep) DEFERRED — collision risk w/ live Mini drip, needs roll claim-lock.
+Climb-merge DONE (648 folds). NEXT: BB-1 land-bequest→land_transfer_events (north star, unblocked by QW-3). Review-pipeline
+PRs #106/#108/#109/#110/#111 merged. #68/#69/#95/#99 CLOSED; #105 partially executed (QW-2).
 
 ---
 
