@@ -25,8 +25,13 @@ const di = process.argv.indexOf('--dataset');
 const DATASET = di > -1 ? process.argv[di + 1] : null;
 const li = process.argv.indexOf('--limit');
 const LIMIT = li > -1 ? +process.argv[li + 1] : (APPLY ? null : 300);
+const ci = process.argv.indexOf('--concurrency');
+const CONCURRENCY = ci > -1 ? Math.max(1, +process.argv[ci + 1]) : 1;
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// Concurrency is SAFE here: each past_people row is independent (distinct subject), we skip
+// already-linked rows, and blocking-key inserts target distinct subject_ids (no conflict).
+// Biscoe still holds per row (no auto-merge). Pool sized to cover the workers + headroom.
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: Math.max(CONCURRENCY + 2, 10) });
 const svc = new PersonService(pool);
 
 const where = ['linked_subject_id IS NULL', "name IS NOT NULL AND name <> ''"];
@@ -50,7 +55,8 @@ console.log(`${rows.length} unlinked rows to process\n`);
 const tally = { created: 0, linked: 0, rejected_no_name: 0, would_create: 0, error: 0 };
 const linkedSamples = [];
 let n = 0;
-for (const r of rows) {
+
+async function processRow(r) {
   const context = `SlaveVoyages PAST [${r.dataset}] sv_id=${r.sv_id ?? ''} voyage_id=${r.voyage_id ?? ''} `
     + `ship=${r.ship_name ?? ''} origin=${r.origin ?? ''} lang=${r.language_group ?? ''} `
     + `embark=${r.embark_port ?? ''} disembark=${r.disembark_port ?? ''} year=${r.year ?? ''} `
@@ -111,10 +117,15 @@ for (const r of rows) {
       }
     }
   } catch (e) { tally.error++; if (tally.error <= 3) console.log(`  err id=${r.id} ${record.name}: ${e.message}`); }
-  if (++n % 200 === 0) process.stdout.write(`  ${n}/${rows.length}\r`);
+  if (++n % 500 === 0) process.stdout.write(`  ${n}/${rows.length} (created ${tally.created} linked ${tally.linked} err ${tally.error})\r`);
 }
 
-console.log(`\n=== RESULT (${APPLY ? 'APPLIED' : 'DRY-RUN'}) ===`);
+// worker pool — CONCURRENCY workers pull from a shared cursor over rows
+let cursor = 0;
+async function worker() { while (cursor < rows.length) { const i = cursor++; await processRow(rows[i]); } }
+await Promise.all(Array.from({ length: Math.min(CONCURRENCY, rows.length || 1) }, worker));
+
+console.log(`\n=== RESULT (${APPLY ? 'APPLIED' : 'DRY-RUN'}) [concurrency ${CONCURRENCY}] ===`);
 console.table(tally);
 if (linkedSamples.length) { console.log('sample LINKS to existing spine:'); console.table(linkedSamples); }
 const createKey = APPLY ? 'created' : 'would_create';
