@@ -89,10 +89,21 @@ unicode sanitize, SAVEPOINT-scoped writes). Respects the one-FS-scraper-at-a-tim
    syncs polymorphic cols. NOTE: person_documents unique index is (canonical_person_id,
    unconfirmed_person_id, s3_url, name_as_appears) — pre-archive s3_url is NULL so the
    per-source identity is carried in name_as_appears (`kinship:<type>:<sourceUrl>`).
-3. **C — wire into the climber's loop** behind a flag (e.g. `CLIMB_HARVEST_SOURCES`), dry-run
-   on ONE fixture lineage (Hopewell / Nancy Brown G21N-4JF) on the Mini, measure edges/person.
-4. **Flip** `DAA_KINSHIP_GATE=enforce` for that lineage once its path is edge-to-edge
-   documented; regenerate the DAA and confirm each link renders its citation.
+3. **C — wire into the climber's loop** behind `CLIMB_HARVEST_SOURCES`. ⚠️ WRITTEN, UNTESTED
+   (Mini-only). `familysearch-ancestor-climber.js`: `harvestPersonSources(person, fsId,
+   sessionId)` reads `/tree/person/sources/{fsId}`, classifies each attached source, maps its
+   parent ROLE → the tree father/mother FS id, and calls the edge writer. Called after the
+   Father/Mother log line, fail-soft, restores the details page. **MUST verify on the Mini:**
+   (a) the Sources-tab DOM SELECTORS are best-effort/unverified against live FS; (b) S3 ARCHIVING
+   IS DEFERRED — `s3Key=null` so every harvested edge lands `verified=false` (populates the tier +
+   source_document_id, feeds /review, but does NOT auto-lift the gate until the FS filmed-image →
+   S3StorageAdapter follow-up per `plan-fs-image-archiving.md`); (c) parent match is by ROLE not
+   re-read record NAME — a mismatch surfaces as a D3 conflict, not a silent false edge. Deploy:
+   this branch → Mini via merge+pull or scp (`standard-deployment-and-versioning.md`); one climb at
+   a time. Dry-run on Hopewell / Nancy Brown G21N-4JF, measure edges/person.
+4. **Flip** `DAA_KINSHIP_GATE=enforce` for that lineage once its path is edge-to-edge documented
+   (needs the S3-archiving follow-up so tier-1 stated edges reach verified=true); regenerate the
+   DAA and confirm each link renders its citation.
 5. **Backfill** pass over existing climb sessions (separate, sequenced against de-siloing
    Step 4 like #92) — do NOT bulk-run before the per-lineage flow is proven.
 
