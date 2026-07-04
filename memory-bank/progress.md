@@ -2407,4 +2407,43 @@ Backlog roadmap produced by a 12-area read-only scoping workflow; remaining big 
 
 ---
 
+## Session 2026-07-03 — genealogical edge-evidence system (the kinship proposition)
+
+Triggered by the user asking how we establish that a FamilySearch "ancestor" is *verifiably* the real
+ancestor — "'FamilySearch is unreliable before X date' is not a real standard and holds no space to grow."
+Correct. The climb had rich MATCH/classification confidence (MatchVerifier) and a NODE gate (probate) but
+**no per-edge confidence at all** — parent→child links came from `slice(0,2)` tree pointers with a heuristic
+constant "confidence". The reframe: the project ALREADY refused the analogous fake standard on the slaveholder
+side (assert "was a slaveowner" only on a proposition-specific S3 doc); the KINSHIP proposition ("X is the
+child of Y") was simply the one the document gate never covered. Fix = extend the same document-gate
+epistemology to the edge. "Before X date" then falls out as an emergent statistic, not a rule.
+
+Built end-to-end (5 commits on `audit/probate-classifier-and-source-documents`):
+- **Standard** (`896ef439d`, `standard-genealogical-edge-evidence.md`) — kinship as a gated claim; per-edge
+  evidence tiers onto `canonical_family_edges.evidence_tier` (M066 slot already existed; `verified` = the
+  edge twin of M102 `assertable_slaveowner`); kinship document-type table; GPS mapping; DAA weakest-link rule.
+- **DAA chain-of-custody gate** (`896ef439d`) — `DAAOrchestrator._enforceKinshipGate` + `DAAKinshipGateError`,
+  after `_enforceProbateGate`. Requires every edge on the participant→slaveholder `lineage_path_fs_ids` to be an
+  S3-backed tier-1 verified edge; names the shallowest gap "unproven at generation N". AUDIT-only by default
+  (`DAA_KINSHIP_GATE=enforce` to fail closed) so it doesn't brick current DAAs. Fake-db test 7/7.
+- **Classifier** (`993d497ff`) — `src/services/climb/kinship-source-classifier.js`, pure; FS source → tier/
+  proposition/auto-verify. Fixtures in `tests/fixtures/fs-sources/`; 11/11.
+- **Edge writer** (`0dd611dfe`) — `src/services/climb/kinship-edge-writer.js`; resolve FS→canonical, ensure
+  `person_documents`, SELECT-first `child_of` upsert (M103 trigger syncs polymorphic cols). Live-DB rollback 11/11.
+  Gotcha logged: `person_documents` unique index is (canonical_person_id, unconfirmed_person_id, s3_url,
+  name_as_appears) — pre-archive s3_url is NULL, so per-source identity rides in `name_as_appears`.
+- **Harvest wiring** (`4f3f721ba`) — `familysearch-ancestor-climber.js` `harvestPersonSources()` behind
+  `CLIMB_HARVEST_SOURCES=true`. **Written, UNTESTED (Mini-only)** — Sources-tab DOM selectors need live-FS
+  verification; ships per topology (MacBook does no scraping).
+
+Decisions (resolved): **D1** split state-vs-infer — document-STATED tier-1 auto-verifies, census co-residence +
+tier-2 need /review sign-off. **D2** M103-polymorphic edges. **D3** conflicting tier-1 parents → both edges
+unverified + `kinship_conflict`, never overwrite.
+
+Remaining before live (Mini-side): verify harvest selectors + dry-run a lineage; the S3-archiving follow-up
+(harvest passes `s3Key=null` today → edges land verified=false, feeding /review but not yet lifting the gate);
+then flip `DAA_KINSHIP_GATE=enforce`. Plan: `plan-fs-source-harvest-for-kinship-edges.md`.
+
+---
+
 *This document tracks development progress and is updated regularly as features are completed.*
