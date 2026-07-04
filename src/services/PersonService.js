@@ -83,6 +83,14 @@ function assertableSlaveownerSQL(cp) {
         OR EXISTS (SELECT 1 FROM person_documents pd JOIN probate_scrape_progress p
                      ON p.person_document_id=pd.id
                    WHERE pd.canonical_person_id=${cp} AND p.enslaved_count > 0)
+        -- Enumeration-of-unnamed (#95): a STORED PRIMARY owner-doc that a human has verified as
+        -- evidencing an enslaved HOLDING (e.g. an estate-inventory line valuing "Servants" as
+        -- property, or a bill of sale for "2 Negro servants") supports the OWNER's flag even when
+        -- no individual is named. No person row is minted (Rule 5) — the signal is on the document
+        -- (person_documents.evidences_enslaved_holding, migration 113). This is the count-of-unnamed
+        -- corroborator for cases like Alexander Hamilton, whose estate names no one.
+        OR EXISTS (SELECT 1 FROM person_documents d WHERE d.canonical_person_id=${cp}
+                     AND d.s3_key IS NOT NULL AND d.evidences_enslaved_holding = TRUE)
       )
     )
   )`;
@@ -301,8 +309,16 @@ class PersonService {
        record.status || 'pending']);
     const leadId = ins.rows[0].lead_id;
     await this._writeBlockingKeys('unconfirmed_persons', leadId, record);
-    // NB: external ids for leads have no home yet (person_external_ids FK is canonical-only) —
-    // tracked as a follow-up (polymorphic external ids). Not dropped: kept in context if needed.
+    // M117: person_external_ids is polymorphic — a lead now carries its source id as a first-class,
+    // resolvable external id (not a context string). id_system MUST be product-specific (e.g.
+    // 'slavevoyages_africanorigins', 't71_register') — never a coarse vendor label (see the sv_id
+    // collision, standard-external-source-ingest.md §4).
+    if (record.externalId && record.idSystem) {
+      await this.db.query(
+        `INSERT INTO person_external_ids (subject_table, subject_id, id_system, external_id, external_url, confidence)
+         VALUES ('unconfirmed_persons', $1, $2, $3, $4, $5) ON CONFLICT (id_system, external_id) DO NOTHING`,
+        [leadId, record.idSystem, record.externalId, record.sourceUrl || null, record.confidence || 0.7]).catch(() => {});
+    }
     return { ref: { subject_table: 'unconfirmed_persons', subject_id: leadId }, action: 'created', candidates: res.candidates };
   }
 
