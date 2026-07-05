@@ -4,6 +4,100 @@ _Last updated: 2026-07-03 (genealogical edge-evidence system — the kinship pro
 
 ---
 
+## UCL LBS scraper — research passes + step-1 frontier BUILT (2026-07-04, branch audit/probate-classifier)
+User: dedicated research passes to devise + iteratively test/improve a scraper recovering all persons +
+spine attributes from https://www.ucl.ac.uk/lbs/search/ — **fully autonomous, running on the Mac Mini
+via puppeteer**. Research done + written to [[finding-ucl-lbs-source-and-scraper-research]] +
+[[plan-ucl-lbs-scraper]]. KEY FINDINGS: (1) LBS = digitized 1834 Slave Compensation Commission = the
+tier-1 "British 1834 compensation" source activeContext already flagged NEEDED — dual-ledger enslaver
+debt (£20M to named awardees, per claim, with roles) + enslaved-count denominators (#116) + ~67k
+owner-class canonicals + the six legacy strands (Commercial/firms = continuity substrate). (2) Licence
+**CC BY-NC-SA 4.0** → usable non-commercially w/ attribution. (3) **NO bulk dump** (UKDA SN-852209 has no
+files; MySQL/PHP, no API) → scrape the pages. (4) **HARD CONSTRAINT: Cloudflare managed challenge** — every
+/lbs/* returns 403 "Just a moment…" to any curl/fetch/WebFetch → must use the Mini's **real Chrome via
+`puppeteer.connect()` to :9222** (same FS-climber lifecycle; that's WHY it's Mini-side). Reverse-engineered
+the DOM from **Wayback** (not Cloudflare-blocked). (5) Verified model: 4 types `GET /lbs/{claim,estate,
+person,firm}/view/{id}`; claim pages carry colony/claim-no/estate/N-enslaved/£-s-d/date/contested +
+Associated Individuals w/ ROLES (Awardee/Legatee/Trustee…); person pages carry name/birth-death/occupation/
+spouse/children/addresses/per-claim-£-role/typed relationships (kinship edges). Person ids are MIXED
+small-int AND large/negative hashes → enumerate by **GRAPH CRAWL** (seed dense claim/estate/firm int space,
+follow every link), not sequential walk.
+**STEP 1 DONE + VERIFIED (MacBook, uncommitted):** migration **118** (`lbs_crawl_frontier` visited-set/queue
++ `lbs_raw_records` raw-first staging; ext_id TEXT for negative/huge ids) applied+recorded (the HTTP
+migration-runner is blocked by a PRE-EXISTING checksum mismatch on 090 — unrelated, someone edited an
+applied migration — so applied 118 via TCP pg + recorded w/ matching sha256). `scripts/seed-ucl-lbs-
+frontier.mjs` (idempotent, ON CONFLICT=visited-set, fail-loud on missing DATABASE_URL) **seeded 73,000
+queued rows** (46k claim + 25k estate + 2k firm). Progress = `SELECT status,count(*) FROM lbs_crawl_frontier
+GROUP BY 1` (DB-is-truth). **STEP 2 BUILT (MacBook, uncommitted; syntax+deps+schema verified, awaits LIVE Mini proof):**
+`scripts/scrapers/ucl-lbs-crawler.mjs` — Stage-1 crawl+archive ONLY (raw-first; no parsing). Drives the
+Mini's real Chrome via `puppeteer.connect()` :9222 + puppeteer-extra STEALTH (same FS-climber lifecycle);
+Cloudflare-challenge detector w/ auto-solve wait + exponential backoff; atomic frontier claim
+(`FOR UPDATE SKIP LOCKED`); archives HTML→S3 (`sources/ucl-lbs/{type}/{id}.html`, bucket reparations-them
+verified enabled) + `lbs_raw_records`; ONE `source_artifacts('ucl-lbs', CC BY-NC-SA)` row reused by all
+pages; graph-expands every `/lbs/{type}/view/{id}` link into the frontier (ON CONFLICT=visited-set);
+`disconnect()` NOT close (leaves Mini Chrome up); ntfy on block; pauses after 3 consecutive blocks.
+Flags: `--once <type> <id>`, `--limit N`, `--no-s3`, `--no-expand`, `--delay`, `--stale-min`.
+**LIVE-TEST VERDICT (2026-07-04): the live-site CDP crawler is BLOCKED — Cloudflare TURNSTILE refuses the
+attached browser, grants NO durable cf_clearance (only a 1-shot token + __cf_bm), re-challenges every nav
+(repeated VNC solves never persisted). FlareSolverr ruled out (can't clear Turnstile). → PIVOTED to
+Wayback + data request (user choice). Live crawler PARKED (kept for a future non-Cloudflare route).**
+**WAYBACK PATH BUILT + RUNNING (autonomous, no Chrome):** M119 (`wayback_ts` col) + `scripts/scrapers/
+ucl-lbs-wayback.mjs` (`--enumerate` CDX→frontier, `--fetch` snapshot→S3+staging; plain HTTP, ON CONFLICT
+visited-set, politeness+backoff). **Enumerated the archived universe = ~22,190 records: claim 4,796 ·
+estate 4,605 · person 12,242 · firm 547.** Full `--fetch` **running unattended on the Mini** (nohup, pid
+launched; log `/tmp/lbs-wayback-fetch.log`; ~overnight) → HTML to S3 `sources/ucl-lbs/{type}/{id}.html` +
+`lbs_raw_records`. Verified 37+ claims streaming (11KB each, all s3). Progress = `SELECT status,count(*)
+FROM lbs_crawl_frontier WHERE wayback_ts IS NOT NULL GROUP BY 1`. **Data request DRAFTED** (`research/
+ucl-lbs-data-request.md`) — the complete/authoritative route (CC BY-NC-SA, UKDA SN-852209); a granted
+dump supersedes Wayback via the same parser.
+**STEP 3 — PARSER DONE + VERIFIED (29/29, MacBook, uncommitted).** `src/services/lbs/lbs-parser.js`
+(PURE, cheerio; `parseLbs(urlType, html)` dispatch). Also HARDENED the Wayback enumerate to prefer the
+NEWEST 200-capture (dropped `collapse=urlkey` which kept the OLDEST/stale DOM; ON CONFLICT GREATEST-ts +
+re-queue on a newer capture). Re-enumerated → captures now skew 2024-2026 (12,505 rows at 2025). 4
+fixtures `tests/fixtures/ucl-lbs/{claim,person,estate,firm}-*.html` (2024-2026 captures) + `tests/unit/
+test-ucl-lbs-parser.js`. VERIFIED extraction: **claim** → colony/claimNo/contested/year/enslavedCount/
+£compensation(pounds+decimal)/individuals[personId+role incl. "(Mortgagee)" detail]/estates[]/notes;
+**person** → name/absentee/occupation/spouse/children/school/university/birth-death/associated-claims
+[£+role]/relationships[typed kinship+otherPersonId]/addresses; **estate** → name/colony/parish/
+registrations[year,total,F,M,possessor time-series]/claims/people; **firm** → name/people[role+personId].
+DOM grammar captured in the parser header (label:value=`table.full.table` strong/div; assoc lists=
+`td.header` w/ `.highlight` role; firm=`.label`; estate reg rows scanned globally by `(Tot)` signature).
+Corpus fetch RE-RUNNING on Mini (pid, /tmp/lbs-wayback-fetch.log) w/ the newest-capture script.
+**STEP 5 — INGEST DONE + VERIFIED end-to-end (MacBook, uncommitted; on Mini too).** Migration **120**
+(typed tables: `lbs_claims`, `lbs_claim_persons`, `lbs_estates`, `lbs_estate_registrations`, `lbs_firms`,
+`lbs_firm_people`) applied. `scripts/ingest-ucl-lbs.mjs` — 3 modes `--parse` (S3 HTML→`parsed` JSONB via
+presigned-url fetch), `--promote` (JSONB→typed+spine), `--fixtures` (offline test); dry-run default,
+`--apply` writes. **Decision: NOT slave_economy_benchmarks** — that's for CITED jurisdiction aggregates;
+per-claim/estate counts would double-count, so they live in the typed tables + a per-colony control-total
+TRIPWIRE logs SUM(enslaved_count)/claim-count (rule #2; full BPP compare = follow-up once BPP colony
+totals loaded). Persons→`PersonService.findOrCreateLead` (full attrs, `id_system='ucl_lbs_person'`,
+gated secondary 0.85; `personType='enslaver'` ONLY if ≥1 associated claim else 'unknown' — #96 no
+over-typing); idempotent via a person_external_ids pre-check (resolve() ext tier-1 only sees canonicals);
+enslaved COUNTS stay integers (no placeholder persons, audit #5); comp £ = dual-ledger debt (audit #3,
+as-transcribed not summed). **VERIFIED on 4 fixtures --apply:** lbs_claims Grenada 770 £6212.01/206-
+enslaved/contested; 3 Hankey awardees `is_awardee` role "Awardee (Mortgagee)" linked to leads; estate
+1817-1823 M/F series; firm 5/5 linked; Lennard lead `enslaver`+occupation ctx+ext-id; **re-run
+idempotent (0 created, 13 ext-ids stable).** Parser+ingest scp'd to Mini (cheerio present). Corpus fetch
+~20% (done 4,366 / queued 17,721) still running on Mini.
+**STEP 6 — AUTONOMY DONE + LIVE on the Mini.** `scripts/lbs-drip.mjs` = one idempotent/resumable tick:
+(1) SELF-HEAL fetch (relaunch detached `ucl-lbs-wayback --fetch` if queued>0 & no fetch proc; reclaim
+stale 'fetching'); (2) PARSE bounded batch (S3→JSONB, `--parse-batch` default 3000); (3) PROMOTE all
+parsed (person→estate→claim→firm); (4) status + ntfy on error / on DRAIN. Lock file (stale>2h override),
+DB-is-truth. **Cron INSTALLED on Mini: `0 */2 * * *` → `/usr/local/bin/node scripts/lbs-drip.mjs >>
+/tmp/lbs-drip.log`** (node v20.20.1; verified cron-BARE-env loads .env DATABASE_URL + has global fetch).
+**Validated on REAL data (not just fixtures):** drip parsed 20 archived Antigua claims (0 errors) →
+promoted (lbs_claims 21, Σ£ £23,013, Antigua 1,219 enslaved/20 claims); one full Mini tick launched.
+**THE WHOLE PIPELINE IS AUTONOMOUS + LIVE:** nohup fetch draining ~22,190 (was ~4,400 done) + 2-hourly
+cron doing parse→promote→self-heal, ntfy on drain. Satisfies the user's "completely autonomous, runs on
+Mac Mini" requirement.
+**OPTIONAL FOLLOW-UPS (not required for autonomy):** relationships→`canonical_family_edges` producer
+(spouse/children JSONB on leads → edges, Biscoe-gated); estate possessor→owner-continuity; BPP colony
+totals loaded → full control-total tripwire (currently logs the per-colony surface); send the data-request
+email (`research/ucl-lbs-data-request.md`) for the authoritative 100%-coverage dump. **UNCOMMITTED** —
+migrations 118/119/120, seed/crawler/wayback/ingest/drip scripts, lbs-parser + test, 4 fixtures, 3 memory
+docs. NB the pre-existing 090 checksum mismatch still blocks `apply-migrations.js` (all my migrations
+applied via TCP + recorded). Full arc in [[plan-ucl-lbs-scraper]] + [[finding-ucl-lbs-source-and-scraper-research]].
+
 ## Genealogical edge-evidence system — the kinship proposition, END-TO-END BUILT (2026-07-03, branch audit/probate-classifier)
 User: "how are we establishing when we are confident the FamilySearch 'ancestor' is verifiably the REAL
 ancestor… 'unreliable before X date' is not a real standard and holds no space to grow." **The reframe that
