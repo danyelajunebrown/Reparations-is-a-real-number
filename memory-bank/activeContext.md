@@ -1,6 +1,57 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-03 (genealogical edge-evidence system — the kinship proposition, end-to-end built)_
+_Last updated: 2026-07-04 (roster-audit primary-doc ingest + gate/profile/RAG fixes — PR #125 open)_
+
+---
+
+## Roster audit → 15 famous enslavers SERVED on primary docs (2026-07-03/04, PR #125, branch audit/probate-classifier)
+Audited Wikipedia "List of slave owners" (~300) against `standard-canonical-person-and-document-gate.md`.
+**Breadth probe: 321/321 ABSENT for the intended person** (145 no-trace, 176 namesakes-only) — the DB holds
+the NAMES (freedpeople who took them, bulk-mint Hall/SlaveVoyages, same-name strangers) but not the people.
+A raw name+gate match is worse than useless (an AR "George Washington" carried `assertable_slaveowner=true` —
+wrong human). Then depth-ingested PRIMARIES, each visually verified before serving:
+- **Wills (user scans):** **George Washington** (+ **William Lee**, 1799 will manumission clause), **Thomas
+  Jefferson** (+ **Burwell Colbert, John Hemings, Joe Fossett, Madison & Eston Hemings**, 1826 codicil).
+  **James Madison = LEAD only** (transcription, no scanned file → NOT served; his will frees none, names none).
+- **Hamilton (LoC cash books via IIIF):** served on the estate "**Servants £400**" inventory + the 1796
+  "**$250 … 2 Negro servants … for me**" purchase; + **Peggy** + **Malachi Treat** (buyer) from the 1784 Peggy
+  sale. Serfilippi Schuyler-Mansion paper stored SECONDARY + RAG (a hunting map, not assertable).
+- **1860 slave schedules (Mac Mini FS scraper):** **Lee, Joshua Ward** (largest US slaveholder), **Cameron,
+  Hampton, Forrest, Cobb, Ladson, Aiken** — from the pre-indexed leads' FamilySearch ARKs.
+
+Pipeline: `ingest-{gw,jefferson,madison,hamilton}-*.mjs`, `ingest-peggy-treat.mjs`, `pull-marquee-schedules.cjs`
+(Mini, queue-gated behind probate) + `promote-marquee-schedules.mjs` (MacBook, human-verified per lead).
+**FS image capture (issue #124):** the viewer is tiled `<img>` (no canvas) → element-grab/`page.screenshot`
+give illegible zoomed-out "wide screenshots"; the viewer's **Download button** yields the real full-res JPG
+(~2 MB). The probate scraper has the SAME bug. `captureFamilySearchImage()` = the reusable primitive.
+
+Gate/schema fixes (`PersonService.js` + migrations, applied live to Neon):
+- **M113** `person_documents.evidences_enslaved_holding` — enumeration-of-unnamed gate branch (an estate line
+  valuing "Servants" lifts the owner flag without naming; Rule-5-safe).
+- `bill_of_sale` + `slave_manifest` moved **OWNER_NAMED → OWNER_CONTENT** (name BUYER **and** enslaved → owner
+  assertion needs a role edge; fixed an enslaved woman, Peggy, wrongly flagged `assertable_slaveowner`).
+- **M114** `person_documents.enslaved_count` (+ `_partial`, `_demographics`) — count-holding path for UNNAMED
+  enslaved (a Rule-5-safe COUNT, not fabricated person rows).
+
+Profile (`contribute.js`, deploys via Render): enslaved list keys on the verified `owner_canonical_id` edge,
+not `owner_name ILIKE` (killed namesake contamination + the $28.52M-off-the-wrong-2-people bug);
+`hasPrimarySource` recognizes `s3_key` primaries; **`person_facts` surfaced**; **count-based reparations** from
+`SUM(enslaved_count)`. RAG: `/api/rag` mounted + `/api/chat` grounded (RagService was imported by ZERO live code).
+
+Issues: **#118** (search MUST disambiguate same-name distinct people — two REAL "George Washington" enslavers,
+President vs Choctaw-Nation/AR schedule; NEVER demote a real person), **#124** (FS capture quality).
+
+HONEST LIMITS (do not overstate "served"): schedule counts are **PARTIAL** — one page each (Ward i=48=80
+verified; his ~1,130 needs the full run). The FamilySearch SPA is **anti-scrape/flaky** (`&i=` nav ignored;
+index panel renders unreliably on nav; DOM index **over-attributes on mixed pages** — Lee 40 vs image-verified
+3). Reliable per-owner counts need an image-OCR pipeline that **REUSES existing OCR** (`OCRService.performOCR`,
+Vision→Tesseract) — OCR is already fragmented across `OCRService`/`OCRProcessor`/`document-ai-extractor`/Gemini;
+do NOT add a 5th. Reparations **formula** still the legacy-uncited one (only the COUNT feeding it changed —
+methodology = Issues #2–#25). Ward enriched with 19 SECONDARY `person_facts` (all `needs_primary` — the family
+article is a HUNTING MAP enumerating primaries to chase: gravestone, will+probate, full 1850+1860 schedules,
+marriage/death records, the 1843 Allston letter). **NEXT:** build the count pipeline (validate `OCRService` on
+a schedule JPG FIRST — cursive may defeat it → then fix the transcribed-index extraction, not the OCR), backfill
+the 8 counts + Ward's full 1860 run; Ward = gold-standard per-person source-hunting exemplar.
 
 ---
 
