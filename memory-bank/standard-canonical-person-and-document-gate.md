@@ -54,6 +54,12 @@ documentation still needed" banner; this verdict makes a secondary-only canonica
 | Correspondence *from the person under consideration* | ✅/— by author | ✅/— by author |
 | Slave / freedman narrative | — | ✅ first-person testimony |
 
+**The kinship proposition ("X is the child of Y") is gated the same way**, on its own
+document types (census co-residence, marriage/death/birth records naming parents, will
+naming heir) and stored per-edge in `canonical_family_edges`. It is a separate proposition
+with its own table — see `standard-genealogical-edge-evidence.md`. A bare FamilySearch tree
+edge licenses navigation only, exactly as a bare FS profile does not license "was a slaveowner".
+
 ## Mechanism (proposed, NOT yet built)
 
 A gate flag on `canonical_persons` (e.g. `externally_assertable` / `public_search_visible`),
@@ -75,6 +81,7 @@ filter on it; internal consumers (DAA, climber, obligation, dedup) ignore it.
   (the source's cited Register of Liberated Africans / NARA manifest) to lift the gate.
 
 ## See also
+`standard-genealogical-edge-evidence.md` (the kinship-edge twin of this gate) ·
 `plan-identity-resolution-completion.md` · `plan-source-classification.md` ·
 `interpretive-framework.md` (uncertainty: confidence, `name_type:'unknown'`,
 explicit-vs-inferred, human-review) · `projectbrief.md`.

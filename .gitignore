@@ -79,3 +79,18 @@ tmp-*.js
 scripts/_tmp_*.mjs
 test-results/
 test-barnard-extract.js
+
+# Generated worksheets — contain opted-in participant lineage PII (real names,
+# genealogy) + large binaries. NEVER commit: this repo publishes to public Pages.
+worksheets/
+
+# Root-level scratch probes (one-off DB/S3 queries, size checks)
+db-size.mjs
+s3-size.mjs
+scratch_q*.mjs
+
+# IPUMS complete-count CSV/SAS drops — large + IPUMS bars redistribution. Keep out
+# of the repo; ingest reads them from a local path (see plan-ipums-census-benchmark).
+data/ipums/
+*.sas7bdat
+[HhCc]_[0-9]*.csv

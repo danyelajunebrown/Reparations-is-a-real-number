@@ -16,7 +16,7 @@
 import 'dotenv/config';
 import { neon } from '@neondatabase/serverless';
 import puppeteer from 'puppeteer';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const sql = neon(process.env.DATABASE_URL);
@@ -70,24 +70,42 @@ async function main() {
   const addEv = (fs, tag, note) => { if (!fs) return; if (!evByFs.has(fs)) evByFs.set(fs, { tags: new Set(), notes: [] });
     const e = evByFs.get(fs); if (tag) e.tags.add(tag); if (note) e.notes.push(note); };
   const SLAVE_DOCS = { census_slave_schedule: 'Slave schedule', compensated_emancipation_petition: 'DC petition', will: 'Will' };
+  // CONFIRMED slaveholder = the project's painstakingly-VERIFIED layer, not the bulk
+  // name-match table. We source ONLY from enslaver_evidence_compendium where
+  // evidence_strength='direct_primary' (identity-resolved + primary-source: DC petitions,
+  // will extractions, etc.) — the standard's assertable bar. The bulk
+  // person_documents_with_names census linkages are name-only and unverified (0/33,791
+  // human_verified); a NJ ancestor d.1793 was matched to an 1860 Georgia schedule. We do
+  // NOT read them. See memory-bank/finding-census-namematch-falsepositives-jun30.md and
+  // standard-canonical-person-and-document-gate.md.
+  let evKept = 0;
+  const SRC_LABEL = (est) =>
+    /reparations_petition/i.test(est) ? 'DC petition 1862' :
+    /will_extraction/i.test(est) ? 'Will (verified)' :
+    /debt_acknowledg/i.test(est) ? 'Estate/debt record' :
+    /probate/i.test(est) ? 'Probate (verified)' : 'Verified enslaver record';
   if (cids.length) {
-    const docs = await sql`
-      SELECT canonical_person_id cid, document_type dt, document_year dy, count(*)::int n
-      FROM person_documents_with_names
-      WHERE canonical_person_id = ANY(${cids}) AND document_type = ANY(${Object.keys(SLAVE_DOCS)})
-      GROUP BY 1,2,3`;
-    for (const d of docs) { const fs = fsOfCid.get(d.cid);
-      addEv(fs, SLAVE_DOCS[d.dt], `${SLAVE_DOCS[d.dt]}${d.dy ? ' ' + d.dy : ''}`); }
     const comp = await sql`
       SELECT canonical_person_id cid, evidence_source_table est, max(claim_summary) cs
-      FROM enslaver_evidence_compendium WHERE canonical_person_id = ANY(${cids}) GROUP BY 1,2`;
-    for (const c of comp) { const fs = fsOfCid.get(c.cid);
-      // skip the merely-genealogical linkages (tree_profile / external_id) — keep substantive ones
-      if (/will_extraction|reparations_petition|debt_acknowledg|family_relationships|probate|slave/i.test(c.est))
-        addEv(fs, 'Enslaver record', (c.cs || c.est).slice(0, 70)); }
+      FROM enslaver_evidence_compendium
+      WHERE canonical_person_id = ANY(${cids}) AND evidence_strength = 'direct_primary'
+      GROUP BY 1, 2`;
+    for (const c of comp) {
+      const fs = fsOfCid.get(c.cid); if (!fs) continue;
+      evKept++;
+      addEv(fs, SRC_LABEL(c.est), (c.cs || c.est).slice(0, 80));
+    }
   }
+  console.log(`confirmed (enslaver_evidence_compendium · direct_primary · verified): ${evKept} evidence rows`);
   const evOf = (fs) => { const e = evByFs.get(fs); if (!e || !e.tags.size) return null;
     return { confirmed: true, tags: [...e.tags], notes: [...new Set(e.notes)].slice(0, 4) }; };
+
+  // Audit flags (deterministic, from audit-lineages.mjs). Speculative-tail grading
+  // so the FamilySearch deep grafts are visually distinct from the documented core.
+  let auditNode = {};
+  try { const a = JSON.parse(readFileSync(resolve('worksheets', 'lineage-audit.json'), 'utf8')); auditNode = a.node || {}; }
+  catch { auditNode = {}; }
+  const nameWeak = (n) => !n || n.trim().split(/\s+/).length < 2 || /^\(?unresolved|^mrs?\.?\b|^miss\b|unknown|\[/i.test(n.trim());
 
   // parent edges
   const edges = await sql`
@@ -146,8 +164,11 @@ async function main() {
   const node = (fs) => {
     const d = detail.get(fs) || {};
     const nm = nameOf(fs);
+    const a = auditNode[fs] || {};
     return { fs, name: nm, by: d.by, dy: d.dy, place: d.place || '',
-             flag: nm ? flagByName.get(nm) || null : null, side: sideOf(nm), ev: evOf(fs) };
+             flag: nm ? flagByName.get(nm) || null : null, side: sideOf(nm), ev: evOf(fs),
+             weakName: nameWeak(nm), badGap: a.badGap && a.badGap.length ? a.badGap : null,
+             dupId: !!a.dupIdentity, spec: (d.by ? d.by < 1700 : false) };
   };
   const MAXDEPTH = 25;
   const chainsFor = (apex) => {
@@ -173,14 +194,23 @@ async function main() {
     const chain = chains[0];
     const nodes = chain.map(node);
     const apexNode = nodes[0];
+    // deterministic confidence grade (mirrors audit-lineages.mjs)
+    const oldest = Math.min(...nodes.map(n => n.by || 9999));
+    const badGaps = nodes.filter(n => n.badGap).length;
+    const weak = nodes.filter(n => n.weakName).length;
+    let grade = 'SOLID';
+    if (oldest < 1700 || badGaps >= 2 || weak >= Math.ceil(nodes.length / 2)) grade = 'SPECULATIVE';
+    else if (oldest < 1780 || badGaps >= 1 || weak >= 2) grade = 'MODERATE';
     lines.push({ apex, apexNode, nodes, branches: chains.length - 1,
       slaveEra: apexNode.by ? apexNode.by <= ERA_END : false,
       hasConfirmed: nodes.some(n => n.ev), confirmedCount: nodes.filter(n => n.ev).length,
-      hasFlag: nodes.some(n => n.flag), depth: nodes.length });
+      hasFlag: nodes.some(n => n.flag), depth: nodes.length,
+      grade, oldest: oldest === 9999 ? null : oldest, badGaps, weak });
   }
-  // sort: CONFIRMED-slaveholder lines first, then climb-flagged, then oldest apical, then longest
+  const gradeRank = { SOLID: 0, MODERATE: 1, SPECULATIVE: 2 };
+  // sort: CONFIRMED first, then by confidence grade, then oldest apical
   lines.sort((a, b) =>
-    (b.hasConfirmed - a.hasConfirmed) || (b.hasFlag - a.hasFlag) ||
+    (b.hasConfirmed - a.hasConfirmed) || (gradeRank[a.grade] - gradeRank[b.grade]) ||
     ((a.apexNode.by || 9999) - (b.apexNode.by || 9999)) || (b.depth - a.depth));
 
   // ---- stats ----
@@ -198,24 +228,30 @@ async function main() {
   // ---- HTML ----
   const rowHtml = (n, depth) => {
     const indent = depth * 22;
-    // CONFIRMED slaveholder evidence (canonical-keyed) is the prominent marker.
     const ev = n.ev ? `<span class="ev" title="${esc(n.ev.notes.join(' · '))}">⚖ ${esc(n.ev.tags.join(' · '))}</span>` : '';
-    // climb's weak guess only as a faint "verify" hint when there is no confirmed evidence
     const flag = (!n.ev && n.flag) ? `<span class="flag" title="${esc(n.flag.slaveholder)} — ${esc(n.flag.classification || '')}">⚑ verify</span>` : '';
+    // audit marks: impossible generation gap, duplicate identity, weak name
+    const gap = n.badGap ? `<span class="gap" title="${esc(n.badGap.map(g => g.why).join('; '))}">⚠ gap</span>` : '';
+    const dup = n.dupId ? `<span class="dup" title="same name+year appears elsewhere — possible bad merge">⊘ dup?</span>` : '';
     const sideCls = n.side === 'MAT' ? 'mat' : n.side === 'PAT' ? 'pat' : '';
-    return `<div class="prow ${sideCls} ${n.ev ? 'confirmed' : ''}" style="margin-left:${indent}px">
+    const specCls = (n.spec && !n.ev) ? 'spec' : '';   // dim pre-1700 unconfirmed (FamilySearch-speculative)
+    return `<div class="prow ${sideCls} ${n.ev ? 'confirmed' : ''} ${specCls} ${n.weakName ? 'weak' : ''}" style="margin-left:${indent}px">
       <span class="conn">${depth ? '└─' : '◆'}</span>
       <span class="nm">${esc(n.name || '(unnamed)')}</span>
       <span class="yr">${esc(yrs(n.by, n.dy))}</span>
       ${n.place ? `<span class="pl">${esc(n.place)}</span>` : '<span class="pl none">—</span>'}
       <span class="id">${esc(n.fs)}</span>
-      ${ev}${flag}
+      ${ev}${flag}${gap}${dup}
     </div>`;
   };
   const lineHtml = (l, i) => {
     const a = l.apexNode;
-    return `<section class="line ${l.hasFlag ? 'flagged' : ''}">
-      <h2>LINE ${i + 1} · ${esc(a.name || '(unnamed)')} <span class="apexmeta">${esc(yrs(a.by, a.dy))}${a.place ? ' · ' + esc(a.place) : ''}</span></h2>
+    const gradeBadge = `<span class="grade g-${l.grade.toLowerCase()}">${l.grade}</span>`;
+    const auditNote = (l.grade === 'SPECULATIVE')
+      ? `<div class="note spec-note">⚠ Speculative: deepest ancestor b.${l.oldest || '?'} — FamilySearch collaborative-tree depth, not verified by our standards. Treat pre-1700 nodes as leads.${l.badGaps ? ` ${l.badGaps} impossible generation gap(s).` : ''}</div>` : '';
+    return `<section class="line ${l.hasFlag ? 'flagged' : ''} grade-${l.grade.toLowerCase()}">
+      <h2>${gradeBadge} LINE ${i + 1} · ${esc(a.name || '(unnamed)')} <span class="apexmeta">${esc(yrs(a.by, a.dy))}${a.place ? ' · ' + esc(a.place) : ''}</span></h2>
+      ${auditNote}
       ${l.branches ? `<div class="note">+${l.branches} alternate descent branch(es) collapse into this line</div>` : ''}
       ${l.nodes.map((n, d) => rowHtml(n, d)).join('')}
       <div class="prow tail" style="margin-left:${l.nodes.length * 22}px"><span class="conn">└─</span><span class="nm you">${esc(label)} (you)</span></div>
@@ -250,6 +286,13 @@ async function main() {
     .prow.confirmed .nm { color:#7a1f12; }
     .cf { color:#9a3b12 !important; }
     .prow.tail .you { color:#b8860b; font-weight:700; }
+    .grade { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; vertical-align:middle; letter-spacing:.3px; }
+    .g-solid { background:#1d4d2b; color:#fff; } .g-moderate { background:#b8860b; color:#fff; } .g-speculative { background:#eee; color:#999; border:1px solid #ddd; }
+    section.line.grade-speculative { opacity:.85; border-style:dashed; }
+    .spec-note { color:#999; }
+    .prow.spec .nm { color:#aaa; font-weight:500; } .prow.spec .yr, .prow.spec .pl { color:#bbb; }
+    .prow.weak .nm { font-style:italic; }
+    .prow .gap { color:#b00; font-weight:700; font-size:10px; } .prow .dup { color:#a60; font-size:10px; }
     section.orphans { border:1px dashed #ccc; border-radius:7px; padding:10px 12px; margin-top:18px; background:#fafafa; }
     section.orphans h2 { font-size:13px; margin:0 0 4px; color:#555; }
     .legend { font-size:10.5px; color:#666; margin:6px 0 16px; }

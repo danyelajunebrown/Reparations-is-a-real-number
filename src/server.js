@@ -149,6 +149,7 @@ app.use(ADMIN_CONTRIBUTE_PATHS, requireAdmin);
 app.use('/api/documents', documentsRouter);
 app.use('/api/research', researchRouter);
 app.use('/api/chat', require('./api/routes/chat'));
+app.use('/api/rag', require('./api/routes/rag')); // grounded retrieval over the doc corpus (read-only)
 app.use('/api/health', healthRouter);
 app.use('/api/errors', errorsRouter);
 app.use('/api/debug', debugRouter);

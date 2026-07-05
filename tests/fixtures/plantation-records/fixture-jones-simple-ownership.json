@@ -1,0 +1,122 @@
+{
+  "source_compilation_id": "jones-florida-records",
+  "source_title": "Florida Plantation Records from the Papers of George Noble Jones",
+  "fixture_name": "Jones Plantation – Simple Ownership",
+  "fixture_description": "Representative pages from George Noble Jones records showing basic slaveowner-enslaved relationships, estate valuations, and correspondence patterns",
+  
+  "ground_truth": {
+    "slaveowners": [
+      {
+        "name": "George Noble Jones",
+        "birth_year": 1811,
+        "death_year": 1876,
+        "state": "Florida",
+        "counties": ["Leon County", "Jefferson County"],
+        "expected_person_type": "enslaver",
+        "expected_verification_status": "unverified_secondary",
+        "expected_confidence": 0.70
+      }
+    ],
+    "enslaved_persons": [
+      {
+        "name": "James",
+        "enslaved_by": "George Noble Jones",
+        "notes": "Mentioned in plantation records",
+        "expected_relationship": "enslaved_by"
+      },
+      {
+        "name": "Mary",
+        "enslaved_by": "George Noble Jones",
+        "notes": "Mentioned in plantation records",
+        "expected_relationship": "enslaved_by"
+      },
+      {
+        "name": "Samuel",
+        "enslaved_by": "George Noble Jones",
+        "notes": "Mentioned in plantation records",
+        "expected_relationship": "enslaved_by"
+      }
+    ],
+    "financial_records": [
+      {
+        "type": "estate_valuation",
+        "amount": 45000,
+        "currency": "USD",
+        "year": 1850,
+        "notes": "Estate inventory value"
+      }
+    ],
+    "temporal_data": [
+      {
+        "event": "document_date",
+        "year": 1850,
+        "notes": "Date of plantation record entry"
+      }
+    ]
+  },
+  
+  "test_pages": [
+    {
+      "page_number": 1,
+      "source_format": "OCR_TEXT",
+      "raw_text": "FLORIDA PLANTATION RECORDS\n\nJournal Entry, 1850\n\nMr. George Noble Jones, plantation owner in Leon County, Florida.\nHe owned the following enslaved persons:\n  - James\n  - Mary\n  - Samuel\n\nThese persons were held in bondage at his plantation.\nRecorded this day by the clerk.",
+      "expected_extractions": {
+        "slaveowners": ["George Noble Jones"],
+        "enslaved": ["James", "Mary", "Samuel"],
+        "dates": [1850],
+        "relationships": [
+          {
+            "type": "enslaved_by",
+            "from": "James",
+            "to": "George Noble Jones"
+          },
+          {
+            "type": "enslaved_by",
+            "from": "Mary",
+            "to": "George Noble Jones"
+          },
+          {
+            "type": "enslaved_by",
+            "from": "Samuel",
+            "to": "George Noble Jones"
+          }
+        ]
+      }
+    },
+    {
+      "page_number": 2,
+      "source_format": "OCR_TEXT",
+      "raw_text": "ESTATE INVENTORY\n\nEstate of George Noble Jones\nYear of Assessment: 1855\n\nProperty held:\n  - Plantation land: valued at $30,000\n  - Enslaved persons (3): valued at $15,000\n  - Livestock and equipment: $5,000\n  - Total estate value: $45,000\n\nHeirs apparent: son James Jones Jr., wife Anne Jones.",
+      "expected_extractions": {
+        "valuations": [30000, 15000, 5000, 45000],
+        "heirs": ["James Jones Jr.", "Anne Jones"],
+        "enslaved_count": 3,
+        "relationships": [
+          {
+            "type": "heir",
+            "name": "James Jones Jr.",
+            "relationship_to": "George Noble Jones"
+          },
+          {
+            "type": "heir",
+            "name": "Anne Jones",
+            "relationship_to": "George Noble Jones"
+          }
+        ]
+      }
+    }
+  ],
+  
+  "acceptance_criteria": {
+    "name_extraction_precision": 0.95,
+    "relationship_accuracy": 0.90,
+    "date_extraction_accuracy": 1.0,
+    "valuation_extraction_accuracy": 0.90,
+    "required_canonical_persons_created": 1,
+    "required_unconfirmed_persons_created": 3,
+    "required_relationships_created": 3,
+    "required_pages_processed": 2
+  },
+  
+  "notes": "Fixture validates basic plantation record parsing: slaveowner identification, enslaved person listing, financial valuations, and relationship edge creation. All extracted names should pass NAME_STOPWORDS filter and be marked with extraction_confidence >= 0.70."
+}

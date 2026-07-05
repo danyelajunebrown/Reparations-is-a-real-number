@@ -36,6 +36,26 @@ class DAAProbateGateError extends Error {
     }
 }
 
+/**
+ * Thrown by _enforceKinshipGate (enforce mode) when the CHAIN OF CUSTODY of a
+ * lineage is unproven — i.e. at least one parent→child edge on the path from
+ * the living participant up to a named slaveholder ancestor is not backed by a
+ * proposition-specific kinship document stored in S3.
+ *
+ * Standard: memory-bank/standard-genealogical-edge-evidence.md §7 (weakest-link).
+ * The probate gate (`_enforceProbateGate`) validates the slaveholder NODE; this
+ * gate validates every EDGE on the path. A DAA asserts "this slaveholder is YOUR
+ * ancestor" — a claim only as strong as its weakest link. Named after the
+ * generation where the chain first breaks.
+ */
+class DAAKinshipGateError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'DAAKinshipGateError';
+        this.code = 'DAA_KINSHIP_GATE';
+    }
+}
+
 class DAAOrchestrator {
     constructor(database, daaGenerator, documentGenerator) {
         this.db = database;
@@ -226,6 +246,26 @@ class DAAOrchestrator {
         // Apr 18, 2026 request), they get ingested into land_transfer_events
         // and this gate releases automatically.
         await this._enforceProbateGate(slaveholders);
+
+        // ── CHAIN-OF-CUSTODY GATE: every EDGE on the lineage must be proven ──
+        //
+        // The probate gate above validated the slaveholder NODE. It does NOT
+        // validate that the participant is actually descended from that node.
+        // A DAA asserts "this documented slaveholder is YOUR ancestor" — a claim
+        // only as strong as the weakest parent→child link on the path. Per
+        // memory-bank/standard-genealogical-edge-evidence.md §7, each edge is
+        // asserted only when a proposition-specific kinship document (census
+        // co-residence, marriage/death/birth naming parents, will naming heir)
+        // is stored in S3 and attached to the edge (canonical_family_edges,
+        // tier 1, verified). Bare FamilySearch tree pointers license navigation,
+        // never assertion.
+        //
+        // ENFORCEMENT: audit-only by default (computes + logs the verdict,
+        // names unproven edges) because the per-edge source HARVEST (§5) is not
+        // built yet, so a hard block would fail every current DAA including the
+        // Hopewell fixture. Set DAA_KINSHIP_GATE=enforce to fail closed once the
+        // harvest lands and edges carry kinship documents.
+        await this._enforceKinshipGate(slaveholders, climbSession.id);
 
         // Step 3: Aggregate enslaved persons for each slaveholder
         console.log('Step 3: Aggregating enslaved persons with primary sources...');
@@ -515,6 +555,193 @@ class DAAOrchestrator {
         }
 
         console.log(`   ✓ Probate gate passed: ${passed.length} slaveholders have documentary evidence`);
+    }
+
+    /**
+     * Chain-of-custody (kinship) gate — verifies that every parent→child edge
+     * on the lineage path from the living participant up to each named
+     * slaveholder is backed by a proposition-specific kinship document in S3.
+     *
+     * Standard: memory-bank/standard-genealogical-edge-evidence.md §7.
+     * An edge is ASSERTABLE only when a `canonical_family_edges` row exists
+     * between the two persons (resolved from their FamilySearch IDs via
+     * person_external_ids) with evidence_tier = 1, verified = true, and a
+     * source_document_id whose person_documents row has a real archived file
+     * (s3_key present — a bare FS profile URL does not count). This mirrors the
+     * person-level gate M102 put on assertable_slaveowner, applied to the edge.
+     *
+     * The lineage path is the climb's `lineage_path_fs_ids` (modern person at
+     * index 0 → slaveholder at the end); each consecutive pair is one edge.
+     *
+     * @param {Array}  slaveholders — resolved slaveholders (post probate gate).
+     * @param {string} sessionId    — ancestor_climb_sessions.id for the climb.
+     * @param {object} [opts]        — { enforce } overrides the env flag (tests).
+     * @throws {DAAKinshipGateError} in enforce mode when any path has a gap.
+     */
+    async _enforceKinshipGate(slaveholders, sessionId, opts = {}) {
+        const enforce = opts.enforce != null
+            ? opts.enforce
+            : (process.env.DAA_KINSHIP_GATE || '').toLowerCase() === 'enforce';
+
+        if (!slaveholders || slaveholders.length === 0) return; // probate gate handles empties
+
+        // Pull the FS-ID lineage paths recorded by the climb for this session,
+        // so we can walk the edges even for slaveholders that entered via the
+        // getDocumentedSlaveholders resolution path (which carries lineage_path
+        // names but not always the FS-ID array).
+        const matchRows = (await this.db.query(`
+            SELECT slaveholder_fs_id, slaveholder_name, generation_distance,
+                   lineage_path, lineage_path_fs_ids
+            FROM ancestor_climb_matches
+            WHERE session_id = $1
+        `, [sessionId])).rows;
+
+        const byFsId = new Map();
+        const byName = new Map();
+        for (const r of matchRows) {
+            if (r.slaveholder_fs_id) byFsId.set(r.slaveholder_fs_id, r);
+            if (r.slaveholder_name) byName.set(r.slaveholder_name.toLowerCase(), r);
+        }
+
+        // Build each slaveholder's ordered edge list + the global unique edge set.
+        const perSlaveholder = [];
+        const uniqueChild = [];
+        const uniqueParent = [];
+        const seenEdge = new Set();
+
+        for (const sh of slaveholders) {
+            const row = (sh.slaveholder_fs_id && byFsId.get(sh.slaveholder_fs_id))
+                     || (sh.slaveholder_name && byName.get(String(sh.slaveholder_name).toLowerCase()))
+                     || null;
+            const fsPath   = sh.lineage_path_fs_ids || (row && row.lineage_path_fs_ids) || null;
+            const namePath = sh.lineage_path || (row && row.lineage_path) || null;
+
+            if (!fsPath || fsPath.length < 2) {
+                // No FS-ID chain recorded → chain of custody cannot be verified.
+                perSlaveholder.push({
+                    name: sh.slaveholder_name, gen: sh.generation_distance,
+                    pathKnown: false, edges: []
+                });
+                continue;
+            }
+
+            const edges = [];
+            for (let i = 0; i < fsPath.length - 1; i++) {
+                const childFs = fsPath[i];
+                const parentFs = fsPath[i + 1];
+                const edge = {
+                    childFs, parentFs, gen: i + 1,
+                    childName: namePath && namePath[i],
+                    parentName: namePath && namePath[i + 1],
+                    unresolvable: !childFs || !parentFs
+                };
+                if (!edge.unresolvable) {
+                    const key = `${childFs}|${parentFs}`;
+                    if (!seenEdge.has(key)) {
+                        seenEdge.add(key);
+                        uniqueChild.push(childFs);
+                        uniqueParent.push(parentFs);
+                    }
+                }
+                edges.push(edge);
+            }
+            perSlaveholder.push({
+                name: sh.slaveholder_name, gen: sh.generation_distance,
+                pathKnown: true, edges
+            });
+        }
+
+        // One query: which unique edges carry an S3-backed, tier-1, verified
+        // kinship edge. Positional array pairing via multi-arg unnest.
+        const assertable = new Set();
+        if (uniqueChild.length > 0) {
+            const res = await this.db.query(`
+                WITH resolved AS (
+                    SELECT e.child_fs, e.parent_fs,
+                           cx.canonical_person_id AS child_id,
+                           px.canonical_person_id AS parent_id
+                    FROM unnest($1::text[], $2::text[]) AS e(child_fs, parent_fs)
+                    LEFT JOIN person_external_ids cx
+                        ON cx.id_system = 'familysearch' AND cx.external_id = e.child_fs
+                    LEFT JOIN person_external_ids px
+                        ON px.id_system = 'familysearch' AND px.external_id = e.parent_fs
+                )
+                SELECT r.child_fs, r.parent_fs,
+                    EXISTS (
+                        SELECT 1
+                        FROM canonical_family_edges cfe
+                        JOIN person_documents pd ON pd.id = cfe.source_document_id
+                        WHERE cfe.verified = TRUE
+                          AND cfe.evidence_tier = 1
+                          AND pd.s3_key IS NOT NULL
+                          AND (
+                            (cfe.relationship_type = 'parent_of'
+                                AND cfe.person_a_id = r.parent_id
+                                AND cfe.person_b_id = r.child_id)
+                            OR (cfe.relationship_type = 'child_of'
+                                AND cfe.person_a_id = r.child_id
+                                AND cfe.person_b_id = r.parent_id)
+                          )
+                    ) AS assertable
+                FROM resolved r
+            `, [uniqueChild, uniqueParent]);
+            for (const row of res.rows) {
+                if (row.assertable) assertable.add(`${row.child_fs}|${row.parent_fs}`);
+            }
+        }
+
+        // Evaluate: every edge on a slaveholder's path must be assertable.
+        const proven = [];
+        const blocked = [];
+        for (const s of perSlaveholder) {
+            if (!s.pathKnown) {
+                blocked.push(`  • ${s.name} (Gen ${s.gen != null ? s.gen : '?'}): ` +
+                    `lineage path has no FS IDs recorded — chain of custody cannot be verified`);
+                continue;
+            }
+            let firstGap = null;
+            for (const e of s.edges) {
+                const ok = !e.unresolvable && assertable.has(`${e.childFs}|${e.parentFs}`);
+                if (!ok) { firstGap = e; break; }
+            }
+            if (firstGap) {
+                const child = firstGap.childName || firstGap.childFs || '?';
+                const parent = firstGap.parentName || firstGap.parentFs || '?';
+                blocked.push(`  • ${s.name}: lineage unproven at generation ${firstGap.gen} — ` +
+                    `"${child}" → "${parent}" has no S3-stored kinship document ` +
+                    `(census co-residence, marriage/death/birth naming parents, or will naming heir)`);
+            } else {
+                proven.push(`${s.name} [${s.edges.length} edge(s) documented]`);
+            }
+        }
+
+        console.log(`   → Kinship (chain-of-custody) gate [${enforce ? 'ENFORCE' : 'audit'}]:`);
+        for (const p of proven) console.log(`      ✓ ${p}`);
+        if (blocked.length > 0) {
+            console.log(`   → ${blocked.length} lineage(s) with an unproven parent→child edge:`);
+            for (const b of blocked) console.log('   ' + b);
+        }
+
+        if (blocked.length > 0 && enforce) {
+            throw new DAAKinshipGateError(
+                'DAA generation blocked: the lineage connecting the participant to ' +
+                'the following slaveholder ancestor(s) has at least one parent→child ' +
+                'edge with no proposition-specific kinship document stored in S3. A DAA ' +
+                'asserts descent; an unproven link makes that assertion unsupported:\n' +
+                blocked.join('\n') +
+                '\n\nAttach a kinship document (post-1850 census co-residence, marriage/' +
+                'death/birth record naming parents, or a will naming the heir) to each ' +
+                'edge via canonical_family_edges (evidence_tier 1, verified) and re-run. ' +
+                'Standard: memory-bank/standard-genealogical-edge-evidence.md §7.'
+            );
+        }
+
+        if (blocked.length === 0) {
+            console.log(`   ✓ Kinship gate passed: ${proven.length} lineage(s) fully documented edge-to-edge`);
+        } else if (!enforce) {
+            console.log(`   ⚠ Kinship gate AUDIT ONLY — ${blocked.length} unproven lineage(s) would block ` +
+                `under DAA_KINSHIP_GATE=enforce (harvest not yet built; see standard §5/§9).`);
+        }
     }
 
     /**
@@ -1821,3 +2048,4 @@ class DAAOrchestrator {
 
 module.exports = DAAOrchestrator;
 module.exports.DAAProbateGateError = DAAProbateGateError;
+module.exports.DAAKinshipGateError = DAAKinshipGateError;

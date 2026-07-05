@@ -1600,23 +1600,48 @@ router.get('/person/:id', async (req, res) => {
                 console.log('person_documents query error (non-fatal):', personDocsErr.message);
             }
 
-            // Get enslaved persons connected to this owner
-            // First try enslaved_individuals with direct owner link
-            const directLinked = await pool.query(`
-                SELECT
-                    full_name as enslaved_name,
-                    enslaved_id,
-                    gender,
-                    notes
-                FROM enslaved_individuals
-                WHERE enslaved_by_individual_id = $1
-                   OR notes ILIKE $2
-                LIMIT 100
-            `, [id, `%${person.full_name}%`]);
-            enslavedPersons = directLinked.rows;
+            // Get enslaved persons connected to this owner.
+            // ── CORRECTNESS: prefer the VERIFIED ownership edge (enslaved_owner_relationships)
+            //    keyed on the CANONICAL id — NEVER a name join. A name join (owner_name /
+            //    notes ILIKE '%full_name%') merges every same-name owner's enslaved people
+            //    (there are ~300 "George Washington"s), inflating both the roster AND the
+            //    reparations count below. If a verified edge exists we use it and SKIP the
+            //    name heuristics entirely. Only a canonical with NO edge falls back to them.
+            let usedVerifiedEdge = false;
+            if (tableSource === 'canonical_persons') {
+                const edge = await pool.query(`
+                    SELECT COALESCE(r.enslaved_name, cp.canonical_name) AS enslaved_name,
+                           r.enslaved_canonical_id AS enslaved_id,
+                           'canonical_persons' AS table_source,
+                           r.start_year, r.end_year, r.source_url, r.verification_status
+                    FROM enslaved_owner_relationships r
+                    LEFT JOIN canonical_persons cp ON cp.id = r.enslaved_canonical_id
+                    WHERE r.owner_canonical_id = $1
+                       OR (r.owner_subject_table = 'canonical_persons' AND r.owner_subject_id = $1)
+                    LIMIT 200
+                `, [parseInt(id, 10)]);
+                if (edge.rows.length > 0) { enslavedPersons = edge.rows; usedVerifiedEdge = true; }
+            }
+
+            // First try enslaved_individuals with direct owner link (legacy, name-prone) —
+            // ONLY when there is no verified canonical edge.
+            if (!usedVerifiedEdge) {
+                const directLinked = await pool.query(`
+                    SELECT
+                        full_name as enslaved_name,
+                        enslaved_id,
+                        gender,
+                        notes
+                    FROM enslaved_individuals
+                    WHERE enslaved_by_individual_id = $1
+                       OR notes ILIKE $2
+                    LIMIT 100
+                `, [id, `%${person.full_name}%`]);
+                enslavedPersons = directLinked.rows;
+            }
 
             // If no direct links, try census OCR relationships JSON first
-            if (enslavedPersons.length === 0) {
+            if (!usedVerifiedEdge && enslavedPersons.length === 0) {
                 try {
                     // Query enslaved persons where relationships->>'owner' matches this person
                     const censusLinked = await pool.query(`
@@ -1698,8 +1723,23 @@ router.get('/person/:id', async (req, res) => {
                 console.log('Descendants query error:', e.message);
             }
 
+            // Documented enslaved COUNT (M114): a slave schedule / bill of sale enumerates UNNAMED
+            // enslaved; the count lives on the document (Rule-5-safe, not fabricated person rows).
+            // Sum over this owner's docs and use the larger of (named enslaved rows, documented count),
+            // so a schedule-served owner with NO named enslaved still gets an accounting + reparations.
+            // The partial flag surfaces "documented minimum" (one schedule page ≠ the full holding).
+            let documentedEnslavedCount = 0, documentedPartial = false;
+            try {
+                const dc = await pool.query(
+                    `SELECT COALESCE(SUM(enslaved_count),0)::int c, BOOL_OR(enslaved_count_partial) partial
+                       FROM person_documents WHERE canonical_person_id = $1 AND enslaved_count IS NOT NULL`, [parseInt(id, 10)]);
+                documentedEnslavedCount = dc.rows[0].c || 0;
+                documentedPartial = !!dc.rows[0].partial;
+            } catch (e) { /* non-fatal */ }
+            const effectiveEnslavedCount = Math.max(enslavedPersons.length, documentedEnslavedCount);
+
             // Calculate reparations owed BY this slaveholder
-            if (enslavedPersons.length > 0) {
+            if (effectiveEnslavedCount > 0) {
                 const basePerPerson = 100000; // Base human dignity damages
                 const yearsPerPerson = 20; // Average years enslaved
                 const annualWage = 25000;
@@ -1708,12 +1748,16 @@ router.get('/person/:id', async (req, res) => {
                 const totalPerPerson = (yearsPerPerson * annualWage) + basePerPerson;
                 const withInterest = totalPerPerson * Math.pow(1.02, yearsSinceEmancipation);
 
-                reparations.total = enslavedPersons.length * withInterest;
+                const usingDocumented = documentedEnslavedCount > enslavedPersons.length;
+                reparations.total = effectiveEnslavedCount * withInterest;
+                reparations.enslavedCount = effectiveEnslavedCount;
+                reparations.enslavedCountPartial = usingDocumented && documentedPartial;
+                reparations.enslavedCountSource = usingDocumented ? 'documented_schedule_count' : 'named_relationships';
                 reparations.breakdown = [
                     {
                         label: 'Enslaved Persons',
-                        amount: enslavedPersons.length,
-                        description: `${enslavedPersons.length} individuals documented`
+                        amount: effectiveEnslavedCount,
+                        description: `${effectiveEnslavedCount} documented${reparations.enslavedCountPartial ? ' (minimum — partial record; full holding larger)' : ''}`
                     },
                     {
                         label: 'Per Person Debt',
@@ -1999,8 +2043,14 @@ router.get('/person/:id', async (req, res) => {
         // banner when every linked doc is secondary/indexed.
         const allDocsForCoverage = [...documents, ...ownerDocuments,
             ...documentCollections.flatMap((c) => c.pages || [])];
+        // Primary = an ORIGINAL archived file is stored — the SAME signal the external-assertion
+        // gate keys on (s3_key present). Previously this only matched the magic string
+        // 'direct_primary', so every S3-stored primary doc written by PersonService (which sets
+        // evidence_strength='primary') falsely tripped the "primary documentation still needed"
+        // banner. Recognize s3_key-backed docs and both primary labels.
         const hasPrimarySource = allDocsForCoverage
-            .some((d) => d.evidence_strength === 'direct_primary');
+            .some((d) => (d.s3_key != null && d.s3_key !== '')
+                || d.evidence_strength === 'direct_primary' || d.evidence_strength === 'primary');
 
         const coverage = {
             hasDocuments: (documents.length + ownerDocuments.length + documentCollections.length) > 0,
@@ -2062,12 +2112,35 @@ router.get('/person/:id', async (req, res) => {
             console.log('forensic estate query (non-fatal):', feErr.message?.substring(0, 100));
         }
 
+        // person_facts enrichment (M096): the identity grid reads bare canonical_persons columns
+        // (which have no occupation/spouse/office), so surface person_facts — map key facts onto the
+        // existing fields AND return the full typed list. Each fact carries its own confidence +
+        // verification_status (e.g. 'needs_primary' for a secondary-sourced fact awaiting a primary),
+        // so the UI can render provenance honestly rather than presenting inferred facts as verified.
+        let personFacts = [];
+        if (tableSource === 'canonical_persons' && person.id) {
+            try {
+                const pf = await pool.query(`
+                    SELECT fact_type, date_year, date_text, place_text, value_text, related_name_text,
+                           source_table, source_citation, source_url, confidence, verification_status
+                    FROM person_facts WHERE person_id = $1
+                    ORDER BY fact_type, date_year NULLS LAST`, [parseInt(person.id, 10)]);
+                personFacts = pf.rows;
+                const firstOf = (t) => pf.rows.find((r) => r.fact_type === t);
+                if (!person.occupation) { const o = firstOf('occupation'); if (o) person.occupation = o.value_text; }
+                if (!person.spouse_name) { const s = firstOf('spouse'); if (s) person.spouse_name = s.related_name_text || s.value_text; }
+                if (!person.birth_year) { const bf = firstOf('birth'); if (bf && bf.date_year) person.birth_year = bf.date_year; }
+                if (!person.death_year) { const df = firstOf('death'); if (df && df.date_year) person.death_year = df.date_year; }
+            } catch (pfErr) { console.log('person_facts query (non-fatal):', pfErr.message?.substring(0, 80)); }
+        }
+
         res.json({
             success: true,
             person: {
                 ...person,
                 tableSource,
                 location: locationStr,
+                facts: personFacts,
                 // Estimation metadata — used by UI to render "(est.)" labels with hover tooltips
                 birth_year_source: person.birth_year_source || null,
                 birth_year_confidence: person.birth_year_confidence || null,

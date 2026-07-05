@@ -12,6 +12,11 @@ const pool = new Pool({
     ssl: process.env.DB_SSL_REQUIRED === 'true' ? { rejectUnauthorized: false } : false
 });
 
+// Grounded retrieval: when no hardcoded keyword intent matches, ground the answer on the document
+// corpus (semantic + cited) instead of dead-ending. Read-only; never feeds any computed number.
+const RagService = require('../../services/rag/RagService');
+const rag = new RagService(pool);
+
 // Session storage for conversation context
 const sessions = new Map();
 
@@ -391,7 +396,23 @@ ${byStatus}`;
             return res.json({ success: true, response });
         }
 
-        // Default - try to understand and help
+        // Default — instead of giving up, GROUND the answer on the document corpus via RAG
+        // (semantic retrieval + strictly-cited answer). This is the "when we look for things, RAG
+        // helps us find" path. Read-only, citations included. Falls back to the help text only if
+        // the retrieval backend is unavailable or nothing relevant is indexed.
+        try {
+            const r = await rag.query(userMessage, { k: 6 });
+            if (r && Array.isArray(r.citations) && r.citations.length > 0) {
+                const cites = r.citations
+                    .map(c => `• doc#${c.document_id}${c.document_type ? ' (' + c.document_type + ')' : ''}${c.source_url ? ' — ' + c.source_url : ''}`)
+                    .join('\n');
+                response = `${r.answer}\n\n_Grounded on ${r.citations.length} document(s):_\n${cites}`;
+                return res.json({ success: true, response, rag: true, citations: r.citations, retrieved: r.retrieved });
+            }
+        } catch (e) {
+            console.error('chat RAG fallback error (non-fatal):', e.message);
+        }
+
         response = `I'm not sure how to answer that. Try:\n• "How many enslaved persons are in the database?"\n• "Find records about [name]"\n• "Show me statistics"\n• "What are the data sources?"\n• Type "help" for all commands`;
 
         res.json({ success: true, response });

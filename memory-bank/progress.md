@@ -2377,6 +2377,73 @@ Dual-ledger financial model where compensation TO owners is treated as EVIDENCE 
 6. **Living descendants inherit an unpaid debt** — they are not being debited retroactively for crimes they weren't party to. The architecture must consistently reflect this.
 7. **Brattle Group $100-131T** is the macro ceiling — individual DAA methodology should not exceed this when extrapolated
 
+## Session 2026-07-02 — review pipeline hardened, quick wins, BB-1 deed/parcel pivot
+
+**Review pipeline made fail-loud (6 fixes, merged to main/Render):** #106 auth validates token;
+#108 `review.html api()` throws on any non-OK (killed the false-"✓"/nothing-persists bug); #109
+cross-source Link 42P08 (`$2::text` in assignment+concat); #110 ambiguous approve/reject 42P08
+(separate concat param); #111 `PersonService.merge` SAVEPOINT-before + ROLLBACK-TO and unique-OR-check
+constraint handling (was SAVEPOINT-after-abort → "current transaction is aborted" 500). Root cause of
+"submissions not received" = false-success client + 42P08/savepoint server bugs, not auth.
+
+**Climb-dedup:** `merge-climb-duplicate-clusters.mjs` folded 648 anchored climb re-import duplicates
+(the "Jennie Goodwin ×6" pattern) → dedup-queue pairwise explosion collapsed at the source (#92).
+
+**Quick wins (all dry-run-first; each dry-run caught a real bug):** QW-2 unwound 5,697 cross-role false
+identity links (enslaved/freedperson → enslaver canonical; #105, Trask-safe/reversible). QW-4
+`score-enslaved-lead-confidence.mjs` re-scored 2,663 flat-0.85 leads (869 OCR/secondary→0.72; scholarly
+Santos kept 0.85 — dry-run caught an 11,887-row over-penalization of Brazilian mononyms; #70). QW-5
+`triage-ellison-rootsweb-leads.js` triaged the 260-lead Ellison narrative shred (13 fragments rejected,
+97→reviewing; #100). QW-3 `backfill-inheritance-asset-detail-from-probate.mjs` — inheritance_edges typed
+3→96, valued 0→20 (audit rule #1: never sums; count-not-sum; heir fail-closed). QW-1 deferred (Mini collision).
+
+**BB-1 pivot to a DEED/parcel spine** — see [[finding-bb1-deed-parcel-spine]]. Wills give heirship
+provenance, not parcel identity; deeds carry legal descriptions + liber/folio. Migration 112 `properties`
+parcel anchor + wired `land_transfer_events.property_id` FK; anchored the 1 real deed. Follow-ups filed:
+#112 (deed/parcel spine: corpus, parser, county forward-trace, georeference) + #113 (probate extractor
+captures no devisee per land item → 0/280 land items name a heir).
+
+Backlog roadmap produced by a 12-area read-only scoping workflow; remaining big bets BB-2..BB-7.
+
+---
+
+## Session 2026-07-03 — genealogical edge-evidence system (the kinship proposition)
+
+Triggered by the user asking how we establish that a FamilySearch "ancestor" is *verifiably* the real
+ancestor — "'FamilySearch is unreliable before X date' is not a real standard and holds no space to grow."
+Correct. The climb had rich MATCH/classification confidence (MatchVerifier) and a NODE gate (probate) but
+**no per-edge confidence at all** — parent→child links came from `slice(0,2)` tree pointers with a heuristic
+constant "confidence". The reframe: the project ALREADY refused the analogous fake standard on the slaveholder
+side (assert "was a slaveowner" only on a proposition-specific S3 doc); the KINSHIP proposition ("X is the
+child of Y") was simply the one the document gate never covered. Fix = extend the same document-gate
+epistemology to the edge. "Before X date" then falls out as an emergent statistic, not a rule.
+
+Built end-to-end (5 commits on `audit/probate-classifier-and-source-documents`):
+- **Standard** (`896ef439d`, `standard-genealogical-edge-evidence.md`) — kinship as a gated claim; per-edge
+  evidence tiers onto `canonical_family_edges.evidence_tier` (M066 slot already existed; `verified` = the
+  edge twin of M102 `assertable_slaveowner`); kinship document-type table; GPS mapping; DAA weakest-link rule.
+- **DAA chain-of-custody gate** (`896ef439d`) — `DAAOrchestrator._enforceKinshipGate` + `DAAKinshipGateError`,
+  after `_enforceProbateGate`. Requires every edge on the participant→slaveholder `lineage_path_fs_ids` to be an
+  S3-backed tier-1 verified edge; names the shallowest gap "unproven at generation N". AUDIT-only by default
+  (`DAA_KINSHIP_GATE=enforce` to fail closed) so it doesn't brick current DAAs. Fake-db test 7/7.
+- **Classifier** (`993d497ff`) — `src/services/climb/kinship-source-classifier.js`, pure; FS source → tier/
+  proposition/auto-verify. Fixtures in `tests/fixtures/fs-sources/`; 11/11.
+- **Edge writer** (`0dd611dfe`) — `src/services/climb/kinship-edge-writer.js`; resolve FS→canonical, ensure
+  `person_documents`, SELECT-first `child_of` upsert (M103 trigger syncs polymorphic cols). Live-DB rollback 11/11.
+  Gotcha logged: `person_documents` unique index is (canonical_person_id, unconfirmed_person_id, s3_url,
+  name_as_appears) — pre-archive s3_url is NULL, so per-source identity rides in `name_as_appears`.
+- **Harvest wiring** (`4f3f721ba`) — `familysearch-ancestor-climber.js` `harvestPersonSources()` behind
+  `CLIMB_HARVEST_SOURCES=true`. **Written, UNTESTED (Mini-only)** — Sources-tab DOM selectors need live-FS
+  verification; ships per topology (MacBook does no scraping).
+
+Decisions (resolved): **D1** split state-vs-infer — document-STATED tier-1 auto-verifies, census co-residence +
+tier-2 need /review sign-off. **D2** M103-polymorphic edges. **D3** conflicting tier-1 parents → both edges
+unverified + `kinship_conflict`, never overwrite.
+
+Remaining before live (Mini-side): verify harvest selectors + dry-run a lineage; the S3-archiving follow-up
+(harvest passes `s3Key=null` today → edges land verified=false, feeding /review but not yet lifting the gate);
+then flip `DAA_KINSHIP_GATE=enforce`. Plan: `plan-fs-source-harvest-for-kinship-edges.md`.
+
 ---
 
 *This document tracks development progress and is updated regularly as features are completed.*

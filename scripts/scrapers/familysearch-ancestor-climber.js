@@ -51,7 +51,16 @@ const sql = neon(process.env.DATABASE_URL);
 // silo — the same fix doors 3–5 use, replacing the after-the-fact reconcile-climb-minted.js sweep.
 // Thin adapter maps the neon `sql` client to PersonService's db.query(text,params)->{rows} shape.
 const PersonService = require('../../src/services/PersonService');
-const personService = new PersonService({ query: async (t, p) => ({ rows: await sql.query(t, p) }) });
+const dbAdapter = { query: async (t, p) => ({ rows: await sql.query(t, p) }) };
+const personService = new PersonService(dbAdapter);
+
+// Kinship edge-evidence harvest (standard-genealogical-edge-evidence.md). Off by default;
+// set CLIMB_HARVEST_SOURCES=true to read each person's FamilySearch Sources tab and write
+// per-edge kinship evidence into canonical_family_edges. See harvestPersonSources() below.
+const { classifyKinshipSource } = require('../../src/services/climb/kinship-source-classifier');
+const { writeKinshipEdge } = require('../../src/services/climb/kinship-edge-writer');
+const HARVEST_SOURCES = process.env.CLIMB_HARVEST_SOURCES === 'true';
+const SOURCES_PAGE_URL = 'https://www.familysearch.org/en/tree/person/sources/';
 async function writeClimbKeys(cid, name, birthYear) {
   try { await personService._writeBlockingKeys('canonical_persons', cid, { name, birthYear: birthYear || null }); }
   catch (e) { /* non-fatal — reconcile-climb-minted.js remains the safety net */ }
@@ -2028,6 +2037,112 @@ async function saveInferredParentLink(climbSessionId, childPerson, discoveredPar
 }
 
 /**
+ * harvestPersonSources — read the CURRENT person's FamilySearch Sources tab and write
+ * per-edge kinship evidence (standard-genealogical-edge-evidence.md, mechanism step C).
+ *
+ * For each attached source we classify it (kinship-source-classifier) and, when it
+ * substantiates one of THIS person's parent edges (tree father/mother), write a
+ * canonical_family_edges row via the edge writer. The edge is the child→parent link
+ * where child = the current person and parent = the tree father/mother the source names.
+ *
+ * ── FIRST-CUT LIMITS (deploy to Mini, then iterate) ──────────────────────────────
+ *  • DOM SELECTORS BELOW ARE UNVERIFIED against live FamilySearch — confirm on the Mini
+ *    (the sources page structure changes). The scraper is fail-soft: no match → [] → no
+ *    harm; it never throws into the climb loop.
+ *  • S3 ARCHIVING IS DEFERRED. We pass s3Key=null, so every harvested edge lands
+ *    verified=false (per D1 the gate needs a stored file). That still populates
+ *    canonical_family_edges at the correct tier with a source_document_id — feeding the
+ *    /review queue and the audit-mode DAA gate — but does NOT yet auto-lift the gate.
+ *    Wiring the FS filmed-image download → S3StorageAdapter (plan-fs-image-archiving.md)
+ *    is the follow-up that turns document-STATED tier-1 edges verified=true.
+ *  • NAMED-PARENT CONFIRMATION IS COARSE. We map a source's parent ROLE (father/mother)
+ *    to the tree's father_fs_id/mother_fs_id rather than re-reading the record's indexed
+ *    parent NAME. A genuine mismatch surfaces downstream as a D3 kinship_conflict (both
+ *    edges flagged, neither asserts) rather than a silent false edge — acceptable for a
+ *    first cut; opening each record ARK to confirm the named parent is the enhancement.
+ */
+async function harvestPersonSources(person, fsId, sessionId) {
+    if (!HARVEST_SOURCES || !fsId) return;
+    if (!person || (!person.father_fs_id && !person.mother_fs_id)) return; // no tree edge to document
+
+    let harvested = 0, written = 0;
+    try {
+        await safeGoto(SOURCES_PAGE_URL + fsId, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await new Promise(r => setTimeout(r, 1500));
+
+        // Best-effort scrape of the attached-source list. UNVERIFIED SELECTORS — the goal is
+        // one {collectionTitle, arkUrl, cardText} per attached source; refine on the Mini.
+        const sources = await page.evaluate(() => {
+            const out = [];
+            const cards = document.querySelectorAll(
+                '[data-testid*="source"], li[class*="source"], div[class*="sourceListItem"], div[class*="source-card"]');
+            const seen = new Set();
+            (cards.length ? cards : document.querySelectorAll('a[href*="/ark:/61903/"]')).forEach(el => {
+                const card = el.closest('li, article, [class*="source"]') || el;
+                const link = card.querySelector('a[href*="/ark:/61903/"], a[href*="/search/record/"]')
+                    || (el.tagName === 'A' ? el : null);
+                const arkUrl = link ? link.href : null;
+                const titleEl = card.querySelector('h3, h4, [class*="title"], [class*="Title"]');
+                const collectionTitle = (titleEl ? titleEl.textContent : card.textContent || '').trim().slice(0, 200);
+                const cardText = (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+                const key = arkUrl || collectionTitle;
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                out.push({ collectionTitle, arkUrl, cardText });
+            });
+            return out;
+        }).catch(() => []);
+
+        for (const s of sources) {
+            harvested++;
+            const yr = (s.cardText.match(/\b(1[6-9]\d{2}|20[0-2]\d)\b/) || [])[1];
+            const eventYear = yr ? parseInt(yr, 10) : null;
+
+            // Derive which parent role this source names, and map to the tree parent's FS id.
+            const namesFather = /\bfather\b/i.test(s.cardText);
+            const namesMother = /\bmother\b/i.test(s.cardText);
+            const relationships = [];
+            if (namesFather && person.father_fs_id) relationships.push({ role: 'father', name: person.father_name || '(named)', fsId: person.father_fs_id });
+            if (namesMother && person.mother_fs_id) relationships.push({ role: 'mother', name: person.mother_name || '(named)', fsId: person.mother_fs_id });
+            // Census co-residence: a census attached to the child implies household presence;
+            // pair it with a tree parent if one exists (classifier gates pre-1850 out by year).
+            const householdCoResidence = /\bcensus\b/i.test(s.collectionTitle + ' ' + s.cardText);
+            if (householdCoResidence && !relationships.length) {
+                if (person.father_fs_id) relationships.push({ role: 'father', name: person.father_name || '(head)', fsId: person.father_fs_id });
+                else if (person.mother_fs_id) relationships.push({ role: 'mother', name: person.mother_name || '(head)', fsId: person.mother_fs_id });
+            }
+            if (!relationships.length) continue;
+
+            const classification = classifyKinshipSource({
+                collectionTitle: s.collectionTitle, arkUrl: s.arkUrl, eventYear,
+                subject: { name: person.name, fsId }, relationships, householdCoResidence,
+            });
+            if (!classification.evidences) continue;
+
+            const parentFsId = classification.parentHint && classification.parentHint.fsId;
+            if (!parentFsId) continue;
+
+            const res = await writeKinshipEdge({ db: dbAdapter, personService }, {
+                childFsId: fsId, parentFsId, classification,
+                source: { sourceUrl: s.arkUrl, arkUrl: s.arkUrl, eventYear, s3Key: null }, // s3 archiving deferred
+                createdBy: `climb_harvest:${sessionId || 'adhoc'}`,
+            });
+            if (res.status === 'written' || res.status === 'conflict') {
+                written++;
+                console.log(`   ⛓ kinship edge [${classification.documentType} T${classification.evidenceTier} ${res.status}${res.verified ? ' verified' : ''}]: ${person.name} → ${classification.parentHint.role}`);
+            }
+        }
+        if (harvested) console.log(`   ⛓ Sources harvested: ${harvested} scanned, ${written} edge(s) written (s3 archiving deferred → verified pending)`);
+    } catch (err) {
+        console.log(`   [Harvest] non-fatal: ${String(err.message || err).slice(0, 80)}`);
+    } finally {
+        // Restore the details page so the rest of the per-person iteration is unaffected.
+        try { await safeGoto(PERSON_PAGE_URL + fsId, { waitUntil: 'domcontentloaded', timeout: 45000 }); }
+        catch (_) { /* next queue item re-navigates anyway */ }
+    }
+}
+
+/**
  * findOrCreatePerson: Resolve a discovered name to a canonical_persons entry.
  * Uses find_person_match() for tiered matching, creates a new entry if no match found.
  * Returns { id, uuid, isNew, matchTier }.
@@ -3083,7 +3198,15 @@ async function climbAncestors(startFsId, startName = null, resumeSession = null,
             console.log(`   Locations: ${person.locations?.join(', ') || 'none found'}`);
             console.log(`   Father: ${person.father_fs_id || 'not found'}`);
             console.log(`   Mother: ${person.mother_fs_id || 'not found'}`);
-            
+
+            // Kinship edge-evidence harvest (off unless CLIMB_HARVEST_SOURCES=true). Reads this
+            // person's Sources tab and writes per-edge kinship evidence into canonical_family_edges
+            // for the tree parent(s) above. Fail-soft + restores the details page. See
+            // harvestPersonSources() and standard-genealogical-edge-evidence.md.
+            if (HARVEST_SOURCES) {
+                await harvestPersonSources(person, person.fs_id || fsId, sessionId);
+            }
+
             // Capture diagnostics if no parents found
             if (!person.father_fs_id && !person.mother_fs_id) {
                 console.log('   ⚠ No parents found in tree, attempting multi-source discovery...');

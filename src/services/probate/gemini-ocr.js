@@ -22,13 +22,13 @@ const OCR_PROMPT =
   'If a word is illegible, write [illegible]. If the page is rotated or sideways, ' +
   'still transcribe it. Output ONLY the transcribed text, no commentary.';
 
-async function transcribeImage(pngBuffer, { mimeType = 'image/png' } = {}) {
+async function transcribeImage(pngBuffer, { mimeType = 'image/png', prompt = OCR_PROMPT } = {}) {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set — cannot Gemini-OCR');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_OCR_MODEL}:generateContent?key=${GEMINI_KEY}`;
   const body = {
     contents: [{
       parts: [
-        { text: OCR_PROMPT },
+        { text: prompt },
         { inline_data: { mime_type: mimeType, data: pngBuffer.toString('base64') } },
       ],
     }],

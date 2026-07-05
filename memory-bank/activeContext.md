@@ -1,6 +1,299 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-02 (#96 person-status model P0–P3 core — CHECKPOINT/PAUSE)_
+_Last updated: 2026-07-04 (roster-audit ingest + gate/profile/RAG + OCR consolidation #126 — PR #125 open)_
+
+---
+
+## Roster audit → 15 famous enslavers SERVED on primary docs (2026-07-03/04, PR #125, branch audit/probate-classifier)
+Audited Wikipedia "List of slave owners" (~300) against `standard-canonical-person-and-document-gate.md`.
+**Breadth probe: 321/321 ABSENT for the intended person** (145 no-trace, 176 namesakes-only) — the DB holds
+the NAMES (freedpeople who took them, bulk-mint Hall/SlaveVoyages, same-name strangers) but not the people.
+A raw name+gate match is worse than useless (an AR "George Washington" carried `assertable_slaveowner=true` —
+wrong human). Then depth-ingested PRIMARIES, each visually verified before serving:
+- **Wills (user scans):** **George Washington** (+ **William Lee**, 1799 will manumission clause), **Thomas
+  Jefferson** (+ **Burwell Colbert, John Hemings, Joe Fossett, Madison & Eston Hemings**, 1826 codicil).
+  **James Madison = LEAD only** (transcription, no scanned file → NOT served; his will frees none, names none).
+- **Hamilton (LoC cash books via IIIF):** served on the estate "**Servants £400**" inventory + the 1796
+  "**$250 … 2 Negro servants … for me**" purchase; + **Peggy** + **Malachi Treat** (buyer) from the 1784 Peggy
+  sale. Serfilippi Schuyler-Mansion paper stored SECONDARY + RAG (a hunting map, not assertable).
+- **1860 slave schedules (Mac Mini FS scraper):** **Lee, Joshua Ward** (largest US slaveholder), **Cameron,
+  Hampton, Forrest, Cobb, Ladson, Aiken** — from the pre-indexed leads' FamilySearch ARKs.
+
+Pipeline: `ingest-{gw,jefferson,madison,hamilton}-*.mjs`, `ingest-peggy-treat.mjs`, `pull-marquee-schedules.cjs`
+(Mini, queue-gated behind probate) + `promote-marquee-schedules.mjs` (MacBook, human-verified per lead).
+**FS image capture (issue #124):** the viewer is tiled `<img>` (no canvas) → element-grab/`page.screenshot`
+give illegible zoomed-out "wide screenshots"; the viewer's **Download button** yields the real full-res JPG
+(~2 MB). The probate scraper has the SAME bug. `captureFamilySearchImage()` = the reusable primitive.
+
+Gate/schema fixes (`PersonService.js` + migrations, applied live to Neon):
+- **M113** `person_documents.evidences_enslaved_holding` — enumeration-of-unnamed gate branch (an estate line
+  valuing "Servants" lifts the owner flag without naming; Rule-5-safe).
+- `bill_of_sale` + `slave_manifest` moved **OWNER_NAMED → OWNER_CONTENT** (name BUYER **and** enslaved → owner
+  assertion needs a role edge; fixed an enslaved woman, Peggy, wrongly flagged `assertable_slaveowner`).
+- **M114** `person_documents.enslaved_count` (+ `_partial`, `_demographics`) — count-holding path for UNNAMED
+  enslaved (a Rule-5-safe COUNT, not fabricated person rows).
+
+Profile (`contribute.js`, deploys via Render): enslaved list keys on the verified `owner_canonical_id` edge,
+not `owner_name ILIKE` (killed namesake contamination + the $28.52M-off-the-wrong-2-people bug);
+`hasPrimarySource` recognizes `s3_key` primaries; **`person_facts` surfaced**; **count-based reparations** from
+`SUM(enslaved_count)`. RAG: `/api/rag` mounted + `/api/chat` grounded (RagService was imported by ZERO live code).
+
+Issues: **#118** (search MUST disambiguate same-name distinct people — two REAL "George Washington" enslavers,
+President vs Choctaw-Nation/AR schedule; NEVER demote a real person), **#124** (FS capture quality).
+
+HONEST LIMITS (do not overstate "served"): schedule counts are **PARTIAL** — one page each (Ward i=48=80
+verified; his ~1,130 needs the full run). The FamilySearch SPA is **anti-scrape/flaky** (`&i=` nav ignored;
+index panel renders unreliably on nav; DOM index **over-attributes on mixed pages** — Lee 40 vs image-verified
+3). Reparations **formula** still the legacy-uncited one (only the COUNT feeding it changed — methodology = Issues
+#2–#25). Ward enriched with 19 SECONDARY `person_facts` (all `needs_primary` — the family article is a HUNTING
+MAP enumerating primaries to chase: gravestone, will+probate, full 1850+1860 schedules, marriage/death records,
+the 1843 Allston letter).
+
+**OCR was fragmented AND BROKEN → FIXED (#126, in PR #125):** the canonical `OCRService` (used by live
+`DocumentProcessor`) called a **SUSPENDED Google Vision key** and silently degraded EVERY upload to Tesseract
+(useless on cursive). The working OCR was `src/services/probate/gemini-ocr.js` (`transcribeImage`, Gemini 2.5
+Flash), siloed in probate. **Consolidated `OCRService` onto `gemini-ocr`** (Gemini primary → Vision dormant
+secondary → Tesseract fallback; added a backward-compat `prompt` param to `gemini-ocr` — no 5th module). Verified:
+`OCRService.performOCR` on Ward's schedule now transcribes via gemini-2.5-flash (was PERMISSION_DENIED).
+
+**Count pipeline = #127 (filed, PAUSED — Mini-heavy):** reuse `gemini-ocr` — walk the owner's consecutive pages
+on the Mini (Next/Prev buttons; `&i=` URL param IGNORED; SPA flaky, needs render-waits) → download full-res →
+Gemini-OCR each. The GOLD per-page count is the printed **"Total slaves" footer box** (machine-legible); owner
+identity is cross-referenced vs the FS transcribed index (Gemini MISREADS cursive owner names — "Col. Joshua J
+Ward"→"C.P. Jordan & Ward"; the DOM index OVER-attributes on mixed pages — Lee 40 vs image-verified 3). **Ward's
+page CONFIRMED by image-read** = Col. Joshua J Ward, **Brook Green Plantation, 80 all-female** (footer box=80; the
+"all-female" was REAL — a rice-plantation female gang, NOT a bug). Sum his ~14 Brook Green pages → ~1,130; backfill
+the other 7 leads. Ward = gold-standard per-person source-hunting exemplar. **PR #125 carries all of the above.**
+
+---
+
+## UCL LBS scraper — research passes + step-1 frontier BUILT (2026-07-04, branch audit/probate-classifier)
+User: dedicated research passes to devise + iteratively test/improve a scraper recovering all persons +
+spine attributes from https://www.ucl.ac.uk/lbs/search/ — **fully autonomous, running on the Mac Mini
+via puppeteer**. Research done + written to [[finding-ucl-lbs-source-and-scraper-research]] +
+[[plan-ucl-lbs-scraper]]. KEY FINDINGS: (1) LBS = digitized 1834 Slave Compensation Commission = the
+tier-1 "British 1834 compensation" source activeContext already flagged NEEDED — dual-ledger enslaver
+debt (£20M to named awardees, per claim, with roles) + enslaved-count denominators (#116) + ~67k
+owner-class canonicals + the six legacy strands (Commercial/firms = continuity substrate). (2) Licence
+**CC BY-NC-SA 4.0** → usable non-commercially w/ attribution. (3) **NO bulk dump** (UKDA SN-852209 has no
+files; MySQL/PHP, no API) → scrape the pages. (4) **HARD CONSTRAINT: Cloudflare managed challenge** — every
+/lbs/* returns 403 "Just a moment…" to any curl/fetch/WebFetch → must use the Mini's **real Chrome via
+`puppeteer.connect()` to :9222** (same FS-climber lifecycle; that's WHY it's Mini-side). Reverse-engineered
+the DOM from **Wayback** (not Cloudflare-blocked). (5) Verified model: 4 types `GET /lbs/{claim,estate,
+person,firm}/view/{id}`; claim pages carry colony/claim-no/estate/N-enslaved/£-s-d/date/contested +
+Associated Individuals w/ ROLES (Awardee/Legatee/Trustee…); person pages carry name/birth-death/occupation/
+spouse/children/addresses/per-claim-£-role/typed relationships (kinship edges). Person ids are MIXED
+small-int AND large/negative hashes → enumerate by **GRAPH CRAWL** (seed dense claim/estate/firm int space,
+follow every link), not sequential walk.
+**STEP 1 DONE + VERIFIED (MacBook, uncommitted):** migration **118** (`lbs_crawl_frontier` visited-set/queue
++ `lbs_raw_records` raw-first staging; ext_id TEXT for negative/huge ids) applied+recorded (the HTTP
+migration-runner is blocked by a PRE-EXISTING checksum mismatch on 090 — unrelated, someone edited an
+applied migration — so applied 118 via TCP pg + recorded w/ matching sha256). `scripts/seed-ucl-lbs-
+frontier.mjs` (idempotent, ON CONFLICT=visited-set, fail-loud on missing DATABASE_URL) **seeded 73,000
+queued rows** (46k claim + 25k estate + 2k firm). Progress = `SELECT status,count(*) FROM lbs_crawl_frontier
+GROUP BY 1` (DB-is-truth). **STEP 2 BUILT (MacBook, uncommitted; syntax+deps+schema verified, awaits LIVE Mini proof):**
+`scripts/scrapers/ucl-lbs-crawler.mjs` — Stage-1 crawl+archive ONLY (raw-first; no parsing). Drives the
+Mini's real Chrome via `puppeteer.connect()` :9222 + puppeteer-extra STEALTH (same FS-climber lifecycle);
+Cloudflare-challenge detector w/ auto-solve wait + exponential backoff; atomic frontier claim
+(`FOR UPDATE SKIP LOCKED`); archives HTML→S3 (`sources/ucl-lbs/{type}/{id}.html`, bucket reparations-them
+verified enabled) + `lbs_raw_records`; ONE `source_artifacts('ucl-lbs', CC BY-NC-SA)` row reused by all
+pages; graph-expands every `/lbs/{type}/view/{id}` link into the frontier (ON CONFLICT=visited-set);
+`disconnect()` NOT close (leaves Mini Chrome up); ntfy on block; pauses after 3 consecutive blocks.
+Flags: `--once <type> <id>`, `--limit N`, `--no-s3`, `--no-expand`, `--delay`, `--stale-min`.
+**LIVE-TEST VERDICT (2026-07-04): the live-site CDP crawler is BLOCKED — Cloudflare TURNSTILE refuses the
+attached browser, grants NO durable cf_clearance (only a 1-shot token + __cf_bm), re-challenges every nav
+(repeated VNC solves never persisted). FlareSolverr ruled out (can't clear Turnstile). → PIVOTED to
+Wayback + data request (user choice). Live crawler PARKED (kept for a future non-Cloudflare route).**
+**WAYBACK PATH BUILT + RUNNING (autonomous, no Chrome):** M119 (`wayback_ts` col) + `scripts/scrapers/
+ucl-lbs-wayback.mjs` (`--enumerate` CDX→frontier, `--fetch` snapshot→S3+staging; plain HTTP, ON CONFLICT
+visited-set, politeness+backoff). **Enumerated the archived universe = ~22,190 records: claim 4,796 ·
+estate 4,605 · person 12,242 · firm 547.** Full `--fetch` **running unattended on the Mini** (nohup, pid
+launched; log `/tmp/lbs-wayback-fetch.log`; ~overnight) → HTML to S3 `sources/ucl-lbs/{type}/{id}.html` +
+`lbs_raw_records`. Verified 37+ claims streaming (11KB each, all s3). Progress = `SELECT status,count(*)
+FROM lbs_crawl_frontier WHERE wayback_ts IS NOT NULL GROUP BY 1`. **Data request DRAFTED** (`research/
+ucl-lbs-data-request.md`) — the complete/authoritative route (CC BY-NC-SA, UKDA SN-852209); a granted
+dump supersedes Wayback via the same parser.
+**STEP 3 — PARSER DONE + VERIFIED (29/29, MacBook, uncommitted).** `src/services/lbs/lbs-parser.js`
+(PURE, cheerio; `parseLbs(urlType, html)` dispatch). Also HARDENED the Wayback enumerate to prefer the
+NEWEST 200-capture (dropped `collapse=urlkey` which kept the OLDEST/stale DOM; ON CONFLICT GREATEST-ts +
+re-queue on a newer capture). Re-enumerated → captures now skew 2024-2026 (12,505 rows at 2025). 4
+fixtures `tests/fixtures/ucl-lbs/{claim,person,estate,firm}-*.html` (2024-2026 captures) + `tests/unit/
+test-ucl-lbs-parser.js`. VERIFIED extraction: **claim** → colony/claimNo/contested/year/enslavedCount/
+£compensation(pounds+decimal)/individuals[personId+role incl. "(Mortgagee)" detail]/estates[]/notes;
+**person** → name/absentee/occupation/spouse/children/school/university/birth-death/associated-claims
+[£+role]/relationships[typed kinship+otherPersonId]/addresses; **estate** → name/colony/parish/
+registrations[year,total,F,M,possessor time-series]/claims/people; **firm** → name/people[role+personId].
+DOM grammar captured in the parser header (label:value=`table.full.table` strong/div; assoc lists=
+`td.header` w/ `.highlight` role; firm=`.label`; estate reg rows scanned globally by `(Tot)` signature).
+Corpus fetch RE-RUNNING on Mini (pid, /tmp/lbs-wayback-fetch.log) w/ the newest-capture script.
+**STEP 5 — INGEST DONE + VERIFIED end-to-end (MacBook, uncommitted; on Mini too).** Migration **120**
+(typed tables: `lbs_claims`, `lbs_claim_persons`, `lbs_estates`, `lbs_estate_registrations`, `lbs_firms`,
+`lbs_firm_people`) applied. `scripts/ingest-ucl-lbs.mjs` — 3 modes `--parse` (S3 HTML→`parsed` JSONB via
+presigned-url fetch), `--promote` (JSONB→typed+spine), `--fixtures` (offline test); dry-run default,
+`--apply` writes. **Decision: NOT slave_economy_benchmarks** — that's for CITED jurisdiction aggregates;
+per-claim/estate counts would double-count, so they live in the typed tables + a per-colony control-total
+TRIPWIRE logs SUM(enslaved_count)/claim-count (rule #2; full BPP compare = follow-up once BPP colony
+totals loaded). Persons→`PersonService.findOrCreateLead` (full attrs, `id_system='ucl_lbs_person'`,
+gated secondary 0.85; `personType='enslaver'` ONLY if ≥1 associated claim else 'unknown' — #96 no
+over-typing); idempotent via a person_external_ids pre-check (resolve() ext tier-1 only sees canonicals);
+enslaved COUNTS stay integers (no placeholder persons, audit #5); comp £ = dual-ledger debt (audit #3,
+as-transcribed not summed). **VERIFIED on 4 fixtures --apply:** lbs_claims Grenada 770 £6212.01/206-
+enslaved/contested; 3 Hankey awardees `is_awardee` role "Awardee (Mortgagee)" linked to leads; estate
+1817-1823 M/F series; firm 5/5 linked; Lennard lead `enslaver`+occupation ctx+ext-id; **re-run
+idempotent (0 created, 13 ext-ids stable).** Parser+ingest scp'd to Mini (cheerio present). Corpus fetch
+~20% (done 4,366 / queued 17,721) still running on Mini.
+**STEP 6 — AUTONOMY DONE + LIVE on the Mini.** `scripts/lbs-drip.mjs` = one idempotent/resumable tick:
+(1) SELF-HEAL fetch (relaunch detached `ucl-lbs-wayback --fetch` if queued>0 & no fetch proc; reclaim
+stale 'fetching'); (2) PARSE bounded batch (S3→JSONB, `--parse-batch` default 3000); (3) PROMOTE all
+parsed (person→estate→claim→firm); (4) status + ntfy on error / on DRAIN. Lock file (stale>2h override),
+DB-is-truth. **Cron INSTALLED on Mini: `0 */2 * * *` → `/usr/local/bin/node scripts/lbs-drip.mjs >>
+/tmp/lbs-drip.log`** (node v20.20.1; verified cron-BARE-env loads .env DATABASE_URL + has global fetch).
+**Validated on REAL data (not just fixtures):** drip parsed 20 archived Antigua claims (0 errors) →
+promoted (lbs_claims 21, Σ£ £23,013, Antigua 1,219 enslaved/20 claims); one full Mini tick launched.
+**THE WHOLE PIPELINE IS AUTONOMOUS + LIVE:** nohup fetch draining ~22,190 (was ~4,400 done) + 2-hourly
+cron doing parse→promote→self-heal, ntfy on drain. Satisfies the user's "completely autonomous, runs on
+Mac Mini" requirement.
+**OPTIONAL FOLLOW-UPS (not required for autonomy):** relationships→`canonical_family_edges` producer
+(spouse/children JSONB on leads → edges, Biscoe-gated); estate possessor→owner-continuity; BPP colony
+totals loaded → full control-total tripwire (currently logs the per-colony surface); send the data-request
+email (`research/ucl-lbs-data-request.md`) for the authoritative 100%-coverage dump. **UNCOMMITTED** —
+migrations 118/119/120, seed/crawler/wayback/ingest/drip scripts, lbs-parser + test, 4 fixtures, 3 memory
+docs. NB the pre-existing 090 checksum mismatch still blocks `apply-migrations.js` (all my migrations
+applied via TCP + recorded). Full arc in [[plan-ucl-lbs-scraper]] + [[finding-ucl-lbs-source-and-scraper-research]].
+
+## Genealogical edge-evidence system — the kinship proposition, END-TO-END BUILT (2026-07-03, branch audit/probate-classifier)
+User: "how are we establishing when we are confident the FamilySearch 'ancestor' is verifiably the REAL
+ancestor… 'unreliable before X date' is not a real standard and holds no space to grow." **The reframe that
+drove everything:** the project ALREADY refused the analogous fake standard on the slaveholder side — the
+document gate (`standard-canonical-person-and-document-gate.md`) asserts "was a slaveowner" ONLY on a
+proposition-specific S3 doc. The KINSHIP proposition ("X is the child of Y") was the one proposition the gate
+never covered. Climb edges were pure tree-pointer trust (`slice(0,2)`) + a heuristic-constant "confidence" (0.90
+because it came from the tree, not because a document corroborates it). Fix = extend the SAME document-gate
+epistemology to the kinship link, tiered exactly like every other claim, earned one record at a time. So
+"unreliable before X date" becomes an EMERGENT statistic (deep edges corroborate less because their records are
+thinner), never a hardcoded rule. Full arc built + committed this session (5 commits, MacBook-buildable parts
+green; the scrape wiring ships untested for the Mini):
+
+1. **Standard `896ef439d`** — `standard-genealogical-edge-evidence.md`. Kinship = a gated claim; per-edge
+   evidence tiers onto `canonical_family_edges.evidence_tier` (M066 slot ALREADY EXISTS — `source_document_id`,
+   `verified` = the edge twin of M102 `assertable_slaveowner`); kinship document-type table; GPS mapping;
+   DAA weakest-link rule. Cross-linked into the gate standard + climb plan Phase B.
+2. **DAA chain-of-custody gate `896ef439d`** — `DAAOrchestrator._enforceKinshipGate` + `DAAKinshipGateError`,
+   called right after `_enforceProbateGate` (which guards the NODE; this guards every EDGE). Walks each
+   slaveholder's `lineage_path_fs_ids`, resolves FS→canonical via `person_external_ids`, requires every
+   consecutive edge to have an S3-backed tier-1 `verified` `canonical_family_edges` row; reports the SHALLOWEST
+   unproven edge as "lineage unproven at generation N". **AUDIT-only by default** (`DAA_KINSHIP_GATE` !==
+   'enforce') so it doesn't brick current DAAs incl. Hopewell before edges carry docs. `test-daa-kinship-gate.js`
+   fake-db 7/7.
+3. **Classifier `993d497ff`** — `src/services/climb/kinship-source-classifier.js`, PURE. FS source →
+   `{documentType, evidenceTier, evidences, parentHint, kinConfidence, verifiedEligible}`. Fixtures in
+   `tests/fixtures/fs-sources/`, `test-kinship-source-classifier.js` 11/11.
+4. **Edge writer `0dd611dfe`** — `src/services/climb/kinship-edge-writer.js`. Resolve FS→canonical, ensure a
+   `person_documents` row, SELECT-first upsert of the `child_of` edge (`person_a_id/b` → M103 trigger syncs
+   polymorphic cols). `test-kinship-edge-writer.js` live-DB-rollback 11/11.
+5. **Harvest wiring `4f3f721ba`** — `familysearch-ancestor-climber.js` `harvestPersonSources()` behind
+   `CLIMB_HARVEST_SOURCES=true`; reads `/tree/person/sources/{fsId}`, classifies, maps parent ROLE→tree
+   father/mother FS id, calls the writer; fail-soft + restores details page. **⚠️ WRITTEN, UNTESTED (Mini-only).**
+
+**DECISIONS (resolved, in `plan-fs-source-harvest-for-kinship-edges.md`):** D1 split state-vs-infer —
+document-STATED tier-1 (will/death/birth/marriage naming a parent) auto-`verified=true`; census co-residence +
+tier-2 stay `verified=false` for /review. D2 write M103-polymorphic edges. D3 conflicting tier-1 parents → both
+edges `verified=false` + `notes='kinship_conflict'`, never overwrite (GPS conflict resolution).
+
+**REMAINING before live (both Mini-side, out of the MacBook's lane):** (a) verify the harvest's Sources-tab DOM
+SELECTORS against live FS + dry-run one lineage (Hopewell / Nancy Brown `G21N-4JF`); (b) S3-ARCHIVING FOLLOW-UP
+— harvest currently passes `s3Key=null` so edges land verified=false (correct tier + citation, feeds /review) but
+do NOT auto-lift the gate until FS filmed-image→`S3StorageAdapter` lands (`plan-fs-image-archiving.md`). THEN flip
+`DAA_KINSHIP_GATE=enforce` on that lineage. See [[standard-genealogical-edge-evidence]] +
+[[plan-fs-source-harvest-for-kinship-edges]].
+
+## Reference-class benchmark layer + SlaveVoyages PAST de-siloing (2026-07-03, branch audit/probate-classifier)
+Multi-national slave-population BENCHMARK denominators (calibration #90 reference classes) +
+de-siloing the orphaned SlaveVoyages named-enslaved cohort. Origin: user asked whether IPUMS/other-
+country aggregates could be voraciously intaken now that a lead table exists.
+
+- **US census benchmark (M113→M114, DONE):** `census_holding_benchmarks` = IPUMS complete-count
+  county-year enslaved/free/pop denominators. AGGREGATE layer, NOT persons (no placeholder rows).
+  M113 keyed on `stateicp` (household files) was CORRUPT — stateicp is IPUMS-uncertified and
+  TRANSPOSES VA↔TN 1810-1840 (VA's ~450k enslaved landed under "Tennessee"); a swap conserves the
+  national total so it passed the national gate while per-state strata were 60-200% wrong. Caught by a
+  per-state control-total audit; rolled back 1830/1840. **Fix (M114): rebuild on the COUNTY file's
+  validated `statefip`** (1840 GA/MD/SC/TN match published 0.0%). LOADED **4,297 county-years, 31
+  states, 1790-1840**, national totals within 0.5%. Ingest hardened: per-state corruption tripwire +
+  breakdown-absent skip (no false 0s). `scripts/ingest-ipums-census-benchmark.mjs` · `plan-ipums-census-benchmark.md`.
+- **Cuba source assessment (6-agent fan-out, 1,062 OCR pages):** the "Cuba book" = John MacGregor,
+  *Commercial Statistics* Vol IV (1850) — a macro trade/customs digest, NOT a Cuba monograph (Cuba
+  ~50pp; back 2/3 = British East Indies). Person value ~ZERO; macro value REAL — cited la Sagra
+  aggregates: 436,495 enslaved (1841), capitalized-enslaved **$41.7M within $507M colonial capital**
+  (1830 dual-ledger balance sheet). `assessment-macgregor-cuba-source-and-benchmark-scope.md`.
+- **Citation discipline (`reference-benchmark-sources-register.md`):** primary-first for every figure —
+  Cuba (la Sagra/censuses 1775-1841), Jamaica 1788 (**TNA CO 137/87**), British+French W.I. 1773-88
+  (**Privy Council Slave-Trade Committee minutes** + Necker, via 1790 Almanac), Brazil 1872 (**DGE**).
+  Conduits (MacGregor, Jamaican Family Search, Wikipedia) named ONLY where figures enter the class.
+  Licensing (JFS no-repost → cite the primary).
+- **Issues filed: #116** reference-class benchmark layer (generalized `slave_economy_benchmarks`,
+  polity discriminator, aggregates-only); **#117** de-silo the SlaveVoyages PAST cohort.
+- **SlaveVoyages PAST de-siloing (#117, Cuba pilot):** `slavevoyages_past_people` = 169,065 named
+  enslaved Africans, ALL orphaned (canonical_person_id=0 linked); the thin SV→canonical ingest put
+  51,111 names into canonical_persons with `primary_state` NULL, geography stranded in the side table.
+  **~9,531 disembarked Havana/Cuba/Matanzas** (african_origins = Havana Mixed Commission liberated
+  Africans) = the NUMERATOR inside Cuba's 436,495. Promoter `scripts/promote-slavevoyages-past-to-leads.mjs`
+  (M115 back-link cols) routes each via `PersonService.resolve` → link-to-spine or GATED secondary lead.
+  **BUG caught by spot-check: externalId=sv_id fired resolve tier-1 (name-blind), and sv_id (African-
+  Origins PERSON ids) collides numerically with canonical `slavevoyages` external-ids (voyage ENSLAVER
+  ids) → 5,275 enslaved bolted onto enslaver canonicals.** No canonical/external-id mutated (ON CONFLICT
+  DO NOTHING); rolled back back-links; **fixed to NAME+location (Biscoe).** 4,256 correct new gated
+  leads preserved; re-run landing the rest. Lesson (twin of the stateicp catch): a plausible match rate
+  masking systematic corruption — the spot-check gate is why we scale safely.
+- **Country coverage scoping:** HAVE US/Cuba/Jamaica/Brazil-1872/BWI-1790/FWI-1770s. NEED (tier-1):
+  British 1817-34 Slave Registers + 1834 compensation (denominator + dual-ledger enslaver debt in one),
+  Brazil provincial/earlier, Puerto Rico, Suriname. Recaptive sites (Freetown 62k, St Helena) = a
+  different reference class.
+- **NEW SCRAPE TARGETS (user-supplied, in the register):** (1) **British Caribbean Slave Registers
+  1817-1834** (UNESCO Memory of the World; **TNA T 71**, ~700+ vols — Jamaica 249/Barbados 37/Grenada
+  67/Demerara 37/Trinidad/Berbice/Dominica/St Kitts/Bahamas/Bermuda…; Ancestry-digitized). Person-level
+  name/sex/age/colour/birthplace(creole|African+ethnic)/occupation/manumission + NAMED ENSLAVERS — the
+  Tier-1 target (numerator+denominator+dual-ledger in one). Its own scrape. (2) **Brazil, Pombos
+  (Pernambuco) slave deeds 1863-1890** (FamilySearch DGS **4144740**, film 1532441 Item 2; notarial
+  registrations) → chattel-transfer records for `chattel_transfer_events`. Its own scrape.
+
+---
+
+## Review pipeline SHORED UP + backlog roadmap (2026-07-02, branch audit/probate-classifier)
+**Review pipeline — all fail-loud now, merged to main/Render:** #106 auth VALIDATES token (verifyAndActivate
+via /api/admin/verify; bad token → "✗ rejected"); #108 review.html api() THROWS on any non-OK (killed the
+false-"✓"/card-vanish-but-nothing-persists bug); #109 cross-source Link 42P08 (cast $2::text in assignment+concat);
+#110 ambiguous approve/reject 42P08 (separate concat param); **#111 PersonService.merge** — SAVEPOINT-before +
+ROLLBACK-TO (was SAVEPOINT-after-abort = "current transaction is aborted" 500) AND handles unique OR CHECK
+constraint (dedup_pair_order self-pair) by row-by-row delete-on-collision. Merge primitive now works for real dupes.
+**Running:** `merge-climb-duplicate-clusters.mjs --apply` (folds 363 anchored climb re-import clusters / ~649 dupes,
+person_merge_log; resumable/idempotent) + doc-embed drip (~15%).
+**BACKLOG ROADMAP (workflow wf_a3ff131b-1f2, 12 areas scoped, full in task w2agk9xpx.output):**
+QUICK WINS (DB-only, dry-run-first): QW-1 segment-probate-v2 over all rolls; QW-2 over-consolidation READ-only audit
+(574 clusters: 4,369 cross-role, 267 null-state, rest Trask-absentee/human); QW-3 inheritance asset-detail backfill
+(~178 monetary+342 enslaved+390 heir, feeds land); QW-4 enslaved-lead confidence scoring (replace flat 0.85);
+QW-5 Ellison rootsweb triage (260 leads). BIG BETS (dep order): BB-1 land-bequest→land_transfer_events (NORTH STAR,
+M038/M067 schema built, grantee=0); BB-2 non-enslaver producer (#96 enables); BB-3 forensic scaling (roll claim-lock);
+BB-4 #63 approach B (new enslaved_candidate_pairs table, name+county block); BB-5 dedup clustering UI; BB-6 RAG adoption
+(Tailscale Funnel topology); BB-7 forward descendancy (blocked on identity fingerprint); BB-8 #55/#100 producers.
+QUICK WINS DONE: QW-2 ✅ (5,697 cross-role false links unwound, #105, reversible); QW-4 ✅ (`score-enslaved-lead-confidence.mjs`
+— 2,663 re-scored: 869 OCR/secondary→0.72, flagged santos→0.75, junk→0.30; 9,479 scholarly santos correctly KEPT 0.85 —
+dry-run caught an 11,887-row over-penalization of Brazilian mononyms); QW-5 ✅ (`triage-ellison-rootsweb-leads.js` — 13
+fragments rejected, 97→reviewing; Ellisons kept). QW-3 APPLYING in bg (`backfill-inheritance-asset-detail-from-probate.mjs`
+— 725 testators, 426 candidate asset edges from probate_estate_extractions per-heir JSONB; AUDIT RULE #1: never sums values
+(count-not-sum, value NULL when >1 valued item collapses); Biscoe: skip if heir not a single canonical (heir_id NOT NULL);
+SLOW — resolveHeir ILIKE full-scan). QW-1 (segment sweep) DEFERRED — collision risk w/ live Mini drip, needs roll claim-lock.
+Climb-merge DONE (648 folds). Review-pipeline PRs #106/#108/#109/#110/#111 merged. #68/#69/#95/#99 CLOSED; #105 partially executed (QW-2).
+QW-3 APPLIED: inheritance_edges typed 3→96, valued 0→20 (108 from-probate; 272 skipped fail-closed).
+**BB-1 PIVOTED to a DEED/parcel spine** (user Q "how would parcels even be IDed?" — a WILL bequest isn't parcel-identifying;
+a DEED carries a recorded legal description + liber/folio, traceable via county grantor-grantee index). DONE: migration 112
+`properties` parcel anchor (legal_description/lot/block/subdivision/liber_folio/metes_and_bounds + nullable modern_parcel_apn/
+geometry) + wired the dangling land_transfer_events.property_id FK; anchored the 1 real deed (Biscoe 1858 DC Lots 47&48
+Holmead's addition + Liber J.A.S.104 f.124-128). `build-inheritance-land-transfers.mjs` = heirship-PROVENANCE producer, NOT
+applied (wills feed heirship graph not parcels; 7 vague will land-bequests). NEXT for the parcel spine: deed legal-description
+parser at scale (deed corpus THIN — 1 row now), county grantor-grantee forward-trace (manual/browser/Mini), metes-and-bounds→
+modern APN georeferencing. Remaining big bets: BB-2 non-enslaver producer, BB-3 forensic scaling, BB-4 #63 cross-source,
+BB-5 dedup-clustering UI, BB-6 RAG adoption, BB-7 forward descendancy. QW-1 (segment sweep) still deferred (Mini collision).
 
 ---
 

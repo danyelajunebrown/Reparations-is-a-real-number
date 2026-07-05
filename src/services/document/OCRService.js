@@ -8,20 +8,29 @@ const vision = require('@google-cloud/vision');
 const pdfParse = require('pdf-parse');
 const fs = require('fs').promises;
 const path = require('path');
+// Consolidated OCR backend (issue #126): gemini-ocr.js is the ONE working image-OCR path
+// (Gemini 2.5 Flash vision), also used by probate. The Google Vision key was suspended, so the
+// old Vision-primary path silently degraded every upload to Tesseract. Gemini is now primary;
+// Vision stays a dormant secondary in case the key is restored; Tesseract is the offline fallback.
+const { transcribeImage } = require('../probate/gemini-ocr');
 
 class OCRService {
   constructor(config = {}) {
+    this.geminiEnabled = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
     this.googleVisionEnabled = !!process.env.GOOGLE_VISION_API_KEY;
     this.tesseractEnabled = true; // Always available (no API key needed)
+    this._transcribeImage = transcribeImage;
 
+    if (this.geminiEnabled) console.log('✓ Gemini vision OCR enabled (primary)');
     if (this.googleVisionEnabled) {
       this.visionClient = new vision.ImageAnnotatorClient({
         keyFilename: process.env.GOOGLE_VISION_CREDENTIALS_PATH || undefined,
         apiKey: process.env.GOOGLE_VISION_API_KEY || undefined
       });
-      console.log('✓ Google Vision API enabled');
-    } else {
-      console.log('ℹ Google Vision API not configured - using Tesseract.js');
+      console.log('✓ Google Vision API configured (secondary)');
+    }
+    if (!this.geminiEnabled && !this.googleVisionEnabled) {
+      console.log('ℹ No cloud OCR key set - using Tesseract.js (weak on cursive)');
     }
   }
 
@@ -68,14 +77,16 @@ class OCRService {
         console.log('PDF has no extractable text, falling back to OCR');
       }
 
-      // Determine OCR service to use
+      // Determine OCR service to use — Gemini primary, Vision secondary, Tesseract fallback.
       let service = preferredService;
       if (service === 'auto') {
-        service = this.googleVisionEnabled ? 'google-vision' : 'tesseract';
+        service = this.geminiEnabled ? 'gemini' : (this.googleVisionEnabled ? 'google-vision' : 'tesseract');
       }
 
       // Perform OCR
-      if (service === 'google-vision' && this.googleVisionEnabled) {
+      if (service === 'gemini' && this.geminiEnabled) {
+        return await this.performGeminiOCR(filePath, mimeType, documentType);
+      } else if (service === 'google-vision' && this.googleVisionEnabled) {
         return await this.performGoogleVisionOCR(filePath, mimeType);
       } else {
         return await this.performTesseractOCR(filePath);
@@ -84,9 +95,9 @@ class OCRService {
     } catch (error) {
       console.error('OCR error:', error);
 
-      // If primary method failed, try fallback
-      if (this.googleVisionEnabled && !error.message.includes('Tesseract')) {
-        console.log('Falling back to Tesseract...');
+      // If a cloud method failed, fall back to Tesseract (offline, no key required).
+      if ((this.geminiEnabled || this.googleVisionEnabled) && !error.message.includes('Tesseract')) {
+        console.log('Cloud OCR failed, falling back to Tesseract...');
         try {
           return await this.performTesseractOCR(filePath);
         } catch (fallbackError) {
@@ -162,6 +173,42 @@ class OCRService {
           console.warn('Failed to terminate Tesseract worker:', terminateError.message);
         }
       }
+    }
+  }
+
+  /**
+   * Perform OCR using Gemini vision (the working shared backend — issue #126).
+   * Delegates to src/services/probate/gemini-ocr.js (Gemini 2.5 Flash), the same path probate
+   * uses. Gemini returns no per-token confidence, so we report a nominal value.
+   */
+  async performGeminiOCR(filePath, mimeType, documentType) {
+    console.log('Using Gemini vision OCR...');
+    const startTime = Date.now();
+    try {
+      const imageBuffer = await fs.readFile(filePath);
+      // Gemini vision accepts jpeg/png/webp/gif; coerce anything else to png (a real mismatch
+      // just errors → the Tesseract fallback in performOCR catches it).
+      const mt = /jpe?g|png|webp|gif/i.test(mimeType) ? mimeType : 'image/png';
+      const GENERAL_OCR_PROMPT =
+        'Transcribe ALL legible text from this scanned document-page image VERBATIM, ' +
+        'preserving names, dates, dollar amounts, and original spelling exactly. Do not ' +
+        'summarize, translate, or modernize. If a word is illegible, write [illegible]. ' +
+        'If the page is rotated, still transcribe it. Output ONLY the transcribed text.';
+      const text = await this._transcribeImage(imageBuffer, { mimeType: mt, prompt: GENERAL_OCR_PROMPT });
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      if (!text || !text.trim()) throw new Error('No text found in image');
+      console.log(`✓ Gemini OCR complete in ${duration}s (${text.length} chars)`);
+      return {
+        text,
+        confidence: 0.75, // nominal — Gemini gives no per-token confidence
+        pageCount: 1,
+        method: 'gemini-vision',
+        service: 'gemini-2.5-flash',
+        duration: parseFloat(duration)
+      };
+    } catch (error) {
+      console.error('Gemini OCR failed:', error.message);
+      throw new Error(`Gemini OCR failed: ${error.message}`);
     }
   }
 
