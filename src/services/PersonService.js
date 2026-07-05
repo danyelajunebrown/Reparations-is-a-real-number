@@ -44,11 +44,17 @@ const SUBJECT_TABLES = {
 const OWNER_NAMED = [
   'census_slave_schedule', 'slave_schedule', 'compensated_emancipation_petition',
   'compensation_petition', 'emancipation_petition', 'plantation_record', 'insurance_register',
-  'government_disclosure', 'corporate_disclosure', 'bill_of_sale', 'slave_manifest',
+  'government_disclosure', 'corporate_disclosure',
+  // NOTE: 'bill_of_sale' was moved to OWNER_CONTENT below. A bill of sale names BOTH the BUYER
+  // (owner) AND the enslaved person, so linkage alone is ambiguous — asserting owner on linkage
+  // falsely flagged the ENSLAVED person as a slaveowner (live bug: "Peggy", sold by A. Hamilton to
+  // Dr. Malachi Treat, 1784). So it now requires an owner-edge corroborator like other CONTENT types.
+  // 'slave_manifest' has the same buyer+enslaved ambiguity — latent, review before relying on it as NAMED.
 ];
 const OWNER_CONTENT = [
   'will', 'will_testament', 'estate_inventory', 'estate_account', 'guardian_account',
   'tax_record', 'court_record', 'correspondence', 'census',
+  'bill_of_sale', 'slave_manifest', // names buyer AND enslaved → owner assertion needs a role edge
 ];
 const ENSLAVED_NAMED = [
   'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
