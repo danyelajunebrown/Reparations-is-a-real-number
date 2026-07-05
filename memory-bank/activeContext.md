@@ -1,6 +1,6 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-04 (roster-audit ingest + gate/profile/RAG + OCR consolidation #126 — PR #125 open)_
+_Last updated: 2026-07-05 (roster-audit + gate/profile/RAG + OCR #126 — PR #125 MERGED + DEPLOYED live)_
 
 ---
 
@@ -63,7 +63,11 @@ identity is cross-referenced vs the FS transcribed index (Gemini MISREADS cursiv
 Ward"→"C.P. Jordan & Ward"; the DOM index OVER-attributes on mixed pages — Lee 40 vs image-verified 3). **Ward's
 page CONFIRMED by image-read** = Col. Joshua J Ward, **Brook Green Plantation, 80 all-female** (footer box=80; the
 "all-female" was REAL — a rice-plantation female gang, NOT a bug). Sum his ~14 Brook Green pages → ~1,130; backfill
-the other 7 leads. Ward = gold-standard per-person source-hunting exemplar. **PR #125 carries all of the above.**
+the other 7 leads. Ward = gold-standard per-person source-hunting exemplar. **PR #125 MERGED → main + DEPLOYED
+live 2026-07-05** (verified in prod: Ward's profile now returns occupation / 19 facts / reparations $1.14B;
+`OCRService` runs on Gemini). Deploy-readiness confirmed GREEN: schema already in Neon, `render-build.sh` runs
+NO migrations (code-only deploy), no dangling imports of the 5 deleted service classes; my migrations renumbered
+113/114→121/122 (collision with #90 census) + logged in `schema_migrations`.
 
 ---
 
