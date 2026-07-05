@@ -1,6 +1,6 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-04 (roster-audit primary-doc ingest + gate/profile/RAG fixes — PR #125 open)_
+_Last updated: 2026-07-04 (roster-audit ingest + gate/profile/RAG + OCR consolidation #126 — PR #125 open)_
 
 ---
 
@@ -44,14 +44,26 @@ President vs Choctaw-Nation/AR schedule; NEVER demote a real person), **#124** (
 HONEST LIMITS (do not overstate "served"): schedule counts are **PARTIAL** — one page each (Ward i=48=80
 verified; his ~1,130 needs the full run). The FamilySearch SPA is **anti-scrape/flaky** (`&i=` nav ignored;
 index panel renders unreliably on nav; DOM index **over-attributes on mixed pages** — Lee 40 vs image-verified
-3). Reliable per-owner counts need an image-OCR pipeline that **REUSES existing OCR** (`OCRService.performOCR`,
-Vision→Tesseract) — OCR is already fragmented across `OCRService`/`OCRProcessor`/`document-ai-extractor`/Gemini;
-do NOT add a 5th. Reparations **formula** still the legacy-uncited one (only the COUNT feeding it changed —
-methodology = Issues #2–#25). Ward enriched with 19 SECONDARY `person_facts` (all `needs_primary` — the family
-article is a HUNTING MAP enumerating primaries to chase: gravestone, will+probate, full 1850+1860 schedules,
-marriage/death records, the 1843 Allston letter). **NEXT:** build the count pipeline (validate `OCRService` on
-a schedule JPG FIRST — cursive may defeat it → then fix the transcribed-index extraction, not the OCR), backfill
-the 8 counts + Ward's full 1860 run; Ward = gold-standard per-person source-hunting exemplar.
+3). Reparations **formula** still the legacy-uncited one (only the COUNT feeding it changed — methodology = Issues
+#2–#25). Ward enriched with 19 SECONDARY `person_facts` (all `needs_primary` — the family article is a HUNTING
+MAP enumerating primaries to chase: gravestone, will+probate, full 1850+1860 schedules, marriage/death records,
+the 1843 Allston letter).
+
+**OCR was fragmented AND BROKEN → FIXED (#126, in PR #125):** the canonical `OCRService` (used by live
+`DocumentProcessor`) called a **SUSPENDED Google Vision key** and silently degraded EVERY upload to Tesseract
+(useless on cursive). The working OCR was `src/services/probate/gemini-ocr.js` (`transcribeImage`, Gemini 2.5
+Flash), siloed in probate. **Consolidated `OCRService` onto `gemini-ocr`** (Gemini primary → Vision dormant
+secondary → Tesseract fallback; added a backward-compat `prompt` param to `gemini-ocr` — no 5th module). Verified:
+`OCRService.performOCR` on Ward's schedule now transcribes via gemini-2.5-flash (was PERMISSION_DENIED).
+
+**Count pipeline = #127 (filed, PAUSED — Mini-heavy):** reuse `gemini-ocr` — walk the owner's consecutive pages
+on the Mini (Next/Prev buttons; `&i=` URL param IGNORED; SPA flaky, needs render-waits) → download full-res →
+Gemini-OCR each. The GOLD per-page count is the printed **"Total slaves" footer box** (machine-legible); owner
+identity is cross-referenced vs the FS transcribed index (Gemini MISREADS cursive owner names — "Col. Joshua J
+Ward"→"C.P. Jordan & Ward"; the DOM index OVER-attributes on mixed pages — Lee 40 vs image-verified 3). **Ward's
+page CONFIRMED by image-read** = Col. Joshua J Ward, **Brook Green Plantation, 80 all-female** (footer box=80; the
+"all-female" was REAL — a rice-plantation female gang, NOT a bug). Sum his ~14 Brook Green pages → ~1,130; backfill
+the other 7 leads. Ward = gold-standard per-person source-hunting exemplar. **PR #125 carries all of the above.**
 
 ---
 
