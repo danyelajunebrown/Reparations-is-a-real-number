@@ -1,6 +1,43 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-05 (roster-audit + gate/profile/RAG + OCR #126 — PR #125 MERGED + DEPLOYED live)_
+_Last updated: 2026-07-06 (schedule backfills + modal enrichment + OCR-capacity findings #142 — PR #133 deployed)_
+
+---
+
+## Schedule-count backfills + modal enrichment + OCR-capacity findings (2026-07-06, PR #133 + issue #142)
+Continued the roster campaign. **Ward = the fully-connected gold-standard exemplar now** (deployed): 25 `person_facts`
+(6 plantations, 10 children, office), 14 schedule pages / **1,100 enslaved / $15.69B** live, `enslaver_evidence_compendium`
+populated (`direct_primary`/`original_verified`), spouse + 3 heir-sons as gated secondary canonicals with
+`canonical_family_edges` + `inheritance_edges` (Mayham→Alderly, Benj. Huger→Prospect Hill, Joshua→Brook Green — the
+continuity spine). Frontend `PersonProfile.jsx` now renders a **Plantations & Holdings** + **Documented record** section
+from `person.facts` (was rendering NONE — deployed to gh-pages). **#118** search disambiguation: `life_span` (birth–death)
+added to all 3 search UNION branches so two real "George Washington" enslavers are tellable apart. PR #133 merged→main.
+
+**7-lead schedule backfill (Cobb/Ladson/Forrest/Cameron/Hampton/Aiken/Lee):** 4 counted EXACT (Cobb 8, Forrest 7,
+Lee 3 [personal; Custis estate separate], Ladson 2). 3 big holders = **per-location PARTIAL minimums** (Aiken 80,
+Cameron 55, Hampton 21), flagged `distributed_holding`.
+
+**OCR-CAPACITY FINDINGS (issue #142) — the load-bearing lesson:**
+- **Vision-model bakeoff on 1860 cursive** (ground-truth Forrest ages [30,22,18,16,14,8,15]=7): **Qwen2.5-VL-72B via
+  OpenRouter = EXACT + UNCAPPED** (OpenRouter has credit). Gemini accurate but DAILY-capped (~250/day, drains w/ retries).
+  GPT-4o=12, gpt-4o-mini=116, Groq="Sarah Patton" — all miscount cursive. Google Vision key suspended (#126). → build a
+  **vision-OCR router** mirroring `probate-llm-extractor.js` (Qwen-VL primary → Gemini → footer fallback); wire
+  `OCRService`/`gemini-ocr` consumers onto it. This is the OCR-capacity layer the project lacked.
+- **The real wall is STRUCTURE, not OCR:** big planters' enslaved are **distributed across many plantations/counties/
+  states on SEPARATE schedules** (Hampton = SC+Mississippi; Cameron = Person + Orange Co Stagville; Aiken = Jehossee
+  ~700 but adjacent pages read as Mrs/Jno Aiken — cursive owner-name drift). **Ward's single 14-page contiguous run is
+  the EXCEPTION.** So a big holder's TRUE total needs **owner-name search + aggregation across the whole 1860 collection**
+  (likely QUERY the existing **1.68M pre-indexed slave-schedule leads in `unconfirmed_persons`** by owner-name via
+  blocking keys → dedup → sum `enslaved_count`), NOT run-walking. Second named build in #142.
+- FS multi-page walk mechanics (from Ward + these): `&i=` param IGNORED; Next/Prev buttons work; the printed
+  **"Total slaves" footer box** is the reliable per-page number; continuation pages are BLANK-owner (enumerator-dependent —
+  Ward re-labeled "Est J J Ward / Brook Green Continued"; Aiken/Cameron/Hampton did not). Walker: `/tmp/*.cjs` on Mini.
+
+**NEXT (before building #142's two capabilities): re-read the whole architecture for MAX INTEGRATION** (per user) — the
+vision router must mirror the existing text router + OCRService consolidation; the owner-name aggregator must reuse the
+1.68M indexed leads + `person_blocking_keys` + PersonService single-door + the `person_documents.enslaved_count`
+count-holding model, NOT a new silo. Recurring op constraints: [[reference_familysearch_session_reauth]] (FS session
+expiry → :9222 debug Chrome sign-in), Gemini daily cap.
 
 ---
 
