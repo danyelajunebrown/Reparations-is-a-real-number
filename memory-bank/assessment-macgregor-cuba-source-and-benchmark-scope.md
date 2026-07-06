@@ -100,3 +100,19 @@ more work); (c) whether a Cuba obligation theatre is in scope yet or this is pur
 ## See also
 [[plan-ipums-census-benchmark]] · [[wealth-tracing-framework]] · [[interpretive-framework]] ·
 [[project_calibration_first_architecture]] · `migrations/090-secondary-source-compilations.sql`
+
+## MacGregor 5-VOLUME MAP (2026-07-06) — which volume holds which theatre
+User re-dropped `hvd-hb35mk-1783310926.txt` (= SAME shelfmark hb35mk = **Vol IV**, re-download of the
+already-assessed `-1783039781`; Cuba $41.7M/$507M already extracted — do NOT redo). The book's own
+"Summary of Contents of the Five Volumes" maps directly onto our theatres — all public-domain HathiTrust:
+- **Vol I** — Austria, Belgium, **Denmark & her Colonies (Danish WI)**, **France & her Colonies (French WI)**, **Holland & her Colonies (Dutch WI/Suriname)**, German Customs Union, Italy, Gibraltar/Malta/Ionian.
+- **Vol II** — Ottoman, Greece, **African States/sea-ports**, Russia, Sweden/Norway, **Spain & her Colonies (Cuba/PR)**, **Portugal & her Colonies (Brazil-adjacent)**.
+- **Vol III** — **United States** (agriculture/productions/trade/finances/revenues/debts per state), Texas, Mexico, … **British/French/Dutch Guyana**, Peru…Patagonia.
+- **Vol IV** (THIS FILE) — **Foreign West Indies** (Hayti/Cuba/PR/French/Dutch/Danish WI) · **Brazil** · British East Indies & Oriental Commerce · Ceylon/Singapore/Malacca. Cuba DONE.
+- **Vol V** — Chinese Empire · **British Possessions in Africa, Asia, Australasia (incl. Mauritius, Cape)** · **British North American Colonies** · **BRITISH WEST INDIES** · Falklands/Sandwich Is. · **British & Colonial Customs Tariffs & Regulations** · UK sea-port dues · **Summary of British Navigation & Trade for 150 Years** · Supplements.
+**→ For British-colony financial/trade data (the user's ask) get VOL V** (British WI + British N. America +
+British Africa/Asia incl. Mauritius/Cape + 150-yr British trade summary). Vol I = Danish/French/Dutch WI;
+Vol II = Spain(Cuba/PR)+African states; Vol III = US + Guyana. Each feeds `slave_economy_benchmarks`
+(#116) as CITED colony-level aggregates (dual-ledger, per-stratum control totals, cite MacGregor→la Sagra/
+official returns), never person rows. STILL EXTRACTABLE IN VOL IV (not yet done): the **Brazil** macro
+trade/slave-economy section (Brazil = major slave economy) + foreign-WI (French/Dutch/Danish) trade tables.

@@ -57,6 +57,18 @@ error). We kept both, noted the discrepancy, and used a tolerance on that one ch
 figure to force agreement. → Validation tolerances document KNOWN SOURCE discrepancies; they are
 never used to paper over OUR transcription errors (those checks stay exact).
 
+## 8. DUAL-ARCHIVE every source: S3 re-host AND Wayback snapshot (non-optional)
+This is the M100 `source_artifacts` standard ("our S3 re-host + the Internet Archive/Wayback snapshot of
+its canonical page") and the SlaveVoyages ingest followed it (`ensureSnapshot`). It was NEVER codified as
+a rule here, so the LBS ingest silently regressed — it wrote per-page HTML to S3 but left `wayback_url`
+NULL (caught 2026-07-06; backfilled). → EVERY external-source ingest MUST, per source: (a) re-host the
+file/page to S3 (`s3_key`) when `rehostable=TRUE`; AND (b) `ensureSnapshot()` the canonical source page to
+Wayback and record `wayback_url` on the `source_artifacts` row. S3 = serving copy; Wayback = independent
+provenance/backup (rate-limited, so snapshot the DATASET/record page, not necessarily every image). For
+`rehostable=FALSE` sources (JFS no-repost, etc.), S3 stays NULL and Wayback/link-only is the record. A
+gate-lifting document image (register scan) that lands in S3 gets its source page Wayback-snapshotted too.
+Verify `wayback_url` is populated as part of ingest done-ness.
+
 ## See also
 [[reference-benchmark-sources-register]] · [[plan-ipums-census-benchmark]] ·
 [[standard-canonical-person-and-document-gate]] · [[assessment-de-siloing-orphaning]] ·
