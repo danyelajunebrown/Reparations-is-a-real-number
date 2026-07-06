@@ -150,3 +150,16 @@ PRIMARY (conduits/blogs named only where figures enter the class). Pairs with th
   "European Economic Development: The Contribution of the Periphery" (1982); Rönnbäck, "Sweet Business:
   Quantifying the Value Added in the British Colonial Sugar Trade"; Eltis & Engerman on slave-trade value.
   → use for cross-checking/benchmarking the primary-derived per-power figures (calibration #90 style).
+
+## Per-power colonial-trade-value PRIMARIES — concrete sources (user-supplied 2026-07-06)
+The actual texts for the per-power vantages above → extract colony-level trade/value AGGREGATES into
+`slave_economy_benchmarks` (#116; the extraction/dual-ledger side: what each metropole drew from its slave
+colonies = debt evidence). Most are archive.org PUBLIC-DOMAIN (OCR-extractable, like the MacGregor Cuba
+6-agent pass). Extraction = a per-source macro pass (aggregates only, cite primary, per-stratum control
+totals) — NOT person rows. Rule 8 dual-archive each when ingested.
+- **FRENCH — Necker, *De l'administration des finances de la France* (1784, vol 3):** https://archive.org/details/deladministratio03neck (PD). French colonial trade/revenue values. + FRAMESPA article https://doi.org/10.4000/framespa.343 (French colonial econ, confirm topic).
+- **BRITISH — Bryan Edwards, *History Civil & Commercial of the British Colonies in the West Indies* (vol 4):** https://archive.org/details/historycivilcomm04edwa (PD). Per-island trade/production/value tables. + **Rönnbäck, "Sweet Business" (British colonial sugar value-added, 18th c.):** https://www.cambridge.org/core/product/identifier/S0212610914000081 (Rev. Hist. Econ. 2014).
+- **SPANISH/CUBA — Humboldt, *Political Essay on the Island of Cuba*:** https://archive.org/details/islandofcubapoli0000humb (PD). Cuba trade/population/value (cross-check vs la Sagra/MacGregor).
+- **CROSS-POWER — Inikori, *Africans and the Industrial Revolution in England* (2002):** https://assets.cambridge.org/97805218/11934/sample/9780521811934ws.pdf (sample; full = Cambridge). Per-power Atlantic trade-value tables — the comparative benchmark/calibration frame (#90).
+- **CIHM 38031:** https://archive.org/details/cihm_38031 — Canadian microfiche (British N. America trade, confirm on OCR).
+NEXT: a per-source extraction pass (MacGregor-Cuba style) → cited colony/power aggregates in slave_economy_benchmarks; pairs with BPP compensation totals (#131) + MacGregor Vol V (British WI).
