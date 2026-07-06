@@ -164,6 +164,52 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         </div>
       </Section>
 
+      {Array.isArray(p.facts) && p.facts.length > 0 && (() => {
+        const plantations = p.facts.filter((f) => f.fact_type === 'plantation');
+        // Facts already surfaced in the Identity grid — don't repeat them here.
+        const shownInIdentity = ['birth', 'death', 'occupation', 'spouse', 'plantation'];
+        const record = p.facts.filter((f) => !shownInIdentity.includes(f.fact_type));
+        const needsPrimary = (f) => f.verification_status === 'needs_primary';
+        return (
+          <>
+            {plantations.length > 0 && (
+              <Section title={`Plantations & Holdings (${plantations.length})`}>
+                <div className="grid-3">
+                  {plantations.map((f, i) => (
+                    <div key={i} className="box" style={{ padding: 8 }}>
+                      <div style={{ fontWeight: 600 }}>{f.value_text}</div>
+                      <div className="dim" style={{ fontSize: 11, marginTop: 3 }}>
+                        <span style={{ color: needsPrimary(f) ? '#b58900' : '#2aa198' }}>
+                          {needsPrimary(f) ? '○ needs primary' : '● primary-corroborated'}
+                        </span>
+                      </div>
+                      {f.source_citation && (
+                        <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>{f.source_citation}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+            {record.length > 0 && (
+              <Section title="Documented record">
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {record.map((f, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      <span className="dim" style={{ fontSize: 11 }}>{formatClass(f.fact_type)}:</span>{' '}
+                      {f.value_text}
+                      {needsPrimary(f) && (
+                        <span className="dim" style={{ fontSize: 10 }}> (needs primary)</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+          </>
+        );
+      })()}
+
       {owner && (
         <Section title="Enslaved by">
           <Link
