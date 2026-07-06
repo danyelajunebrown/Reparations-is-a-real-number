@@ -1,6 +1,6 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-04 (roster-audit ingest + gate/profile/RAG + OCR consolidation #126 — PR #125 open)_
+_Last updated: 2026-07-05 (roster-audit + gate/profile/RAG + OCR #126 — PR #125 MERGED + DEPLOYED live)_
 
 ---
 
@@ -62,8 +62,23 @@ Gemini-OCR each. The GOLD per-page count is the printed **"Total slaves" footer 
 identity is cross-referenced vs the FS transcribed index (Gemini MISREADS cursive owner names — "Col. Joshua J
 Ward"→"C.P. Jordan & Ward"; the DOM index OVER-attributes on mixed pages — Lee 40 vs image-verified 3). **Ward's
 page CONFIRMED by image-read** = Col. Joshua J Ward, **Brook Green Plantation, 80 all-female** (footer box=80; the
-"all-female" was REAL — a rice-plantation female gang, NOT a bug). Sum his ~14 Brook Green pages → ~1,130; backfill
-the other 7 leads. Ward = gold-standard per-person source-hunting exemplar. **PR #125 carries all of the above.**
+"all-female" was REAL — a rice-plantation female gang, NOT a bug). **#127 EXECUTED for Ward 2026-07-05:** the
+self-contained walker (`/tmp/ward-full-run.cjs` on the Mini — inline Gemini + Download-button capture; walks
+Next/Prev, footer-box count per page, S3 + per-page `person_document`) captured **14 pages = 1,100 enslaved**
+(12×80 + 60 + the i=48 80), his profile now shows **1,100 / reparations $15.69B live** (was 80/$1.14B). Owner
+labels name his SIX plantations (Brook Green, Springfield, Alderly, Prospect Hill…). 1,100 corroborates the
+1,130-1,131 secondary; 1 backward-boundary page had a transient Gemini-null (unresolved — the ~30 gap). **Blocker
+hit + resolved: the Mini's FamilySearch session (cookie jar) EXPIRED** — scraper has NO password auto-login (throws
+"log in via the Chrome window"); cookie re-injection via probate-restart did NOT help; required a MANUAL sign-in
+via VNC into the **:9222 debug Chrome specifically** (user first signed into the wrong Chrome — the debug profile
+`/tmp/familysearch-ancestor-climber` is separate). This blocks BOTH the walker AND probate (shared Chrome). Worth
+a session-health ping + ntfy alert so runs don't silently no-op. STILL TODO: backfill the other 7 schedule leads
+(Cameron/Cobb/Forrest/Hampton/Ladson/Aiken + Lee's small run) via the same walker. Ward = gold-standard exemplar.
+**PR #125 MERGED → main + DEPLOYED
+live 2026-07-05** (verified in prod: Ward's profile now returns occupation / 19 facts / reparations $1.14B;
+`OCRService` runs on Gemini). Deploy-readiness confirmed GREEN: schema already in Neon, `render-build.sh` runs
+NO migrations (code-only deploy), no dangling imports of the 5 deleted service classes; my migrations renumbered
+113/114→121/122 (collision with #90 census) + logged in `schema_migrations`.
 
 ---
 

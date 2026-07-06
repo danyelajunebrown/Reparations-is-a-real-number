@@ -347,6 +347,7 @@ router.get('/search/:query', async (req, res) => {
                     source_type,
                     confidence_score,
                     array_to_string(locations, ', ') as locations,
+                    NULL::text as life_span,
                     context_text,
                     scraped_at as created_at,
                     'unconfirmed_persons' as table_source
@@ -363,6 +364,7 @@ router.get('/search/:query', async (req, res) => {
                     'confirmed' as source_type,
                     1.0 as confidence_score,
                     NULL::text as locations,
+                    NULL::text as life_span,
                     notes as context_text,
                     created_at,
                     'enslaved_individuals' as table_source
@@ -379,6 +381,12 @@ router.get('/search/:query', async (req, res) => {
                     'canonical' as source_type,
                     COALESCE(confidence_score, 1.0) as confidence_score,
                     CONCAT_WS(', ', primary_county, primary_state) as locations,
+                    -- #118 disambiguation: same-name distinct people (e.g. two real "George Washington"
+                    -- enslavers — the President in VA vs the Choctaw-Nation/AR schedule) must be tellable
+                    -- apart in search. Surface life dates alongside the location already returned.
+                    CASE WHEN birth_year_estimate IS NOT NULL OR death_year_estimate IS NOT NULL
+                         THEN CONCAT(COALESCE(birth_year_estimate::text, '?'), '–', COALESCE(death_year_estimate::text, '?'))
+                         ELSE NULL END as life_span,
                     notes as context_text,
                     created_at,
                     'canonical_persons' as table_source
