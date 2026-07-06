@@ -4,6 +4,17 @@ _Last updated: 2026-07-05 (roster-audit + gate/profile/RAG + OCR #126 — PR #12
 
 ---
 
+## DIRECTIVE (user, 2026-07-05): USE RAG on every DB / search / modal step
+For any step touching the database, search, or person-profile modals, GROUND it via the RAG retrieval
+layer (`scripts/rag-query.cjs` / `/api/rag/query`, `RagService`, nomic-embed-text on the Mini ollama —
+51,347 doc_ocr embeddings live) BEFORE deciding — not just reason from context. **Corollary caught by
+doing it:** the LBS records are NOT embedded → invisible to RAG/search/modals. So every new ingest MUST
+add an EMBED phase (like `embed-persons.mjs`/`embed-documents.mjs`) into the `embeddings` table, else the
+data is siloed from retrieval. LBS embed step added to the pipeline (persons + claim/estate content via
+Mini ollama; query-embed runs on the Mini where ollama is local).
+
+---
+
 ## Roster audit → 15 famous enslavers SERVED on primary docs (2026-07-03/04, PR #125, branch audit/probate-classifier)
 Audited Wikipedia "List of slave owners" (~300) against `standard-canonical-person-and-document-gate.md`.
 **Breadth probe: 321/321 ABSENT for the intended person** (145 no-trace, 176 namesakes-only) — the DB holds
