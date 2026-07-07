@@ -68,8 +68,8 @@ async function main() {
     for (const [name, ctx] of SERVANTS) {
       const lid = (await c.query(`INSERT INTO unconfirmed_persons (full_name, person_type, locations, context_text, source_url, source_type, extraction_method, confidence_score, created_at)
          VALUES ($1,'freedperson', ARRAY['Natchez','Mississippi'], $2, $3, 'secondary','will_named_servant',0.6, now()) RETURNING lead_id`, [name, ctx, WILL_URL])).rows[0].lead_id;
-      await c.query(`INSERT INTO person_external_ids (subject_table, subject_id, unconfirmed_person_id, id_system, external_id, confidence)
-        VALUES ('unconfirmed_persons',$1,$1,'duncan_will_1866',$2,0.6) ON CONFLICT (id_system, external_id) DO NOTHING`, [lid, 'duncanwill:' + name.toLowerCase().replace(/[^a-z]/g, '')]);
+      await c.query(`INSERT INTO person_external_ids (subject_table, subject_id, id_system, external_id, confidence)
+        VALUES ('unconfirmed_persons',$1,'duncan_will_1866',$2,0.6) ON CONFLICT (id_system, external_id) DO NOTHING`, [lid, 'duncanwill:' + name.toLowerCase().replace(/[^a-z]/g, '')]);
       servs++;
     }
     await c.query('COMMIT');

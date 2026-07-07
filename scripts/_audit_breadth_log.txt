@@ -1,0 +1,327 @@
+NO_TRACE                                   | Adelicia Acklen (1817-1887) [US-TN] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Green Adams (1812-1884) [US-KY] canon=1/0 lead=6/0
+NO_TRACE                                   | Giovanni Pietro Francesco Agius de Soldanis (1712-1770) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Stair Agnew (1757-1821) [Canada-NB] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | William Aiken (1779-1831) [US-SC] canon=2/0 lead=11/0
+NAMESAKES_ONLY (absent for intended)       | William Aiken Jr. (1806-1887) [US-SC] canon=2/0 lead=11/0
+NO_TRACE                                   | Muhammad al-Badr (1926-1996) [Yemen] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Isaac Allen (1741-1806) [Canada-NB] canon=9/0 lead=8/0
+NO_TRACE                                   | Diego de Almagro (1475-1538) [Spain/SouthAmerica] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Joseph R. Anderson (1813-1892) [US-VA] canon=15/0 lead=26/0
+NAMESAKES_ONLY (absent for intended)       | John Armfield (1797-1871) [US-VA] canon=3/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | David Rice Atchison (1807-1883) [US-MO] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | William Atherton (1742-1803) [England/Jamaica] canon=2/0 lead=1/0
+NO_TRACE                                   | John James Audubon (1785-1851) [US] canon=0/0 lead=0/0
+NO_TRACE                                   | Stephen F. Austin (?-?) [US-TX] canon=0/0 lead=0/0
+NO_TRACE                                   | Jacques Baby (1731-1789) [Canada] canon=0/0 lead=0/0
+NO_TRACE                                   | James Baby (1763-1833) [Canada] canon=0/0 lead=0/0
+NO_TRACE                                   | Abu Bakr al-Baghdadi (1971-2019) [Iraq/Syria] canon=0/0 lead=0/0
+NO_TRACE                                   | Adriana Bake (1724-1787) [DutchEastIndies] canon=0/0 lead=0/0
+NO_TRACE                                   | Vasco Nunez de Balboa (1475-1519) [Spain] canon=0/0 lead=0/0
+NO_TRACE                                   | Emanoil Baleanu (1793-1862) [Wallachia] canon=0/0 lead=0/0
+NO_TRACE                                   | Elizabeth Swain Bannister (1785-1828) [Berbice] canon=0/0 lead=0/0
+NO_TRACE                                   | Hayreddin Barbarossa (1478-1546) [Ottoman] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | William Barksdale (1821-1863) [US-MS] canon=5/0 lead=5/0
+NAMESAKES_ONLY (absent for intended)       | Alexander Barrow (1801-1846) [US-LA] canon=1/0 lead=0/0
+NO_TRACE                                   | George Washington Barrow (1807-1866) [US-LA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Robert Ruffin Barrow (1798-1875) [US-LA] canon=2/0 lead=3/0
+NO_TRACE                                   | William Beckford (1709-1770) [UK/Jamaica] canon=0/0 lead=0/0
+NO_TRACE                                   | William Thomas Beckford (1760-1844) [UK/Jamaica] canon=0/0 lead=0/0
+NO_TRACE                                   | Benjamin Belcher (1743-1802) [Canada-NS] canon=0/0 lead=0/0
+NO_TRACE                                   | Zabeau Bellanton (?-?) [Saint-Domingue] canon=0/0 lead=0/0
+NO_TRACE                                   | Judah P. Benjamin (1811-1884) [US-LA] canon=0/0 lead=0/0
+CANDIDATE (canonical sig-match, gated)     | Charles Bent (1799-1847) [US-NM] canon=5/1 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Thomas H. Benton (1782-1858) [US-MO] canon=2/0 lead=4/0
+NO_TRACE                                   | George Berkeley (1685-1753) [Ireland/RhodeIsland] canon=0/0 lead=0/0
+NO_TRACE                                   | John M. Berrien (1781-1856) [US-GA] canon=0/0 lead=0/0
+NO_TRACE                                   | Antoine Bestel (1766-1852) [France/Mauritius] canon=0/0 lead=0/0
+NO_TRACE                                   | James G. Birney (1792-1857) [US] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Blair (1788-1841) [UK/Demerara] canon=10/0 lead=12/0
+NO_TRACE                                   | Simon Bolivar (1783-1830) [Venezuela] canon=0/0 lead=0/0
+NO_TRACE                                   | Shadrach Bond (1773-1832) [US-IL] canon=0/0 lead=0/0
+NO_TRACE                                   | Joseph Boucher de Niverville (1715-1804) [NewFrance] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Bowie (1796-1836) [US-TX] canon=6/0 lead=6/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Boyd (1801-1851) [Scotland/Australia] canon=1/0 lead=1/0
+NO_TRACE                                   | Joseph Brant (1747-1803) [Mohawk/Canada] canon=0/0 lead=0/0
+NO_TRACE                                   | William Brattle (1706-1776) [US-MA] canon=0/0 lead=0/0
+NO_TRACE                                   | John C. Breckinridge (1821-1875) [US-KY] canon=0/0 lead=0/0
+NO_TRACE                                   | Simone Brocard (?-?) [Saint-Domingue] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Preston Brooks (1819-1857) [US-SC] canon=0/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | James Brown (1766-1835) [US-LA] canon=60/0 lead=60/0
+NO_TRACE                                   | John Burbidge (1718-1812) [Canada-NS] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Pierce Butler (1744-1822) [US-SC] canon=0/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | William Orlando Butler (1791-1880) [US-KY] canon=21/0 lead=43/0
+NO_TRACE                                   | Daniel Cady (1773-1859) [US-NY] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Julius Caesar (-100--44) [Rome] canon=5/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Charles Caldwell (1772-1853) [US-KY] canon=5/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | John C. Calhoun (1782-1850) [US-SC] canon=9/0 lead=12/0
+NAMESAKES_ONLY (absent for intended)       | Meredith Calhoun (1805-1869) [US-LA] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Paul C. Cameron (1808-1891) [US-NC] canon=3/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | William Capell (1732-1799) [UK] canon=4/0 lead=3/0
+NO_TRACE                                   | Caravaggio (1571-1610) [Italy/Malta] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Charles Carroll (1737-1832) [US-MD] canon=6/0 lead=9/0
+NO_TRACE                                   | Landon Carter (1710-1778) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Robert Carter (1663-1732) [US-VA] canon=14/0 lead=26/0
+NAMESAKES_ONLY (absent for intended)       | Samuel A. Cartwright (1793-1863) [US] canon=1/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Lewis Cass (1782-1866) [US-MI] canon=2/0 lead=6/0
+NO_TRACE                                   | Girolamo Cassar (1520-1592) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Cato the Elder (-234--149) [Rome] canon=0/0 lead=0/0
+NO_TRACE                                   | Pietru Caxaro (?-1485) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Carlos Manuel de Cespedes (1819-1874) [Cuba] canon=0/0 lead=0/0
+NO_TRACE                                   | Auguste Chouteau (1750-1829) [US-MO] canon=0/0 lead=0/0
+NO_TRACE                                   | Pierre Chouteau (1758-1849) [US-MO] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Cicero (-106--43) [Rome] canon=29/0 lead=60/0
+NAMESAKES_ONLY (absent for intended)       | William Clark (1770-1838) [US-MO] canon=42/0 lead=60/0
+NAME_HIT_UNRESOLVED (no year to disambiguate) | Nancy Clarke (?-?) [Barbados] canon=1/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Henry Clay (1777-1852) [US-KY] canon=23/0 lead=60/0
+NAMESAKES_ONLY (absent for intended)       | Howell Cobb (1815-1868) [US-GA] canon=2/0 lead=6/0
+NAMESAKES_ONLY (absent for intended)       | Edward Coles (1786-1868) [US-IL] canon=1/0 lead=1/0
+NO_TRACE                                   | Amaryllis Collymore (1745-1828) [Barbados] canon=0/0 lead=0/0
+NO_TRACE                                   | Alfred H. Colquitt (1824-1894) [US-GA] canon=0/0 lead=0/0
+NO_TRACE                                   | Edward Colston (1636-1711) [England] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Christopher Columbus (1451-1506) [Genoa/Spain] canon=1/0 lead=3/0
+NO_TRACE                                   | Confucius (?-?) [China] canon=0/0 lead=0/0
+NO_TRACE                                   | Hernan Cortes (1485-1547) [Spain/Mexico] canon=0/0 lead=0/0
+NO_TRACE                                   | Therese de Couagne (1697-1764) [Canada] canon=0/0 lead=0/0
+NO_TRACE                                   | Robert Davers (1620-1684) [England/Barbados] canon=0/0 lead=0/0
+NO_TRACE                                   | Robert Davers (1653-1722) [England/Barbados] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Jefferson Davis (1807-1889) [US-MS] canon=1/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Joseph Davis (1784-1870) [US-MS] canon=21/0 lead=43/0
+NAMESAKES_ONLY (absent for intended)       | Sam Davis (1842-1863) [US-TN] canon=30/0 lead=60/0
+NAMESAKES_ONLY (absent for intended)       | Francisco Paulo de Almeida (1826-1901) [Brazil] canon=29/0 lead=13/0
+NO_TRACE                                   | James De Lancey (1703-1760) [US-NY] canon=0/0 lead=0/0
+NO_TRACE                                   | James De Lancey (1746-1804) [US-NY/Canada] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Abraham de Peyster (1657-1728) [US-NY] canon=1/0 lead=1/0
+NO_TRACE                                   | Demosthenes (-384--322) [Greece] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Henry Denny Denson (1715-1780) [Canada-NS] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Jean Noel Destrehan (1754-1823) [US-LA] canon=3/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Roderick Dew (1802-1846) [US-VA] canon=13/0 lead=12/0
+NAMESAKES_ONLY (absent for intended)       | John Dickinson (1732-1808) [US-PA] canon=7/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Albert Baldwin Dod (1805-1845) [US-NJ] canon=0/0 lead=1/0
+NO_TRACE                                   | Henry Dodge (1782-1867) [US-WI] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Domingos Malaquias de Aguiar Pires Ferreira (1788-1859) [Brazil] canon=11/0 lead=3/0
+NO_TRACE                                   | Thomas Dorland (1759-1832) [Canada] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Stephen A. Douglas (1813-1861) [US-IL] canon=2/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Richard Duncan (?-1819) [Canada] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Stephen Duncan (1787-1867) [US-MS] canon=1/0 lead=0/0
+NO_TRACE                                   | Robley Dunglison (1798-1869) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Early (1786-1873) [US-VA] canon=2/0 lead=4/0
+NAMESAKES_ONLY (absent for intended)       | Jonathan Edwards (1703-1758) [US] canon=1/0 lead=1/0
+NO_TRACE                                   | Ninian Edwards (1775-1833) [US-IL] canon=0/0 lead=0/0
+NO_TRACE                                   | Matthew Elliott (1739-1814) [Canada] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | George Ellis (1753-1815) [England/Jamaica] canon=8/0 lead=9/0
+NAMESAKES_ONLY (absent for intended)       | William Ellison (1790-1861) [US-SC] canon=8/0 lead=32/0
+NO_TRACE                                   | Adrien d'Epinay (1794-1839) [Mauritius] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Edwin Epps (1808-?) [US-LA] canon=1/0 lead=2/0
+NO_TRACE                                   | Erchinoald (?-658) [France] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Mary Faber (1798-?) [Guinea] canon=2/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Peter Faneuil (1700-1743) [US-MA] canon=2/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Farar Sr. (?-1790) [US] canon=3/0 lead=2/0
+NO_TRACE                                   | Rebecca Latimer Felton (1835-1930) [US-GA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Antonio Pires Ferreira (1799-1877) [Brazil] canon=47/0 lead=5/0
+NO_TRACE                                   | Eliza Fenwick (1767-1840) [UK/Barbados] canon=0/0 lead=0/0
+NO_TRACE                                   | Fernando Pires Ferreira (1842-1907) [Brazil] canon=0/0 lead=0/0
+NO_TRACE                                   | Firmino Pires Ferreira (1848-1930) [Brazil] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Joaquim Pires Ferreira (1761-?) [Brazil] canon=49/0 lead=15/0
+NAMESAKES_ONLY (absent for intended)       | Jose Pires Ferreira (1757-?) [Brazil] canon=60/0 lead=4/0
+NO_TRACE                                   | Nathan Bedford Forrest (1821-1877) [US-TN] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Forsyth (1780-1841) [US-GA] canon=6/0 lead=4/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Franklin (1706-1790) [US-PA] canon=8/0 lead=29/0
+NAMESAKES_ONLY (absent for intended)       | Isaac Franklin (1789-1846) [US-TN] canon=2/0 lead=2/0
+NO_TRACE                                   | Tacitus Gaillard (1718-1786) [US-SC] canon=0/0 lead=0/0
+NO_TRACE                                   | Ana Gallum (?-?) [US-FL] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Garland (1791-1885) [US-VA] canon=3/0 lead=3/0
+NO_TRACE                                   | Horatio Gates (1727-1806) [US] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Gladstone (1764-1851) [UK/Jamaica] canon=2/0 lead=6/0
+NO_TRACE                                   | Estevao Gomes (1483-1538) [Portugal] canon=0/0 lead=0/0
+NO_TRACE                                   | Antao Goncalves (?-?) [Portugal] canon=0/0 lead=0/0
+NO_TRACE                                   | Ulysses S. Grant (1822-1885) [US] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Robert Isaac Dey Gray (1772-1804) [Canada] canon=13/0 lead=21/0
+NO_TRACE                                   | Curtis Grubb (1730-1789) [US-PA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Henry Hammond (1807-1864) [US-SC] canon=6/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Wade Hampton (1752-1835) [US-SC] canon=7/0 lead=13/0
+NAMESAKES_ONLY (absent for intended)       | Wade Hampton (1791-1858) [US-SC] canon=7/0 lead=13/0
+NAMESAKES_ONLY (absent for intended)       | Wade Hampton (1818-1902) [US-SC] canon=7/0 lead=13/0
+NAMESAKES_ONLY (absent for intended)       | John Hancock (1737-1793) [US-MA] canon=19/0 lead=24/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Harrison (1693-1745) [US-VA] canon=3/0 lead=14/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Harrison (1726-1791) [US-VA] canon=3/0 lead=14/0
+NAMESAKES_ONLY (absent for intended)       | Benjamin Hawkins (1754-1816) [US-NC] canon=2/0 lead=2/0
+CANDIDATE (canonical sig-match, gated)     | William Henry Harrison (1773-1841) [US] canon=45/2 lead=59/0
+NAMESAKES_ONLY (absent for intended)       | Patrick Henry (1736-1799) [US-VA] canon=17/0 lead=29/0
+NO_TRACE                                   | Thomas Heyward Jr. (1746-1809) [US-SC] canon=0/0 lead=0/0
+NO_TRACE                                   | George Hibbert (1757-1837) [England/Jamaica] canon=0/0 lead=0/0
+NO_TRACE                                   | Thomas Hibbert (1710-1780) [England/Jamaica] canon=0/0 lead=0/0
+NO_TRACE                                   | Eufrosina Hinard (1777-?) [US-LA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Thomas C. Hindman (1828-1868) [US-AR] canon=2/0 lead=1/0
+NO_TRACE                                   | Arthur William Hodge (1763-1811) [BVI] canon=0/0 lead=0/0
+NO_TRACE                                   | Jean-Francois Hodoul (1765-1835) [France/Mauritius] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Johns Hopkins (1795-1873) [US-MD] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Sam Houston (1793-1863) [US-TX] canon=8/0 lead=9/0
+NAMESAKES_ONLY (absent for intended)       | Abijah Hunt (1762-1811) [US-MS] canon=3/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | David Hunt (1779-1861) [US-MS] canon=12/0 lead=13/0
+NAMESAKES_ONLY (absent for intended)       | Margaret Hutton (1727-1797) [US-PA] canon=2/0 lead=0/0
+NO_TRACE                                   | Ibn Battuta (1304-1368) [Morocco] canon=0/0 lead=0/0
+NO_TRACE                                   | Emina Ilhamy (1858-1931) [Egypt] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Andrew Jackson (1767-1845) [US-TN] canon=15/0 lead=60/0
+CANDIDATE (canonical sig-match, gated)     | William James (1791-1861) [England] canon=60/1 lead=60/0
+NAMESAKES_ONLY (absent for intended)       | William Jarvis (1756-1817) [Canada] canon=6/0 lead=8/0
+NAMESAKES_ONLY (absent for intended)       | Peter Jefferson (1708-1757) [US-VA] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Jefferson (1743-1826) [US-VA] canon=12/0 lead=50/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Jeremiah (?-1775) [US-SC] canon=0/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | Andrew Johnson (1808-1875) [US-TN] canon=11/0 lead=32/0
+NAMESAKES_ONLY (absent for intended)       | William King (1812-1895) [Canada] canon=25/0 lead=40/0
+NO_TRACE                                   | Anna Kingsley (1793-1870) [US-FL] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Zephaniah Kingsley (1765-1843) [US-FL] canon=2/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | James Knight (1640-1721) [England/Canada] canon=9/0 lead=10/0
+NO_TRACE                                   | Cristovao Lins (1529-?) [Brazil] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Ladson (1753-1812) [US-SC] canon=2/0 lead=5/0
+NAMESAKES_ONLY (absent for intended)       | James H. Ladson (1795-1868) [US-SC] canon=2/0 lead=5/0
+NAMESAKES_ONLY (absent for intended)       | Henry Laurens (1724-1792) [US-SC] canon=4/0 lead=2/0
+NO_TRACE                                   | Delphine LaLaurie (1787-1849) [US-LA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Lamont (1782-1850) [Scotland/Trinidad] canon=1/0 lead=1/0
+NO_TRACE                                   | Marie Laveau (1801-1881) [US-LA] canon=0/0 lead=0/0
+NO_TRACE                                   | Fenda Lawrence (1742-?) [Africa/Saloum] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Richard Bland Lee (1761-1827) [US-VA] canon=10/0 lead=12/0
+NAMESAKES_ONLY (absent for intended)       | Robert E. Lee (1807-1870) [US-VA] canon=22/0 lead=32/0
+NAMESAKES_ONLY (absent for intended)       | William Lenoir (1751-1839) [US-NC] canon=1/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | William Ballard Lenoir (1775-1852) [US-TN] canon=1/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Uriah P. Levy (1792-1862) [US-VA] canon=1/0 lead=1/0
+NO_TRACE                                   | Francis Lieber (1800-1872) [US-SC] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Edward Lloyd (1779-1834) [US-MD] canon=11/0 lead=15/0
+NAMESAKES_ONLY (absent for intended)       | Edward Long (1734-1813) [England/Jamaica] canon=13/0 lead=6/0
+NAMESAKES_ONLY (absent for intended)       | George Long (1800-1879) [England] canon=12/0 lead=10/0
+NO_TRACE                                   | Toussaint Louverture (1743-1803) [Haiti] canon=0/0 lead=0/0
+NO_TRACE                                   | George Duncan Ludlow (1734-1808) [Canada] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | David Lynd (1745-1802) [Canada] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | James Madison (1751-1836) [US-VA] canon=10/0 lead=35/0
+NAMESAKES_ONLY (absent for intended)       | James Madison Sr. (1723-1801) [US-VA] canon=10/0 lead=35/0
+NO_TRACE                                   | Ferdinand Magellan (1480-1521) [Portugal] canon=0/0 lead=0/0
+NO_TRACE                                   | Bertrand-Francois Mahe de La Bourdonnais (1699-1753) [France/Mauritius] canon=0/0 lead=0/0
+NO_TRACE                                   | William Mahone (1826-1895) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Lawrence Manning (1816-1889) [US-SC] canon=5/0 lead=17/0
+NAMESAKES_ONLY (absent for intended)       | Francis Marion (1732-1795) [US-SC] canon=2/0 lead=7/0
+NO_TRACE                                   | Joseph Marryat (1757-1824) [UK/Caribbean] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Marshall (1755-1835) [US-VA] canon=29/0 lead=50/0
+NAMESAKES_ONLY (absent for intended)       | George Mason (1725-1792) [US-VA] canon=5/0 lead=11/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Massie (1675-1731) [US-VA] canon=0/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Massie (1747-1834) [US-VA] canon=0/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | William Massie (1718-1751) [US-VA] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Catharine Flood McCall (1766-1828) [US-VA] canon=1/0 lead=1/0
+NO_TRACE                                   | Carrie Winder McGavock (1829-1905) [US-TN] canon=0/0 lead=0/0
+NO_TRACE                                   | John McGavock (1815-1893) [US-TN] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James McGill (1744-1813) [Canada] canon=3/0 lead=6/0
+NAMESAKES_ONLY (absent for intended)       | Henry Middleton (1717-1784) [US-SC] canon=4/0 lead=12/0
+NAMESAKES_ONLY (absent for intended)       | John Milledge (1757-1818) [US-GA] canon=1/0 lead=6/0
+NAMESAKES_ONLY (absent for intended)       | Robert Milligan (1746-1809) [Scotland/Jamaica] canon=2/0 lead=1/0
+NO_TRACE                                   | Moctezuma II (1480-1520) [Aztec] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Monroe (1758-1831) [US-VA] canon=6/0 lead=23/0
+NO_TRACE                                   | Indro Montanelli (1909-2001) [Italy] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Frank A. Montgomery (1830-1903) [US-MS] canon=2/0 lead=1/0
+NO_TRACE                                   | Jackson Morton (1794-1874) [US-FL] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | William Moultrie (1730-1805) [US-SC] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Muhammad (570-632) [Arabia] canon=1/0 lead=0/0
+NO_TRACE                                   | Hercules Mulligan (1740-1825) [US-NY] canon=0/0 lead=0/0
+NO_TRACE                                   | Mansa Musa (1280-1337) [Mali] canon=0/0 lead=0/0
+NO_TRACE                                   | Cosmana Navarra (1600-1687) [Malta] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Newton (1725-1807) [England] canon=16/0 lead=21/0
+NO_TRACE                                   | Nicias (-470--413) [Greece] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Susannah Ostrehan (?-1809) [Barbados] canon=1/0 lead=0/0
+NO_TRACE                                   | Paul Henry Ourry (1719-1783) [UK] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Owen (1784-1865) [US-NC] canon=37/0 lead=52/0
+NAMESAKES_ONLY (absent for intended)       | John Page (1628-1692) [US-VA] canon=22/0 lead=28/0
+NO_TRACE                                   | Suzanne Amomba Paille (1673-1755) [FrenchGuiana] canon=0/0 lead=0/0
+NO_TRACE                                   | Charles Nicholas Pallmer (1772-1848) [UK/Jamaica] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | George Palmer (1772-1853) [England/Grenada] canon=5/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | William Penn (1644-1718) [US-PA/England] canon=24/0 lead=25/0
+NO_TRACE                                   | Richard Pennant (1737-1808) [UK/Jamaica] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John J. Pettus (1813-1867) [US-MS] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Judith Philip (1760-1848) [Grenada] canon=0/0 lead=12/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Phillips (1760-1851) [Wales] canon=14/0 lead=8/0
+NAMESAKES_ONLY (absent for intended)       | John Pinney (1740-1818) [UK/Nevis] canon=2/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | Plato (-428--348) [Greece] canon=18/0 lead=53/0
+NO_TRACE                                   | Susanna du Plessis (1739-1795) [Surinam] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James K. Polk (1795-1849) [US-TN] canon=6/0 lead=14/0
+NO_TRACE                                   | Leonidas Polk (1806-1864) [US-TN] canon=0/0 lead=0/0
+NO_TRACE                                   | Samuel Polk (1772-1827) [US-TN] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Sarah Childress Polk (1803-1891) [US-TN] canon=1/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | Alexander Porter (1785-1844) [US-LA] canon=10/0 lead=24/0
+NO_TRACE                                   | Mattia Preti (1613-1699) [Italy/Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Rachael Pringle Polgreen (1753-1791) [Barbados] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John A. Quitman (1798-1858) [US-MS] canon=1/0 lead=0/0
+NO_TRACE                                   | Edmund Randolph (1753-1813) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Randolph (1773-1833) [US-VA] canon=15/0 lead=25/0
+NAMESAKES_ONLY (absent for intended)       | John Reynolds (1788-1865) [US-IL] canon=14/0 lead=28/0
+NAMESAKES_ONLY (absent for intended)       | George R. Reeves (1826-1882) [US-TX] canon=2/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | Daniel Robertson (1733-1810) [UK/Canada] canon=3/0 lead=5/0
+NAMESAKES_ONLY (absent for intended)       | Thomas B. Robertson (1779-1828) [US-LA] canon=8/0 lead=8/0
+NAMESAKES_ONLY (absent for intended)       | William Barton Rogers (1804-1882) [US-VA/MA] canon=25/0 lead=26/0
+NO_TRACE                                   | Juan Manuel de Rosas (1793-1877) [Argentina] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Mary Johnston Rose (1718-1783) [Jamaica] canon=9/0 lead=10/0
+NAMESAKES_ONLY (absent for intended)       | Isaac Ross (1760-1836) [US-MS] canon=8/0 lead=12/0
+NO_TRACE                                   | Anne Rossignol (1730-1810) [Senegal/France] canon=0/0 lead=0/0
+NO_TRACE                                   | Isaac Royall Jr. (1719-1781) [US-MA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Peter Russell (1733-1808) [Canada] canon=1/0 lead=3/0
+NAMESAKES_ONLY (absent for intended)       | John Rutledge (1739-1800) [US-SC] canon=6/0 lead=6/0
+NO_TRACE                                   | Elisabeth Samson (1715-1771) [Surinam] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Ana Joaquina dos Santos e Silva (1788-1859) [Angola] canon=12/0 lead=2/0
+NO_TRACE                                   | Ibn Saud (1875-1953) [SaudiArabia] canon=0/0 lead=0/0
+NO_TRACE                                   | Ernst Heinrich von Schimmelmann (1747-1831) [Denmark/StCroix] canon=0/0 lead=0/0
+NO_TRACE                                   | Sally Seymour (?-1824) [US-SC] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | J. Marion Sims (1813-1883) [US] canon=60/0 lead=60/0
+NO_TRACE                                   | Philip Skene (1725-1810) [US-NY] canon=0/0 lead=0/0
+NO_TRACE                                   | Ashbel Smith (1805-1886) [US-TX] canon=0/0 lead=0/0
+NO_TRACE                                   | Emilia Soares de Patrocinio (1805-1886) [Brazil] canon=0/0 lead=0/0
+NO_TRACE                                   | Hernando de Soto (1500-1542) [Spain] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Alexander H. Stephens (1812-1883) [US-GA] canon=1/0 lead=1/0
+NAME_HIT_UNRESOLVED (no year to disambiguate) | Charles Stewart (?-?) [US/UK] canon=13/0 lead=19/0
+NAMESAKES_ONLY (absent for intended)       | J. E. B. Stuart (1833-1864) [US-VA] canon=36/0 lead=43/0
+NAMESAKES_ONLY (absent for intended)       | John Stuart (1740-1811) [Canada] canon=12/0 lead=13/0
+NAMESAKES_ONLY (absent for intended)       | Peter Stuyvesant (1592-1672) [NewNetherland] canon=1/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Thomas Sumter (1734-1832) [US-SC] canon=2/0 lead=2/0
+NO_TRACE                                   | Mary Surratt (1823-1865) [US-MD] canon=0/0 lead=0/0
+NO_TRACE                                   | Clemente Tabone (1575-1665) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Lawrence Taliaferro (1794-1871) [US-MN] canon=0/0 lead=0/0
+NO_TRACE                                   | Roger Taney (1777-1864) [US-MD] canon=0/0 lead=0/0
+NO_TRACE                                   | John Tayloe II (1721-1779) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | George Taylor (1716-1781) [US-PA] canon=23/0 lead=57/0
+NAMESAKES_ONLY (absent for intended)       | Zachary Taylor (1784-1850) [US] canon=0/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Edward Telfair (1735-1807) [US-GA] canon=2/0 lead=1/0
+NO_TRACE                                   | Thomas Thistlewood (1721-1786) [Jamaica] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | George Henry Thomas (1816-1870) [US-VA] canon=29/0 lead=49/0
+NO_TRACE                                   | Madam Tinubu (1810-1887) [Nigeria] canon=0/0 lead=0/0
+NO_TRACE                                   | Tippu Tip (1832-1905) [Zanzibar] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Robert Toombs (1810-1885) [US-GA] canon=1/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | George Trenholm (1807-1876) [US-SC] canon=3/0 lead=2/0
+NAMESAKES_ONLY (absent for intended)       | John Tyler (1790-1862) [US-VA] canon=8/0 lead=20/0
+NAMESAKES_ONLY (absent for intended)       | Martin Van Buren (1782-1862) [US-NY] canon=2/0 lead=6/0
+CANDIDATE (canonical sig-match, gated)     | Joseph H. Vann (1798-1844) [US-Cherokee] canon=5/1 lead=1/0
+NO_TRACE                                   | Diego Velazquez (1599-1660) [Spain] canon=0/0 lead=0/0
+NO_TRACE                                   | Hugues Loubenx de Verdalle (1531-1595) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Amerigo Vespucci (1451-1512) [Italy] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Jacques Villere (1761-1830) [US-LA] canon=2/0 lead=2/0
+NO_TRACE                                   | Elisabeth Dieudonne Vincent (1798-1883) [US-LA] canon=0/0 lead=0/0
+NO_TRACE                                   | Caterina Vitale (1566-1619) [Malta] canon=0/0 lead=0/0
+NO_TRACE                                   | Walkara (1805-1855) [US-UT] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | Joshua John Ward (1800-1853) [US-SC] canon=4/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Robert Wash (1790-1856) [US-MO] canon=9/0 lead=26/0
+NAMESAKES_ONLY (absent for intended)       | Augustine Washington (1694-1743) [US-VA] canon=1/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | George Washington (1732-1799) [US-VA] canon=60/0 lead=60/0
+NAMESAKES_ONLY (absent for intended)       | Martha Washington (1731-1802) [US-VA] canon=3/0 lead=6/0
+NO_TRACE                                   | John Wayles (1715-1773) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | James Moore Wayne (1790-1867) [US-GA] canon=4/0 lead=7/0
+NAMESAKES_ONLY (absent for intended)       | Thomas H. Watts (1819-1892) [US-AL] canon=6/0 lead=7/0
+NO_TRACE                                   | John Wedderburn of Ballindean (1729-1803) [Scotland] canon=0/0 lead=0/0
+NO_TRACE                                   | Richard Wenman (1712-1781) [Canada-NS] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John H. Wheeler (1806-1882) [US-NC] canon=18/0 lead=21/0
+NAMESAKES_ONLY (absent for intended)       | William Whipple (1730-1785) [US-NH] canon=2/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | George Whitefield (1714-1770) [England/Georgia] canon=1/0 lead=0/0
+NO_TRACE                                   | James Matthew Whyte (1788-1843) [Canada/Jamaica] canon=0/0 lead=0/0
+NO_TRACE                                   | James Beckford Wildman (1789-1867) [UK/Jamaica] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | John Witherspoon (1723-1794) [US-NJ] canon=6/0 lead=8/0
+NAMESAKES_ONLY (absent for intended)       | John Winthrop (1587-1649) [US-MA] canon=2/0 lead=1/0
+NAMESAKES_ONLY (absent for intended)       | Joseph Wragg (1698-1751) [US-SC] canon=2/0 lead=1/0
+NO_TRACE                                   | George Wythe (1726-1807) [US-VA] canon=0/0 lead=0/0
+NAMESAKES_ONLY (absent for intended)       | William Lowndes Yancey (1814-1863) [US-AL] canon=2/0 lead=3/0
+NO_TRACE                                   | Marie-Marguerite d'Youville (1701-1771) [Canada] canon=0/0 lead=0/0
+NO_TRACE                                   | David Levy Yulee (1810-1886) [US-FL] canon=0/0 lead=0/0
+NO_TRACE                                   | Juan de Zaldivar (1514-1570) [Spain/NewSpain] canon=0/0 lead=0/0

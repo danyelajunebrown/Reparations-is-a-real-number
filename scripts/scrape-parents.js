@@ -32,10 +32,11 @@ const FS_ID = process.env.FS_ID || 'P4RF-PFQ';   // Adrian — the participant (
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
 const HEADLESS = process.env.HEADLESS !== '0';
 const DIAG = process.env.DIAG === '1';
+const RETRY = process.env.RETRY === '1';   // re-process only parents=0 cases, thorough wait
 
 const PERSON_URL = 'https://www.familysearch.org/en/tree/person/details/';
 const COOKIES = './fs-climber-cookies.json';
-const PROGRESS = './worksheets/.parents-progress.json';
+const PROGRESS = RETRY ? './worksheets/.parents-retry-progress.json' : './worksheets/.parents-progress.json';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function loadProgress() { try { return new Set(JSON.parse(fs.readFileSync(PROGRESS, 'utf8'))); } catch { return new Set(); } }
@@ -44,20 +45,42 @@ function saveProgress(set) { try { fs.writeFileSync(PROGRESS, JSON.stringify([..
 async function applyCookies(page) {
   try { const c = JSON.parse(fs.readFileSync(COOKIES, 'utf8')); await page.setCookie(...c); return c.length; } catch { return 0; }
 }
+// A page is "logged in" only if it shows real person content (the title's year
+// range or a family testid) — NOT a sign-in interstitial served at the same URL.
+async function isLoggedIn(page) {
+  return await page.evaluate(() => {
+    const t = document.title || '';
+    if (/sign[- ]?in|create a free account|log in/i.test(t)) return false;
+    const loc = location.href;
+    if (loc.includes('ident.familysearch') || loc.includes('/auth/') || loc.includes('/identity/')) return false;
+    const realPerson = /\(\d{4}|–|Living|Deceased/.test(t) ||
+      !!document.querySelector('[data-testid^="family-"],[data-testid="person-page-tabs"],[data-testid^="conclusionDisplay"]');
+    return realPerson;
+  });
+}
+// Verify login against a clearly DECEASED ancestor, not Adrian (who is living —
+// FamilySearch restricts living-person pages, so they're a bad login signal).
+const LOGIN_CHECK = process.env.LOGIN_CHECK || 'L64X-RH2'; // Ann Maria Biscoe (1700s)
 async function ensureLogin(page) {
-  await page.goto(PERSON_URL + FS_ID, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await sleep(2500);
-  const url = page.url();
-  if (url.includes('ident.familysearch') || url.includes('/auth/')) {
-    if (HEADLESS) throw new Error('Login required but running headless. Re-run with HEADLESS=0 to log in once.');
-    console.log('\n╔══════════════════════════════════════════════════════╗');
-    console.log('║  LOG IN to FamilySearch in the browser window.       ║');
-    console.log('╚══════════════════════════════════════════════════════╝\n');
-    for (let i = 0; i < 150; i++) { await sleep(2000); const u = page.url();
-      if (u.includes('/tree/person/details/') && !u.includes('ident.familysearch') && !u.includes('/auth/')) break; }
-    const c = await page.cookies(); fs.writeFileSync(COOKIES, JSON.stringify(c, null, 2));
-    console.log(`✓ Logged in, saved ${c.length} fresh cookies\n`);
-  } else { console.log('✓ Existing cookies still valid — logged in\n'); }
+  await page.goto(PERSON_URL + LOGIN_CHECK, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await sleep(3000);
+  if (await isLoggedIn(page)) { console.log('✓ Existing cookies still valid — logged in\n'); return; }
+  if (HEADLESS) throw new Error('Login required but running headless. Re-run with HEADLESS=0 to log in once.');
+  console.log('\n╔══════════════════════════════════════════════════════╗');
+  console.log('║  LOG IN to FamilySearch in the browser window.       ║');
+  console.log('║  Waiting up to 5 minutes for a real person page…     ║');
+  console.log('╚══════════════════════════════════════════════════════╝\n');
+  // Re-navigate to the person page each check: after login FS often lands on the
+  // home/tree page, so we must reload the person URL to confirm the session.
+  let ok = false;
+  for (let i = 0; i < 90; i++) {            // ~9 min
+    await sleep(4000);
+    if (await isLoggedIn(page)) { ok = true; break; }
+    if (i % 3 === 2) { try { await page.goto(PERSON_URL + LOGIN_CHECK, { waitUntil: 'domcontentloaded', timeout: 60000 }); await sleep(2500); if (await isLoggedIn(page)) { ok = true; break; } } catch {} }
+  }
+  if (!ok) throw new Error('Login not detected after ~9 min.');
+  const c = await page.cookies(); fs.writeFileSync(COOKIES, JSON.stringify(c, null, 2));
+  console.log(`✓ Logged in, saved ${c.length} fresh cookies\n`);
 }
 
 // Extract this person's PARENTS as [{fs_id, name}]. FamilySearch's details page
@@ -76,15 +99,29 @@ async function extractParents(page, fsId) {
     await new Promise(r => setTimeout(r, 600));
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
   } catch {}
+  const familyCardSel = '[data-testid^="family-"][data-testid*="_"]';
+  // Family section "rendered" = a couple card OR the add-parent control (which FS shows
+  // for EVERYONE once the section mounts — including people with no parents). Waiting on
+  // add-parent lets genuine tree-tops resolve fast instead of timing out.
   try {
-    await page.waitForFunction(() => {
+    await page.waitForFunction((fcs) => {
       const b = document.body.innerText || '';
-      return !!document.querySelector('[data-testid^="family-"][data-testid*="_"]') ||
+      return !!document.querySelector(fcs) ||
+             !!document.querySelector('[data-testid^="add-parent"]') ||
              !!document.querySelector('[data-testid="focusPersonHighlight"]') ||
              b.includes('Person Not Found') || b.includes('This person is living');
-    }, { timeout: 22000, polling: 400 });
+    }, { timeout: RETRY ? 32000 : 22000, polling: 400 }, familyCardSel);
   } catch { /* settle anyway */ }
-  await sleep(1800);
+  await sleep(RETRY ? 2200 : 1800);
+  // RETRY: if the family section mounted but no couple card yet (lagging render),
+  // give it one more scroll + wait before concluding parents=0.
+  if (RETRY) {
+    const hasCard = await page.$(familyCardSel);
+    if (!hasCard) {
+      try { await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); } catch {}
+      await sleep(2500);
+    }
+  }
 
   return await page.evaluate((selfId) => {
     const body = document.body.innerText || '';
@@ -180,9 +217,13 @@ async function buildWorklist() {
 async function main() {
   const { visited, nameOf, alreadyEdged } = await buildWorklist();
   const processed = loadProgress();
-  const todo = visited.filter(id => !processed.has(id) && !alreadyEdged.has(id));
+  // Normal: skip anything processed or already-edged. RETRY: target exactly the
+  // parents=0 cases (visited WITHOUT an edge), resumable via the retry progress file.
+  const todo = RETRY
+    ? visited.filter(id => !alreadyEdged.has(id) && !processed.has(id))
+    : visited.filter(id => !processed.has(id) && !alreadyEdged.has(id));
   const batch = LIMIT > 0 ? todo.slice(0, LIMIT) : todo;
-  console.log(`Session ${SID.slice(0,8)} · ${visited.length} visited · ${processed.size} progress-done · ${alreadyEdged.size} edge-done`);
+  console.log(`Session ${SID.slice(0,8)} · ${visited.length} visited · ${processed.size} progress-done · ${alreadyEdged.size} edge-done${RETRY ? ' · RETRY(parents=0)' : ''}`);
   console.log(`This run: ${batch.length} persons · headless=${HEADLESS} · diag=${DIAG}\n`);
   if (!batch.length) { console.log('Nothing to do.'); return; }
 
