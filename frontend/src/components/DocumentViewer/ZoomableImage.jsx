@@ -44,6 +44,12 @@ export function ZoomableImage({ url, tileSources, alt, background = '#000' }) {
           tileSources: tileSources || { type: 'image', url },
           // See the header note — never set crossOrigin on presigned S3.
           crossOriginPolicy: false,
+          // Force the 2D-canvas drawer. OpenSeadragon 6 defaults to WebGL, but WebGL
+          // texImage2D REFUSES a cross-origin image without CORS ("Error creating texture
+          // in WebGL"), so the scan wouldn't render. The canvas drawer uses drawImage,
+          // which displays cross-origin/tainted images fine (we only ever draw, never
+          // read pixels). Robust for presigned S3 across every engine.
+          drawer: 'canvas',
           // We render our own controls (below) so we don't need the button sprite.
           showNavigationControl: false,
           showNavigator: false,
