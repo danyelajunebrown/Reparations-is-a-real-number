@@ -179,5 +179,12 @@ Constraints these add to the build (beyond the objectives above):
       `tileSources`. Wired into DocEmbed + DocCollectionOverlay (PDF/external paths unchanged). PersonProfile
       now shows the PRIMARY source high (after Identity), secondary low. RUNTIME zoom + mobile-Safari/S3
       render need on-device verification now that it's live.
-- [ ] (e) AskPanel on /api/rag/query with citations→DocumentViewer.
+- [x] (e) AskPanel — committed, build-green (NOT yet deployed). `api.ragQuery` → POST /api/rag/query;
+      `components/Ask/AskPanel.jsx` + `/ask` route + nav. Grounded answer + Sources (citation document_id →
+      /documents/:id → zoomable viewer = the c↔e pairing). Honest states: not-grounded → "no answer given";
+      degraded → "unavailable"; never fabricates. Read-only (no reparations figure).
+      **OPS DEPENDENCY (blocks live answers):** Render isn't on the tailnet → /api/rag/query returns
+      degraded until `OLLAMA_URL` (Tailscale Funnel to the Mini's nomic/ollama) or a gemini query-embed is
+      set on Render. UI handles degraded honestly today. FOLLOW-UP: wire retrieval into search + person
+      modal (RULE 0.5).
 - [ ] (e+) canonical embedding backfill (Mini) + eval harness + baselines.
