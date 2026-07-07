@@ -163,7 +163,11 @@ Constraints these add to the build (beyond the objectives above):
 ## Status
 - [x] (a) design system — committed, build-green, VALIDATED against the full read (preserves the gate-stub
       rendering, VersionGate, dignity framing; the ledger-spine signature mirrors the evidence-gate epistemology).
-- [ ] (d) primitives + client consolidation + delete StatsRibbon.
+- [x] (d) primitives + client consolidation — committed, build-green. `components/ui/index.jsx`
+      (PersonCard/DocumentCard/Section/states + evidence primitives); Home+Search consume them;
+      wills fetch → api client (ingestWill/getWillCandidates/linkWill + requestMultipart); StatsRibbon
+      → _archive; `.table` style added. FOLLOW-UP: migrate PersonProfile/DocumentViewer/CorporateEntity/
+      BlockchainPanel/LegalTopic off their local `Field`/`Section` copies onto the shared primitives.
 - [ ] (b) schema-driven field layer.
 - [ ] (c) primary-sources-up + OpenSeadragon viewer + mobile-Safari verify.
 - [ ] (e) AskPanel on /api/rag/query with citations→DocumentViewer.
