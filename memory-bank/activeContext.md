@@ -4,6 +4,37 @@ _Last updated: 2026-07-07 (#142 builds 1+2 DEPLOYED, build 3 staged — vision r
 
 ---
 
+## VA Untold #140 + high-profile enslaver front-end audit (2026-07-07, branch audit/probate-classifier)
+**Virginia Untold Free Negro Registers #140 (commit da736a77d):** LVA CKAN CSV → 40,925 freed-person leads
+(bulk path, per-row keys — Barcode is a COLLECTION code, only 88 distinct, NOT a person key), rule-8
+dual-archived, embedding. Rich: 5,904 mother, **8,338 "Who emancipated" (manumitter=former enslaver,
+dual-ledger)**, 100% carry a File Name → LVA page. **IMAGES NOT ATTACHED (0 — verified):** CSV has no image
+URL; LVA serves via ExLibris/Preservica + FromThePage. FromThePage exposes IIIF (`fromthepage.com/iiif/
+<id>/manifest`) but only **6 of ~39 registers** indexed there → scan-attach = a harvest (barcode locality/
+years→work→canvas by File-Name page→image→S3), partial today. VA Untold is at leads+embed; NOT yet
+image-backed canonicals. **Issue #145 filed** = all remaining tiers (PR-1872 #138, FOTM #139, Réunion,
+French Antilles, Curaçao, Danish #141, OCR corpora) + VA Untold image follow-ons, each with the 6-step
+standing procedure.
+**HIGH-PROFILE ENSLAVER FRONT-END AUDIT:** Gate behavior CONFIRMED on the live API — `assertable_slaveowner=Y`
+→ modal loads full (docs + enslavedPersons); **`assertable=n` → GATED/empty EVEN WITH an image** (Monroe has
+an image but the gate isn't lifted → shows nothing). So "shore up" = lift the gate (qualifying doc + set
+assertable). **FALSE-POSITIVE name-match risk:** ILIKE grabs wrong same-named people (matched "George
+Washington YOUNG" #196627 not the President; 1860-schedule "Andrew Jackson"/"James Polk" post-date their
+deaths → not them). Adds MUST go through the curated `roster_partner_ingest` pipeline with verified identity
+(birth/death year + a real doc), not name-match promotion. **The curated roster (roster_partner_ingest, 19
+records) already does ~14 majors WELL** (assert=Y+img): Washington #828136, Jefferson, Lee, J.J. Ward (14
+docs), Forrest, Wade Hampton, A. Hamilton (4 docs), Aiken, Ladson, Cameron, Cobb, Treat + the Monticello
+Hemings (enslaved, assert=n pending own docs). **TOP 10 to ADD/SHORE-UP (highest profile, missing or gated/
+misclassified):** 1) Stephen Duncan #79380 — LARGEST US holder ~2,200, gated/0-docs; 2) Nathaniel Heyward —
+MISSING (~2,000 rice); 3) Pierce Butler — MISSING (1859 "Weeping Time"); 4) Jefferson Davis #576209 —
+MISCLASSIFIED as freedperson, fix→enslaver+doc; 5) John C. Calhoun #207607 — gated; 6) James Madison #427834
+— weak/not-in-roster (ingest-madison-lead in progress); 7) James Monroe #614729 — has image, gate not lifted
+(easy); 8) Isaac Franklin #141263 — largest trader, gated; 9) Charles Carroll #141466 — gated; 10) Andrew
+Jackson — the assert=Y record is a same-named 1860 person, needs a verified President record. Mechanism =
+roster_partner_ingest + will/probate scan → assertable.
+
+---
+
 ## FRONTEND LIGHT REDESIGN — started (2026-07-07, branch frontend/light-redesign) → [[plan-frontend-light-redesign]]
 Executing the "Part 1" frontend-overhaul brief (bright/daylight light UI, prioritized-but-detailed,
 primary-sources-up, consolidated, RAG surfaced). Branch off audit/probate-classifier (frontend SOURCE lives
