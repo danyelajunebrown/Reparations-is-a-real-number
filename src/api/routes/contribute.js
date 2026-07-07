@@ -1736,15 +1736,17 @@ router.get('/person/:id', async (req, res) => {
             // Sum over this owner's docs and use the larger of (named enslaved rows, documented count),
             // so a schedule-served owner with NO named enslaved still gets an accounting + reparations.
             // The partial flag surfaces "documented minimum" (one schedule page ≠ the full holding).
-            let documentedEnslavedCount = 0, documentedPartial = false;
+            // Reconciled enslaved count via the shared method (#142) — the SAME one the DAA uses, so
+            // the two can't diverge. includeIndexLeads: this is a single-person view, it can afford the
+            // owner-referenced-lead scan (a documented floor for un-walked enslavers).
+            let documentedEnslavedCount = 0, documentedPartial = false, effectiveEnslavedCount = enslavedPersons.length;
             try {
-                const dc = await pool.query(
-                    `SELECT COALESCE(SUM(enslaved_count),0)::int c, BOOL_OR(enslaved_count_partial) partial
-                       FROM person_documents WHERE canonical_person_id = $1 AND enslaved_count IS NOT NULL`, [parseInt(id, 10)]);
-                documentedEnslavedCount = dc.rows[0].c || 0;
-                documentedPartial = !!dc.rows[0].partial;
-            } catch (e) { /* non-fatal */ }
-            const effectiveEnslavedCount = Math.max(enslavedPersons.length, documentedEnslavedCount);
+                const { enslavedCountFor } = require('../../services/reparations/enslaved-count');
+                const ec = await enslavedCountFor(pool, parseInt(id, 10), { namedCount: enslavedPersons.length, includeIndexLeads: true });
+                effectiveEnslavedCount = ec.count;
+                documentedEnslavedCount = ec.sources.documented_docs;
+                documentedPartial = ec.partial;
+            } catch (e) { /* non-fatal — fall back to the named count */ }
 
             // Calculate reparations owed BY this slaveholder
             if (effectiveEnslavedCount > 0) {

@@ -1518,6 +1518,7 @@ class DAAOrchestrator {
         const slaveholderCalculations = [];
         let totalEnslavedCount = 0;
 
+        const { enslavedCountFor } = require('./enslaved-count');
         for (const data of slaveholderData) {
             const enslavedForCalculation = data.enslavedPersons.map(person => ({
                 name: person.enslaved_name,
@@ -1525,6 +1526,20 @@ class DAAOrchestrator {
                 startYear: person.start_year || 1800,
                 relationship: person.relationship_type
             }));
+
+            // #142: reconcile the NAMED persons with the DOCUMENTED count (person_documents.enslaved_count
+            // from slave-schedule walks / probate) — the SAME reconciler contribute.js uses, so the DAA and
+            // the person view can no longer diverge. A walked slaveholder (e.g. Joshua Ward — 1,100 enslaved
+            // documented on schedules, few NAMED) must contribute the documented count, not ~0. Pad the
+            // shortfall with unnamed, schedule-documented enslaved at a default duration (audit: each traces
+            // to a stored doc; MAX-reconciled so overlapping sources never double-count).
+            const canonId = data.slaveholder.slaveholder_id || data.slaveholder.canonical_id || data.slaveholder.id;
+            try {
+                const ec = await enslavedCountFor(this.db, canonId, { namedCount: enslavedForCalculation.length });
+                for (let i = enslavedForCalculation.length; i < ec.count; i++) {
+                    enslavedForCalculation.push({ name: null, yearsEnslaved: 20, startYear: 1850, relationship: 'documented_unnamed' });
+                }
+            } catch (e) { /* non-fatal — keep the named count */ }
 
             const preview = this.daaGenerator.calculatePreview(
                 enslavedForCalculation,
