@@ -44,6 +44,26 @@ what was fixed, below, for the record.
    writing will_extractions, sync `enslaved_persons_count` → the doc + call `recomputeGate(canonicalId)`
    (step 2 above), inside the script.
 
+## TWO TRACKS (key insight — the fix differs by served doc type)
+- **Schedule-served (census_slave_schedule with enslaved_count>0): just `recomputeGate` — NO LLM, NO
+  reextract.** These were attached without a gate recompute; a bulk `recompute-assertion-gates.mjs`
+  lifts them cheaply. This is a big, fast slice of the backlog. (Verified: Ward/Lee/Hampton lifted by
+  recomputeGate alone.)
+- **Will/probate-served: the reextract path** (OCR+LLM → extract enslaved → gate-sync). The 7,967.
+- ⇒ Run the cheap bulk recomputeGate FIRST (lifts every schedule-served one whose doc already has a
+  count), THEN the reextract drip for the will-served remainder.
+
+## FLAGSHIP ENSLAVERS SURFACED (2026-07-07, this session)
+Now assertable + serving (verified on prod where noted): **Hugh Hopewell V #193376** (will → Jacob/Harry),
+**Joshua John Ward #828471** (14 schedules, ~1,100 enslaved — largest US holder), **Robert E. Lee #828469**,
+**Wade Hampton #828474** (recomputeGate), **Thomas Jefferson #828182** (will → Burwell/John/Madison/Eston
+Hemings/Joe Fossett). Already assertable: Hamilton #828192, Cobb #360238.
+**Cannot lift (no supporting doc):** Calhoun #207607, Isaac Franklin #141263, Charles Carroll #141466,
+James Madison #427834, Stephen Duncan #79380 — all serve NO s3 doc → need a document attached first.
+**Namesake/misattribution:** "James M Monroe" #614729's linked scan is a **1893 GA probate admin bond**
+(President Monroe d.1831) — enslaved=0, gate correctly NOT lifted. The parallel audit's "Monroe easy" was
+wrong about that doc; don't force-assert. Needs the President's actual will attached (or re-link).
+
 ## Batch design (after the two fixes)
 - Enumerate the 7,967 will/probate-served gated enslavers (query in this doc's problem section).
 - Drip on the Mini (like the probate cron): N/tick, resumable, idempotent (skip already-assertable),
