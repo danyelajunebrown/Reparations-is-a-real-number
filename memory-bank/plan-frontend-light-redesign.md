@@ -168,7 +168,11 @@ Constraints these add to the build (beyond the objectives above):
       wills fetch → api client (ingestWill/getWillCandidates/linkWill + requestMultipart); StatsRibbon
       → _archive; `.table` style added. FOLLOW-UP: migrate PersonProfile/DocumentViewer/CorporateEntity/
       BlockchainPanel/LegalTopic off their local `Field`/`Section` copies onto the shared primitives.
-- [ ] (b) schema-driven field layer.
+- [x] (b) schema-driven field layer — committed, build-green. `api/fieldRegistry.js` (PERSON_FIELDS) +
+      `<RecordDetail>` primitive; PersonProfile Identity grid is now registry-driven (priority order +
+      progressive disclosure + estimation badge). Adding a column = one registry line (demoed with
+      primary_state/county/status). confidence_score deliberately omitted (flat-0.85 caveat).
+      FOLLOW-UP: extend RecordDetail to the enslaved-persons list + owner block if useful.
 - [ ] (c) primary-sources-up + OpenSeadragon viewer + mobile-Safari verify.
 - [ ] (e) AskPanel on /api/rag/query with citations→DocumentViewer.
 - [ ] (e+) canonical embedding backfill (Mini) + eval harness + baselines.
