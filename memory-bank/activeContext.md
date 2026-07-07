@@ -4,6 +4,47 @@ _Last updated: 2026-07-07 (#142 builds 1+2 DEPLOYED, build 3 staged — vision r
 
 ---
 
+## PROMOTION RECKONING — the systemic orphaning bug + RULE 0.6 (2026-07-07, branch audit/probate-classifier)
+User pressed on whether ingested persons actually PROMOTE + SURFACE. Grounded audit found the load-bearing
+disease. Commits d4c8e0ead / 8f36f5363 / promote-curated / link-ny-probate.
+**THE DIAGNOSIS (verify-db-not-logs):** promotion was **systemically not happening — 9 leads promoted EVER**;
+3.12M leads vs 680K canonicals (82% of persons un-promoted). The ingest + attach-doc halves were built; the
+PROMOTE half never was → nothing new surfaces (leads are search-hidden by design). NOT a serving bug — the
+doc-load (documentCollections/ownerDocuments) + doc-serve (/access presigned S3, verified HTTP 200 JPEG) work.
+The two things that looked broken were my own test errors (wrong response field; host-prefixed a full presigned URL).
+**SYSTEM ORPHANING AUDIT:** person_documents 658K → 450K→canonical, 159K→lead, **83K ORPHANED**; **only 45,521
+canonicals (7%) serve an image → 635,006 (93%) IMAGE-LESS** (RULE 0.6 debt); **158,766 image-backed leads
+promotable now**.
+**RULE 0.6 CODIFIED (CLAUDE.md + [[standard-canonical-person-and-document-gate]]):** a canonical MUST (1)
+be deduped/discrete, (2) SERVE an image (person_documents.s3_key, dual-archived rule 8), (3) be RAG-embedded.
+Supersedes secondary-only gated canonicals for NEW promotions; the 635K image-less = backfill DEBT. Order for
+image-rich sources: attach-scan drip → promote image-backed+deduped → embed.
+**THE FIX — `promote-curated-source.mjs`** (curated = source already internally deduped, e.g. IISG Id_person).
+The naive `PersonService.promoteToCanonical` failed on curated enslaved leads: (a) 70% needs_review (mononym+
+birthdecade ambiguity vs the 424K other enslaved — the Biscoe guard is for MERGE, wrongly blocked CREATE);
+(b) ext-id ON-CONFLICT left the canonical orphaned from its source id. Fix: CREATE per source-record (defer
+cross-source MERGE to a Biscoe review pass) + MIGRATE identity set-based (ext-id + blocking keys + document
+lead→canonical) + gate. **PROVEN end-to-end:** a promoted Suriname person is canonical + assertable + gated:False
++ its register scan loads in the modal + SERVES (200 JPEG 244KB). The full lead→canonical→surface→serve pipeline
+works for the first time.
+**#3 DONE — `link-ny-probate-testators.mjs`:** 3,726 real-named NY testators → assertable decedent canonicals
+with their will scans linked (orphan docs → surfacing). Remaining ~74K unlinked NY docs = junk/Image-NNN.
+**#1 Suriname promote — CHAINED after the scan drip** (drip ~82%, 46,802 scans; full promote fires on drain →
+~95K assertable canonicals serving register scans). **#2 158K image-backed:** promotable-with-id_system are
+almost all Suriname (49K→95K, = #1); the other ~110K (older freedmen's/census/probate docs, NO id_system) need
+a GENERALIZED promote (select any lead w/ an s3_key doc, mint ext-id from source) — small follow-on.
+**#4 635K IMAGE-LESS — recoverable, it's a RELINK disease not un-gettable:** by origin — 248K promote-slaveholders
+(1860 slave-schedule scans, 140K scans in S3 but attached to the ENSLAVED on-page "Unknown" rows, NOT the named
+owner; **owner↔scan link was LOST at promotion** — no ext-id, eor empty → needs name+state matching, Biscoe-soft);
+78K freedpersons (Freedman's Bank scans); 43K SlaveVoyages (voyage images, partial); **185K Hall/Louisiana =
+the hard tail (notarial scrape needed)**. Lesson: the ingest pipelines LOST or never-made the person↔document
+link; #4 = sequenced relink passes.
+**NEXT (order):** generalized promote for the 110K no-id-system image-backed → 248K slaveholder→schedule-scan
+relink (matching-precision first) → Hall notarial scrape. Also: NY probate SCRAPER resumed (stale-jar reauth,
+pid running); enslaved_org embed drip + Suriname scan drip running.
+
+---
+
 ## #142 builds EXECUTED — vision router + reconciled count + distributed linker (2026-07-07, PR #144)
 Preceded by a full architecture re-read for MAX INTEGRATION (user directive). Plan + integration map:
 `memory-bank/plan-vision-router-and-count-aggregation.md`. Every build plugged into an existing seam and
