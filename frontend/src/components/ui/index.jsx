@@ -109,7 +109,7 @@ export function Field({ label, children, value, mono, suffix }) {
   return (
     <div className="box">
       <div className="box-label">{label}</div>
-      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, wordBreak: 'break-word' }}>
+      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, overflowWrap: 'anywhere' }}>
         {isEmpty
           ? <span className="dimmer">—</span>
           : (suffix ? <>{content} <span className="dim">{suffix}</span></> : content)}

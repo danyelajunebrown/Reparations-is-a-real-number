@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
@@ -60,6 +60,17 @@ export default function SearchPage() {
 
       {query && (
         <>
+          {/* Ground the search flow in RAG (RULE 0.5): offer a grounded, cited
+              answer over the source documents alongside keyword matches. */}
+          <div className="box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span className="dim" style={{ fontSize: 'var(--fs-sm)' }}>
+              Want an answer, not just matches? Ask the archive about “{query}” — grounded in the source documents, with citations.
+            </span>
+            <Link to={`/ask?q=${encodeURIComponent(query)}`} className="btn-primary" style={{ textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              Ask the archive ↗
+            </Link>
+          </div>
+
           {!isIdSearch && (
             <Filters
               activeClasses={activeClasses}

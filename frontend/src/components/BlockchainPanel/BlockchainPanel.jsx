@@ -5,6 +5,7 @@ import { api } from '../../api/client.js';
 import { useAsyncAction } from '../../hooks/useApi.js';
 import { formatUSD } from '../../api/format.js';
 import { computeGenealogyHash } from '../../api/genealogyHash.js';
+import { Field } from '../ui/index.jsx';
 
 /**
  * BlockchainPanel — connect MetaMask, submit DAA records, make payments.
@@ -78,16 +79,7 @@ export function BlockchainPanel() {
   );
 }
 
-function Field({ label, value, mono }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, fontSize: 12, wordBreak: 'break-all' }}>
-        {value || <span className="dimmer">—</span>}
-      </div>
-    </div>
-  );
-}
+// Field now comes from components/ui (shared primitive; overflowWrap:anywhere handles hashes/addresses).
 
 // ReparationsEscrow contract signatures (see contracts/ReparationsEscrow.sol):
 //   submitAncestryRecord(string name, string fsId, bytes32 genealogyHash,

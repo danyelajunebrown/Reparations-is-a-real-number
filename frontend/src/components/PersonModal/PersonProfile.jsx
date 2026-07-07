@@ -234,6 +234,15 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                 <span className="source-badge">{coverage.source_label}</span>
               </div>
             )}
+            {/* Ground the person-modal flow in RAG (RULE 0.5): ask a question about
+                this person, answered from the source documents with citations. */}
+            {(p.full_name || p.name) && (
+              <div style={{ marginTop: 8 }}>
+                <Link to={`/ask?q=${encodeURIComponent(p.full_name || p.name)}`} style={{ fontSize: 'var(--fs-sm)' }}>
+                  Ask the archive about {p.full_name || p.name} ↗
+                </Link>
+              </div>
+            )}
           </div>
           {p.verification_status && (
             <div style={{ textAlign: 'right' }}>

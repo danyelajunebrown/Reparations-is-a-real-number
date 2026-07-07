@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { LoadingState, ErrorState } from '../ui/index.jsx';
 
@@ -16,15 +16,15 @@ import { LoadingState, ErrorState } from '../ui/index.jsx';
  *  - Read-only: this never computes a reparations figure (that stays deterministic).
  */
 export function AskPanel() {
-  const [question, setQuestion] = useState('');
+  const [params] = useSearchParams();
+  const initialQ = params.get('q') || '';
+  const [question, setQuestion] = useState(initialQ);
   const [asked, setAsked] = useState('');
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  async function ask(e) {
-    if (e) e.preventDefault();
-    const q = question.trim();
+  async function askQuestion(q) {
     if (!q || loading) return;
     setLoading(true);
     setError(null);
@@ -38,6 +38,13 @@ export function AskPanel() {
       setLoading(false);
     }
   }
+  const ask = (e) => { if (e) e.preventDefault(); askQuestion(question.trim()); };
+
+  // Deep-linked from Search / a person profile (?q=…): run it automatically.
+  useEffect(() => {
+    if (initialQ.trim()) askQuestion(initialQ.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQ]);
 
   const citations = result?.citations || [];
   const grounded = !!result && result.grounded !== false && citations.length > 0;
