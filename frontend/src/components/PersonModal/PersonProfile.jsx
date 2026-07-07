@@ -4,7 +4,7 @@ import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
 import { DocOverlay, DocCollectionOverlay } from '../DocumentViewer/DocumentViewer.jsx';
-import { RecordDetail } from '../ui/index.jsx';
+import { RecordDetail, Field, Section } from '../ui/index.jsx';
 import { PERSON_FIELDS } from '../../api/fieldRegistry.js';
 import {
   formatClass,
@@ -683,24 +683,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function Section({ title, children }) {
-  return (
-    <section>
-      <h2 className="upper" style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, value }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div>{value || <span className="dimmer">—</span>}</div>
-    </div>
-  );
-}
+// Field and Section now come from components/ui (shared primitives).
 
 // YearDisplay moved into the schema-driven renderer (components/ui RecordDetail):
 // year fields with format 'yearEstimate' now render the estimation badge there.

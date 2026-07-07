@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { formatUSD, formatInt } from '../../api/format.js';
+import { Field, Section } from '../ui/index.jsx';
 
 /**
  * LegalTopic — detail view for /legal/:topic.
@@ -303,30 +304,7 @@ function Lede({ children }) {
   );
 }
 
-function Section({ title, children }) {
-  return (
-    <section>
-      <h2 className="upper" style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, value, suffix, mono }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, wordBreak: 'break-word' }}>
-        {value == null || value === '' ? <span className="dimmer">—</span> : (
-          <>
-            {String(value)}
-            {suffix && <span className="dim"> {suffix}</span>}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
+// Field and Section now come from components/ui (shared primitives).
 
 function Cite({ children }) {
   return (

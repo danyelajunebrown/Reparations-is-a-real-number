@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { formatUSD } from '../../api/format.js';
+import { Field } from '../ui/index.jsx';
 
 export function CorporateEntity({ entityId }) {
   const { data, loading, error } = useApi(() => api.getCorporateEntity(entityId), [entityId]);
@@ -89,11 +90,4 @@ export function CorporateEntity({ entityId }) {
   );
 }
 
-function Field({ label, value }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div>{value || <span className="dimmer">—</span>}</div>
-    </div>
-  );
-}
+// Field now comes from components/ui (shared primitive).

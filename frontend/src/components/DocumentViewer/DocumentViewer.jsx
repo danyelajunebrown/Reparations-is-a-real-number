@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
+import { Field } from '../ui/index.jsx';
 
 /**
  * DocumentViewer — full-page view at /documents/:id.
@@ -570,13 +571,4 @@ function buildHighlightedOcr(text, namesToHighlight, colors) {
   return safe;
 }
 
-function Field({ label, value, mono }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined }}>
-        {value || <span className="dimmer">—</span>}
-      </div>
-    </div>
-  );
-}
+// Field now comes from components/ui (shared primitive).

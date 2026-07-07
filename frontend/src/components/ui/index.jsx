@@ -99,12 +99,21 @@ export function DocumentCard({ doc }) {
 
 // ── Evidence primitives (the "ledger spine" — claim hangs off its source) ──────
 
-/** A labelled key/value box. Consolidates the ad-hoc `Field` helpers. */
-export function Field({ label, children }) {
+/** A labelled key/value box. Consolidates the ad-hoc `Field` helpers that were
+ *  re-defined in PersonProfile / DocumentViewer / CorporateEntity / BlockchainPanel /
+ *  LegalTopic. Superset of all of them: takes either `children` (RecordDetail) or a
+ *  `value` prop, an optional `mono` voice, and renders an em-dash for empties. */
+export function Field({ label, children, value, mono, suffix }) {
+  const content = children != null ? children : value;
+  const isEmpty = content == null || content === '';
   return (
-    <div className="box" style={{ padding: 'var(--sp-3)' }}>
+    <div className="box">
       <div className="box-label">{label}</div>
-      <div>{children}</div>
+      <div style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, wordBreak: 'break-word' }}>
+        {isEmpty
+          ? <span className="dimmer">—</span>
+          : (suffix ? <>{content} <span className="dim">{suffix}</span></> : content)}
+      </div>
     </div>
   );
 }
