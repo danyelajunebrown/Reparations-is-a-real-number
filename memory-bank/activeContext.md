@@ -4,6 +4,71 @@ _Last updated: 2026-07-06 (schedule backfills + modal enrichment + OCR-capacity 
 
 ---
 
+## MULTI-SOURCE INGEST AT SCALE + bulk-path unlock + RULE 0.5/0.6 (2026-07-05→07, branch audit/probate-classifier)
+A very large session (parallel to the roster campaign). Arc: LBS validated → the performance unlock →
+Enslaved.org (424K) → Suriname (95K) + gate-lifting scans → standards codified. Commits b26dc2be…4f27d63.
+
+**THE SCALING UNLOCK — set-based bulk-lead ingest (commit 94bcfe3aa).** User flagged the LBS promote was
+~4h for 21K over Neon ("super slow… even for leads without documents"). Root cause = `PersonService.
+findOrCreateLead` fires ~6-10 network round-trips/person → ~1.5 leads/sec (731K = ~5 days). Fix: **M121
+`derive_blocking_keys()`** (SQL port of `_queryKeys`, byte-identical, verified) + **`scripts/lib/
+bulk-lead-ingest.mjs`** — ONE data-modifying CTE per batch creates leads + person_external_ids +
+blocking_keys set-based (ext-id unique index = the dedup; no app-side cache). A/B: byte-identical keys,
+idempotent, **1,592 leads/sec (~1000×)**. Keeps findOrCreateLead for the interactive path. Every large
+gated-lead ingest rides this now. Plan: [[plan-bulk-ingest-and-enslaved-org]].
+
+**LBS #137 VALIDATED (commits 6cbe7090f…).** Fixed the dedup bug (findOrCreateLead's swallowed ext-id
+write → 2.9× dup leads; ingest now owns dedup via ext-id cache + explicit write). `validate-ucl-lbs-
+ingest.mjs` (the "not successful until this passes" harness) GREEN: dedup 1:1 (6,154), colony 100%/£
+99.9% fill, 0 re-parse drift, £ as-transcribed, no fabrication, 7,085 awardees, **Σ£10.15M** dual-ledger
+(Jamaica 2,696 claims/220K enslaved/£4.24M). Caught+fixed 2 parser bugs (£-as-year, 0-enslaved). Embedded.
+
+**#136 Enslaved.org LOD — 424,185 leads in ~7 min (commit f21899bec).** `ingest-enslaved-org.mjs`:
+two-pass Wikibase-JSON (731,500 persons P1→Q410; status P33-only Q109/Q112 — NOT P17/P39); provenance via
+statement-ref→P6→Source(name/project/license); **SKIP federated slices we hold — 307,314 SlaveVoyages+Hall
+excluded** (was 1 via wrong P13); bulk path; id_system=enslaved_org_qid. New datasets gained: Fogel
+Economics of American Negro Slavery (~123K priced transfers), Brazil (~50K), Virginia Untold (~25K),
+extended LBS/T71. **#143 (dedup DEFERRED):** enslaved.org has NO strong corroborator (P21=0%, no birth
+years → nmsx name+sex only) → blanket cross-source dedup = low-precision review flood; needs birth-year
+derivation first. **Leads vs canonicals:** leads LINK/resolve (reversible), canonicals MERGE (destructive,
+Biscoe); RAG (`find-semantic-dup-candidates.mjs`) adds semantic RECALL but not precision. Embed drip on Mini.
+
+**#137 Suriname Slave Registers — 95,505 leads + gate-lifting scan pipeline (commits 8c50dbcc0…4f27d63).**
+IISG Dataverse hdl:10622/CSPBHO CC BY-SA CSV (55MB, 192K entry-rows→95,538 persons by Id_person). RICH:
+63% birth year, 54% mother, **99.97% owner** (dual-ledger + owner-sequence=transfer chain), 32% emancipation
+surname. `ingest-suriname-slaveregisters.mjs`, bulk path, **rule-8 dual-archive** (S3 CSV + Wayback). Strong
+corroborators → 60,309 nmsxb birth-year keys → REAL cross-source dedup (unlike enslaved.org). **SCAN-ATTACH
+(RULE 0.6):** `harvest-nas-scan-index.mjs` (OAI-PMH set=nas 524K→13,697-folio (inv|folio)→IIIF index, **100%
+coverage** of the 13,683 IISG folios) + `attach-suriname-scans.mjs --index` (per-folio: IIIF service.archief.nl
+→ S3 + Wayback → `person_documents.unconfirmed_person_id`, LEAD-capable). **DRIP RUNNING** (MacBook nohup,
+resumable, high-recall, ~few hrs) attaching register scans to the 95K leads. Curaçao (OAI-PMH set=ghn, 46,821)
+= next Dutch piece.
+
+**STANDARDS CODIFIED:**
+- **RULE 0.5** (CLAUDE.md + [[standard-external-source-ingest]]): use RAG on every DB/search/modal step;
+  every ingest MUST add an EMBED phase (`embed-leads.mjs` generalizes it) or data is a retrieval silo.
+- **RULE 0.6** (CLAUDE.md + [[standard-canonical-person-and-document-gate]]): a canonical MUST serve an
+  image (person_documents.s3_key, dual-archived) AND be RAG-embedded. Supersedes secondary-only gated
+  canonicals for NEW promotions; existing image-less canonicals = backfill DEBT. Order for image-rich
+  sources: attach-scan drip → promote image-backed+deduped → embed. LOD-only (enslaved.org) can't clear it.
+- **Rule 8** ([[standard-external-source-ingest]]): dual-archive S3 + Wayback (was the M100 standard the
+  LBS ingest silently regressed from; codified + LBS backfilled).
+
+**RESEARCH (all in [[data-sourcing-shopping-list]]/[[reference-benchmark-sources-register]]):** intl
+slavery-source catalog (6-agent pass) tiered by re-hostable-images/gate-class/id_system → epic **#135** +
+builds **#136-141** (Enslaved.org✓/Dutch⧗/PR-1872/FOTM/Virginia-Untold/Danish-permission). Per-power
+colonial-trade-value PRIMARIES (Necker/Bryan Edwards/Humboldt/Inikori/Rönnbäck archive.org PD) + the
+**MacGregor 5-volume map** (Vol V = British WI; user gave Vol IV = Cuba✓+Brazil). JFS #132 (no-repost) +
+British Guiana vc.id.au #134. All feed `slave_economy_benchmarks` as cited aggregates (extraction pass NEXT).
+
+**RUNNING BACKGROUND:** enslaved_org embed drip (Mini, ~days); Suriname scan-attach drip (MacBook, ~hrs).
+**NEXT:** Suriname promote(image-backed+deduped)→embed once scans land; nas index makes every image-source
+faster; Curaçao; per-power benchmark extraction; birth-year derivation to unlock enslaved.org dedup (#143).
+**PERF CAVEAT retired:** the promote-slowness that motivated the bulk path is solved for leads; the
+canonical-promote path (PersonService.promoteToCanonical) is still per-record — bulk it before mass promotion.
+
+---
+
 ## Schedule-count backfills + modal enrichment + OCR-capacity findings (2026-07-06, PR #133 + issue #142)
 Continued the roster campaign. **Ward = the fully-connected gold-standard exemplar now** (deployed): 25 `person_facts`
 (6 plantations, 10 children, office), 14 schedule pages / **1,100 enslaved / $15.69B** live, `enslaver_evidence_compendium`
