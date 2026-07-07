@@ -68,7 +68,7 @@ async function main() {
   // lead map: hdsc_person_id -> lead_id
   const leadMap = new Map();
   for (const r of (await pool.query(`SELECT external_id, subject_id FROM person_external_ids WHERE id_system='hdsc_suriname_slaveregister'`)).rows) leadMap.set(r.external_id, Number(r.subject_id));
-  console.log(`leads: ${leadMap.size}`);
+  console.log(`leads: ${leadMap.size} | scan-index: ${SCAN_INDEX ? Object.keys(SCAN_INDEX).length + ' folios (LOCAL match)' : 'NONE (name-search fallback ~15%)'}`);
   // folio map from CSV: "inv|folio" -> { inventory, folio, sampleName, personIds[] }
   const folios = new Map();
   await new Promise((res, rej) => fs.createReadStream(FILE).pipe(parse({ columns: true, skip_empty_lines: true, relax_quotes: true }))
