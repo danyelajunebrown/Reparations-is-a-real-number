@@ -173,6 +173,11 @@ Constraints these add to the build (beyond the objectives above):
       progressive disclosure + estimation badge). Adding a column = one registry line (demoed with
       primary_state/county/status). confidence_score deliberately omitted (flat-0.85 caveat).
       FOLLOW-UP: extend RecordDetail to the enslaved-persons list + owner block if useful.
-- [ ] (c) primary-sources-up + OpenSeadragon viewer + mobile-Safari verify.
+- [x] (c) primary-sources-up + zoomable viewer — committed, build-green, DEPLOYED. `ZoomableImage`
+      (OpenSeadragon 6, lazy-loaded → own 86KB-gzip chunk); pinch/pan cross-browser (Chrome/Chromium/
+      Android/Edge/Safari/Firefox), no crossOrigin on presigned S3, <img> fallback, IIIF-capable via
+      `tileSources`. Wired into DocEmbed + DocCollectionOverlay (PDF/external paths unchanged). PersonProfile
+      now shows the PRIMARY source high (after Identity), secondary low. RUNTIME zoom + mobile-Safari/S3
+      render need on-device verification now that it's live.
 - [ ] (e) AskPanel on /api/rag/query with citations→DocumentViewer.
 - [ ] (e+) canonical embedding backfill (Mini) + eval harness + baselines.

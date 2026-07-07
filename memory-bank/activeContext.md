@@ -54,6 +54,19 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   document_type}], retrieved, grounded, degraded}` (degrades gracefully). `/api/chat` is a keyword router
   over LEADS + a hardcoded reparations formula → the AskPanel should be driven off `/api/rag/query` (cited,
   honest empty), NOT raw /api/chat. Citations' document_id → `documents` table → existing DocumentViewer.
+- **(d) follow-up + (b) + (c) DONE + DEPLOYED (2026-07-07).** (d) follow-up: shared `ui/Field` made a
+  superset, folded the duplicated local Field/Section out of PersonProfile/DocumentViewer/CorporateEntity/
+  LegalTopic (BlockchainPanel's hex-address variant kept on purpose). (b): `api/fieldRegistry.js` +
+  `<RecordDetail>` — PersonProfile Identity grid is schema-driven (priority + progressive disclosure).
+  (c): `ZoomableImage` (OpenSeadragon 6, lazy chunk) wired into the doc viewers, cross-browser pinch/pan,
+  primary source surfaced HIGH on the profile. **DEPLOYED to gh-pages-react** (`npm run deploy:gh-pages` →
+  "Published"). Existing cached clients need ONE hard-refresh (then VersionGate auto-detects). TODO: verify
+  runtime zoom on-device across Chrome/Chromium/Android/Edge/Safari.
+- **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
+  git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
+  The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the
+  commit label is wrong. Did NOT rewrite history (parallel session active). Frontend source branch =
+  `frontend/light-redesign`, which now also carries parallel backend commits (harmless to the frontend build).
 - **Grounding note:** read the full governing memory bank before proceeding further (user directive). The
   design-system commit is validated by it (preserves gate-stub, VersionGate, dignity framing). Remaining
   objectives (d consolidate → b schema-driven fields → c primary-sources-up+OpenSeadragon → e AskPanel →
