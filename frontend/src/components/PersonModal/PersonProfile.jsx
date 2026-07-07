@@ -4,12 +4,13 @@ import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
 import { DocOverlay, DocCollectionOverlay } from '../DocumentViewer/DocumentViewer.jsx';
+import { RecordDetail } from '../ui/index.jsx';
+import { PERSON_FIELDS } from '../../api/fieldRegistry.js';
 import {
   formatClass,
   CLASS_LABELS,
   CLASS_DESCRIPTIONS,
   formatYear,
-  formatYearWithEstimation,
 } from '../../api/format.js';
 
 /**
@@ -96,16 +97,13 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
     ...enslavedPersons.slice(0, 10).map(ep => ({ name: ep.full_name, category: 'enslaved' })),
   ].filter(n => n.name && n.name.length > 1);
 
-  // Birth/death year formatted with estimation badge support
-  const birthYearFormatted = formatYearWithEstimation(
-    p.birth_year, p.birth_year_source, p.birth_year_confidence, p.birth_year_formula
-  );
-  const deathYearFormatted = formatYearWithEstimation(
-    p.death_year, p.death_year_source, p.death_year_confidence, p.death_year_formula
-  );
-  const freedomYearFormatted = formatYearWithEstimation(
-    p.freedom_year, p.freedom_year_source, null, null
-  );
+  // Spouse is a bespoke field (comes from the family graph, links to the person)
+  // that the registry can't express — passed to RecordDetail as an `extra`.
+  const spouseNode = spouseFromFamily
+    ? (spouseFromFamily.id
+        ? <Link to={`/person/${spouseFromFamily.table_source || 'canonical_persons'}/${spouseFromFamily.id}`}>{spouseFromFamily.full_name || spouseFromFamily.name}</Link>
+        : (spouseFromFamily.full_name || spouseFromFamily.name))
+    : (p.spouse_name || null);
 
   return (
     <div className="stack-xl">
@@ -139,29 +137,19 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
       </header>
 
       <Section title="Identity">
-        <div className="grid-3">
-          <Field label="Birth year" value={<YearDisplay formatted={birthYearFormatted} />} />
-          <Field label="Death year" value={<YearDisplay formatted={deathYearFormatted} />} />
-          <Field label="Gender" value={p.gender} />
-          <Field label="Location" value={p.location} />
-          {p.primary_plantation && (
-            <Field label="Plantation" value={p.primary_plantation} />
-          )}
-          {p.freedom_year && (
-            <Field label="Freedom year" value={<YearDisplay formatted={freedomYearFormatted} />} />
-          )}
-          <Field label="Occupation" value={p.occupation} />
-          <Field label="Spouse" value={
-            spouseFromFamily
-              ? (spouseFromFamily.id
-                  ? <Link to={`/person/${spouseFromFamily.table_source || 'canonical_persons'}/${spouseFromFamily.id}`}>{spouseFromFamily.full_name || spouseFromFamily.name}</Link>
-                  : (spouseFromFamily.full_name || spouseFromFamily.name))
-              : p.spouse_name
-          } />
-          <Field label="Racial designation" value={p.racial_designation} />
-          <Field label="Source table" value={tableSource} />
-          <Field label="Status" value={p.status} />
-        </div>
+        {/* Schema-driven: fields come from PERSON_FIELDS (api/fieldRegistry.js),
+            rendered by priority with progressive disclosure. Adding a new column
+            to the profile is a one-line registry entry — no change here. */}
+        <RecordDetail
+          record={p}
+          fields={PERSON_FIELDS}
+          columns={3}
+          visibleCount={9}
+          extras={[
+            { label: 'Spouse', priority: 66, present: !!spouseNode, node: spouseNode },
+            { label: 'Source table', priority: 20, present: !!tableSource, node: tableSource },
+          ]}
+        />
       </Section>
 
       {Array.isArray(p.facts) && p.facts.length > 0 && (() => {
@@ -714,22 +702,5 @@ function Field({ label, value }) {
   );
 }
 
-/**
- * YearDisplay — renders a plain year string OR an estimation badge.
- * The `formatted` prop is the return value of formatYearWithEstimation().
- * If it's a plain string, render it directly.
- * If it's an object { yearStr, isEstimate, tooltip }, render a dashed
- * underline with "(est.)" label and native title tooltip.
- */
-function YearDisplay({ formatted }) {
-  if (!formatted || formatted === '—') return <span className="dimmer">—</span>;
-  if (typeof formatted === 'string') return <span>{formatted}</span>;
-
-  const { yearStr, tooltip } = formatted;
-  return (
-    <span className="estimate-badge">
-      <span className="estimate-badge-year" title={tooltip}>{yearStr}</span>
-      <span className="estimate-badge-label" title={tooltip}>(est.)</span>
-    </span>
-  );
-}
+// YearDisplay moved into the schema-driven renderer (components/ui RecordDetail):
+// year fields with format 'yearEstimate' now render the estimation badge there.

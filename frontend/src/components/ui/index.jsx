@@ -8,9 +8,9 @@
 //
 // Consume via:  import { PersonCard, DocumentCard, Section } from '../components/ui/index.jsx';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { formatClass } from '../../api/format.js';
+import { formatClass, formatYearWithEstimation, formatPct } from '../../api/format.js';
 
 /** Safe hostname for a source URL (used in the person meta line). */
 export function hostname(url) {
@@ -127,4 +127,87 @@ export function EvidenceBlock({ unproven = false, children }) {
 /** The amount owed, in the mono ledger voice, tabular, oxblood. */
 export function LedgerFigure({ children }) {
   return <span className="figure-ledger">{children}</span>;
+}
+
+// ── RecordDetail: schema-driven field rendering ───────────────────────────────
+// Renders any record from a field REGISTRY (see api/fieldRegistry.js) instead of
+// hardcoding each field. Because the schema grows every few migrations, adding a
+// new column to the UI is a ~one-line registry entry: if the field is present on
+// the record it surfaces at its configured priority; if absent it's skipped.
+// Only fields with a value render (empty "—" rows are noise, not data), and
+// lower-priority fields collapse under "Show all fields" (progressive disclosure).
+
+function EstimatedYear({ formatted }) {
+  if (!formatted || formatted === '—') return <span className="dimmer">—</span>;
+  if (typeof formatted === 'string') return <span>{formatted}</span>;
+  const { yearStr, tooltip } = formatted;
+  return (
+    <span className="estimate-badge">
+      <span className="estimate-badge-year" title={tooltip}>{yearStr}</span>
+      <span className="estimate-badge-label" title={tooltip}>(est.)</span>
+    </span>
+  );
+}
+
+function fieldHasValue(field, record) {
+  const raw = record?.[field.key];
+  if (field.format === 'yearEstimate') return raw != null && raw !== '' && raw !== 0;
+  return raw != null && raw !== '';
+}
+
+function renderFieldValue(field, record) {
+  const raw = record?.[field.key];
+  switch (field.format) {
+    case 'yearEstimate':
+      return (
+        <EstimatedYear
+          formatted={formatYearWithEstimation(
+            raw,
+            record?.[`${field.key}_source`],
+            record?.[`${field.key}_confidence`],
+            record?.[`${field.key}_formula`],
+          )}
+        />
+      );
+    case 'mono': return <span className="mono">{raw}</span>;
+    case 'pct': return <span className="tnum">{formatPct(raw)}</span>;
+    default: return <span>{raw}</span>;
+  }
+}
+
+export function RecordDetail({ record, fields, extras = [], columns = 3, visibleCount }) {
+  const [showAll, setShowAll] = useState(false);
+
+  const items = [];
+  for (const f of fields || []) {
+    if (!fieldHasValue(f, record)) continue;
+    items.push({ label: f.label, priority: f.priority ?? 0, node: renderFieldValue(f, record) });
+  }
+  // Bespoke fields the registry can't express (e.g. a linked spouse) come in as `extras`.
+  for (const e of extras || []) {
+    if (e.present === false || e.node == null) continue;
+    items.push({ label: e.label, priority: e.priority ?? 0, node: e.node });
+  }
+  items.sort((a, b) => b.priority - a.priority);
+
+  const cap = visibleCount == null ? items.length : visibleCount;
+  const canCollapse = items.length > cap;
+  const visible = showAll || !canCollapse ? items : items.slice(0, cap);
+
+  return (
+    <>
+      <div className={`grid-${columns}`}>
+        {visible.map((it, i) => <Field key={it.label + i} label={it.label}>{it.node}</Field>)}
+      </div>
+      {canCollapse && (
+        <button
+          type="button"
+          onClick={() => setShowAll(s => !s)}
+          style={{ marginTop: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}
+        >
+          {showAll ? 'Show fewer fields' : `Show all fields (${items.length - cap} more)`}
+        </button>
+      )}
+    </>
+  );
 }
