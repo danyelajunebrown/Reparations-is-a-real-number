@@ -77,6 +77,29 @@ async function request(path, { method = 'GET', body, signal, headers = {}, admin
   return data;
 }
 
+// Multipart variant for file uploads (the wills contribution flow). Do NOT set
+// Content-Type — the browser sets the multipart boundary. Shares the base URL and
+// admin-token handling so uploads go through the one client, not an ad-hoc fetch.
+async function requestMultipart(path, formData, { signal } = {}) {
+  const url = `${API_URL}${path}`;
+  const headers = {};
+  const adminToken = getAdminToken();
+  if (adminToken) headers['X-Admin-Token'] = adminToken;
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body: formData, headers, signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    throw new ApiError(`Network error: ${err.message}`, 0, null);
+  }
+  const contentType = res.headers.get('content-type') || '';
+  const data = contentType.includes('application/json') ? await res.json().catch(() => null) : null;
+  if (!res.ok) {
+    throw new ApiError(data?.error || data?.message || `HTTP ${res.status}`, res.status, data);
+  }
+  return data;
+}
+
 export const api = {
   // System
   health: () => request('/api/health'),
@@ -92,6 +115,31 @@ export const api = {
   // Person detail
   getPerson: (id, tableSource, signal) =>
     request(`/api/contribute/person/${id}${tableSource ? `?table=${tableSource}` : ''}`, { signal }),
+
+  // Wills contribution flow (Contribute → Submit a document).
+  // These endpoints return { success, ... } with 200 even on logical failure, so
+  // the methods check `success` in addition to the HTTP status.
+  ingestWill: async (formData) => {
+    const data = await requestMultipart('/api/wills/ingest', formData);
+    if (!data || data.success === false) {
+      throw new ApiError(data?.error || 'Upload failed', 0, data);
+    }
+    return data;
+  },
+  getWillCandidates: async (name, signal) => {
+    const data = await request(`/api/wills/candidates?name=${encodeURIComponent(name)}`, { signal });
+    return data?.candidates || [];
+  },
+  linkWill: async ({ personDocId, canonicalPersonId, extractionId }) => {
+    const data = await request('/api/wills/link', {
+      method: 'POST',
+      body: { personDocId, canonicalPersonId, extractionId },
+    });
+    if (!data || data.success === false) {
+      throw new ApiError(data?.error || 'Link failed', 0, data);
+    }
+    return data;
+  },
 
   // Browse
   browsePersons: ({ limit = 50, offset = 0, type, source, minConfidence } = {}) => {

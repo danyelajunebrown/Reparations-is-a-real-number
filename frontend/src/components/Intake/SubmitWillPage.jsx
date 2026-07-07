@@ -21,9 +21,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
+import { api } from '../../api/client.js';
 
-const BACKEND = import.meta.env.VITE_API_URL || '';
-const BACKEND_ROOT = BACKEND ? BACKEND.replace(/\/api$/, '') : '';
+// Backend root — used only for the non-SPA "Will Review" link (served by Render).
+// The wills upload/disambiguation calls go through the api client (above).
+const BACKEND_ROOT = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
 
 // ── Document type definitions ──────────────────────────────────────────────────
 const DOC_TYPES = [
@@ -56,39 +58,12 @@ const DOC_TYPES = [
   },
 ];
 
-async function ingestDocument(formData) {
-  const res = await fetch(`${BACKEND}/api/wills/ingest`, {
-    method: 'POST',
-    body: formData,
-  });
-  const data = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || `Upload failed (${res.status})`);
-  }
-  return data;
-}
-
-async function fetchCandidates(name) {
-  const res = await fetch(
-    `${BACKEND}/api/wills/candidates?name=${encodeURIComponent(name)}`,
-    { headers: { Accept: 'application/json' } }
-  );
-  const data = await res.json().catch(() => ({ success: false, candidates: [] }));
-  return data.candidates || [];
-}
-
-async function linkDocument(personDocId, canonicalPersonId, extractionId) {
-  const res = await fetch(`${BACKEND}/api/wills/link`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ personDocId, canonicalPersonId, extractionId }),
-  });
-  const data = await res.json().catch(() => ({ success: false }));
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || `Link failed (${res.status})`);
-  }
-  return data;
-}
+// The wills upload/disambiguation flow now goes through the central API client
+// (base URL + admin-token handling in one place) instead of ad-hoc fetch calls.
+const ingestDocument = (formData) => api.ingestWill(formData);
+const fetchCandidates = (name) => api.getWillCandidates(name);
+const linkDocument = (personDocId, canonicalPersonId, extractionId) =>
+  api.linkWill({ personDocId, canonicalPersonId, extractionId });
 
 // ── Disambiguation panel (wills only) ─────────────────────────────────────────
 function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked }) {

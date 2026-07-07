@@ -344,6 +344,27 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: var(--sp-4) 0; }
   padding: 1px 7px; border-radius: 2px;
 }
 
+/* ── Tables (reparations breakdown, legal topics) ─────────────
+   Referenced as .table by ReparationsBreakdown/LegalTopic but previously
+   unstyled. Wrap wide tables in an overflow-x:auto container so the page body
+   never scrolls sideways on a phone. */
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.table th, .table td {
+  text-align: left; padding: 8px 10px; vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+.table th {
+  font-weight: 600; color: var(--ink-soft); font-size: var(--fs-xs);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom-color: var(--rule-strong);
+}
+/* Opt-in numeric column: right-aligned, in the mono ledger voice. */
+.table td.num, .table th.num {
+  text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.table tbody tr:hover { background: var(--paper-sunk); }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* ── Reduced motion (accessibility floor) ─────────────────── */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

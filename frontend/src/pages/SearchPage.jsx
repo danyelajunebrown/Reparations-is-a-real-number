@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
-import { formatClass, CLASS_LABELS } from '../api/format.js';
+import { PersonCard, DocumentCard, Section } from '../components/ui/index.jsx';
+import { CLASS_LABELS } from '../api/format.js';
 
 // Verified data policy (strict):
 // The frontend filters unverified matches before rendering. An "Include unverified"
@@ -81,7 +82,7 @@ export default function SearchPage() {
               </div>
             )}
             <div className="stack">
-              {shownPersons.map((p, i) => <PersonResult key={p.id + '-' + i} person={p} />)}
+              {shownPersons.map((p, i) => <PersonCard key={p.id + '-' + i} person={p} />)}
             </div>
           </Section>
 
@@ -94,19 +95,7 @@ export default function SearchPage() {
               <div className="state">No documents match "{query}".</div>
             )}
             <div className="stack">
-              {documents.map(d => (
-                <Link
-                  key={d.document_id || d.id}
-                  to={`/documents/${d.document_id || d.id}`}
-                  className="box"
-                  style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-                >
-                  <div>{d.title || d.filename || d.owner_name}</div>
-                  <div className="dim" style={{ fontSize: 12 }}>
-                    {d.doc_type} · {d.owner_name || 'unknown owner'}
-                  </div>
-                </Link>
-              ))}
+              {documents.map(d => <DocumentCard key={d.document_id || d.id} doc={d} />)}
             </div>
           </Section>
         </>
@@ -147,37 +136,5 @@ function Filters({ activeClasses, showAll, onToggleClass, onSetShowAll }) {
         </button>
       </div>
     </div>
-  );
-}
-
-function PersonResult({ person }) {
-  const id = person.id;
-  const source = person.table_source || person.tableSource || 'canonical_persons';
-  const href = `/person/${source}/${id}`;
-  const cls = person.verification_status;
-  return (
-    <Link to={href} className="box" style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <div>{person.name || person.full_name}</div>
-        {cls && <span className={`badge ${cls}`}>{formatClass(cls)}</span>}
-      </div>
-      <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-        {person.type || person.person_type}
-        {person.birth_year ? ` · b.${person.birth_year}` : ''}
-        {person.location ? ` · ${person.location}` : ''}
-        {person.source_url ? ` · ${new URL(person.source_url, 'https://x').hostname || 'source'}` : ''}
-      </div>
-    </Link>
-  );
-}
-
-function Section({ title, loading, error, children }) {
-  return (
-    <section>
-      <h2 className="upper" style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>{title}</h2>
-      {loading && <div className="state">Loading<span className="blink">_</span></div>}
-      {error && <div className="state err">Error: {error.message}</div>}
-      {!loading && !error && children}
-    </section>
   );
 }
