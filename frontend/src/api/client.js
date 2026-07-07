@@ -116,6 +116,13 @@ export const api = {
   getPerson: (id, tableSource, signal) =>
     request(`/api/contribute/person/${id}${tableSource ? `?table=${tableSource}` : ''}`, { signal }),
 
+  // RAG — grounded retrieval over the primary-source corpus. READ-ONLY and cited:
+  // it answers ONLY from retrieved documents and returns the rows it grounded on.
+  // Never used to compute a reparations figure (audit boundary). Degrades to
+  // { degraded:true } (not an error) when the embedding backend is unreachable.
+  ragQuery: (question, { k = 8, signal } = {}) =>
+    request('/api/rag/query', { method: 'POST', body: { question, k }, signal }),
+
   // Wills contribution flow (Contribute → Submit a document).
   // These endpoints return { success, ... } with 200 even on logical failure, so
   // the methods check `success` in addition to the HTTP status.
