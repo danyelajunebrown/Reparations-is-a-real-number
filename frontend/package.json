@@ -11,15 +11,16 @@
     "deploy": "echo 'Use: npm run deploy:gh-pages — pushes to gh-pages-react branch (NOT the legacy gh-pages branch)' && exit 1"
   },
   "dependencies": {
+    "d3": "^7.9.0",
+    "ethers": "^6.13.4",
+    "openseadragon": "^6.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0",
-    "d3": "^7.9.0",
-    "ethers": "^6.13.4"
+    "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.5",
-    "gh-pages": "^6.2.0"
+    "gh-pages": "^6.2.0",
+    "vite": "^6.0.5"
   }
 }

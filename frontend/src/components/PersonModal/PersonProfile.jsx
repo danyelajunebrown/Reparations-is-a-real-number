@@ -105,6 +105,118 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
         : (spouseFromFamily.full_name || spouseFromFamily.name))
     : (p.spouse_name || null);
 
+  // ── Source documents ────────────────────────────────────────────────────────
+  // Group into PRIMARY (an original scan/record image) vs SECONDARY (indexed,
+  // transcribed, republished, or database-derived). Hoisted out of the render so
+  // the primary scan can sit HIGH on the page (objective c: primary sources up),
+  // above the derived commentary, while the full list stays below.
+  const isCollPrimary = (col) => (col.pages || []).some((pg) => pg?.evidence_strength === 'direct_primary');
+  const isDocPrimary  = (d) => d?.evidence_strength === 'direct_primary';
+  const primaryColls   = documentCollections.filter(isCollPrimary);
+  const secondaryColls = documentCollections.filter((c) => !isCollPrimary(c));
+  const primaryDocs    = documents.filter(isDocPrimary);
+  const secondaryDocs  = documents.filter((d) => !isDocPrimary(d));
+  const hasPrimaryDocs = primaryColls.length > 0 || primaryDocs.length > 0;
+  const hasSecondaryDocs = secondaryColls.length > 0 || secondaryDocs.length > 0;
+
+  const renderCollCard = (col, idx) => {
+    const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
+    if (!hasPages) {
+      return (
+        <div key={col.collection_key || idx} className="box" style={{ opacity: 0.6 }}>
+          <div>{col.collection_name || 'Primary source document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {col.doc_type}{col.page_count > 1 ? ` · ${col.page_count} pages` : ''}
+            {col.source_type_label && ` · ${col.source_type_label}`}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <button
+        key={col.collection_key || idx}
+        type="button"
+        onClick={() => setViewCollection(col)}
+        className="box"
+        style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+      >
+        <div>{col.collection_name || 'Primary source document'}</div>
+        <div className="dim" style={{ fontSize: 12 }}>
+          {col.doc_type}
+          {col.page_count > 1 ? ` · ${col.page_count} pages` : ' · 1 page'}
+          {col.source_type_label && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>{col.source_type_label}</span>}
+          <span style={{ marginLeft: 8, color: 'var(--accent)' }}>↗ view</span>
+        </div>
+      </button>
+    );
+  };
+  const renderDocCard = (doc, idx) => {
+    const docId = doc.id || doc.document_id;
+    const hasS3 = !!(doc.s3_key || doc.s3_url);
+    const canUseViewer = !!(docId && hasS3);
+    const externalUrl = doc.source_url;
+    const isPdRow = hasS3 && docId != null &&
+      (typeof docId === 'number' || /^\d+$/.test(String(docId)));
+
+    if (canUseViewer) {
+      const handleClick = isPdRow
+        ? () => setViewCollection({
+            collection_name: doc.title || doc.filename || 'Source document',
+            source_type_label: doc.doc_type || '',
+            doc_type: doc.doc_type || 'will',
+            pages: [{
+              id: docId,
+              filename: doc.filename,
+              title: doc.title || doc.filename,
+              ocr_text: doc.ocr_text || null,
+              source_url: null,
+            }],
+          })
+        : () => setViewDocId(docId);
+      return (
+        <button
+          key={`doc-${docId}-${idx}`}
+          type="button"
+          onClick={handleClick}
+          className="box"
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+        >
+          <div>{doc.title || doc.filename || 'Untitled document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+            <span style={{ marginLeft: 8, color: 'var(--accent)' }}>↗ view</span>
+          </div>
+        </button>
+      );
+    }
+    if (externalUrl) {
+      let host = externalUrl;
+      try { host = new URL(externalUrl).hostname; } catch (_) {}
+      return (
+        <a
+          key={`ext-${idx}`}
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="box"
+          style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+        >
+          <div>{doc.title || doc.filename || 'Source document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+            {' · '}<span style={{ color: 'var(--accent)' }}>{host} ↗</span>
+          </div>
+        </a>
+      );
+    }
+    return (
+      <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
+        <div>{doc.title || doc.filename || 'Document reference'}</div>
+        <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
+      </div>
+    );
+  };
+
   return (
     <div className="stack-xl">
       <header>
@@ -151,6 +263,21 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
           ]}
         />
       </Section>
+
+      {/* Primary source high on the page: the original scan this profile rests on,
+          above the derived/secondary commentary (objective c). Tap to open the
+          zoomable viewer. The full document list (incl. secondary) stays below. */}
+      {hasPrimaryDocs && (
+        <Section title="Primary source">
+          <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
+            The original record image this profile rests on. Tap to open the scan in a zoomable viewer.
+          </div>
+          <div className="stack">
+            {primaryColls.map(renderCollCard)}
+            {primaryDocs.map(renderDocCard)}
+          </div>
+        </Section>
+      )}
 
       {Array.isArray(p.facts) && p.facts.length > 0 && (() => {
         const plantations = p.facts.filter((f) => f.fact_type === 'plantation');
@@ -484,145 +611,20 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
            an original. A collection counts as primary if any of its pages is
            direct_primary.
       ──────────────────────────────────────────────────────────────────── */}
-      {(() => {
-        if (documentCollections.length === 0 && documents.length === 0) return null;
-
-        const isCollPrimary = (col) => (col.pages || []).some((p) => p?.evidence_strength === 'direct_primary');
-        const isDocPrimary  = (d) => d?.evidence_strength === 'direct_primary';
-        const primaryColls   = documentCollections.filter(isCollPrimary);
-        const secondaryColls = documentCollections.filter((c) => !isCollPrimary(c));
-        const primaryDocs    = documents.filter(isDocPrimary);
-        const secondaryDocs  = documents.filter((d) => !isDocPrimary(d));
-
-        const renderCollCard = (col, idx) => {
-              const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
-              if (!hasPages) {
-                // No viewable URL in any page — show metadata-only card
-                return (
-                  <div key={col.collection_key || idx} className="box" style={{ opacity: 0.6 }}>
-                    <div>{col.collection_name || 'Primary source document'}</div>
-                    <div className="dim" style={{ fontSize: 12 }}>
-                      {col.doc_type}{col.page_count > 1 ? ` · ${col.page_count} pages` : ''}
-                      {col.source_type_label && ` · ${col.source_type_label}`}
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <button
-                  key={col.collection_key || idx}
-                  type="button"
-                  onClick={() => setViewCollection(col)}
-                  className="box"
-                  style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
-                >
-                  <div>{col.collection_name || 'Primary source document'}</div>
-                  <div className="dim" style={{ fontSize: 12 }}>
-                    {col.doc_type}
-                    {col.page_count > 1 ? ` · ${col.page_count} pages` : ' · 1 page'}
-                    {col.source_type_label && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>{col.source_type_label}</span>}
-                    <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
-                  </div>
-                </button>
-              );
-        };
-        const renderDocCard = (doc, idx) => {
-          const docId = doc.id || doc.document_id;
-          const hasS3 = !!(doc.s3_key || doc.s3_url);
-          const canUseViewer = !!(docId && hasS3);
-          const externalUrl = doc.source_url;
-          // Detect whether this doc comes from person_documents (integer id)
-          // vs the documents table (UUID string). person_documents rows must be
-          // opened via DocCollectionOverlay → getPersonDocAccess so the backend
-          // generates a presigned S3 URL from s3_key. Using DocOverlay for these
-          // returns 404 (that endpoint queries the separate documents table).
-          const isPdRow = hasS3 && docId != null &&
-            (typeof docId === 'number' || /^\d+$/.test(String(docId)));
-
-          if (canUseViewer) {
-            const handleClick = isPdRow
-              ? () => setViewCollection({
-                  collection_name: doc.title || doc.filename || 'Source document',
-                  source_type_label: doc.doc_type || '',
-                  doc_type: doc.doc_type || 'will',
-                  pages: [{
-                    id: docId,
-                    filename: doc.filename,
-                    title: doc.title || doc.filename,
-                    ocr_text: doc.ocr_text || null,
-                    source_url: null,
-                  }],
-                })
-              : () => setViewDocId(docId);
-            return (
-              <button
-                key={`doc-${docId}-${idx}`}
-                type="button"
-                onClick={handleClick}
-                className="box"
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
-              >
-                <div>{doc.title || doc.filename || 'Untitled document'}</div>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                  <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
-                </div>
-              </button>
-            );
-          }
-          if (externalUrl) {
-            let hostname = externalUrl;
-            try { hostname = new URL(externalUrl).hostname; } catch (_) {}
-            return (
-              <a
-                key={`ext-${idx}`}
-                href={externalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="box"
-                style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-              >
-                <div>{doc.title || doc.filename || 'Source document'}</div>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                  {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>{hostname} ↗</span>
-                </div>
-              </a>
-            );
-          }
-          return (
-            <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
-              <div>{doc.title || doc.filename || 'Document reference'}</div>
-              <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
-            </div>
-          );
-        };
-
-        return (
-          <>
-            {(primaryColls.length > 0 || primaryDocs.length > 0) && (
-              <Section title="Primary source documents">
-                <div className="stack">
-                  {primaryColls.map(renderCollCard)}
-                  {primaryDocs.map(renderDocCard)}
-                </div>
-              </Section>
-            )}
-            {(secondaryColls.length > 0 || secondaryDocs.length > 0) && (
-              <Section title="Secondary source documents">
-                <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
-                  Indexed, transcribed, republished or database-derived citations.
-                  These document that a record exists; they are not the original.
-                </div>
-                <div className="stack">
-                  {secondaryColls.map(renderCollCard)}
-                  {secondaryDocs.map(renderDocCard)}
-                </div>
-              </Section>
-            )}
-          </>
-        );
-      })()}
+      {/* Secondary source documents stay LOW — indexed/transcribed/republished
+          citations that a record exists, not the original scan (which is up top). */}
+      {hasSecondaryDocs && (
+        <Section title="Secondary source documents">
+          <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
+            Indexed, transcribed, republished or database-derived citations.
+            These document that a record exists; they are not the original.
+          </div>
+          <div className="stack">
+            {secondaryColls.map(renderCollCard)}
+            {secondaryDocs.map(renderDocCard)}
+          </div>
+        </Section>
+      )}
 
       {viewDocId && (
         <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />

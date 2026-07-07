@@ -50,10 +50,15 @@ async function main() {
       continue;
     }
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30000) });
-      if (!r.ok) { stats.err++; console.log(`  HTTP ${r.status}  ${d.canonical_name} ${url.slice(0, 50)}`); continue; }
-      const ct = (r.headers.get('content-type') || '').toLowerCase();
-      const buf = Buffer.from(await r.arrayBuffer());
+      // fetch the origin; if it blocks (403/error/empty), fall back to the Internet Archive cache.
+      const tryFetch = async (u) => { const r = await fetch(u, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30000) }); const b = Buffer.from(await r.arrayBuffer()); return { ok: r.ok, status: r.status, ct: (r.headers.get('content-type') || '').toLowerCase(), buf: b }; };
+      let r; try { r = await tryFetch(url); } catch { r = { ok: false, status: 'ERR', ct: '', buf: Buffer.alloc(0) }; }
+      if (!r.ok || r.buf.length < 1024) { // Wayback fallback — serve from the IA cache
+        try { const w = await tryFetch(`https://web.archive.org/web/2id_/${url}`); if (w.ok && w.buf.length >= 1024) { r = w; console.log(`    (via Wayback cache) ${d.canonical_name}`); } } catch { /* keep original */ }
+      }
+      if (!r.ok || r.buf.length < 1024) { stats.err++; console.log(`  ${r.status}/${r.buf.length}b  ${d.canonical_name} ${url.slice(0, 44)} — needs agent-sourced open URL`); continue; }
+      const ct = r.ct;
+      const buf = r.buf;
       if (buf.length < 1024) { stats.err++; console.log(`  EMPTY(${buf.length}b)  ${d.canonical_name} ${url.slice(0, 45)} — soft-block, needs Mini`); continue; }
       const ext = /pdf/.test(ct) ? 'pdf' : /jpe?g/.test(ct) ? 'jpg' : /png/.test(ct) ? 'png' : /html/.test(ct) ? 'html' : 'bin';
       const s3Key = `sources/roster/${slug(d.canonical_name)}/${slug(d.document_type)}-${d.id}.${ext}`;

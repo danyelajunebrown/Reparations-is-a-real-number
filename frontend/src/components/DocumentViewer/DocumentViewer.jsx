@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { Field } from '../ui/index.jsx';
+import { ZoomableImage } from './ZoomableImage.jsx';
 
 /**
  * DocumentViewer — full-page view at /documents/:id.
@@ -309,18 +310,14 @@ function DocEmbed({ viewUrl, downloadUrl, filename, isPdf: isPdfHint, isImage: i
   }
 
   if (isImage) {
+    // Deep-zoom viewer (pinch/pan, cross-browser). Fills the lightbox when
+    // fullscreen; a tall panel inline on the /documents/:id page.
     return (
-      <img
-        src={viewUrl}
-        alt={filename || 'document'}
-        style={{
-          maxWidth: '100%',
-          maxHeight: fullscreen ? '100%' : undefined,
-          border: fullscreen ? 'none' : '1px solid var(--border)',
-          background: fullscreen ? 'transparent' : '#fff',
-          display: 'block',
-        }}
-      />
+      <div style={fullscreen
+        ? { width: '100%', height: '100%' }
+        : { height: '70vh', border: '1px solid var(--border)' }}>
+        <ZoomableImage url={viewUrl} alt={filename || 'document'} background={fullscreen ? '#000' : '#111'} />
+      </div>
     );
   }
 
@@ -521,8 +518,13 @@ export function DocCollectionOverlay({ collection, onClose, namesToHighlight = [
             );
           }
           if (isImage) return (
-            <img src={viewUrl} alt={page.title || page.filename || `Page ${pageIdx + 1}`}
-              style={{ maxWidth: '100%', display: 'block' }} />
+            <div style={{ width: '100%', height: '100%' }}>
+              <ZoomableImage
+                key={page.id}
+                url={viewUrl}
+                alt={page.title || page.filename || `Page ${pageIdx + 1}`}
+              />
+            </div>
           );
           if (isPdf) return (
             <iframe src={viewUrl} title={page.title || `Page ${pageIdx + 1}`}
