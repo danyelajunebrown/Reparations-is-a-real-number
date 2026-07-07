@@ -95,3 +95,52 @@ For multi-volume scans (Hynson is ~600 pages), break into ~50-page chunks if you
 ## Outstanding questions
 
 If any of the items I marked "skip" actually contain unexpected slavery content when you see them on-site, override and grab. The classifications above are my best read from titles; you'll know better when the book is in front of you.
+
+## British-Caribbean slaveholder lead-source queue (2026-07-05, user-supplied)
+Same theatre family as UCL LBS / T71 (#119) / British-WI benchmark (#131). Ingest ORDER:
+1. **UCL LBS** (1834 compensation) — IN PROGRESS (Wayback path; commit 4c67365ed; dedup fix + validation pending). CC BY-NC-SA → re-hostable.
+2. **Jamaican Family Search** (Jamaica Almanacs: slave-owners + enslaved counts; wills/inventories) — **#132**. **NO-REPOST** license → extract facts, cite the primary (PD almanacs), don't re-host.
+3. **British Guiana Colonists** vc.id.au (Demerara/Essequibo/Berbice colonist/owner class) + `/edg` — **#134**. Static HTML, no Cloudflare (easy). Verify terms; treat as no-repost until confirmed → facts + cite primary (TNA CO/T71).
+RULE 0.5: each MUST add an EMBED phase (→ `embeddings`) so leads reach RAG/search/modals. Each cross-source-links (#128) to LBS awardees + T71 owners.
+
+## International slavery-source catalog — 6-agent research pass (2026-07-05, verified July 2026)
+User supplied a ~25-source catalog; researched each thoroughly (access / DOCUMENT IMAGES / licensing /
+fields / buildability). The make-or-break question per source = are freely-downloadable images available
+(→ re-hostable to S3 = LIFTS the external-assertion gate) vs transcription-only (→ gated secondary lead).
+DB ground-truth corrected the catalog: Freedman's Bank is NOT on the spine (0 external-ids, #73 silo);
+only 5 id_system namespaces exist; `slavevoyages_enslaver` (51,111) is a coarse label needing re-tag.
+
+### TIER 1 — BUILD NOW (open data + re-hostable/gate-lifting)
+| Source | Yield | Docs re-hostable? | gate-class | id_system | Notes |
+|---|---|---|---|---|---|
+| **Enslaved.org LOD** | E O T | NO images (LOD only) | (secondary) | `enslaved_org_qid` + per-dataset native id | 731,500 people; RDF/JSON dumps no-auth; CC BY-NC-SA per-dataset; **event-centric role→person_type MAPPING needed**; **DEDUP vs our SlaveVoyages+Hall — do NOT re-ingest those**. Highest leverage, Medium complexity. |
+| **Dutch: Suriname/Curaçao + 1863 emancipation** | E O T | **YES — CC0 scans** | slave_register / emancipation_register | `hdsc_suriname_slaveregister` / `hdsc_curacao_slaveregister` / `hdsc_emancipation` | Suriname downloadable structured (Radboud, CC-BY-SA); OAI-PMH bulk; mother's-name(from 1848)+owner+mutations; **1863 register = adopted SURNAME** (identity bridge, separate join). Dutch-only; Curaçao emanc ~60%. |
+| **Puerto Rico 1872 (T1121)** | E O | **YES — public domain** | slave_register | `pr_registro_esclavos_1872` | Free FS coll 177782 / NARA; **both parents + master's name** (Moret's-Law compensation=dual-ledger); ~30K; harvest per-municipality (no bulk export). Cleanest. |
+| **Freedom on the Move** | E O T | **YES — CC BY-NC-SA ad images** | runaway_ad | `fotm_runaway` | Free CSV export; ~32,254 ads pre-parsed into Ad/Runaway/Enslaver/Event, grouped per person. Exact E/O/T fit. |
+| **Virginia Untold Free-Negro Registers** | E(freed) O(manumitter) T | **YES — LVA no restrictions** | register_of_free_blacks | `va_untold_free_negro` | Open CSV + CKAN API; 47,000+ names; manumitter+status fields. VA only; MD/DC manual. |
+| **Réunion 1848/1832 registers** | E O T | **YES — AD Réunion+ANOM, UNESCO** | emancipation_register | `anom_reunion_affranchissement` | Free public-archive images; name+status+owner+manumission; ~20 registers indexed, rest transcribe. |
+| **French Antilles registers (MQ/GP/ANOM images)** | E O T | **YES — public-domain, Licence Ouverte attrib.** | nouveaux_libres / slave_register | `anom_mq_individualite` / `ad971_nouveaux_libres` | Use the ARCHIVE IMAGES (patrimoines-martinique / earchives.archivesguadeloupe / ANOM caomec2), **NOT Anchoukaj** (CM98 proprietary, e-repro forbidden). matricule+assigned surname+habitation(=owner)+mother. OCR. GP Côte-sous-le-vent lost (1918 fire) except Bouillante; MQ ~near-complete. |
+
+### TIER 2 — PERMISSION-FIRST (email agreement before bulk)
+- **Danish West Indies (Rigsarkivet)** — E O T; 8M+ pages; **freedom certs + free-coloured lists NAME THE MANUMITTER** (dual-ledger); free browse but **bulk reuse needs written non-commercial agreement** (bars commercial resellers; our non-commercial status fits carve-out). OCR from images. `rigsarkivet_dwi_{series}`. gate-class: slave_register / emancipation_register / freedom_certificate.
+
+### TIER 3 — OCR IMAGE CORPORA (free images, unindexed → existing DocAI pipeline)
+- **Brazil: Pombos notarial deeds (FS DGS 4144740, VERIFY) + Catholic parish registers of enslaved** — free FS images; chattel/vital; `fs_pombos_notarial` / `fs_brazil_parish`.
+- **Cape SO-series (FS 2739063)** — rich fields incl. mother's name but **images gated (not re-hostable)** → transcription only; + **capeslavesancestry.com CC-BY-NC-SA** transcriptions + TANAP/GLOBALISE entity-tagged corpus. `fs_cape_slave_register` / `capeslavesancestry` / `tanap_cape`.
+- **NC Runaway Ads (DLAS/UNCG)** — request dataset ~5K, images confirm rights. `dlas_nc_runaway`.
+- **Charleston Estate Inventories & Bills of Sale + Southern Claims** — Fold3 PAYWALLED → go to SCDAH/NARA/FS PD originals; fits `chattel_transfer_events`; targeted DocAI, not bulk. `scdah_charleston_inventory` / `nara_southern_claims`.
+- **Mauritius — Nelson Mandela Centre DB** — free login-gated, no images. `mauritius_nmc`.
+
+### TIER 4 — DEFER
+Anchoukaj index (CM98 proprietary — use the registers instead) · Cuba ANC (fragmentary, permission-gated;
+SSDA per-doc only) · SSDA images (permission-gated, no bulk) · Brazil 1872 Matrículas (destroyed 1890) ·
+Indian Ocean + trans-Saharan (aggregate/not person-level digitized).
+
+### CROSS-CUTTING DISCIPLINE
+- **id_system PRODUCT-specific** per source (rule #4); re-tag the 51,111 coarse `slavevoyages_enslaver`.
+- **Reference-class hygiene:** emancipation/manumission/nouveaux-libres = a DATED freed-status FACT, not "enslaved at place X" (same as Freetown/St Helena recaptives).
+- **Gate:** re-hostable register images → S3 → lift the gate per source; transcription-only stay gated secondary.
+- **Enslaved.org dedup vs our SlaveVoyages(169K)+Hall(100K)** is the main work — do not double-ingest federated slices we hold.
+- **RULE 0.5:** every one of these gets an EMBED phase (→ `embeddings`) so leads reach RAG/search/modals.
+- **Verify before scripting:** FS DGS 4144740; First Fifty Years (e-family.co.za) reachability.
+- **Suggested build order:** Enslaved.org (leverage) → Dutch → PR-1872 → Freedom on the Move → Virginia Untold → Réunion/French → Danish(permission) → OCR corpora.

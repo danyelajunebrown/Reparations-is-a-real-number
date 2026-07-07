@@ -55,18 +55,44 @@ const ID_SYSTEM = 'ucl_lbs_person';
 const SOURCE = (t, id) => `https://www.ucl.ac.uk/lbs/${t}/view/${id}`;
 const clip = (s, n = 500) => (s == null ? null : String(s).slice(0, n));
 
-// ── person promotion (idempotent on the LBS external id) ────────────────────────────────────────────
-async function resolveByExtId(db, extId) {
-  const r = await db.query(
-    `SELECT subject_table, subject_id FROM person_external_ids WHERE id_system=$1 AND external_id=$2 LIMIT 1`,
-    [ID_SYSTEM, String(extId)]);
-  return r.rows[0] || null;
+// ── person promotion — dedup is OWNED HERE via an in-memory ext-id cache + an EXPLICIT (non-swallowed)
+// person_external_ids write. We do NOT rely on findOrCreateLead's internal ext-id write: it wraps the
+// insert in `.catch(()=>{})`, which under bulk left leads without ext-ids, so resolveByExtId kept
+// missing and re-created the same LBS person on every reference (2.9x duplication). The cache guarantees
+// exactly one lead per LBS ext_id within a run; the explicit write guarantees persistence across runs.
+async function loadExtIdCache(db) {
+  const cache = new Map();
+  const r = await db.query(`SELECT external_id, subject_table, subject_id FROM person_external_ids WHERE id_system=$1`, [ID_SYSTEM]);
+  for (const row of r.rows) cache.set(String(row.external_id), { subject_table: row.subject_table, subject_id: Number(row.subject_id) });
+  return cache;
 }
 
-// Promote a full PERSON record (from its own page). Returns the spine ref.
-async function promotePerson(svc, db, rec, extId, stats, dry) {
-  const existing = await resolveByExtId(db, extId);
-  if (existing) { stats.person_linked++; return existing; }
+// Get-or-create the LBS person for `extId`. `rich` (optional) = the full person-page attrs. Returns the ref.
+async function getOrCreatePerson(svc, db, extId, name, rich, stats, cache, dry) {
+  const key = String(extId);
+  if (cache.has(key)) { stats.person_linked++; return cache.get(key); }
+  if (!name && !(rich && rich.name)) return null;
+  if (dry) { stats.person_would_create++; const ref = { subject_table: 'unconfirmed_persons', subject_id: null }; cache.set(key, ref); return ref; }
+  const record = rich || { name, personType: 'unknown', confidence: 0.8 };
+  const out = await svc.findOrCreateLead({
+    name: record.name, birthYear: record.birthYear || null, deathYear: record.deathYear || null,
+    locations: record.locations || null, externalId: key, idSystem: ID_SYSTEM, sourceUrl: SOURCE('person', extId),
+    personType: record.personType || 'unknown', sourceType: 'scholarly', confidence: record.confidence || 0.8,
+    context: record.context || null, relationships: record.relationships || [],
+  });
+  if (!out.ref || out.ref.subject_id == null) return null;
+  // EXPLICIT ext-id write (surface errors — do NOT swallow); ON CONFLICT keeps it on the first lead.
+  await db.query(
+    `INSERT INTO person_external_ids (subject_table, subject_id, id_system, external_id, external_url, confidence)
+     VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id_system, external_id) DO NOTHING`,
+    [out.ref.subject_table, out.ref.subject_id, ID_SYSTEM, key, SOURCE('person', extId), 0.85]);
+  cache.set(key, out.ref);
+  if (out.action === 'created') stats.person_created++; else stats.person_linked++;
+  return out.ref;
+}
+
+// Build the rich record from a parsed PERSON page (bio/occupation/relationships/addresses).
+function richPersonRecord(rec) {
   const isOwner = (rec.claims && rec.claims.length > 0);
   const relationships = [];
   if (rec.spouse) relationships.push({ type: 'spouse', name: clip(rec.spouse, 200) });
@@ -74,33 +100,18 @@ async function promotePerson(svc, db, rec, extId, stats, dry) {
   const ctx = [rec.occupation && `occupation: ${rec.occupation}`, rec.absentee && `absentee: ${rec.absentee}`,
     rec.school && `school: ${rec.school}`, rec.university && `university: ${rec.university}`,
     rec.nameInCompensationRecords && `comp-name: ${rec.nameInCompensationRecords}`].filter(Boolean).join('; ');
-  if (dry) { stats.person_would_create++; return { subject_table: 'unconfirmed_persons', subject_id: null }; }
-  const out = await svc.findOrCreateLead({
+  return {
     name: rec.name, birthYear: rec.birthYear, deathYear: rec.deathYear,
     locations: (rec.addresses && rec.addresses.length) ? rec.addresses.map((a) => clip(a, 200)) : null,
-    externalId: String(extId), idSystem: ID_SYSTEM, sourceUrl: SOURCE('person', extId),
-    personType: isOwner ? 'enslaver' : 'unknown', sourceType: 'scholarly', confidence: 0.85,
-    context: clip(ctx, 900) || null, relationships,
-  });
-  if (out.action === 'created') stats.person_created++; else if (out.action === 'linked') stats.person_linked++;
-  return out.ref;
+    personType: isOwner ? 'enslaver' : 'unknown', confidence: 0.85, context: clip(ctx, 900) || null, relationships,
+  };
 }
 
-// Ensure a minimal lead for a person REFERENCED on a claim/estate/firm (no own page archived).
-async function ensurePersonRef(svc, db, extId, name, stats, dry) {
-  const existing = await resolveByExtId(db, extId);
-  if (existing) return existing;
-  if (!name) return null;
-  if (dry) { stats.person_would_create_min++; return { subject_table: 'unconfirmed_persons', subject_id: null }; }
-  const out = await svc.findOrCreateLead({
-    name, externalId: String(extId), idSystem: ID_SYSTEM, sourceUrl: SOURCE('person', extId),
-    personType: 'unknown', sourceType: 'scholarly', confidence: 0.8,
-  });
-  if (out.action === 'created') stats.person_created_min++;
-  return out.ref;
+async function promotePerson(svc, db, rec, extId, stats, cache, dry) {
+  return getOrCreatePerson(svc, db, extId, rec.name, richPersonRecord(rec), stats, cache, dry);
 }
 
-async function promoteClaim(svc, db, rec, extId, stats, colonyTotals, dry) {
+async function promoteClaim(svc, db, rec, extId, stats, colonyTotals, cache, dry) {
   const c = rec.compensation || {};
   if (!dry) {
     await db.query(
@@ -118,7 +129,7 @@ async function promoteClaim(svc, db, rec, extId, stats, colonyTotals, dry) {
        c.decimal ?? null, rec.enslavedCount ?? null, clip(rec.notes, 4000), SOURCE('claim', extId)]);
   }
   for (const ind of (rec.individuals || [])) {
-    const ref = await ensurePersonRef(svc, db, ind.personId, ind.name, stats, dry);
+    const ref = await getOrCreatePerson(svc, db, ind.personId, ind.name, null, stats, cache, dry);
     const isAwardee = /awardee/i.test(ind.role || '');
     if (!dry) await db.query(
       `INSERT INTO lbs_claim_persons (claim_ext_id, person_ext_id, subject_table, subject_id, role_raw, is_awardee)
@@ -155,12 +166,12 @@ async function promoteEstate(svc, db, rec, extId, stats, dry) {
   stats.estate++; stats.estate_regs += (rec.registrations || []).length;
 }
 
-async function promoteFirm(svc, db, rec, extId, stats, dry) {
+async function promoteFirm(svc, db, rec, extId, stats, cache, dry) {
   if (!dry) await db.query(
     `INSERT INTO lbs_firms (firm_ext_id, name, updated_at) VALUES ($1,$2, now())
      ON CONFLICT (firm_ext_id) DO UPDATE SET name=EXCLUDED.name, updated_at=now()`, [String(extId), rec.name]);
   for (const pp of (rec.people || [])) {
-    const ref = await ensurePersonRef(svc, db, pp.personId, pp.name, stats, dry);
+    const ref = await getOrCreatePerson(svc, db, pp.personId, pp.name, null, stats, cache, dry);
     if (!dry) await db.query(
       `INSERT INTO lbs_firm_people (firm_ext_id, person_ext_id, subject_table, subject_id, role_raw)
        VALUES ($1,$2,$3,$4,$5) ON CONFLICT (firm_ext_id, person_ext_id, role_raw)
@@ -170,11 +181,11 @@ async function promoteFirm(svc, db, rec, extId, stats, dry) {
   stats.firm++;
 }
 
-async function promoteRecord(svc, db, urlType, extId, rec, stats, colonyTotals, dry) {
-  if (urlType === 'person') await promotePerson(svc, db, rec, extId, stats, dry);
-  else if (urlType === 'claim') await promoteClaim(svc, db, rec, extId, stats, colonyTotals, dry);
+async function promoteRecord(svc, db, urlType, extId, rec, stats, colonyTotals, cache, dry) {
+  if (urlType === 'person') await promotePerson(svc, db, rec, extId, stats, cache, dry);
+  else if (urlType === 'claim') await promoteClaim(svc, db, rec, extId, stats, colonyTotals, cache, dry);
   else if (urlType === 'estate') await promoteEstate(svc, db, rec, extId, stats, dry);
-  else if (urlType === 'firm') await promoteFirm(svc, db, rec, extId, stats, dry);
+  else if (urlType === 'firm') await promoteFirm(svc, db, rec, extId, stats, cache, dry);
 }
 
 // ── S3 HTML read (presigned + fetch) ────────────────────────────────────────────────────────────────
@@ -197,10 +208,11 @@ async function runFixtures(svc, db, dry) {
     return { f, type, extId };
   }).sort((a, b) => order[a.type] - order[b.type]);
   const stats = mkStats(); const colonyTotals = new Map();
+  const cache = dry ? new Map() : await loadExtIdCache(db);
   for (const { f, type, extId } of items) {
     if (ONLY_TYPE && type !== ONLY_TYPE) continue;
     const rec = parseLbs(type, fs.readFileSync(path.join(dir, f), 'utf8'));
-    await promoteRecord(svc, db, type, extId, rec, stats, colonyTotals, dry);
+    await promoteRecord(svc, db, type, extId, rec, stats, colonyTotals, cache, dry);
     console.log(`  ${type}/${extId}: ${JSON.stringify(summ(type, rec))}`);
   }
   report(stats, colonyTotals, dry);
@@ -227,7 +239,9 @@ async function runParse(db, dry) {
 
 async function runPromote(svc, db, dry) {
   const stats = mkStats(); const colonyTotals = new Map();
-  // person first, then estate, claim, firm
+  const cache = dry ? new Map() : await loadExtIdCache(db);
+  console.log(`ext-id cache: ${cache.size} known LBS persons`);
+  // person first (rich leads), then estate, claim, firm (link via cache)
   for (const type of ['person', 'estate', 'claim', 'firm']) {
     if (ONLY_TYPE && type !== ONLY_TYPE) continue;
     const { rows } = await db.query(
@@ -235,7 +249,7 @@ async function runPromote(svc, db, dry) {
       [type, Number.isFinite(LIMIT) ? LIMIT : 200000]);
     console.log(`promote ${type}: ${rows.length} rows`);
     for (const r of rows) {
-      try { await promoteRecord(svc, db, type, r.ext_id, r.parsed, stats, colonyTotals, dry); }
+      try { await promoteRecord(svc, db, type, r.ext_id, r.parsed, stats, colonyTotals, cache, dry); }
       catch (e) { stats.errors++; if (stats.errors <= 8) console.log(`  err ${type}/${r.ext_id}: ${e.message}`); }
     }
   }

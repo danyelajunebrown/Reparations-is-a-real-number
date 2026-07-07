@@ -200,10 +200,10 @@ class OCRService {
       console.log(`✓ Gemini OCR complete in ${duration}s (${text.length} chars)`);
       return {
         text,
-        confidence: 0.75, // nominal — Gemini gives no per-token confidence
+        confidence: 0.75, // nominal — these vision models give no per-token confidence
         pageCount: 1,
-        method: 'gemini-vision',
-        service: 'gemini-2.5-flash',
+        method: 'vision-router', // delegates to src/services/vision/vision-router.js (Qwen-VL primary → Gemini → gpt-4o)
+        service: require('../vision/vision-router').VISION_MODEL,
         duration: parseFloat(duration)
       };
     } catch (error) {

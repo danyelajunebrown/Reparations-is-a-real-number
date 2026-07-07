@@ -121,3 +121,45 @@ enslavers AND transfers — not just denominators. Each needs its own scrape (Mi
 [[assessment-macgregor-cuba-source-and-benchmark-scope]] · [[plan-ipums-census-benchmark]] ·
 [[interpretive-framework]] · [[wealth-tracing-framework]] · [[bibliography-index]] ·
 `migrations/090-secondary-source-compilations.sql`
+
+## Colonial-trade-value sources BY COLONIAL POWER (2026-07-06) — dual-ledger extraction aggregates
+"Value of imports/trade from the colonies" from each power's own vantage — the extraction side of the
+dual ledger (what each metropole drew from its slave colonies = evidence of debt). All feed
+`slave_economy_benchmarks` (#116) as CITED colony/power-level AGGREGATES (never person rows); cite the
+PRIMARY (conduits/blogs named only where figures enter the class). Pairs with the MacGregor 5-vol map
+(assessment-macgregor-cuba-source-and-benchmark-scope.md) + BPP compensation totals (#131).
+
+- **FRENCH** — Wante, *Importance de nos colonies occidentales…Saint-Domingue* (Paris 1805) = the
+  haitidoi.com blog transcription (1789 French colonial imports; SD > 2x any other colony; France +120.9M
+  livres colonial-product preponderance over England). Cite Wante 1805, not the blog. + Necker,
+  *De l'administration des finances de la France* (1784, already in register); Moreau de Saint-Méry;
+  Peuchet's *Dictionnaire… commerçante*.
+- **BRITISH** — **Bryan Edwards, *History Civil & Commercial of the British Colonies in the West Indies***
+  (1793, Internet Archive, PUBLIC DOMAIN — per-island trade/production/value tables); **MacGregor Vol V**
+  (British WI + 150-yr British trade summary + colonial customs); **Colonial Office Blue Books** (per-colony
+  annual trade returns 1787+; British Online Archives "Caribbean Colonial Statistics 1824-1950");
+  Privy Council Slave-Trade Committee 1789 (in register); Lord Sheffield, *Observations on the Commerce…*.
+- **SPANISH** — **Humboldt, *Political Essay on the Island of Cuba*** (~1826, English PD — Cuba trade/pop/
+  value); **Balanzas de comercio** (1792, 1827; Cuba *Balanza general* 1852) via la Sagra (already used
+  through MacGregor Vol IV); John Fisher, "Statistics of Spain's Colonial Trade 1792-1820" (HAHR 1981).
+- **PORTUGUESE/BRAZIL** — MacGregor Vol IV Brazil section (HAVE the file); Brazilian *Balança geral do
+  commercio*; Alden. **DUTCH** — MacGregor Vol I (Holland & colonies); Postma Dutch slave-trade data.
+  **DANISH** — MacGregor Vol I (Denmark & colonies); Rigsarkivet DWI customs (#141 research).
+- **CROSS-POWER MODERN SCHOLARLY (comparative aggregations)** — Inikori, *Africans and the Industrial
+  Revolution in England* (2002, per-power trade-value tables); O'Brien & Engerman (1991); Patrick O'Brien,
+  "European Economic Development: The Contribution of the Periphery" (1982); Rönnbäck, "Sweet Business:
+  Quantifying the Value Added in the British Colonial Sugar Trade"; Eltis & Engerman on slave-trade value.
+  → use for cross-checking/benchmarking the primary-derived per-power figures (calibration #90 style).
+
+## Per-power colonial-trade-value PRIMARIES — concrete sources (user-supplied 2026-07-06)
+The actual texts for the per-power vantages above → extract colony-level trade/value AGGREGATES into
+`slave_economy_benchmarks` (#116; the extraction/dual-ledger side: what each metropole drew from its slave
+colonies = debt evidence). Most are archive.org PUBLIC-DOMAIN (OCR-extractable, like the MacGregor Cuba
+6-agent pass). Extraction = a per-source macro pass (aggregates only, cite primary, per-stratum control
+totals) — NOT person rows. Rule 8 dual-archive each when ingested.
+- **FRENCH — Necker, *De l'administration des finances de la France* (1784, vol 3):** https://archive.org/details/deladministratio03neck (PD). French colonial trade/revenue values. + FRAMESPA article https://doi.org/10.4000/framespa.343 (French colonial econ, confirm topic).
+- **BRITISH — Bryan Edwards, *History Civil & Commercial of the British Colonies in the West Indies* (vol 4):** https://archive.org/details/historycivilcomm04edwa (PD). Per-island trade/production/value tables. + **Rönnbäck, "Sweet Business" (British colonial sugar value-added, 18th c.):** https://www.cambridge.org/core/product/identifier/S0212610914000081 (Rev. Hist. Econ. 2014).
+- **SPANISH/CUBA — Humboldt, *Political Essay on the Island of Cuba*:** https://archive.org/details/islandofcubapoli0000humb (PD). Cuba trade/population/value (cross-check vs la Sagra/MacGregor).
+- **CROSS-POWER — Inikori, *Africans and the Industrial Revolution in England* (2002):** https://assets.cambridge.org/97805218/11934/sample/9780521811934ws.pdf (sample; full = Cambridge). Per-power Atlantic trade-value tables — the comparative benchmark/calibration frame (#90).
+- **CIHM 38031:** https://archive.org/details/cihm_38031 — Canadian microfiche (British N. America trade, confirm on OCR).
+NEXT: a per-source extraction pass (MacGregor-Cuba style) → cited colony/power aggregates in slave_economy_benchmarks; pairs with BPP compensation totals (#131) + MacGregor Vol V (British WI).

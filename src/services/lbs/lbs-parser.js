@@ -104,7 +104,9 @@ function parseClaim(html) {
     estateName: kv['Estate'] || null,
     contested: kv['Contested'] ? /yes/i.test(kv['Contested']) : null,
     date: header.split('|')[0] ? clean(header.split('|')[0]) : null,
-    year: firstYear(header),
+    // Year ONLY from the date segment — scanning the whole header lets a 4-digit £ amount (e.g. £1656)
+    // be mistaken for a year on "No Date" claims (validation caught 10 such spurious years).
+    year: firstYear(header.split('|')[0] || ''),
     enslavedCount: enslaved ? intOf(enslaved) : null,
     compensation: parsePounds(header),
     individuals: assocRows($, /Associated Individuals/, PERSON_HREF).map((r) => ({ personId: r.id, name: r.name, role: r.role })),

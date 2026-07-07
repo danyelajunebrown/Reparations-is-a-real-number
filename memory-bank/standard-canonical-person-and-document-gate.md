@@ -85,3 +85,18 @@ filter on it; internal consumers (DAA, climber, obligation, dedup) ignore it.
 `plan-identity-resolution-completion.md` · `plan-source-classification.md` ·
 `interpretive-framework.md` (uncertainty: confidence, `name_type:'unknown'`,
 explicit-vs-inferred, human-review) · `projectbrief.md`.
+
+## PROMOTION BAR TIGHTENED (user directive, 2026-07-06): canonicals serve images + are RAG-embedded
+"All canonicals must serve images and be embedded in rag." A lead → `canonical_persons` promotion now
+requires ALL THREE:
+1. **Deduped/discrete** (Biscoe — link to an existing canonical if matched, never name-only auto-merge).
+2. **Serves a document image** — a proposition-specific scan stored in S3 (`person_documents.s3_key`, a
+   real file), dual-archived S3+Wayback (standard-external-source-ingest rule 8). No image → stays a LEAD.
+3. **Embedded in RAG** (`embeddings`, person_profile) so it reaches RAG/search/modals (RULE 0.5).
+This SUPERSEDES creating secondary-only *gated* canonicals for NEW promotions — the gate is no longer
+"exists gated until a doc arrives"; now "no canonical without an image + embedding." Existing image-less
+canonicals (SlaveVoyages URL-only, Hall no-doc, secondary-only) = a BACKFILL DEBT (attach images or keep
+as leads). **Order for image-rich sources (Suriname/Curaçao/PR-1872/FOTM/Virginia Untold):** attach-scan
+DRIP first (resolve → S3+Wayback → person_documents) → promote ONLY the image-backed, deduped persons →
+embed. Suriname #137: scans via Open Archives 'nas' (Folio+RegistryNumber match IISG) → IIIF
+service.archief.nl. LOD-only sources (enslaved.org) can't clear this bar → stay gated leads.

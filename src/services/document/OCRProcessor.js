@@ -122,7 +122,17 @@ class OCRProcessor {
         return await this.processMultiPagePDF(file, options);
       }
 
-      // Try Google Vision first (if available via client library or REST API)
+      // Vision router first (#142): Qwen-VL primary + uncapped → Gemini → gpt-4o. Heals this class's
+      // silo — it never got the #126 Gemini upgrade and was Google-Vision-primary (now a SUSPENDED key)
+      // → silently Tesseract-only. Router is accurate on cursive; Vision/Tesseract remain fallbacks.
+      try {
+        const routerResults = await this.processWithVisionRouter(file, detectedType.mime);
+        if (routerResults && routerResults.text && routerResults.text.trim().length > 0) return routerResults;
+      } catch (routerError) {
+        logger.warn('OCR: vision router failed, falling back', { error: routerError.message });
+      }
+
+      // Try Google Vision next (if available via client library or REST API)
       if (this.googleVisionAvailable && (this.googleVisionClient || this.useRestApi)) {
         try {
           logger.info('OCR: Attempting Google Vision');
@@ -405,6 +415,14 @@ class OCRProcessor {
    * @param {Object} file - File to process
    * @returns {Promise<Object>} OCR results
    */
+  async processWithVisionRouter(file, mime) {
+    const { transcribeImage, VISION_MODEL } = require('../vision/vision-router');
+    const start = Date.now();
+    const text = await transcribeImage(file.buffer, { mimeType: mime || file.mimetype || 'image/png' });
+    if (!text || !text.trim()) throw new Error('vision router returned empty');
+    return { text, confidence: 0.8, service: VISION_MODEL, pageCount: 1, raw: null, duration: (Date.now() - start) / 1000 };
+  }
+
   async processWithGoogleVision(file) {
     // Use REST API if we have an API key but no client library
     if (this.useRestApi && this.googleVisionApiKey) {
