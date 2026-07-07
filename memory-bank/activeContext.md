@@ -125,6 +125,13 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   all 9 main-view endpoints 200 with valid shapes. **DURABLE FIX RECOMMENDED (not built):** a headless
   puppeteer/Playwright route smoke test (load each route + open the doc viewer + assert no console errors) —
   runnable on the Mini/CI; the WebGL bug is exactly what it would have caught. MacBook can't run a browser.
+  **DURABLE FIX BUILT + VERIFIED (commit 242f80506):** `scripts/smoke-test-frontend.mjs` — headless
+  puppeteer route smoke test (390px phone viewport) failing on JS exceptions / non-benign console errors /
+  the WebGL texture regression / a doc viewer with no <canvas>. Launches headless (CI/Apple-Silicon) or
+  CHROME_URL-connect on the Intel Mini; BASE_URL overridable. RAN against live: **11/11 routes clean**, and
+  the doc-viewer check rendered a <canvas> → runtime-CONFIRMS the drawer:'canvas' WebGL fix draws Ward's
+  scan. Run it after every frontend deploy. (Turns out headless launch DID work from this MacBook for our
+  own public site — the earlier 'can't run a browser' caveat was over-cautious for a non-scraping smoke test.)
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
   The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the
