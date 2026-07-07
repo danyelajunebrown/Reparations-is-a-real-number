@@ -62,6 +62,18 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   primary source surfaced HIGH on the profile. **DEPLOYED to gh-pages-react** (`npm run deploy:gh-pages` →
   "Published"). Existing cached clients need ONE hard-refresh (then VersionGate auto-detects). TODO: verify
   runtime zoom on-device across Chrome/Chromium/Android/Edge/Safari.
+- **(e) Ask surface DEPLOYED + (e+) eval harness DONE (2026-07-07).** (e): `/ask` grounded Q&A on
+  /api/rag/query, cited (citation→/documents/:id→viewer), honest empty/degraded; DEPLOYED. Live answers
+  need the RAG backend wired to prod (OLLAMA_URL / Tailscale Funnel — Render isn't on the tailnet; the
+  Ask tab shows "unavailable" honestly until then). (e+): eval harness committed —
+  `build-rag-eval-fixture.mjs` (resolves+freezes gold IDs from live DB, ambiguity flagged not guessed) +
+  `eval-records-rag.mjs` (hard gates + calibration baselines, degrades honestly) +
+  `tests/fixtures/rag-eval/gold.json`. Mini person-embedding backfill (`embed-persons.mjs`) DEFERRED.
+  **DATA-QUALITY FINDINGS (act on):** roster marquee enslavers SERVE scans but assertable_slaveowner=FALSE
+  (Joshua John Ward #828471 = 14 scans/assertable=false; Thomas Jefferson #828182; Robert E. Lee #828469)
+  — scans attached, gate never lifted; and an Arkansas "George Washington" #452284 carries assertable=TRUE
+  (the #118 wrong-human is still live; the President isn't cleanly served/assertable). Frontend redesign
+  a→e complete + deployed; see [[plan-frontend-light-redesign]].
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
   The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the

@@ -187,4 +187,13 @@ Constraints these add to the build (beyond the objectives above):
       degraded until `OLLAMA_URL` (Tailscale Funnel to the Mini's nomic/ollama) or a gemini query-embed is
       set on Render. UI handles degraded honestly today. FOLLOW-UP: wire retrieval into search + person
       modal (RULE 0.5).
-- [ ] (e+) canonical embedding backfill (Mini) + eval harness + baselines.
+- [~] (e+) eval harness DONE + committed; Mini backfill DEFERRED (topology). `scripts/build-rag-eval-
+      fixture.mjs` (resolves+freezes gold IDs from live DB, ambiguity flagged not guessed) →
+      `tests/fixtures/rag-eval/gold.json`; `scripts/eval-records-rag.mjs` (hard gates + calibration
+      baselines, degrades honestly). Verified end-to-end vs prod → degraded (Render not on tailnet).
+      REMAINING: (1) OLLAMA_URL/Tailscale-Funnel so /api/rag/query works in prod; (2) run
+      `embed-persons.mjs` on the Mini to embed canonicals; (3) re-run the harness for real baselines.
+      DATA-QUALITY FINDINGS to act on: roster marquee enslavers serve scans but assertable=FALSE
+      (Ward #828471/Jefferson #828182/Lee #828469); AR "George Washington" #452284 assertable=TRUE (#118
+      wrong-human still live). Also: RECORDS-level recall needs person-embeddings (deferred) + a
+      doc→canonical map before "correct canonical in top-k" is measurable.
