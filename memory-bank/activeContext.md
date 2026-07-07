@@ -1,6 +1,44 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-06 (schedule backfills + modal enrichment + OCR-capacity findings #142 — PR #133 deployed)_
+_Last updated: 2026-07-07 (#142 builds 1+2 DEPLOYED, build 3 staged — vision router + reconciled count)_
+
+---
+
+## #142 builds EXECUTED — vision router + reconciled count + distributed linker (2026-07-07, PR #144)
+Preceded by a full architecture re-read for MAX INTEGRATION (user directive). Plan + integration map:
+`memory-bank/plan-vision-router-and-count-aggregation.md`. Every build plugged into an existing seam and
+REMOVED a duplicate / finished a deferred seam — no new silos.
+
+- **BUILD 1 — vision-OCR router (DEPLOYED).** `src/services/vision/vision-router.js` exports
+  `transcribeImage(buf,{mimeType,prompt})→string` (the seam OCRService already used), mirroring the TEXT
+  router `probate-llm-extractor.js`. Cascade: **`qwen/qwen2.5-vl-72b-instruct` (OpenRouter — cursive-EXACT
+  + UNCAPPED) → gemini-2.5-flash (OpenAI-compat endpoint) → gpt-4o**, 429/5xx fallthrough, `VISION_PROVIDERS`
+  reorders. Healed 3 silos: `gemini-ocr.js`→thin delegate (OCRService/probate/will-reextractor upgrade
+  transparently); `OCRProcessor.js`→router-first (was dead-Google-Vision→Tesseract-only); OCRService
+  envelope stops mislabeling. **Prod needs `OPENROUTER_API_KEY` in Render for Qwen** (else degrades to Gemini).
+- **BUILD 2 — `enslavedCountFor` (DEPLOYED).** `src/services/reparations/enslaved-count.js` — ONE reconciled
+  per-slaveholder count = **MAX** of {`SUM(person_documents.enslaved_count)` walk/OCR, named edges, the 1.4M
+  owner-referenced index leads} (MAX not SUM — overlapping sources never double-count; a documented FLOOR).
+  Wired into BOTH `contribute.js` (was the only `enslaved_count` reader) AND `DAAOrchestrator.calculateTotalDebt`
+  (was NAMED-rows-only + a DEAD `dbSlaveholder.enslaved_count` ref) — **divergence killed**. Verified: Ward
+  0-named→**1,100**; Cobb 8→**49** (index found more of his run). Owner match normalizes Jr/Sr/honorifics,
+  state-scoped for namesakes.
+- **BUILD 3 — distributed edge linker (BUILT + STAGED, not run).** `scripts/link-distributed-enslaved-edges.mjs`
+  persists the 1.4M owner-referenced leads as `enslaved_owner_relationships` edges (owner_canonical→enslaved
+  lead) — **finishes the owner-lead→canonical seam `build-enslaved-owner-edges.mjs` left DEFERRED**; feeds #2's
+  fast `named`. Bounded to served roster enslavers. BLOCKED on perf: a JSONB seq-scan per holder → **migration
+  123** (trigram GIN on `unconfirmed_persons(relationships->>'owner')`, person_type='enslaved') **must be applied
+  CONCURRENTLY OFF-PEAK** (scrapers write that table live) before the batch runs at scale.
+
+**RAG boundary (user asked, now settled + matches your new RULE 0.6):** RAG ← FEEDS ← vision router (#1 OCR →
+`person_documents.ocr_text` → embeddings); RAG ⊥ the COUNT (#2 stays pure SQL per **Rule 1** — deterministic
+computes, never a model); RAG → may aid DISCOVERY → walk (#3). #3's captured pages should trigger a re-embed
+(RULE 0.6 = canonicals must serve an image + be RAG-embedded).
+
+**COMPLETENESS layer still open (documented follow-on):** live FS owner-name search
+(`searchFamilySearchRecords` → ARKs beyond the ~79.5% index → vision-router OCR) closes the Ward-71-vs-1,100
+index gap for distributed holders — BLOCKED on the recurring FS-session expiry (viability probe hit the login
+wall). See [[reference_familysearch_session_reauth]].
 
 ---
 
