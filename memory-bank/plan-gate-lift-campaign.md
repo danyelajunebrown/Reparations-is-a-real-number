@@ -25,7 +25,13 @@ front-end audit" top-10 (Duncan/Heyward/Calhoun/Madison/Monroe/Franklin/Carroll�
    then `PersonService.recomputeGate(<canonical_id>)` → derives `assertable_slaveowner`.
    (Verified: Hugh V doc#570111 → count=2 [Jacob, Harry] → recomputeGate → assertable=true → serves un-gated on prod.)
 
-## TWO PIPELINE ROOT CAUSES to fix BEFORE the batch (both in reextract)
+## STATUS: both pipeline root causes FIXED (commit f6ce350a0, 2026-07-07) — campaign now RUNNABLE
+Hugh V fully completed (`--relink --apply`): assertable=true, 2 enslaved linked, 6 family edges incl.
+James Hopewell #1070 as his child (gated tier-3). The `--apply` path now extracts + links + lifts the
+gate automatically for any of the 7,967. Remaining = run the batch drip (Mini, coordinated). Details of
+what was fixed, below, for the record.
+
+## TWO PIPELINE ROOT CAUSES — FIXED (both in reextract)
 1. **CHECK-constraint bug — `scripts/reextract-hand-uploaded-wills.mjs:228`** creates heirs with
    `personType: 'free_person'`, which migration 110's `chk_canonical_person_type` REJECTS (allowlist
    has free_black/free_poc/free_person_of_color, NOT free_person). → fatal on the entity backfill.
@@ -47,10 +53,10 @@ front-end audit" top-10 (Duncan/Heyward/Calhoun/Madison/Monroe/Franklin/Carroll�
 - **COORDINATE with the parallel enslaver-shore-up session** (commit/gate-recompute collisions hit twice
   this session). Ideally one owner runs the drip; the other pauses gate-recompute during batch windows.
 
-## Not-yet-fixed residue on Hugh V
-His slaveholder status + will now surface, but the will's HEIR edges (sons incl. James Hopewell → cp 1070)
-and the Jacob/Harry person rows did NOT land (root cause #1). Re-run `--relink --id 570111` AFTER fixing
-reextract:228 to complete his family graph without re-OCR/LLM.
+## Hugh V — COMPLETE (2026-07-07)
+Both fixes applied + `--relink --apply` re-run: assertable=true, Jacob/Harry linked, 6 family edges
+(James Hopewell #1070 now his child; father Hugh Sr; others) — all gated tier-3 (verified=false) per the
+kinship-evidence standard. Nothing left on Hugh V.
 
 ## See also
 [[standard-canonical-person-and-document-gate]] (RULE 0.6) · [[activeContext]] (Hopewell audit + the
