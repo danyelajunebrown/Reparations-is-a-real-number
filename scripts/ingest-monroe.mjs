@@ -54,8 +54,10 @@ async function main() {
          VALUES ($1,'Spence Monroe','estate_inventory',$2,'secondary','secondary',1774,$3,TRUE,'roster_partner_ingest') ON CONFLICT DO NOTHING`, [id, SRC, INV_TEXT]);
       await c.query(`UPDATE canonical_persons SET assertable_slaveowner=TRUE WHERE id=$1`, [id]);
     }
-    // parent → child edge (best-effort; skip silently if schema differs)
-    try { await c.query(`INSERT INTO canonical_family_edges (person_id, relative_id, relationship, source, confidence) VALUES ($1,$2,'child','spence_monroe_1774_estate',0.95) ON CONFLICT DO NOTHING`, [spence, james]); } catch { /* schema variance */ }
+    // parent → child edge (SAVEPOINT-scoped — a failed stmt inside a txn otherwise aborts the whole txn)
+    await c.query('SAVEPOINT fam');
+    try { await c.query(`INSERT INTO canonical_family_edges (person_id, relative_id, relationship, source, confidence) VALUES ($1,$2,'child','spence_monroe_1774_estate',0.95) ON CONFLICT DO NOTHING`, [spence, james]); await c.query('RELEASE SAVEPOINT fam'); }
+    catch { await c.query('ROLLBACK TO SAVEPOINT fam'); /* schema variance — edge is a follow-on */ }
     // the ~9 enslaved people named in the inventory → leads (held by Spence 1774, inherited by James)
     let n = 0;
     for (const nm of ENSLAVED) {
