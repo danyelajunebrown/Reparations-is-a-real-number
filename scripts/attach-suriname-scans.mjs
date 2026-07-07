@@ -27,7 +27,10 @@ const S3 = require('../src/services/storage/S3Service');
 const FILE = process.argv[2];
 const APPLY = process.argv.includes('--apply');
 const li = process.argv.indexOf('--limit'); const LIMIT = li > -1 ? +process.argv[li + 1] : Infinity;
-if (!FILE || !fs.existsSync(FILE)) { console.error('usage: node scripts/attach-suriname-scans.mjs <csv> [--limit N] [--apply]'); process.exit(1); }
+const ii = process.argv.indexOf('--index'); const INDEX_PATH = ii > -1 ? process.argv[ii + 1] : null;
+if (!FILE || !fs.existsSync(FILE)) { console.error('usage: node scripts/attach-suriname-scans.mjs <csv> [--index nas_scan_index.json] [--limit N] [--apply]'); process.exit(1); }
+// High-recall LOCAL matching: (inventory|folio) → IIIF UriViewer, harvested by harvest-nas-scan-index.mjs.
+const SCAN_INDEX = INDEX_PATH && fs.existsSync(INDEX_PATH) ? JSON.parse(fs.readFileSync(INDEX_PATH, 'utf8')) : null;
 
 const UA = 'ReparationsResearch/1.0 (+non-commercial; db7613@bard.edu)';
 const NAS_COLLECTION = 'https://www.nationaalarchief.nl/onderzoeken/index/nt00461';
@@ -84,8 +87,14 @@ async function main() {
     // resumable: skip if these leads already have a slave_register doc
     const done = (await pool.query(`SELECT 1 FROM person_documents WHERE unconfirmed_person_id = ANY($1::int[]) AND document_type='slave_register' LIMIT 1`, [leadIds])).rows.length;
     if (done) { stats.skipped_done++; continue; }
-    let scan; try { scan = await resolveScan(f.sampleName, f.inventory, f.folio); } catch (e) { stats.err++; continue; }
-    await sleep(260);
+    let scan;
+    if (SCAN_INDEX) {
+      const uv = SCAN_INDEX[`${f.inventory}|${f.folio}`];
+      scan = uv ? { uriViewer: uv.replace(/\\\//g, '/'), recordUrl: NAS_COLLECTION } : null;
+    } else {
+      try { scan = await resolveScan(f.sampleName, f.inventory, f.folio); } catch (e) { stats.err++; continue; }
+      await sleep(260);
+    }
     if (!scan) { stats.unresolved++; continue; }
     stats.resolved++;
     if (!APPLY) { if (stats.resolved <= 3) console.log(`  would attach folio ${k} (${leadIds.length} leads) ← ${scan.uriViewer.slice(0, 70)}…`); continue; }
