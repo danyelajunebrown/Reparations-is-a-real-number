@@ -111,6 +111,20 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   → an M110-valid value (or ALTER the CHECK); (2) reextract must sync will_extractions enslaved →
   person_documents.enslaved_count/evidences_enslaved_holding + call recomputeGate (it currently does
   neither, so the gate never lifts). Then run the 7,967 as a coordinated drip (Mini), not ad-hoc. NOT done here.
+- **FRONTEND AUDIT POSTURE + 2 live errors resolved (2026-07-07, user pushed on regressions).**
+  Honest gap: the overhaul was build-verified + targeted-prod-verified, but NOT browser/runtime-audited —
+  and both reported errors were runtime-only (invisible to `vite build`):
+  1. **WebGL "Error creating texture" (REAL regression, FIXED, commit 22d50268d):** OSD 6 defaults to the
+     WebGL drawer; WebGL can't texture a cross-origin S3 image without CORS → scan wouldn't render. Fix =
+     `drawer:'canvas'` in ZoomableImage (2D drawImage handles tainted images; crossOriginPolicy stays false).
+  2. **Deep-link "403" on /person/... (COSMETIC, not ours):** GH Pages returns HTTP 404 for a hard-loaded
+     SPA path, the deployed 404.html SPA-redirect fires, page recovers. WebKit renders the 404 as a
+     "permission" message. Standard GH-Pages-SPA behavior; in-app clicks never hit it.
+  **Audit run this session:** build green · code regression grep clean (no broken imports / removed-component
+  refs / stray hardcoded colors beyond the intentional dark lightbox) · cross-view PROD API smoke test =
+  all 9 main-view endpoints 200 with valid shapes. **DURABLE FIX RECOMMENDED (not built):** a headless
+  puppeteer/Playwright route smoke test (load each route + open the doc viewer + assert no console errors) —
+  runnable on the Mini/CI; the WebGL bug is exactly what it would have caught. MacBook can't run a browser.
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
   The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the
