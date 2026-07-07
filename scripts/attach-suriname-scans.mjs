@@ -111,6 +111,7 @@ async function main() {
       stats.docs_attached++;
     }
     if (stats.resolved % 25 === 0) process.stdout.write(`\r  folios ${stats.folios}, resolved ${stats.resolved}, docs ${stats.docs_attached}   `);
+    await sleep(300);   // politeness to service.archief.nl (IIIF) even in index mode
   }
   await pool.end();
   console.log('\n=== stats ===', JSON.stringify(stats));
