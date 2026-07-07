@@ -28,10 +28,10 @@ async function upsertCanon(c, { name, first, last, sex, birth, death, state, cou
     id = (await c.query(
       `INSERT INTO canonical_persons (canonical_name, first_name, last_name, first_name_soundex, last_name_soundex, last_name_metaphone,
           sex, person_type, birth_year_estimate, death_year_estimate, primary_state, primary_county, confidence_score, verification_status, created_by, notes)
-       VALUES ($1,$2,$3, soundex($2), soundex($3), metaphone($3,8), $4,'enslaver',$5,$6,$7,$8,0.95,'verified','roster_partner_ingest',$9) RETURNING id`,
+       VALUES ($1::text,$2::text,$3::text, soundex($2::text), soundex($3::text), metaphone($3::text,8), $4::text,'enslaver',$5::int,$6::int,$7::text,$8::text,0.95,'verified','roster_partner_ingest',$9::text) RETURNING id`,
       [name, first, last, sex, birth, death, state, county, notes])).rows[0].id;
     await c.query(`INSERT INTO person_blocking_keys (subject_table, subject_id, canonical_person_id, key_type, key_value)
-      SELECT 'canonical_persons',$1,$1,k.key_type,k.key_value FROM derive_blocking_keys($2,$3,$4) k ON CONFLICT DO NOTHING`, [id, name, sex, birth]);
+      SELECT 'canonical_persons',$1::int,$1::int,k.key_type,k.key_value FROM derive_blocking_keys($2::text,$3::text,$4::int) k ON CONFLICT DO NOTHING`, [id, name, sex, birth]);
   } else {
     await c.query(`UPDATE canonical_persons SET notes=$2, verification_status='verified' WHERE id=$1`, [id, notes]);
   }
