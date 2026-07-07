@@ -91,9 +91,26 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   wills" = YES but 4 of 6 are ORPHANED** (person_documents document_type=will mentioning Hopewell:
   6 total, **4 canonical_person_id=NULL** → S3 scans linked to no person, invisible on every profile);
   only #1070 + #617719 linked. Plus dedup debt: multiple Hugh Hopewells (#193376/#617726/#609495-merged/
-  #193864/#194338/#193558) + 3 merged "Anne Maria Hopewell" tombstones. This is the assertable-gate gap
-  + RULE-0.6 orphaning, concretely on the flagship fixture family. Backend/data fix (re-extract + relink
-  orphans + dedup), not frontend.
+  #193864/#194338/#193558) + 3 merged "Anne Maria Hopewell" tombstones.
+  **CORRECTION (verified by reading OCR):** my "4 orphaned Hopewell wills" was a FALSE POSITIVE — those
+  are NY-probate wills (John Brinkerhoff Dutchess Co, Theodore Staats Cayuga Co) mentioning the *town* of
+  Hopewell, NY; ILIKE '%hopewell%' matched a PLACE, not the family. Real Hopewell-family wills are the
+  linked ones. (I fell into the exact namesake/place trap the project fights — logged as a lesson.)
+  **HUGH V FIXED end-to-end (2026-07-07):** ran `reextract-hand-uploaded-wills.mjs --id 570111 --apply` →
+  OCR'd the will (gemini-ocr, 3pp, S3 redirect-probe since GetBucketLocation IAM is missing) → extracted
+  2 enslaved (Jacob, Harry) + 7 heirs into will_extractions. The entity-backfill FAILED on
+  `chk_canonical_person_type` (reextract:228 writes personType='free_person', NOT in the M110 allowlist —
+  version-skew bug). Per user (targeted-SQL, don't touch shared pipeline): set doc#570111
+  enslaved_count=2 + evidences_enslaved_holding=true (grounded in the will), then PersonService.recomputeGate(193376)
+  DERIVED assertable_slaveowner=true. Verified on PROD: gated=false, will collection serves,
+  reparations compute, hasPrimarySource=true. Hugh V surfaces.
+  **SCALE of the same fix (live counts): 10,890 enslaver canonicals serve a scan but assertable=false**
+  (will 7,367 / other 3,347 / estate_inventory 775 / …); **7,967 are will/probate-served (reextract target)**;
+  **39,681 served will/probate DOCS have no extracted enslaved content**; only 34,626 enslavers assertable now.
+  **TWO PIPELINE ROOT CAUSES to fix before any batch campaign:** (1) reextract:228 personType 'free_person'
+  → an M110-valid value (or ALTER the CHECK); (2) reextract must sync will_extractions enslaved →
+  person_documents.enslaved_count/evidences_enslaved_holding + call recomputeGate (it currently does
+  neither, so the gate never lifts). Then run the 7,967 as a coordinated drip (Mini), not ad-hoc. NOT done here.
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
   The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the
