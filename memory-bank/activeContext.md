@@ -80,6 +80,20 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   #427834, Monroe #614729 (easy — has image), Isaac Franklin #141263, Charles Carroll #141466… =
   the concrete backlog the eval's served-gold cohort will grade once RAG is wired. Frontend redesign
   a→e complete + deployed; see [[plan-frontend-light-redesign]].
+- **HOPEWELL WILL AUDIT (2026-07-07, user asked "what happened to Hugh Hopewell V?"):** verified live.
+  Hugh Hopewell V = **#193376 "Hugh Hopewell, Esq." d.1797** (enslaver). His will scan IS served
+  (doc#570111, will, direct_primary, **s3=true**) — but he's **GATED** (`assertable_slaveowner=false`)
+  because the will doc has `enslaved_count=null` + `evidences_enslaved_holding=false` + **0
+  enslaved_owner edges** → the role-aware gate (#95) can't confirm "slaveholder," so his public profile
+  shows the gated stub. Root cause = the will was archived but its enslaved CONTENT was never extracted
+  (fix: `reextract-hand-uploaded-wills.mjs` → populate count/names → recomputeGate lifts). SAME pattern:
+  **James Hopewell #1070** (primary DAA fixture!) also served=1 but assertable=false. **"Many Hopewell
+  wills" = YES but 4 of 6 are ORPHANED** (person_documents document_type=will mentioning Hopewell:
+  6 total, **4 canonical_person_id=NULL** → S3 scans linked to no person, invisible on every profile);
+  only #1070 + #617719 linked. Plus dedup debt: multiple Hugh Hopewells (#193376/#617726/#609495-merged/
+  #193864/#194338/#193558) + 3 merged "Anne Maria Hopewell" tombstones. This is the assertable-gate gap
+  + RULE-0.6 orphaning, concretely on the flagship fixture family. Backend/data fix (re-extract + relink
+  orphans + dedup), not frontend.
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
   The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the

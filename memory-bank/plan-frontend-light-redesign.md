@@ -199,8 +199,8 @@ Constraints these add to the build (beyond the objectives above):
 - [~] RAG prod-wiring — RUNBOOK written ([[plan-rag-prod-wiring]]); code is ready (reads OLLAMA_URL).
       Needs Mini (`tailscale funnel 11434`) + Render env (`OLLAMA_URL`) + `embed-persons.mjs` on the Mini,
       then re-run the eval for baselines. Your lane (MacBook can't run the Mini).
-- [ ] Backlog (deferred): SubmitWillPage still carries dark-theme inline colors (#888/#e0e0e0/monospace) —
-      relight it onto the design tokens; the contribute form is the one view not fully converted to light.
+- [x] SubmitWillPage relit onto the design tokens (all hex/rgba/monospace → tokens) — the contribute form
+      was the last dark view; the WHOLE public UI is now light. Committed + DEPLOYED.
 - [~] (e+) eval harness DONE + committed; Mini backfill DEFERRED (topology). `scripts/build-rag-eval-
       fixture.mjs` (resolves+freezes gold IDs from live DB, ambiguity flagged not guessed) →
       `tests/fixtures/rag-eval/gold.json`; `scripts/eval-records-rag.mjs` (hard gates + calibration
