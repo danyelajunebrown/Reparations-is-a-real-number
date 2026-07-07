@@ -72,7 +72,13 @@ in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in th
   **DATA-QUALITY FINDINGS (act on):** roster marquee enslavers SERVE scans but assertable_slaveowner=FALSE
   (Joshua John Ward #828471 = 14 scans/assertable=false; Thomas Jefferson #828182; Robert E. Lee #828469)
   — scans attached, gate never lifted; and an Arkansas "George Washington" #452284 carries assertable=TRUE
-  (the #118 wrong-human is still live; the President isn't cleanly served/assertable). Frontend redesign
+  (the #118 wrong-human is still live; the President isn't cleanly served/assertable). **INDEPENDENTLY
+  CORROBORATED** by the parallel "high-profile enslaver front-end audit" (commit 144e0e9cb): `assertable=n`
+  → gated/empty EVEN WITH an image (their exemplar: James Monroe #614729 has an image, gate not lifted).
+  That audit's TOP-10 shore-up list (lift gate = qualifying doc + set assertable): Stephen Duncan #79380
+  (largest US holder ~2,200), Nathaniel Heyward (misclassified freedperson), Calhoun #207607, Madison
+  #427834, Monroe #614729 (easy — has image), Isaac Franklin #141263, Charles Carroll #141466… =
+  the concrete backlog the eval's served-gold cohort will grade once RAG is wired. Frontend redesign
   a→e complete + deployed; see [[plan-frontend-light-redesign]].
 - **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
   git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").

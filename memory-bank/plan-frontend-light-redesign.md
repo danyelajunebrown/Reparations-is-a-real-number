@@ -184,9 +184,23 @@ Constraints these add to the build (beyond the objectives above):
       /documents/:id → zoomable viewer = the c↔e pairing). Honest states: not-grounded → "no answer given";
       degraded → "unavailable"; never fabricates. Read-only (no reparations figure).
       **OPS DEPENDENCY (blocks live answers):** Render isn't on the tailnet → /api/rag/query returns
-      degraded until `OLLAMA_URL` (Tailscale Funnel to the Mini's nomic/ollama) or a gemini query-embed is
-      set on Render. UI handles degraded honestly today. FOLLOW-UP: wire retrieval into search + person
-      modal (RULE 0.5).
+      degraded until `OLLAMA_URL` (Tailscale Funnel to the Mini's nomic/ollama) is set on Render. Runbook:
+      [[plan-rag-prod-wiring]]. CORRECTION (from code re-read): a gemini query-embed is NOT a valid
+      shortcut — the corpus is nomic space; gemini vectors don't match it (would need a full re-embed).
+      UI handles degraded honestly today.
+
+## Follow-ups after a→e (done 2026-07-07)
+- [x] Wire retrieval into search + person-modal (RULE 0.5): AskPanel reads ?q= and auto-runs; SearchPage
+      has a grounded "Ask the archive about <query>" CTA; PersonProfile header has "Ask about <name>".
+      Committed + build-green (deploy pending with this batch).
+- [x] Migrated BlockchainPanel's specialized hex Field onto the shared primitive (shared Field →
+      overflowWrap:anywhere). All 5 display-Field copies now consolidated (SubmitWillPage's is a
+      form-input Field, different component, left).
+- [~] RAG prod-wiring — RUNBOOK written ([[plan-rag-prod-wiring]]); code is ready (reads OLLAMA_URL).
+      Needs Mini (`tailscale funnel 11434`) + Render env (`OLLAMA_URL`) + `embed-persons.mjs` on the Mini,
+      then re-run the eval for baselines. Your lane (MacBook can't run the Mini).
+- [ ] Backlog (deferred): SubmitWillPage still carries dark-theme inline colors (#888/#e0e0e0/monospace) —
+      relight it onto the design tokens; the contribute form is the one view not fully converted to light.
 - [~] (e+) eval harness DONE + committed; Mini backfill DEFERRED (topology). `scripts/build-rag-eval-
       fixture.mjs` (resolves+freezes gold IDs from live DB, ambiguity flagged not guessed) →
       `tests/fixtures/rag-eval/gold.json`; `scripts/eval-records-rag.mjs` (hard gates + calibration
