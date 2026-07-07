@@ -4,6 +4,34 @@ _Last updated: 2026-07-07 (#142 builds 1+2 DEPLOYED, build 3 staged — vision r
 
 ---
 
+## FRONTEND LIGHT REDESIGN — started (2026-07-07, branch frontend/light-redesign) → [[plan-frontend-light-redesign]]
+Executing the "Part 1" frontend-overhaul brief (bright/daylight light UI, prioritized-but-detailed,
+primary-sources-up, consolidated, RAG surfaced). Branch off audit/probate-classifier (frontend SOURCE lives
+in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in the plan doc.
+- **(a) DONE, committed, build-green:** rewrote `frontend/src/styles/global.css` token layer → a bright
+  WCAG-AA "archive/ledger" light system (paper #F4F3EE, near-black ink, serif-display/sans-body/mono-ledger
+  voices, ink-blue accent #14567A, evidence palette seal/debt/flag, the "ledger spine" signature). Legacy
+  token names kept as aliases so every component flips with no markup change; 7-class taxonomy retuned to
+  AA-on-paper; :focus-visible + reduced-motion added. Fixed PersonProfile's 2 hardcoded solarized/amber
+  inline colors → semantic tokens. AA pairs (vs paper): ink 15.7 · ink-soft 6.2 · accent 7.2 · seal 5.8 ·
+  debt 8.4 · err 5.9 · borders 3.1. NOT deployed (manual: `cd frontend && npm run deploy:gh-pages`).
+- **Frontend facts (supersede stale techContext "Vanilla HTML/CSS/JS"):** Vite 6 + React 18 + RR6 + d3 +
+  ethers; ONE global.css; ONE central api client (`api/client.js` + isVerified/filterVerified gate);
+  DocumentViewer exists (582 lines) but NO true zoom/pan (→ OpenSeadragon for c); NO RAG/chat UI (net-new for
+  e); dead StatsRibbon; duplicated PersonResult/Field helpers; only ONE media query (phone-first is a real gap).
+- **RAG contract read:** `/api/rag/query {question,k}` → `{answer, citations:[{document_id,source_url,
+  document_type}], retrieved, grounded, degraded}` (degrades gracefully). `/api/chat` is a keyword router
+  over LEADS + a hardcoded reparations formula → the AskPanel should be driven off `/api/rag/query` (cited,
+  honest empty), NOT raw /api/chat. Citations' document_id → `documents` table → existing DocumentViewer.
+- **Grounding note:** read the full governing memory bank before proceeding further (user directive). The
+  design-system commit is validated by it (preserves gate-stub, VersionGate, dignity framing). Remaining
+  objectives (d consolidate → b schema-driven fields → c primary-sources-up+OpenSeadragon → e AskPanel →
+  e+ canonical embed backfill + eval harness) sequenced in the plan doc, with the added UI constraints
+  (reparations-as-vector never-net, status-as-facts, kinship-edge gate, dignity/placeholder rules, RAG
+  read-only boundary). Baselines (WCAG pairs recorded above; RAG eval baselines TBD when the harness runs).
+
+---
+
 ## PROMOTION RECKONING — the systemic orphaning bug + RULE 0.6 (2026-07-07, branch audit/probate-classifier)
 User pressed on whether ingested persons actually PROMOTE + SURFACE. Grounded audit found the load-bearing
 disease. Commits d4c8e0ead / 8f36f5363 / promote-curated / link-ny-probate.
