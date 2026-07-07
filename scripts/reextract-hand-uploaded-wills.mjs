@@ -47,6 +47,7 @@ const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const { extractEstate, MODEL } = require('../src/services/probate/probate-llm-extractor');
 const { transcribeImage, GEMINI_OCR_MODEL } = require('../src/services/probate/gemini-ocr');
 const NameResolver = require('../src/services/NameResolver');
+const PersonService = require('../src/services/PersonService');
 
 const APPLY       = process.argv.includes('--apply');
 const REOCR       = process.argv.includes('--reocr');
@@ -225,7 +226,10 @@ async function backfillEntities(doc, est, weId, { year, parsed, testatorId }) {
   for (const h of heirs) {
     if (!h.name) continue;
     const edge = relationToEdge(h.relation);
-    const rr = await resolver.resolveOrCreate(h.name, { personType: 'free_person', state: parsed.state, county: parsed.county, confidence: 0.65 });
+    // person_type='unknown' (M110-valid; 'free_person' is NOT in the chk_canonical_person_type
+    // allowlist and caused a fatal). The heir RELATIONSHIP is carried by the family edge below,
+    // not by person_type (a lossy summary per #96) — so 'unknown' loses nothing and asserts nothing false.
+    const rr = await resolver.resolveOrCreate(h.name, { personType: 'unknown', state: parsed.state, county: parsed.county, confidence: 0.65 });
     if (!rr.canonicalPerson) continue;
     if (edge && rr.canonicalPerson.id !== testatorId) {
       const id = await upsertFamilyEdge(testatorId, rr.canonicalPerson.id, edge, doc.id, h.bequest);
@@ -240,6 +244,21 @@ async function backfillEntities(doc, est, weId, { year, parsed, testatorId }) {
     catch (e) { log(`     enslaved "${p.name}" link failed: ${e.message}`); }
   }
   log(`   ↳ enslaved: ${ensCreated} linked via slaveholding_relationships`);
+
+  // Gate-sync: put the extracted enslaved COUNT on the will document and lift the gate
+  // BY DERIVATION. The external-assertion gate reads person_documents.enslaved_count /
+  // evidences_enslaved_holding; without this a served will stays gated (the campaign root
+  // cause). recomputeGate DERIVES assertable_slaveowner from the stored doc — never hand-set.
+  const ensN = ens.length;
+  await pool.query(
+    `UPDATE person_documents SET enslaved_count=$2, evidences_enslaved_holding=$3 WHERE id=$1`,
+    [doc.id, ensN, ensN > 0]
+  );
+  try {
+    const gate = await new PersonService(pool).recomputeGate(testatorId);
+    log(`   ↳ gate recomputed: assertable_slaveowner=${gate?.assertable_slaveowner} (enslaved_count=${ensN})`);
+  } catch (e) { log(`   ⚠ recomputeGate failed (non-fatal): ${e.message}`); }
+
   return { edgesAdded, ensCreated };
 }
 
