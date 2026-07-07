@@ -93,9 +93,11 @@ async function ingestFigure(pool, spec) {
       docs++;
     }
     if (holdingDoc) await c.query(`UPDATE canonical_persons SET assertable_slaveowner=TRUE WHERE id=$1`, [eid]);
-    // enslaved people named in the documents → leads held by this figure
+    // enslaved people named in the documents → leads held by this figure.
+    // Idempotency: skip if this figure already has roster enslaved leads (avoid dup on re-run).
+    const already = (await c.query(`SELECT count(*)::int n FROM person_external_ids WHERE id_system=$1`, [idsys + '_enslaved'])).rows[0].n;
     let ens = 0;
-    for (const e of (spec.enslaved || [])) {
+    for (const e of (already > 0 ? [] : (spec.enslaved || []))) {
       const nm = clean(e.name); if (!nm) continue;
       const ctx = `Named as enslaved by ${clean(per.name)} (${clean(per.state)}). ${clean(e.note)}`.slice(0, 900);
       const lid = (await c.query(
@@ -104,11 +106,35 @@ async function ingestFigure(pool, spec) {
         [nm, VALID_ENSLAVED, clean(per.county) || clean(per.state), clean(per.state) || 'United States', ctx, (spec.documents?.[0]?.source_url) || 'research-sourced'])).rows[0].lead_id;
       await c.query(`INSERT INTO person_external_ids (subject_table, subject_id, id_system, external_id, confidence)
         VALUES ('unconfirmed_persons',$1::int,$2::text,$3::text,0.75) ON CONFLICT (id_system, external_id) DO NOTHING`, [lid, idsys + '_enslaved', slug(nm) + '_' + lid]);
+      // GRAPH EDGE: owner→enslaved holding (the DAA backbone). SAVEPOINT-guarded.
+      await c.query('SAVEPOINT eo');
+      try {
+        await c.query(
+          `INSERT INTO enslaved_owner_relationships (enslaved_subject_table, enslaved_subject_id, enslaved_name, owner_canonical_id, owner_subject_table, owner_subject_id, owner_name, relationship_type, source_url, source_context, confidence_score, verification_status, created_by)
+           VALUES ('unconfirmed_persons',$1::int,$2::text,$3::int,'canonical_persons',$3::int,$4::text,'enslaved_by',$5::text,$6::text,0.75,'unverified','roster_partner_ingest')`,
+          [lid, nm, eid, clean(per.name), (spec.documents?.[0]?.source_url) || 'research-sourced', clean(e.note).slice(0, 500)]);
+        await c.query('RELEASE SAVEPOINT eo');
+      } catch { await c.query('ROLLBACK TO SAVEPOINT eo'); }
       ens++;
     }
+    // GRAPH EDGES: inheritance — a father/grandfather/brother whose will/estate transmitted enslaved property.
+    let inh = 0;
+    for (const f of (spec.family || [])) {
+      const rel = clean(f.relationship).toLowerCase();
+      if (!/father|grandfather|brother|mother|uncle/.test(rel)) continue;
+      if (!/will|estate|bequeath|inherit|transmit|willed|passed|owner|slavehold|enslav/.test(rel)) continue;
+      await c.query('SAVEPOINT inh');
+      try {
+        const anc = await upsertEnslaver(c, { name: clean(f.name), first: clean(f.name).split(' ')[0], last: clean(f.name).split(' ').pop(), sex: 'm' }, `Transmitted enslaved property to ${clean(per.name)} (${rel}).`);
+        await c.query(`INSERT INTO inheritance_edges (testator_id, heir_id, relationship_to_testator, asset_type, asset_description, document_year, evidence_tier, confidence, notes, created_at)
+          VALUES ($1::int,$2::int,$3::text,'enslaved_persons',$4::text,$5::int,2,0.8,$6::text, now())`,
+          [anc, eid, rel.split('(')[0].trim() || 'ancestor', `Enslaved people (and land) transmitted from ${clean(f.name)} to ${clean(per.name)}`, per.birth || null, clean(f.relationship).slice(0, 400)]);
+        await c.query('RELEASE SAVEPOINT inh'); inh++;
+      } catch { await c.query('ROLLBACK TO SAVEPOINT inh'); }
+    }
     await c.query('COMMIT');
-    console.log(`  ✓ ${per.name} #${eid} — assertable=${holdingDoc} | docs=${docs} (img→S3=${withImg}) | enslaved leads=${ens}`);
-    return { name: per.name, id: eid, assertable: holdingDoc, docs, enslaved: ens };
+    console.log(`  ✓ ${per.name} #${eid} — assertable=${holdingDoc} | docs=${docs} (img→S3=${withImg}) | enslaved=${ens} (owner-edges) | inheritance-edges=${inh}`);
+    return { name: per.name, id: eid, assertable: holdingDoc, docs, enslaved: ens, inheritance: inh };
   } catch (e) { await c.query('ROLLBACK'); console.error(`  ✗ ${per.name}: ${e.message}`); }
   finally { c.release(); }
 }
