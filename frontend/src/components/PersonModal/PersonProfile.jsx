@@ -179,7 +179,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                     <div key={i} className="box" style={{ padding: 8 }}>
                       <div style={{ fontWeight: 600 }}>{f.value_text}</div>
                       <div className="dim" style={{ fontSize: 11, marginTop: 3 }}>
-                        <span style={{ color: needsPrimary(f) ? '#b58900' : '#2aa198' }}>
+                        <span style={{ color: needsPrimary(f) ? 'var(--flag)' : 'var(--seal)' }}>
                           {needsPrimary(f) ? '○ needs primary' : '● primary-corroborated'}
                         </span>
                       </div>
@@ -476,8 +476,8 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
            research-priority signal. */}
       {coverage.hasDocuments && coverage.hasPrimarySource === false && (
         <div className="box" style={{
-          margin: '12px 0', padding: 12, borderLeft: '3px solid #d97706',
-          background: 'rgba(217, 119, 6, 0.08)', fontSize: 13,
+          margin: '12px 0', padding: 12, borderLeft: '3px solid var(--flag)',
+          background: 'rgba(122, 93, 16, 0.08)', fontSize: 13,
         }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Primary documentation still needed</div>
           <div className="dim" style={{ fontSize: 11 }}>
