@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy:gh-pages": "VITE_API_URL=https://reparations-platform.onrender.com VITE_BASE_PATH=/Reparations-is-a-real-number/ npm run build && gh-pages -d dist -b gh-pages-react -m 'deploy: React frontend'",
+    "deploy:gh-pages": "VITE_API_URL=https://reparations-platform.onrender.com VITE_BASE_PATH=/Reparations-is-a-real-number/ npm run build && gh-pages -d dist -b gh-pages-react -m 'deploy: React frontend' && node ../scripts/verify-deploy.mjs",
     "deploy": "echo 'Use: npm run deploy:gh-pages — pushes to gh-pages-react branch (NOT the legacy gh-pages branch)' && exit 1"
   },
   "dependencies": {
