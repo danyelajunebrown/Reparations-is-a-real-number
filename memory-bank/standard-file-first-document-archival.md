@@ -42,6 +42,19 @@ page," not archiving. The whole batch was rolled back (20 canonicals / 173 leads
   `.source_url` is NOT NULL; `inheritance_edges.evidence_tier` is INT; SAVEPOINT every risky insert
   (aborted-txn trap). Env fetch on the MacBook 403s many origins — the Mini/agents/Wayback get them.
 
+## QUEUED follow-ons (roster_filefirst batch, 2026-07-08)
+The 11 file-first canonicals serve real S3 files + assert; 114 representative enslaved loaded, then Carroll
++74 / Butler +3 via `scripts/roster-ff-extract-rosters.mjs` (text-file re-parse). Still queued:
+1. **OCR (Google Vision/DocAI on the Mini)** — 4 image/PDF files have NO text yet: `sources/roster/
+   andrew_jackson/will.pdf`, `.../james_madison/will.pdf`, `.../nathaniel_heyward/plantation_slave_list.jpg`,
+   `.../stephen_duncan/finding_aid.pdf`. Run through the Mini DocAI pipeline → `person_documents.ocr_text`
+   → embed (RULE 0.5). Heyward's Fife JPG OCR also yields the 141-name roster.
+2. **Full rosters not yet loaded** — Franklin (Dataverse `.tab` parses 0 — needs the `?format=original`
+   TSV or an agent-grade extract; 138 names), Heyward (141, via the Fife-JPG OCR above), + Carroll's
+   remaining tail and Butler's full 92. Reliable source = re-dispatch a retrieval agent per file (the
+   inline regex parsers are inadequate); load via the same leads + `enslaved_owner_relationships` path.
+   AUDIT: Carroll values are model-relayed — do NOT sum for DAA until OCR-verified vs FS image 33S7-9YM6-QVK.
+
 ## Verified open file sources for the roster redo (agent-sourced)
 Butler→`gutenberg.org/cache/epub/64804/pg64804.txt` (92) · Franklin→`dataverse.harvard.edu/api/access/
 datafile/7679728` TSV (138) · Carroll→WikiTree Space page (213) · Heyward→`iiif.library.cofc.edu/iiif/2/
