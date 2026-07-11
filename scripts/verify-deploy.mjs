@@ -44,7 +44,8 @@ async function main() {
 
   console.log('verify-deploy: running route smoke test against the deployed bundle…\n');
   try {
-    execSync(`node ${join(HERE, 'smoke-test-frontend.mjs')}`, { stdio: 'inherit', env: { ...process.env, BASE_URL: SITE } });
+    // Quote the path — the repo path contains a space ("danyelajunebrown GITHUB").
+    execSync(`node "${join(HERE, 'smoke-test-frontend.mjs')}"`, { stdio: 'inherit', env: { ...process.env, BASE_URL: SITE } });
     console.log('\nverify-deploy: ✅ deploy verified.');
   } catch {
     console.error('\nverify-deploy: ❌ smoke test FAILED on the live bundle — fix and redeploy.');
