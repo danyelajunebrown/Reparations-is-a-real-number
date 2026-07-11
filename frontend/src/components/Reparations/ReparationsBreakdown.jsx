@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { formatUSD } from '../../api/format.js';
+import { LedgerFigure } from '../ui/index.jsx';
 import { api } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 
@@ -149,7 +150,7 @@ function LineItemsView({ breakdown }) {
             <div className="box">
                 <div className="box-label">International Law Context</div>
                 <p>On March 25, 2026, 123 UN member states declared the transatlantic slave trade "the gravest crime against humanity" (Resolution A/80/L.48, adopted 123–3 with 52 abstentions). The United States voted against.</p>
-                <table className="table">
+                <div className="table-scroll"><table className="table">
                     <thead>
                         <tr>
                             <th>Source</th>
@@ -183,7 +184,7 @@ function LineItemsView({ breakdown }) {
                             </tr>
                         ))}
                     </tbody>
-                </table>
+                </table></div>
             </div>
 
             {/* SECTION 2 — This Person's Documented Line Items */}
@@ -192,7 +193,7 @@ function LineItemsView({ breakdown }) {
                 {Object.keys(line_items_by_era).map(era => (
                     <div key={era} className="stack-sm">
                         <h3>{era.replace(/_/g, ' ').toUpperCase()}</h3>
-                        <table className="table">
+                        <div className="table-scroll"><table className="table">
                             <thead>
                                 <tr>
                                     <th>Harm Category</th>
@@ -215,7 +216,7 @@ function LineItemsView({ breakdown }) {
                                     </tr>
                                 ))}
                             </tbody>
-                        </table>
+                        </table></div>
                         <div className="text-right">
                             <strong>Subtotal ({era.replace(/_/g, ' ').toUpperCase()}):</strong> {formatUSD(line_items_by_era[era].reduce((sum, item) => sum + parseFloat(item.compounded_amount_usd || 0), 0))}
                         </div>
@@ -362,7 +363,7 @@ function Total({ value }) {
   return (
     <div className="box" style={{ borderColor: 'var(--fg)' }}>
       <div className="box-label">Total owed (this methodology)</div>
-      <div style={{ fontSize: 20 }}>{formatUSD(value)}</div>
+      <div style={{ fontSize: 24 }}><LedgerFigure>{formatUSD(value)}</LedgerFigure></div>
     </div>
   );
 }

@@ -39,7 +39,7 @@ export default function VersionGate() {
       role="alert"
       style={{
         position: 'sticky', top: 0, zIndex: 1000,
-        background: '#1f6feb', color: '#fff',
+        background: 'var(--accent)', color: '#fff',
         fontFamily: 'var(--font-mono, monospace)', fontSize: '0.85rem',
         padding: '6px 12px', textAlign: 'center',
       }}
@@ -50,7 +50,7 @@ export default function VersionGate() {
         onClick={() => window.location.reload()}
         style={{
           marginLeft: 8, cursor: 'pointer',
-          background: '#fff', color: '#1f6feb', border: 'none',
+          background: '#fff', color: 'var(--accent)', border: 'none',
           borderRadius: 3, padding: '2px 10px', fontWeight: 600,
         }}
       >

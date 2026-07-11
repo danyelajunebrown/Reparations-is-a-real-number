@@ -4,7 +4,7 @@ import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
 import { DocOverlay, DocCollectionOverlay } from '../DocumentViewer/DocumentViewer.jsx';
-import { RecordDetail, Field, Section } from '../ui/index.jsx';
+import { RecordDetail, Field, Section, SealBadge, EvidenceBlock } from '../ui/index.jsx';
 import { PERSON_FIELDS } from '../../api/fieldRegistry.js';
 import {
   formatClass,
@@ -278,13 +278,16 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
           zoomable viewer. The full document list (incl. secondary) stays below. */}
       {hasPrimaryDocs && (
         <Section title="Primary source">
-          <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
-            The original record image this profile rests on. Tap to open the scan in a zoomable viewer.
-          </div>
-          <div className="stack">
-            {primaryColls.map(renderCollCard)}
-            {primaryDocs.map(renderDocCard)}
-          </div>
+          <EvidenceBlock>
+            <div style={{ marginBottom: 6 }}><SealBadge>Original record</SealBadge></div>
+            <div className="dim" style={{ fontSize: 11, marginBottom: 8 }}>
+              The original record image this profile rests on. Tap to open the scan in a zoomable viewer.
+            </div>
+            <div className="stack">
+              {primaryColls.map(renderCollCard)}
+              {primaryDocs.map(renderDocCard)}
+            </div>
+          </EvidenceBlock>
         </Section>
       )}
 
