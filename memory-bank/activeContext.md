@@ -1,6 +1,39 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-07 (#142 builds 1+2 DEPLOYED, build 3 staged — vision router + reconciled count)_
+_Last updated: 2026-07-11 (frontend overhaul a→e COMPLETE + deployed + smoke/verify guardrails; gate-lift
+pipeline fixed + 5 flagship enslavers surfaced; Liberty NOT being rescraped)_
+
+---
+
+## SESSION WRAP — frontend overhaul COMPLETE + gate-lift + guardrails (2026-07-08→11) → [[plan-frontend-light-redesign]] · [[plan-gate-lift-campaign]] · [[plan-rag-prod-wiring]]
+The multi-day frontend-overhaul brief (Part 1) is substantially DONE + DEPLOYED (gh-pages-react) + runtime-
+verified, plus two adjacent wins the work surfaced. Detail in the linked plan docs + the dated entries below.
+- **Frontend a→e (deployed):** (a) bright light "archive/ledger" WCAG-AA design system; (d) shared `ui`
+  primitives + one data layer (+ Field/Section consolidation across 5 comps, StatsRibbon retired); (b)
+  schema-driven field layer (`api/fieldRegistry.js` + `RecordDetail`, PersonProfile identity grid); (c)
+  cross-browser OpenSeadragon zoomable viewer (`drawer:'canvas'` — the WebGL-texture regression fix) +
+  primary-sources-up; (e) RAG "Ask" surface + Search/Profile CTAs (deep-linkable `/ask?q=`). Then the
+  INTEGRATION-DEBT pass: the signature primitives (LedgerFigure/SealBadge/EvidenceBlock) — built-but-unused
+  — now wired; `.table-scroll` applied; VersionGate/ErrorBoundary stray colors converted; SubmitWillPage
+  relit → the WHOLE public UI is light.
+- **Runtime guardrails (NEW):** `scripts/smoke-test-frontend.mjs` (headless route smoke test @390px — catches
+  JS/console/WebGL/doc-viewer errors; **11/11 clean**) + `scripts/verify-deploy.mjs` chained into
+  `deploy:gh-pages` (wait-for-propagation → smoke-test the live bundle). It caught its own path-with-space
+  quoting bug on first run (fixed). Runtime audit is now standing, not just build-verify.
+- **RAG OPS still pending (frontend item 1):** Ask works in-UI but returns `degraded` in prod until Render
+  `OLLAMA_URL` → Mini nomic/ollama via Tailscale Funnel ([[plan-rag-prod-wiring]]; a gemini query-embed is
+  NOT a valid shortcut — corpus is nomic space). (e+) records-level embed backfill deferred.
+- **Gate-lift (adjacent win):** fixed the `reextract-hand-uploaded-wills.mjs` pipeline (person_type
+  'free_person'→'unknown'; auto `enslaved_count`→`recomputeGate` sync). **5 flagship enslavers now SURFACE
+  (verified prod):** Hugh Hopewell V, Joshua John Ward (~1,100), Robert E. Lee, Wade Hampton, Thomas
+  Jefferson. TWO TRACKS: schedule-served = cheap bulk `recomputeGate`; will-served = reextract drip (7,967 of
+  10,890 gated-with-scan). #90 (scoped benchmark) is gated on the documented numerator growing (this
+  campaign) + a settled national denominator (#116). [[plan-gate-lift-campaign]].
+- **Liberty probate: NOT being rescraped** (user asked; DB-verified: 14,450 written, latest 2026-05-21, 0 in
+  24h). Only recent Liberty touch = my re-EXTRACTION (not scrape) of one namesake admin-bond doc.
+- **Remaining open (non-loose-ends, not neglect):** RAG live (ops), broaden RecordDetail platform-wide,
+  thorough per-view responsive pass, embed-persons backfill. ⚠ Concurrency race with a parallel backend
+  session recurred (absorbed my (c) commit) — coordinate commit timing.
 
 ---
 

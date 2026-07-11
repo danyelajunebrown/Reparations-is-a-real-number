@@ -3,6 +3,16 @@
 _Created 2026-07-07. Grounds the "Part 1" frontend-overhaul brief. Source of truth for this
 workstream; update as builds land._
 
+## STATUS (2026-07-11): a→e COMPLETE + DEPLOYED + integration-debt pass + runtime guardrails
+Objectives (a) design system, (d) primitives+one-data-layer, (b) schema-driven fields, (c) zoomable
+viewer+primary-sources-up, (e) RAG Ask surface — all built, deployed to gh-pages-react, smoke-verified
+11/11. INTEGRATION-DEBT pass done: signature primitives (LedgerFigure/SealBadge/EvidenceBlock) wired,
+`.table-scroll` applied, VersionGate/ErrorBoundary relit, SubmitWillPage relit. GUARDRAILS added:
+`smoke-test-frontend.mjs` + `verify-deploy.mjs` (chained into deploy:gh-pages). STILL OPEN (non-loose-ends):
+(1) RAG LIVE = Render OLLAMA_URL→Mini ops step ([[plan-rag-prod-wiring]]); (3) broaden RecordDetail beyond
+PersonProfile; (6) thorough per-view responsive pass; (e+) embed-persons backfill on the Mini. Per-item
+detail in the Status checklist at the bottom.
+
 ## Research grounding (what this plan is built on)
 
 - **CLAUDE.md + memory index** re-read (RULE 0/0.5/0.6). **activeContext.md** current-state read:
