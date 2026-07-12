@@ -78,12 +78,11 @@ async function main() {
         const pp = oi === 0 ? per : { ...per, name: owners[oi], first: null, last: null, birth: null, death: null, notes: `Shares the ${d.type} evidencing enslaved holding (${owners[0]}).` };
         const eid = await upsertEnslaver(c, pp, oi === 0 ? notes : pp.notes);
         cids.push(eid);
-        await c.query(`INSERT INTO person_documents (canonical_person_id, name_as_appears, document_type, source_url, source_type, evidence_strength, document_year, ocr_text, s3_key, wayback_url, evidences_enslaved_holding, created_by)
-           VALUES ($1,$2::text,$3::text,$4::text,'secondary','direct_primary',$5::int,$6::text,$7::text,$8::text,$9::bool,'roster_filefirst') ON CONFLICT DO NOTHING`,
-          [eid, clean(owners[0]), clean(d.type), d.archivable_url, d.year || null, ocr, s3Key, wb, evid]).catch(async () => {
-            // person_documents may lack wayback_url column — retry without it
-            await c.query(`INSERT INTO person_documents (canonical_person_id, name_as_appears, document_type, source_url, source_type, evidence_strength, document_year, ocr_text, s3_key, evidences_enslaved_holding, created_by) VALUES ($1,$2::text,$3::text,$4::text,'secondary','direct_primary',$5::int,$6::text,$7::text,$8::bool,'roster_filefirst') ON CONFLICT DO NOTHING`, [eid, clean(owners[0]), clean(d.type), d.archivable_url, d.year || null, ocr, s3Key, evid]);
-          });
+        await c.query(`INSERT INTO person_documents (canonical_person_id, name_as_appears, document_type, source_url, source_type, evidence_strength, document_year, ocr_text, s3_key, evidences_enslaved_holding, created_by)
+           VALUES ($1,$2::text,$3::text,$4::text,'secondary','direct_primary',$5::int,$6::text,$7::text,$8::bool,'roster_filefirst') ON CONFLICT DO NOTHING`,
+          [eid, clean(owners[0]), clean(d.type), d.archivable_url, d.year || null, ocr, s3Key, evid]);
+        // record the Wayback dual-archive in source_artifacts (rule 8), not person_documents
+        if (wb) await c.query(`INSERT INTO source_artifacts (artifact_key, dataset_label, source_name, source_url, s3_key, wayback_url, content_type, rehostable) VALUES ($1,$2,'roster document',$3,$4,$5,'document',TRUE) ON CONFLICT (artifact_key) DO UPDATE SET s3_key=EXCLUDED.s3_key, wayback_url=EXCLUDED.wayback_url`, [`roster-ff-${eid}`, `${clean(owners[oi])} ${clean(d.type)}`, d.archivable_url, s3Key, wb]).catch(() => {});
         stats.canonicals++;
       }
       // GATE = file + evidences_holding
