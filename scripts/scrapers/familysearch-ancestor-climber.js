@@ -2068,7 +2068,11 @@ async function harvestPersonSources(person, fsId, sessionId) {
     let harvested = 0, written = 0;
     try {
         await safeGoto(SOURCES_PAGE_URL + fsId, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await new Promise(r => setTimeout(r, 1500));
+        // The Sources tab is an SPA — the source cards render AFTER domcontentloaded. Wait for the card
+        // list (`.cssSourceTitle*`) to appear, not a fixed 1500ms (which fired before render → 0 captured,
+        // the silent-harvest bug). Modest timeout so a genuinely source-less person doesn't hang.
+        await page.waitForSelector('[class*="cssSourceTitle"]', { timeout: 9000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1200));
 
         // Scrape the attached-source list. Selectors VERIFIED against live FS Sources-tab DOM
         // (2026-07, LTVZ-D8M): each source is a `.cssSourceTitle*` inside a `.cssSourceGrid*` row,
