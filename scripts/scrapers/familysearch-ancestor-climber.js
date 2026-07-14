@@ -2070,23 +2070,34 @@ async function harvestPersonSources(person, fsId, sessionId) {
         await safeGoto(SOURCES_PAGE_URL + fsId, { waitUntil: 'domcontentloaded', timeout: 45000 });
         await new Promise(r => setTimeout(r, 1500));
 
-        // Best-effort scrape of the attached-source list. UNVERIFIED SELECTORS — the goal is
-        // one {collectionTitle, arkUrl, cardText} per attached source; refine on the Mini.
+        // Scrape the attached-source list. Selectors VERIFIED against live FS Sources-tab DOM
+        // (2026-07, LTVZ-D8M): each source is a `.cssSourceTitle*` inside a `.cssSourceGrid*` row,
+        // with a `.cssSourceYear*` and a per-source `[data-testid="source-button_view-<ID>"]` whose
+        // suffix is the FS source id. The old `[data-testid*="source"]`/`a[href*="/ark:/61903/"]`
+        // selectors matched 0 (sources carry no direct ark link) → the harvest silently no-op'd.
         const sources = await page.evaluate(() => {
             const out = [];
-            const cards = document.querySelectorAll(
-                '[data-testid*="source"], li[class*="source"], div[class*="sourceListItem"], div[class*="source-card"]');
             const seen = new Set();
-            (cards.length ? cards : document.querySelectorAll('a[href*="/ark:/61903/"]')).forEach(el => {
-                const card = el.closest('li, article, [class*="source"]') || el;
-                const link = card.querySelector('a[href*="/ark:/61903/"], a[href*="/search/record/"]')
-                    || (el.tagName === 'A' ? el : null);
-                const arkUrl = link ? link.href : null;
-                const titleEl = card.querySelector('h3, h4, [class*="title"], [class*="Title"]');
-                const collectionTitle = (titleEl ? titleEl.textContent : card.textContent || '').trim().slice(0, 200);
-                const cardText = (card.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 600);
-                const key = arkUrl || collectionTitle;
-                if (!key || seen.has(key)) return;
+            // one view-button id per attached source, in DOM order
+            const viewIds = [...document.querySelectorAll('[data-testid^="source-button_view-"]')]
+                .map(el => (el.getAttribute('data-testid') || '').replace('source-button_view-', ''));
+            const titles = document.querySelectorAll('[class*="cssSourceTitle"]');
+            titles.forEach((t, i) => {
+                const card = t.closest('[class*="cssSourceGrid"], [class*="cssSourceSpacing"], li, article') || t.parentElement;
+                const collectionTitle = (t.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+                if (!collectionTitle) return;
+                const yEl = card ? card.querySelector('[class*="cssSourceYear"]') : null;
+                const yearText = yEl ? yEl.textContent.trim() : '';
+                const sourceId = viewIds[i] || null;
+                const link = card ? card.querySelector('a[href*="/ark:/"], a[href*="/search/record/"]') : null;
+                // no fabricated ark: a real record link if present, else the constructed record ark from
+                // the source id (indexed-record convention); the edge stays GATED until S3 archival anyway.
+                const arkUrl = link ? link.href
+                    : (sourceId ? 'https://www.familysearch.org/ark:/61903/1:1:' + sourceId : null);
+                const cardText = ((yearText ? yearText + ' ' : '') + (card ? card.textContent : t.textContent) || '')
+                    .replace(/\s+/g, ' ').trim().slice(0, 600);
+                const key = sourceId || collectionTitle;
+                if (seen.has(key)) return;
                 seen.add(key);
                 out.push({ collectionTitle, arkUrl, cardText });
             });
