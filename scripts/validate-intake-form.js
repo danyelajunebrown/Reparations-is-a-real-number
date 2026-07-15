@@ -141,6 +141,15 @@ function validateFsId(id, fieldLabel) {
     return { value: null, errors };
   }
 
+  // Placeholder / example IDs slip past the no-vowel regex (e.g. "XXXX-XXX" is all consonants). Reject the
+  // literal form example, all-same-char, and obvious fillers before format validation. (QA finding, 2026-07.)
+  const PLACEHOLDER_FS = /^(X{4}-X{3,4}|0{4}-0{3,4}|[A-Z0-9]{4}-XXX+|XXXX-[A-Z0-9]{3,4})$/;
+  const allSameChar = /^(.)\1{3}-\1{2,4}$/.test(trimmed);
+  if (PLACEHOLDER_FS.test(trimmed) || allSameChar) {
+    errors.push(`${fieldLabel}: "${trimmed}" is a placeholder/example ID, not a real FamilySearch ID — enter the ID from your profile page.`);
+    return { value: null, errors };
+  }
+
   if (!FS_ID_LOOSE_REGEX.test(trimmed)) {
     errors.push(`${fieldLabel}: "${trimmed}" is not a valid FamilySearch ID format (expected XXXX-XXX)`);
     return { value: trimmed, errors };
@@ -170,10 +179,13 @@ function validateName(name, fieldLabel, minLength = 3) {
     return { value: trimmed, errors };
   }
 
-  // Check for placeholder/garbage names
-  const garbage = /^(unknown|n\/a|none|test|xxx|tbd|\?+|\.+)$/i;
-  if (garbage.test(trimmed)) {
-    errors.push(`${fieldLabel}: "${trimmed}" appears to be a placeholder, not a real name`);
+  // Placeholder/garbage names. Exact fillers OR phrase-level test markers anywhere in the name
+  // ("Adrian's Grandfather Test Run", "City, State", "example", "lorem", "asdf") — the exact-match-only
+  // regex let full test submissions through. (QA finding, 2026-07.)
+  const garbageExact = /^(unknown|n\/a|none|test|xxx+|tbd|\?+|\.+|city,?\s*state)$/i;
+  const garbagePhrase = /\b(test run|test submission|placeholder|example|lorem ipsum|asdf|qwerty|xxxx)\b/i;
+  if (garbageExact.test(trimmed) || garbagePhrase.test(trimmed)) {
+    errors.push(`${fieldLabel}: "${trimmed}" appears to be a placeholder/test value, not a real name`);
     return { value: trimmed, errors };
   }
 
@@ -299,6 +311,7 @@ function validateConsent(value, fieldLabel) {
 
 function crossValidate(participant) {
   const warnings = [];
+  const errors = [];
 
   // Check generational plausibility
   const selfDob = participant.date_of_birth ? new Date(participant.date_of_birth).getFullYear() : null;
@@ -306,10 +319,13 @@ function crossValidate(participant) {
   const checkGenerationGap = (parentYear, parentLabel, childYear, childLabel) => {
     if (parentYear && childYear) {
       const gap = childYear - parentYear;
-      if (gap < 12) {
+      // IMPOSSIBLE: a parent cannot be born the same year as or after their child. This blocks the climb
+      // (a test/placeholder submission with grandparents "born" after the participant fails here). (QA 2026-07.)
+      if (gap <= 0) {
+        errors.push(`IMPOSSIBLE GENERATION ORDER: ${parentLabel} (b.${parentYear}) is not older than ${childLabel} (b.${childYear}) — a parent must precede their child. Check the birth years / FS IDs.`);
+      } else if (gap < 12) {
         warnings.push(`IMPLAUSIBLE: ${parentLabel} (b.${parentYear}) is only ${gap} years older than ${childLabel} (b.${childYear})`);
-      }
-      if (gap > 60) {
+      } else if (gap > 60) {
         warnings.push(`UNLIKELY: ${parentLabel} (b.${parentYear}) is ${gap} years older than ${childLabel} (b.${childYear}) — verify`);
       }
     }
@@ -346,7 +362,7 @@ function crossValidate(participant) {
     seen.add(id);
   }
 
-  return warnings;
+  return { warnings, errors };
 }
 
 // ── FamilySearch Verification ───────────────────────────────────────────────
@@ -815,9 +831,10 @@ function validateParticipant(data) {
 
   participant.additional_info = data.additional_info || null;
 
-  // ── Cross-validation ──
-  const crossWarnings = crossValidate(participant);
-  warnings.push(...crossWarnings);
+  // ── Cross-validation ── (impossible generation order is a BLOCKING error, not a warning)
+  const cross = crossValidate(participant);
+  warnings.push(...cross.warnings);
+  errors.push(...cross.errors);
 
   return { participant, errors, warnings };
 }
