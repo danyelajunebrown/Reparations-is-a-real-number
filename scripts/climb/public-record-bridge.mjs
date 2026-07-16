@@ -24,7 +24,7 @@ const GRANDPARENTS = [
     knownSpouse: ['Jerry Ralph Smith', 'Jerry R Smith'], knownChildren: ['Laura Smith Hill', 'Laura Hill'] },
   { label: 'GP2 Norma Jean Branch Hill', given: 'Norma', surname: 'Branch', birth: 1941, place: 'Mississippi',
     knownSpouse: ['Lloyd Rhea Hill', 'Lloyd Hill'], knownChildren: ['Thomas Alton Hill', 'Thomas Hill'], altSurname: 'Hill' },
-  { label: 'GP1 Lloyd Rhea Hill', given: 'Lloyd', surname: 'Hill', birth: 1940, place: 'United States',
+  { label: 'GP1 Lloyd Rhea Hill', given: 'Lloyd', surname: 'Hill', birth: 1940, place: 'Mississippi',
     knownSpouse: ['Norma Jean Branch Hill', 'Norma Branch', 'Norma Hill'], knownChildren: ['Thomas Alton Hill', 'Thomas Hill'] },
 ];
 
@@ -54,6 +54,9 @@ async function scrapeResults(page) {
         collection: (txt.match(/"([^"]+)"/) || [])[1] || null,
         parents: grab('Parents'), spouses: grab('Spouses'), children: grab('Children'),
         year: (txt.match(/\b(18|19|20)\d{2}\b/) || [])[0] || null,
+        // BIRTH year specifically (records lead with the EVENT year, e.g. "Enrollment 1955 … Birth 1940" —
+        // matching the event year against the person's birth year wrongly dropped childhood records).
+        birthYear: (txt.match(/Birth\s+((?:18|19|20)\d{2})/i) || [])[1] || null,
       });
     });
     return out;
@@ -73,26 +76,43 @@ function scoreMatch(gp, r) {
 async function main() {
   const b = await pptr.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null });
   const page = await b.newPage();
+  let searchCount = 0;
   for (const gp of GRANDPARENTS) {
     console.log(`\n=== ${gp.label} (b.${gp.birth}, ${gp.place}) — public-record bridge ===`);
     const surnames = [gp.surname, gp.altSurname].filter(Boolean);
     let allResults = [];
     for (const sn of surnames) {
+      // POLITENESS (mandatory — a tight test loop tripped FamilySearch's CAPTCHA and locked the session).
+      // A generous, human-paced gap between EVERY search. Long enough that FS never flags it as botlike.
+      if (searchCount > 0) { const wait = 20000 + (searchCount % 3) * 7000; console.log(`   … politeness wait ${wait / 1000}s`); await sleep(wait); }
+      searchCount++;
       await page.goto(searchUrl(gp, sn), { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-      await sleep(6000);
+      await sleep(7000); // SPA render
       const rows = await scrapeResults(page);
+      // detect a CAPTCHA/logout and STOP rather than hammer (which would wipe a human's in-progress captcha)
+      const blocked = await page.evaluate(() => /login|ident|signin/i.test(location.href) || /verify you are human|captcha|unusual traffic/i.test(document.body.innerText)).catch(() => false);
+      if (blocked) { console.log('   ⚠ FamilySearch is asking for sign-in/CAPTCHA — STOPPING (solve it in the window, then re-run).'); process.exitCode = 2; await page.close().catch(() => {}); await b.disconnect(); return; }
       allResults.push(...rows);
     }
     // rank by disambiguation score
     const scored = allResults.map((r) => ({ ...r, ...scoreMatch(gp, r) })).sort((a, b2) => b2.score - a.score);
-    const strong = scored.filter((r) => r.score >= 3);
-    console.log(`  ${allResults.length} public records; ${strong.length} disambiguated to THIS person (score≥3)`);
-    const parents = new Set();
+    const strong = scored.filter((r) => r.score >= 3);              // spouse/child corroboration → CONFIRMED
+    // CANDIDATE tier: a record that NAMES PARENTS and matches birth year (±2), even without spouse/child
+    // corroboration (childhood records — educable-children, census — never list a spouse). These are seeds
+    // for HUMAN REVIEW, not auto-asserted; the evidence standard forbids silently trusting a bare name-match.
+    const candidates = scored.filter((r) => r.score < 3 && r.parents && (r.birthYear || r.year) && Math.abs(+(r.birthYear || r.year) - gp.birth) <= 2);
+    console.log(`  ${allResults.length} public records; ${strong.length} CONFIRMED (spouse/child), ${candidates.length} CANDIDATE (parents+birthyr, review)`);
+    const confirmed = new Set(), review = new Set();
     for (const r of strong.slice(0, 6)) {
-      console.log(`   [${r.score}] ${(r.collection || '?').slice(0, 45)} ${r.year || ''} — ${r.why.join(',')}`);
-      if (r.parents) { console.log(`       Parents: ${r.parents}`); r.parents.split(/,|;|and /).map((x) => x.trim()).filter((x) => x.length > 3).forEach((x) => parents.add(x)); }
+      console.log(`   ✓CONFIRMED [${r.score}] ${(r.collection || '?').slice(0, 42)} ${r.year || ''} — ${r.why.join(',')}`);
+      if (r.parents) { console.log(`       Parents: ${r.parents}`); r.parents.split(/,|;|and /).map((x) => x.trim()).filter((x) => x.length > 3).forEach((x) => confirmed.add(x)); }
     }
-    console.log(`  → GREAT-GRANDPARENT SEED(S) from public records: ${parents.size ? [...parents].join(' | ') : 'NONE FOUND (widen search)'}`);
+    for (const r of candidates.slice(0, 5)) {
+      console.log(`   ?CANDIDATE [${r.score}] ${(r.collection || '?').slice(0, 42)} ${r.year || ''} — Parents: ${r.parents}`);
+      r.parents.split(/,|;|and /).map((x) => x.trim()).filter((x) => x.length > 3).forEach((x) => review.add(x));
+    }
+    console.log(`  → CONFIRMED great-grandparent seed(s): ${confirmed.size ? [...confirmed].join(' | ') : 'none'}`);
+    if (review.size) console.log(`  → CANDIDATE seed(s) [need human confirm]: ${[...review].join(' | ')}`);
   }
   await page.close().catch(() => {});
   await b.disconnect();
