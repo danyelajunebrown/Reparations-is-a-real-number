@@ -5,6 +5,71 @@ pipeline fixed + 5 flagship enslavers surfaced; Liberty NOT being rescraped)_
 
 ---
 
+## LIVING-PERSON BRIDGE + kinship-harvest fixes + intake/oral-history + climb ON THE MACBOOK (2026-07-14→16)
+Long session, branch frontend/light-redesign. **INFRA REALITY: the Mac Mini is OFFLINE for ~2 weeks**
+(Tailscale "last seen 1d ago"; Pi offline 49d). So ALL FamilySearch/climb work now runs on the MACBOOK:
+Chrome for Testing (puppeteer's bundled full Chrome, `~/.cache/puppeteer/chrome/mac_arm-143…`) launched via
+`open -na … --remote-debugging-port=9222 --user-data-dir=/tmp/piper-climb-chrome` (NEVER puppeteer.launch —
+same rule), user logs into FS manually in that window, scripts `puppeteer.connect()` :9222. Isolated profile +
+shared Neon only → Mini pipeline untouched, resumes clean when it returns. This is a TEMPORARY exception to
+"MacBook = no scraping".
+
+**KINSHIP HARVEST (step 5) — WAS SILENTLY NO-OP'ING; FIXED (2 bugs).** `standard-genealogical-edge-evidence`
+was "END-TO-END BUILT" but the harvest never actually wrote document-backed edges. Live diagnosis on the
+MacBook: (1) `harvestPersonSources` used UNVERIFIED Sources-tab selectors (`[data-testid*=source]`/`a[href*=
+/ark:/61903/]`) → matched 0 rows → silent. Fixed against live DOM: sources are `.cssSourceTitle` in
+`.cssSourceGrid` rows + `source-button_view-<id>` testids (commit 128ca08ff). (2) waited 1500ms → fired BEFORE
+the SPA rendered the cards → 0 captured; fixed to `waitForSelector('.cssSourceTitle')`. Now fires + classifies
+(1950 census → tier-1 child_of). **BUT edges still didn't persist:** `writeKinshipEdge.resolveFs` is
+CANONICAL-ONLY (line 50) and the climb produces LEADS → every edge returns `unresolved`. `canonical_family_edges`
+IS lead-aware (M103 cols a_subject_table/a_subject_id…, person_a_id/b NULLABLE, trigger trg_cfe_sync_subject).
+Fix = `scripts/climb/bridge-persist.mjs` writes a GATED (verified=false) lead-aware child_of edge via the M103
+cols directly — honoring the climb-gate (leads, not canonicals). PROVEN: edge #8113 Kathleen Piper→Jack Piper Sr,
+tier-1, doc-backed, gated. **REMAINING: unify — extend writeKinshipEdge to be lead-aware so the CLIMB (not just
+the bridge) persists edges.**
+
+**LIVING-PERSON WORKAROUND (user directive) — PROVEN + refined.** FS hides living people's TREE profiles
+("[Unknown Name]") but INDEXED RECORDS are public. `scripts/climb/public-record-bridge.mjs`: given the
+consented precise intake data (name/birth/place + known spouse/children), search public FS records,
+disambiguate via known relatives, extract PARENTS = deceased/public great-grandparent seeds; the record doubles
+as the kinship doc. **CONFIRMED tier** (spouse/child corroboration) vs **CANDIDATE tier** (parents+birth-year,
+human review — never auto-asserted). Birth year parsed from "Birth YYYY" specifically (event-year matching
+dropped childhood records). **Piper results:** Kathleen Piper→**Jack Piper Sr** CONFIRMED; Norma Branch→**Alton
+E + Sadie J Branch** strong candidate (Branch maiden name + "Alton"→grandson Thomas ALTON Hill); Lloyd Hill
+noisy; Jerry Smith deceased→father **Clemmie Adcock Smith 1910-1993** on file. **⚠ FS ANTI-BOT DISCIPLINE
+(learned hard):** a tight test-loop of searches tripped FS's CAPTCHA AND my rapid re-navigations WIPED the
+operator's in-progress captcha/login. MANDATORY: 20-34s between searches + STOP-on-CAPTCHA/logout (don't
+hammer) + never open/close tabs fast while the operator is logging in. Commit 8351b319b.
+**DELIVERABLE:** `worksheets/piper-lineage-verification.html` (gitignored, local — PII) — plain-language report
+for Piper to confirm/correct the great-grandparents (participant sign-off, not operator).
+
+**INTAKE HARDENING (a) — commit ac6021f2b.** Adrian's TEST submission (placeholder QA) exposed: `XXXX-XXX`
+FS IDs passed the no-vowel regex (X is a consonant) → explicit placeholder rejection; test-value names
+("…Test Run","City, State") slipped exact-match → phrase detection; impossible generations (GP born after
+participant) were a non-blocking WARNING → `crossValidate` now returns {warnings,errors}, gap<=0 BLOCKS
+(climbs queue only when errors.length===0).
+
+**ORAL-HISTORY → DIRECTED LEADS (b) — M122 `intake_research_leads` + `parse-intake-oral-history.mjs`, commit
+6ec187a76.** The intake free-text field was discarded; now parsed into slaveholder-family / enslaved-ancestor /
+adoption / name-change claims. Slaveholder-family = a DIRECTED HYPOTHESIS cross-referenced against enslavers we
+already hold. **Adrian's McCain lore** ("paternal grandmother's ancestors owned by John McCain's ancestors") →
+**43 McCain enslavers we hold, dominant geography Union County NC** (data corrected my Carroll-County-MS
+assumption) → targeted climb+match on the paternal-grandmother line. Confidence 0.5 (hypothesis); verify→match
+or negative finding. 3 leads persisted to Adrian (P4RF-PFQ). Note: Adrian's intake also flagged adoption
+(maternal cousins) + name change (=Abigail Brown).
+
+**ALSO:** Piper registered (participant 7ce6dd12); NY-probate self-heal watchdog built (`probate-session-
+watchdog.js`, PM2 probate-session-heal-ny) BUT the Mini's now offline so probate is paused until it returns;
+GitHub caught up — all work pushed to branch `frontend/light-redesign` (origin/main is 229 AHEAD via a parallel
+session — do NOT force main; open a PR if releasing). Earlier this session: the roster file-first reckoning
+([[standard-file-first-document-archival]]) + rollback.
+**NEXT:** Piper — await her confirmation of the report → persist confirmed great-grandparent edges → climb up
+from Jack Piper Sr / the Branches / Clemmie Smith toward enslaver matches. Unify writeKinshipEdge lead-awareness.
+Adrian — run the McCain-directed paternal climb. Ingest H_18xx IPUMS census as BENCHMARKS after the VA-slave-
+count corruption fix (NOT the spine — no names). Mini returns ~end July → resume probate + heavy scraping.
+
+---
+
 ## SESSION WRAP — frontend overhaul COMPLETE + gate-lift + guardrails (2026-07-08→11) → [[plan-frontend-light-redesign]] · [[plan-gate-lift-campaign]] · [[plan-rag-prod-wiring]]
 The multi-day frontend-overhaul brief (Part 1) is substantially DONE + DEPLOYED (gh-pages-react) + runtime-
 verified, plus two adjacent wins the work surfaced. Detail in the linked plan docs + the dated entries below.
