@@ -8,6 +8,33 @@ _Related: [[wealth-tracing-framework]] · [[finding-ny-probate-audit-jul01]] · 
 
 ---
 
+## 0. NEW DUTCHESS SOURCES — the O'Callaghan slave censuses (user-supplied, 2026-07-17→18)
+
+The user supplied two Dutchess census sources, **both SECONDARY** (published 19th-c transcriptions
+of colonial manuscripts; the user explicitly corrected "though not primary"). Tier them like the
+Hynson/Heritage compilations: confidence **0.85**, `max_evidence_tier='secondary'` until the NY State
+Archives manuscript is located. Both are O'Callaghan, *Documentary History of the State of New-York*.
+
+- **1714 Census of Dutchess County** (vol 1 p.240; USGenWeb/Andrle transcription). Household census —
+  **COUNTS ONLY, no enslaved names.** 14 slaveholding households, 30 enslaved. → enslaver leads +
+  documented count; **NO fabricated "unnamed enslaved" rows** (audit rule). Includes **Peck De Witt**
+  and **Roger Brett** — both in the Rombout/Schuyler patent lineage (the Massena chain families).
+- **1755 Census of Slaves** (the "Census of Slaves" pp.851-855). **NAMES the enslaved.** Dutchess =
+  3 districts (Col. Martin Hoffman's; Rynebeck Pct/Knickerbacker; Rhinebeck Pct/Neher), ~37 enslavers,
+  **~85 named enslaved**. User chose to ALSO ingest the Westchester half (Philipsburgh Manor,
+  Morrisania/Lewis Morris, Borough of Westchester, Pelham, Mamaroneck/Scarsdale, Rye, North Castle) —
+  count-only where the source is count-only. Same Dutchess families as the wills + Massena: **Ten
+  Broeck, Van Benthuysen, Hoffman, Kip/Keip, Rutsen** — 1755 is a generation BEFORE the wills.
+
+**Artifacts (this session):** faithful transcriptions `data/census/dutchess-1714.json`,
+`census-of-slaves-1755.json`, `dutchess-1714-source.txt`; ingest `scripts/ingest-ny-slave-census.mjs`
+(file-first: S3+Wayback+source_artifacts → per-district `person_documents` (ocr_text, RAG-embeddable) →
+`PersonService.findOrCreateLead` DEDUP → `enslaved_owner_relationships`; `--apply`, dry-run default;
+per-stratum sum validation per standard rule 2). **DEDUP IS THE POINT:** the DB already holds junk
+enslaver rows for these families (`'"Hoffman"'` with literal quotes, `'Hoffman, ??'`, `'Rutsen,
+Andries'` duplicated) — routing through `findOrCreateLead` repairs them (adds county+evidence) instead
+of piling on more. **EMBED (RULE 0.5) is a queued follow-on** — needs nomic on the Mini ollama (offline).
+
 ## 1. HEADLINE — the system is ALREADY monetizing Native land into a reparations obligation
 
 This is not a hypothetical risk to guard against. It is live, in the ledger, today.
