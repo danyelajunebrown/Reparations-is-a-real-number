@@ -180,6 +180,39 @@ Others: #597606 Johannes Van Kleck "of the County of Dutchess" 1746 · #582869 J
 fails on colonial-book layout. Scraping more rolls adds documents to a pipeline that cannot parse
 the ones it already holds. **Extraction-first is the decided path (user, 2026-07-17).**
 
+### EXTRACTION PROVEN — `scripts/analyze-dutchess-colonial-wills.mjs` (dry-run, committed 71995d4fc)
+
+Built + ran a colonial-book parser over all 1,225 docs, **read-only, zero writes** (prove-yield-
+before-promoting). The shared `probate-entity-extractor.js` misses colonial wills because its
+`I <NAME> of (county|state|town)` anchor excludes the colonial "I <NAME> of <PRECINCT> in the
+County of Dutchess" shape (word after "of" is the precinct, not "county"). Added anchors:
+`will_opening` (75) · `probate_proof` "will of the said <NAME>" (197) · `proof_sign` (24) ·
+`inventory_of` "Estate and Debts of <NAME> Dec'd late of" (16). Reuses shared `isValidPersonName`.
+
+**YIELD (1,225 docs):**
+- **testator recovered: 312 (25.5%)** — 304 new/corrected over the carry-forward parser
+- **Dutchess residence confirmed: 1,225 (100%)** — precinct/town on 255
+- **NAMED enslaved: 12 docs → 18 people** — the enslaved-SIDE seeds that previously did not exist
+  (was 0). Incl. the Kniffen reference (Israel Kniffen of Fishkill → **Jack**), **Cornelius
+  Sebring → York/Nanny/Jean/Rose**, William Butcher of Hynebeck → Dolly/Tom/Jack, Van Bunschoten
+  → Haned/Ben, Isaac Teller → Dine.
+- residuary boilerplate ("Silver Plate Slaves Horses Cattle") correctly separated: 2, NOT minted.
+
+**Bug the dry-run surfaced + fixed:** the named-enslaved regex was case-sensitive → "Negro Man
+Jack" captured "Man", rejected it, never reached "Jack". `/i` restores it. This is a lesson for
+the shared extractor's `extractEnslaved` too — check it for the same case-sensitivity trap.
+
+Output JSONL `worksheets/dutchess-colonial-yield.jsonl` (gitignored — names enslaved people)
+awaits human review. **These 12 enslavers + 18 enslaved are the both-sides seed for a Dutchess DAA.**
+
+**NOT YET BUILT (the promotion pipeline, in order):** (a) wire `isNameSuspect` into the mint (§8);
+(b) fix `link-ny-probate-testators.mjs:54` to write `primary_county='Dutchess'` from the residence
+parse; (c) write `person_documents.name_as_appears` + `enslaved_count`/`enslaved_demographics`
+from the parse; (d) dedup (Biscoe) + promote image-backed canonicals; (e) EMBED (RULE 0.5/0.6);
+(f) capture the £-valuations (Kniffen £301) as the wealth-over-time signal — via `estate_valuations`,
+NOT `land_transfer_events`, to avoid the land-claim path entirely (§1, §3). Refinement: "Marry"
+(Kniffen's 2nd enslaved) and post-descriptor list-names are missed; probate_proof is the workhorse.
+
 ## 7. The NY probate scrape — found, stopped, resumable, but NOT the bottleneck
 
 - Collection **1920234** (NY Probate 1629-1971), run by `scripts/scrapers/georgia-probate-scraper.js`
