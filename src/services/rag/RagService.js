@@ -49,17 +49,35 @@ class RagService {
   /** Retrieve the top-k document chunks semantically nearest the question. */
   async retrieve(question, k = 6) {
     const q = '[' + (await embedQuery(question)).join(',') + ']';
-    const { rows } = await this.db.query(
-      `SELECT e.subject_id AS document_id,
-              1 - (e.embedding <=> $1::vector) AS similarity,
-              left(pd.ocr_text, 1200) AS snippet,
-              pd.document_type, pd.source_url, pd.collection_name
-         FROM embeddings e
-         JOIN person_documents pd ON pd.id = e.subject_id::int
-        WHERE e.content_kind = 'doc_ocr' AND e.model = $2
-        ORDER BY e.embedding <=> $1::vector
-        LIMIT $3`, [q, EMBED_MODEL, k]);
-    return rows;
+    // hnsw.ef_search MUST be set before the vector search. On Neon the GUC is unset by default
+    // (SHOW hnsw.ef_search → undefined), and an unset ef_search makes the HNSW index return ZERO
+    // rows — so every RAG query silently answered "no documents indexed" (2026-07-18 diagnosis).
+    // We also post-filter by content_kind/model, so ef_search must be generous enough that enough
+    // doc_ocr candidates survive the filter (person_profile rows are ~62% of the index and crowd
+    // the ANN candidate set). Set it on a dedicated connection inside a txn so SET LOCAL auto-resets.
+    const EF = parseInt(process.env.HNSW_EF_SEARCH || '400', 10);
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL hnsw.ef_search = ${EF}`);
+      const { rows } = await client.query(
+        `SELECT e.subject_id AS document_id,
+                1 - (e.embedding <=> $1::vector) AS similarity,
+                left(pd.ocr_text, 1200) AS snippet,
+                pd.document_type, pd.source_url, pd.collection_name
+           FROM embeddings e
+           JOIN person_documents pd ON pd.id = e.subject_id::int
+          WHERE e.content_kind = 'doc_ocr' AND e.model = $2
+          ORDER BY e.embedding <=> $1::vector
+          LIMIT $3`, [q, EMBED_MODEL, k]);
+      await client.query('COMMIT');
+      return rows;
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   /** Grounded answer: retrieve → LLM answers ONLY from retrieved docs → {answer, citations}.
