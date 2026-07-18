@@ -140,22 +140,60 @@ function extractResidence(text) {
  */
 function extractEnslaved(text) {
   const tokenHit = /\b(negro|negroe|slaves?|wench|mulatto|manumit)/i.test(text);
-  // Named: "Negro Man Jack", "Negro Woman named Marry", "my Negro girl Bett", "Negro named Harry".
-  // NOTE the /i flag: without it the descriptor ("Man") is captured and rejected, and the real
-  // name after it is never reached (the bug the first dry-run surfaced — Kniffen's Jack was lost).
+  // NOTE the /i flag throughout: without it the descriptor ("Man") is captured and rejected, and
+  // the real name after it is never reached (the bug the first dry-run surfaced — Kniffen's Jack).
   const named = [];
-  const STOP = /^(man|woman|boy|girl|wench|fellow|lad|slave|slaves|named|called|and|the|his|her|him|men|women|late|old|young|do|ditto)$/i;
-  // (a) descriptor form: "Negro Man Jack" / "Negro Woman Marry" / "Negro Girl Bett"
+  // Words that are NOT enslaved-person names when captured after a descriptor/"Named"/ditto.
+  const STOP = /^(man|woman|boy|girl|wench|fellow|lad|slave|slaves|named|nam|call|called|and|the|his|her|him|men|women|late|old|young|do|do|ditto|dito|viz|item|negro|negroe|mulatto|one|two|three|four|five|six|dupl|blk|red)$/i;
+  const isName = (c) => c && /^[A-Z][a-z]{2,}$/.test(c) && !STOP.test(c);
+
+  // (a) PROSE / will form — each enslaved person carries their own "Negro <desc> [Named] <Name>".
+  //   "Negro Man Jack", "Negro Woman Named Nanny", "my Negro girl Bett", "Negro named Harry".
+  //   Catches multi-bequest wills (Sebring → York/Nanny/Jean/Rose — each has its own descriptor).
   const descRe = /\bnegro(?:e)?\s+(?:man|woman|boy|girl|wench|fellow|lad|men|women)\s+(?:named\s+|called\s+)?([A-Z][a-z]{2,})/gi;
-  // (b) "Negro/slave named|called <Name>"
   const namedFormRe = /\b(?:negro(?:e)?|mulatto|slave)\s+(?:named|called)\s+([A-Z][a-z]{2,})/gi;
+  // Paired form: "two Negro Girls the one Named Rachel and the other Eunice" — the second person
+  // has no descriptor of their own, just "and the other <Name>". Only fire it near a slavery token.
+  const pairRe = /\band\s+the\s+other\s+(?:named\s+|call(?:ed)?\s+)?([A-Z][a-z]{2,})/gi;
   let m;
   for (const re of [descRe, namedFormRe]) {
-    while ((m = re.exec(text)) !== null) {
-      const cand = m[1];
-      if (STOP.test(cand)) continue;
-      if (/^[A-Z][a-z]+$/.test(cand)) named.push(cand);
+    while ((m = re.exec(text)) !== null) if (isName(m[1])) named.push(m[1]);
+  }
+  // pairRe only where a slavery descriptor sits within ~60 chars before the "and the other".
+  while ((m = pairRe.exec(text)) !== null) {
+    if (isName(m[1]) && /negro|slaves?|wench|mulatto/i.test(text.slice(Math.max(0, m.index - 60), m.index))) {
+      named.push(m[1]);
     }
+  }
+
+  // (b) INVENTORY-RUN form — enslaved people are listed together, before the livestock, as a run
+  //   of "Named <Name>" + ditto ("do <Name>"): "Negro Man Jack do --- Marry - 301.0.0 - one Old
+  //   Horse" / "Negro Man named Prince Named Cato do Woman Named Mill ... Named Flora ... Boy
+  //   Named Bas : blk Horse". The prose regex only gets the FIRST (Jack/Prince). Here: when a
+  //   livestock/goods word closely FOLLOWS a "Negro" mention, the span between them is an enslaved
+  //   inventory run — collect every capitalised token in it that isn't a descriptor/ditto/number.
+  //   Bounded to that span so prose wills (no goods word after) never enter this mode, which would
+  //   otherwise sweep up heirs' names (e.g. Sebring's daughter Katherine).
+  const GOODS = /\b(horses?|mares?|cows?|oxen|ox|bulls?|heff?ers?|calf|calves|colts?|coll|sheep|hogs?|swine|steers?|stallions?|feather|beds?|pewter|silver\s+plate|plate|acres?|barn|hay|cart|wag+on|chains?|guns?|kettles?|tables?|chairs?|cupboard|cubbard|bushels?|pounds?\b)/i;
+  const negRe = /\bnegro(?:e)?s?\b/gi;
+  // Within an inventory run, only ANCHORED names count — a name that immediately follows "Named",
+  // a body descriptor, or a ditto ("do"). Collecting every capitalised token instead swept up
+  // heirs, verbs (Give/Bequeath), and OCR noise (Sorrel horses); the anchor is what makes it an
+  // enslaved person and not just a capitalised word inside the span. The three anchors run as
+  // INDEPENDENT /g passes: a single combined alternation lets one anchor consume the "Named" that
+  // should anchor the next name ("do - Named - Flora" ate Flora's anchor), dropping people.
+  const RUN_ANCHORS = [
+    /(?:named|call(?:ed)?)[\s\-.]+([A-Z][a-z]{2,})/gi,               // "Named Flora"
+    /(?:\bman|\bwoman|\bboy|\bgirl|\bwench|\bfellow|\blad)[\s\-.]+([A-Z][a-z]{2,})/gi, // "Man Jack"
+    /\bdo[\s\-.]+([A-Z][a-z]{2,})/gi,                                // ditto "do --- Marry"
+  ];
+  let nm;
+  while ((nm = negRe.exec(text)) !== null) {
+    const window = text.slice(nm.index, nm.index + 170);
+    const g = window.search(GOODS);
+    if (g < 0) continue;                       // no goods word close after → prose, handled in (a)
+    const run = window.slice(0, g);            // the enslaved run, up to the first livestock/goods
+    for (const re of RUN_ANCHORS) { let rm; while ((rm = re.exec(run)) !== null) if (isName(rm[1])) named.push(rm[1]); }
   }
   // Boilerplate residuary: "Slaves Horses Cattle" / "Silver Plate Slaves" — chattel LIST, no name.
   const boilerplate = /(silver\s+plate|horses?)\s+(?:and\s+)?slaves|slaves\s+(?:and\s+)?(?:horses?|cattle|chattels)/i.test(text)
