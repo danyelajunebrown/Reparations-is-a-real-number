@@ -192,15 +192,25 @@ County of Dutchess" shape (word after "of" is the precinct, not "county"). Added
 **YIELD (1,225 docs):**
 - **testator recovered: 312 (25.5%)** — 304 new/corrected over the carry-forward parser
 - **Dutchess residence confirmed: 1,225 (100%)** — precinct/town on 255
-- **NAMED enslaved: 12 docs → 18 people** — the enslaved-SIDE seeds that previously did not exist
-  (was 0). Incl. the Kniffen reference (Israel Kniffen of Fishkill → **Jack**), **Cornelius
-  Sebring → York/Nanny/Jean/Rose**, William Butcher of Hynebeck → Dolly/Tom/Jack, Van Bunschoten
-  → Haned/Ben, Isaac Teller → Dine.
+- **NAMED enslaved: 13 docs → 26 people** (23 distinct), the enslaved-SIDE seeds that previously
+  did not exist (was 0). After the SECOND pass (commit da26f713d): Kniffen → **Jack + Marry**;
+  inventory 582869 → **Prince/Cato/Mill/Flora/Bas**; Cornelius Sebring → York/Nanny/Jean/Rose;
+  John Potter → **Rachel/Eunice**; John Pine → Nanny/Isaac; William Butcher of Hynebeck →
+  Dolly/Tom/Jack; Van Bunschoten → Haned/Ben; Adam Bither → Flora; Ross → Dina; Teller → Dine;
+  plus August, Harry (testator not yet recovered on those inventories).
 - residuary boilerplate ("Silver Plate Slaves Horses Cattle") correctly separated: 2, NOT minted.
+- **ONE known FALSE POSITIVE, flagged not removed:** doc 581079 "Philip" = "Philip Field", a free
+  person in a petition. Left in the review file deliberately — that judgment belongs to a human,
+  and hacking it away would hide the class of error (surnamed → probably free) from review.
 
-**Bug the dry-run surfaced + fixed:** the named-enslaved regex was case-sensitive → "Negro Man
-Jack" captured "Man", rejected it, never reached "Jack". `/i` restores it. This is a lesson for
-the shared extractor's `extractEnslaved` too — check it for the same case-sensitivity trap.
+**Bugs the dry-runs surfaced + fixed:** (1) the named-enslaved regex was case-sensitive → "Negro
+Man Jack" captured "Man", rejected it, never reached "Jack" — `/i` restores it. **This is a lesson
+for the shared `probate-entity-extractor.js` `extractEnslaved` too — check it for the same trap.**
+(2) Multi-person docs only yielded the FIRST person: estate inventories list the enslaved together
+before the livestock, and wills use "the one named X and the other Y". Added a bounded inventory-run
+scan (anchored names between "Negro" and the first livestock/goods word) + a paired-form pass. Key
+regex lesson: run the "Named"/descriptor/ditto anchors as INDEPENDENT /g passes — a single
+alternation lets the "do" ditto consume the "Named" that should anchor the next name (dropped Flora).
 
 Output JSONL `worksheets/dutchess-colonial-yield.jsonl` (gitignored — names enslaved people)
 awaits human review. **These 12 enslavers + 18 enslaved are the both-sides seed for a Dutchess DAA.**
