@@ -34,15 +34,24 @@ const MAX_PAGES = parseInt(opt('--max-pages', '10'), 10);
 const OUT = opt('--out', `worksheets/nesri-${COUNTY.toLowerCase()}.jsonl`);
 const PAGE_DELAY_MS = parseInt(opt('--delay', '4000'), 10);   // respectful cadence
 
-// The 38 NESRI field labels, longest-first so multi-word labels win when splitting concatenated cards.
+// NESRI field labels, longest-first so multi-word labels win when splitting concatenated cards.
+// NOTE: the RESULTS view uses different labels than the search FORM — e.g. "Enslaver Last Name"
+// (not "Owner Last Name"), "Enslaver Code", "Enslaved Person Code" (not "…Unique Code"). Both sets
+// are included so the parser captures result cards correctly (verified live 2026-07-19). The
+// Parent/Family/Sibling ID-code + Spouse fields are searchable but NOT surfaced in results (empirically
+// absent from every Dutchess card) — kept here only so they'd parse IF a detail view ever exposed them.
 const FIELDS = [
+  // results-view (what actually appears in cards)
+  'Enslaver Code', 'Enslaver Last Name', 'Enslaver First Name', 'Enslaver Birth Year', 'Enslaver Death Year',
+  'Enslaved Person Code', 'Enslaved Person Last Name', 'Enslaved Person First Name',
+  'Enslaved Person Birth Year', 'Enslaved Person Death Year',
+  // search-form / shared
   'Enslaved Person Unique Code', 'Enslaved Person Family Code', 'Enslaver Unique Code',
-  'Unique NESRI Record Identifier', 'Record Type', 'Search Based on a Tag', 'Year of Record',
+  'Unique NESRI Record Identifier', 'Record Type', 'Search Based on a Tag', 'Search Tag', 'Year of Record',
   'Owner Last Name', 'Owner First Name', 'Owner Birth Year', 'Owner Death Year', 'County or Borough',
   'Locality', 'Address of Owner or Name of House or Vessel', 'Cemetery', 'Number of Enslaved Persons',
   'Adult Male Enslaved Persons', 'Adult Female Enslaved Persons', 'Minor Male Enslaved Persons',
-  'Minor Female Enslaved Persons', 'Enslaved Person  Last Name', 'Enslaved Person First Name',
-  'Enslaved Person  Birth Year', 'Enslaved Person  Death Year', 'Number of All Persons',
+  'Minor Female Enslaved Persons', 'Number of All Persons',
   'Source Document', 'Website Address', 'Comments', 'Related State or Nation', 'Art Site', 'ShipName',
   'Cohort', 'Advocate Last name', 'Advocate First name', 'Sibling ID Codes', 'Parent ID Codes',
   'Enslaved Person Spouse', 'State',
@@ -80,33 +89,34 @@ async function scrape() {
     ]);
     await sleep(8000);
 
+    // Scrape the current results page into card texts + total-pages, via the whole-results-text split
+    // on each record's leading "State XX Record Type" (Caspio list cards have non-standard classes).
+    const scrapePage = () => page.evaluate(() => {
+      const txt = document.body.innerText || '';
+      const totM = txt.match(/Page\s+.*?of\s+([\d,]+)/i);
+      const cntM = txt.match(/1\s*[-–]\s*\d+\s*of\s*([\d,]+)/i);
+      const region = txt.split(/Records?\s*1\s*[-–]/)[1] || txt;
+      const cards = region.split(/(?=State\s+(?:NY|CT|NJ|MA|ME|NH|RI|VT|PA)\s+Record Type)/)
+        .map(s => s.replace(/\s+/g, ' ').trim()).filter(s => s.length > 30 && /Record Type/.test(s));
+      return { cards, totalPages: totM ? parseInt(totM[1].replace(/,/g, ''), 10) : null, count: cntM ? cntM[1] : null };
+    });
+
+    let totalPages = MAX_PAGES;
     for (let p = 1; p <= MAX_PAGES; p++) {
-      const { cards, count, hasNext } = await page.evaluate(() => {
-        const txt = document.body.innerText || '';
-        const m = txt.match(/1\s*[-–]\s*\d+\s*of\s*([\d,]+)/i);
-        // Each result record is a repeated block; Caspio wraps them — grab the largest repeated
-        // container set. Fallback: split the results region by the record-identifier label.
-        let blocks = [...document.querySelectorAll('[class*=cbResultSet] tr, [class*=cbResultSetListView] > *, [class*=Record]')];
-        let cards = blocks.map(b => (b.innerText || '').trim()).filter(s => /Record Type|County or Borough/.test(s) && s.length > 30);
-        if (!cards.length) {
-          // whole-results-text fallback: split on the leading field of each record
-          const region = txt.split(/Records?\s*1\s*[-–]/)[1] || txt;
-          cards = region.split(/(?=State\s+(?:NY|CT|NJ|MA|ME|NH|RI|VT|PA)\s+Record Type)/).map(s => s.trim()).filter(s => s.length > 30 && /Record Type/.test(s));
-        }
-        // Caspio "Next" lives in .cbResultSetNavigationLinks as an <a> wrapping an <img alt=Next>.
-        const nav = document.querySelector('.cbResultSetNavigationLinks');
-        const nextEl = nav && [...nav.querySelectorAll('a')].find(a => /next/i.test(a.textContent + ' ' + (a.querySelector('img')?.alt || '')));
-        return { cards, count: m ? m[1] : null, hasNext: !!nextEl };
-      });
+      const { cards, totalPages: tp, count } = await scrapePage();
+      if (tp) totalPages = tp;
       for (const c of cards) records.push(parseCard(c));
-      console.log(`  page ${p}: ${cards.length} cards${p === 1 && count ? ` (total ${count})` : ''}`);
-      if (!hasNext || !cards.length) break;
-      const clicked = await page.evaluate(() => {
-        const nav = document.querySelector('.cbResultSetNavigationLinks');
-        const nx = nav && [...nav.querySelectorAll('a')].find(a => /next/i.test(a.textContent + ' ' + (a.querySelector('img')?.alt || '')));
-        if (nx) { nx.click(); return true; } return false;
-      });
-      if (!clicked) break;
+      console.log(`  page ${p}/${Math.min(MAX_PAGES, totalPages)}: ${cards.length} cards${p === 1 && count ? ` (total records ${count}, ${totalPages} pages)` : ''}`);
+      if (p >= Math.min(MAX_PAGES, totalPages)) break;
+      // paginate via the reliable Caspio "jump to page N" field
+      const jf = await page.$('input.cbResultSetJumpToTextField');
+      if (!jf) break;
+      await jf.click({ clickCount: 3 });
+      await jf.type(String(p + 1), { delay: 50 });
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => null),
+        page.keyboard.press('Enter'),
+      ]);
       await sleep(PAGE_DELAY_MS);
     }
   } catch (e) { console.log('SCRAPE ERR:', e.message); }

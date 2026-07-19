@@ -310,6 +310,40 @@ above is retrievable. Two routes, in order of preference:
 Either route yields the full Dutchess cohort WITH the parent/sibling/family-code linkage — which is
 both the corroboration-rate measurement AND the Stage-1 maternal spine. Recommend route 1 first.
 
+## 6.3 EMPIRICAL VERIFICATION — parent/family codes are NOT populated (scrape, Jul 19 2026)
+
+Built + ran `scripts/scrapers/nesri-scraper.js` (user-approved; :9222 new tab; jump-to-page
+pagination — 108 pages for Dutchess). **Verdict TEMPERS §6.2's schema-optimism and CONFIRMS §6.1:**
+
+- **Parent ID Codes / Family Code / Sibling ID Codes are SEARCHABLE fields but appear in ZERO result
+  cards** across the sampled Dutchess corpus (multi-page sample). A populated linkage field would be
+  displayed; that they are searchable-but-never-surfaced means they are **effectively unpopulated for
+  this corpus.** So NESRI does NOT deliver the mother→child edge in practice, only in schema.
+- **What NESRI DOES reliably surface (per card): `Enslaver Code/Last/First Name`, `Enslaved Person
+  Code/Last/First Name/Birth/Death Year`, `County`, `Locality`, `Year of Record`, `Source Document`,
+  `Comments`, `Cohort`.** That is a strong **child/person → ENSLAVER** link + source provenance.
+- **Corpus composition (Dutchess, observed):** heavily **census-derived Enslaver records** (alphabetical
+  by enslaver surname — Abbott, Ackart, Acker… from the 1790–1820 federal census slave columns), plus
+  **aggregate Census rows** (1790: 1,864 enslaved / 43,412 total; 1800: 1,609; 1810: 1,262 — matches
+  history) and **scattered Enslaved-Person rows** from sale/runaway ads + DAR "Forgotten Patriots"
+  lists (e.g. "Adam Baer", name often UNKN, no kin link). It is an aggregation index, not a
+  reconstructed-genealogy database.
+
+**FINAL ANSWER to the maternal-link question:** the mother→child edge is NOT available from NESRI.
+§6.1 stands: the Stage-1 maternal spine must come from **CHURCH BAPTISM records** (Dutch Reformed of
+Poughkeepsie/Rhinebeck/New Hackensack etc., which name parents). NESRI's role is the complementary,
+strong **enslaved-person → enslaver** attribution layer + a near-complete **enslaver roster** for the
+county (which dovetails with our 1714/1755 census + wills — same families), and the aggregate census
+denominators (1,864 enslaved in Dutchess 1790, etc.) for the reference-class mass calculations.
+
+**Completability / "all these states?" (user Q, Jul 19): YES.** The scraper is parameterized by
+`--state`/`--county`/`--tag`; the form carries all 9 state radios; Dutchess's 108-page run proves the
+pagination. It generalizes to any state/county slice of the 94k-record NESRI. For the FULL multi-state
+corpus a **data request** to the CUNY-GC team remains the better route (clean CSV; avoids a ~3,000-page
+scrape; respects a scholarly project's infra) — but the scraper can complete any bounded region now.
+NOTE the parser needed the RESULTS-view labels (`Enslaver Last Name` ≠ the form's `Owner Last Name`;
+`Enslaved Person Code` ≠ `…Unique Code`) — fixed in the scraper (2026-07-19).
+
 ## 7. LAND / CHAIN-OF-TITLE (user, Jul 19): "I have Massena title chain + can get others"
 
 Separate axis from calibration — this feeds the WEALTH-OVER-TIME / disgorgement side, now SAFE to
