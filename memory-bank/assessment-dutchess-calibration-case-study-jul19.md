@@ -227,6 +227,51 @@ _Sources: New York Slavery Records Index (nyslavery.commons.gc.cuny.edu/slavery-
 NYS Archives 1799 Act (nysarchivestrust.org). 2,406 Dutchess / 38k NY / 94k NE-9-state figures per the
 project's own summaries._
 
+## 6.1 MOTHER-NAME FILL RATE — VERIFIED (web research, Jul 19 2026)
+
+**Verdict: the civil 1799 birth registrations are NOT a reliable maternal-link source. Use CHURCH
+BAPTISM records for the maternal spine.** Evidence:
+
+1. **Statute (definitive):** the 1799 Act required each certificate to contain only *"the name and
+   addition of such master or mistress, and the name, age, and sex of every child so born."* The
+   enslaved MOTHER's name is **not a required field.** (NYS Archives; archives.nyc.)
+2. **Empirical characterization by the archivists who indexed them:** mother name appears *"sometimes,"*
+   *"optional and sporadic,"* *"inconsistent."* Surviving registries confirm it: the Flatlands/Flatbush
+   books have columns for OWNER + child name/sex/date + abandonment — **no mother column at all.**
+3. **The NESRI INDEX does not carry a mother→child link.** It indexes by owner + enslaved-person +
+   county + year + type; for actual document text it points to FromThePage transcriptions. So even
+   where a clerk noted the mother, querying NESRI yields **child→owner, not child→mother.**
+4. **What the registrations DO give reliably: child→ENSLAVER** (statutorily required). This is
+   genuinely valuable — it firmly attaches each registered child to a specific Dutchess enslaver (the
+   exact 1714/1755-census families), strengthening the enslaver-attribution side of any DAA.
+
+**The correct maternal source — CHURCH BAPTISM records (CONFIRMED for Dutchess):** Dutch Reformed
+parish registers routinely recorded, per baptism, *the names of the PARENTS and child, the child's
+birth date, and witnesses* — and baptized enslaved children. Confirmed Dutchess registers: First
+Reformed of Poughkeepsie (1765+), Reformed Dutch of Rhinebeck Flats (baptisms from Jul 1799), Reformed
+of New Hackensack (1757–1906, ~2,500 baptisms with parents named), plus Fishkill/Fishkill-Hook,
+Lutheran, and Anglican registers; also Quaker (Nine Partners/Oswego) MM manumissions 1773–1782. These
+are at NYS Archives + FS microfilm + Ancestry/Evans-published transcriptions.
+
+**DESIGN CORRECTION for Stage 1 (supersedes the §6 "maternal spine from REG" assumption):** the
+maternal genealogical link (child→mother, the parent edge `f` calibrates) must come from **church
+baptism records**, cross-referenced to the civil registrations and the 1755 census by **owner + town +
+date**. The two sources are complementary and *mutually corroborating*: REG gives owner-certain
+child records; baptisms give parent-named child records; a match on (owner, child, ~date) across both
+is itself a strong documentary verdict for `linkage_verdicts` — arguably the best ground truth in the
+whole design (two independent records agreeing on a child + its owner + its mother).
+
+**NOT YET DONE — the exact % needs image sampling:** a precise civil-registration mother-fill
+percentage requires sampling ~50 actual Dutchess REG document images (FS microfilm / FromThePage /
+NYS Archives) — the NESRI index can't answer it (point 3). Deferred (browser extension not connected;
+the :9222 Chrome is the puppeteer/FS session, not to be risked). But the DESIGN answer does not depend
+on that number: the maternal spine moves to baptisms regardless, and the REG fill % only affects how
+often REG *independently* corroborates the mother (a bonus, not the spine).
+
+_Additional sources: NYGBS (First Reformed Poughkeepsie; New Hackensack register); genealogical.com
+(New Hackensack RDC records); ldsgenealogy.com Dutchess church records; Evans, Records of the Reformed
+Dutch Church (archive.org); wikitree DRC baptism space._
+
 ## 7. LAND / CHAIN-OF-TITLE (user, Jul 19): "I have Massena title chain + can get others"
 
 Separate axis from calibration — this feeds the WEALTH-OVER-TIME / disgorgement side, now SAFE to
