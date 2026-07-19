@@ -35,6 +35,32 @@ enslaver rows for these families (`'"Hoffman"'` with literal quotes, `'Hoffman, 
 Andries'` duplicated) — routing through `findOrCreateLead` repairs them (adds county+evidence) instead
 of piling on more. **EMBED (RULE 0.5) is a queued follow-on** — needs nomic on the Mini ollama (offline).
 
+## 0.5 RAG RETRIEVAL WAS SILENTLY BROKEN PLATFORM-WIDE — fixed (2026-07-18)
+
+Surfaced while embedding the census docs (user asked "can we run RAG here?"). `RagService.retrieve`
+returned **0 rows for EVERY query** ("No documents are indexed yet") despite 219k embeddings —
+a total, silent RAG outage, NOT the "degraded" the memory bank attributed to `OLLAMA_URL`.
+
+**Two stacked causes, both fixed:**
+1. **`hnsw.ef_search` was unset.** On Neon `SHOW hnsw.ef_search → undefined`, and an unset ef_search
+   makes the HNSW index return ZERO rows. `RagService.retrieve` never set it. Fix (commit ad8feb617):
+   set `hnsw.ef_search` (default 400) on a dedicated pooled connection in a txn before the vector query.
+2. **Full HNSW index + post-filter recall loss.** `idx_embeddings_hnsw` covered ALL content_kinds;
+   the planner preferred it for the `ORDER BY <=>`, its ANN candidates were ~62% `person_profile`, and
+   the `content_kind='doc_ocr'` filter removed all of them ("Rows Removed by Filter: 2111 → 0"). Fix
+   (migration 124, commit fc304f274): add a PARTIAL hnsw index `WHERE content_kind='doc_ocr'` and DROP
+   the full index (SAFE — person_profile has no vector reader per orphan-audit finding #2; REVERSIBLE).
+
+**Verified** via this MacBook's local nomic: every test query now returns full top-6 across the whole
+83k `doc_ocr` corpus (was 0). "Lewis Morris Morrisania enslaved" 0→6, Morrisania doc at 0.70.
+
+**EMBED + RAG run LOCALLY on the MacBook now** — `nomic-embed-text` is on this machine's ollama
+(:11434, 768d, the corpus model). `EMBED_SOURCE=ollama` runs the embed backlog (23k+ unembedded docs,
+100% of canonicals) HERE — the "Mini offline" excuse for the RAG/embed debt is GONE. Caveat: the LLM
+*answer* layer (`callLLM`) needs an API key I did not verify; RETRIEVAL (the broken part) is fixed.
+
+---
+
 ## 1. HEADLINE — the system is ALREADY monetizing Native land into a reparations obligation
 
 This is not a hypothetical risk to guard against. It is live, in the ledger, today.
