@@ -185,7 +185,57 @@ certified multicalibration (below the 34k floor and the 2.5% stratum mass floor)
 
 ## Open items to confirm before building (all flagged, none done)
 1. Is `Calculator.js` live on the DAA path or legacy? (params targeting matters).
-2. Do NY 1799 birth-registration books survive for the target town + are they digitized/reachable?
-   (This is the load-bearing assumption; if the forward records aren't there, Dutchess is not viable
-   and we pick the next-best bounded population.)
+2. ~~Do NY 1799 birth-registration books survive + are they reachable?~~ **ANSWERED — YES (Jul 19).**
+   See §6.
 3. `linkage_verdicts` schema + a forward (enslaved→descendant) linkage runner: both NET-NEW.
+
+## 6. LOAD-BEARING SOURCING QUESTION — ANSWERED (web research, Jul 19 2026)
+
+**The 1799-abolition forward records survive AND are already INDEXED.** The **New York / Northeast
+Slavery Records Index** (NYSRI / NESRI, CUNY Graduate Center; `nyslavery.commons.gc.cuny.edu`,
+`nesri.commons.gc.cuny.edu`, `nesri.us`) holds **2,406 records for Dutchess County** — within a
+38,000-record NY set (94k across 9 NE states). Record types include the **1799-Act birth registrations
+(tagged "REG")**, manumissions, census, cemetery, legal, newspaper. This retires the make-or-break
+unknown in §2: the county's forward-linkage substrate is not just surviving, it is compiled.
+
+**Access:** a **Caspio online search datapage** (searchable by owner last name, county/borough, type,
+year). **No confirmed bulk CSV / API** — ingestion means either (a) request the dataset from the
+project, or (b) scrape the Caspio datapage (HTML; the FS-scraper Chrome path handles this — MacBook
+now, or the Mini on return). Fields per the project: Type (Slave Owners | Enslaved Persons | Census |
+Ship), RecYear, CountyBoro, owner name, source. Definitions at `.../database-fields/` (site 403s bots).
+
+**⚠ THE ONE HONEST NUANCE (verify against real REG records before relying on it):** the 1799 Act
+legally required each registration to name the **child** (name/age/sex) and the **owner** — the
+**mother's name was only "sometimes" recorded.** So a REG record reliably gives a **child→enslaver**
+link, but the **child→MOTHER** maternal-genealogical link (the parent edge the calibration `f`
+actually needs) is NOT guaranteed in every record. Consequence for the case study: the birth
+registrations strengthen the ENSLAVER-attribution side robustly, but the maternal-lineage spine may be
+partial and must be corroborated (the mother is often inferable — same owner, same household, adjacent
+registrations — but that inference is itself a link with its own p, not ground truth). Confirm the
+mother-name fill rate on actual Dutchess REG records before committing Stage 1 to the maternal spine.
+
+**Net effect on viability:** upgrades Dutchess from "viable as a multi-month build, load-bearing
+assumption UNVERIFIED" to "viable, forward records CONFIRMED + pre-indexed." Stage 1 shrinks: instead
+of transcribing town-clerk books from scratch, Stage 1 becomes (a) pull the 2,406 Dutchess NESRI
+records, (b) join them to our 1755-census cohort by owner+town, (c) build `linkage_verdicts` from the
+REG child↔owner (certain) + mother-inference (scored), (d) first per-link p. Effort drops from
+~1–2 wk to days for the data pull; the linkage-model + verdict-table build is unchanged.
+
+_Sources: New York Slavery Records Index (nyslavery.commons.gc.cuny.edu/slavery-records, /search,
+/birth-registrations-and-abandonments, /database-fields); Northeast Slavery Records Index
+(nesri.commons.gc.cuny.edu); NY.gov NESRI presentation (ny.gov/.../NESRI_Presentation_20240611_05.pdf);
+NYS Archives 1799 Act (nysarchivestrust.org). 2,406 Dutchess / 38k NY / 94k NE-9-state figures per the
+project's own summaries._
+
+## 7. LAND / CHAIN-OF-TITLE (user, Jul 19): "I have Massena title chain + can get others"
+
+Separate axis from calibration — this feeds the WEALTH-OVER-TIME / disgorgement side, now SAFE to
+ingest because the land NON-CLAIM guardrail is in place ([[finding-land-nonclaim-and-dutchess-audit-jul17]]
+§0/bca9ecede): land value is routed to `native_land_restitution_usd` (Stockbridge-Munsee, separate),
+EXCLUDED from `descendant_claimable_usd`. Schema is READY: `properties` (M112, deed-shaped —
+legal_description/liber_folio/metes_and_bounds), `land_transfer_events` (M038, chain of title),
+`indigenous_land_provenance` (M125, Link 0). More Dutchess chains → more parcel anchors + more
+Indigenous-origin rows + a richer wealth-over-time series for the enslaver families (Beekman/
+Livingston/Ten Broeck/Van Benthuysen) that recur across the 1714/1755 census + wills. Massena is the
+reference instrument (22 links, 1688→2024). NOTE: chains value the wealth; they never create a
+descendant land claim (guardrail + test enforce this).
