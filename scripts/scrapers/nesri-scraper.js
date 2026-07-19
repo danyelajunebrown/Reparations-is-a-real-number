@@ -1,0 +1,149 @@
+#!/usr/bin/env node
+/**
+ * nesri-scraper.js — scrape the Northeast/New York Slavery Records Index (NESRI) Caspio search.
+ *
+ * NESRI (nesri.commons.gc.cuny.edu, CUNY Graduate Center) indexes 94k enslavement records across 9
+ * NE states (38k NY; ~2,406–2,569 Dutchess). Each record has 38 fields INCLUDING structured genealogy:
+ * Owner name/dates, County/Locality, Enslaved-Person name/dates, a "REG" birth-registration Tag,
+ * Number-of-Enslaved counts, Source Document, Comments, and — critically for the Dutchess calibration
+ * study — Enslaved Person Family Code, Parent ID Codes, Sibling ID Codes, Spouse.
+ *
+ * WHY: measure the Parent-ID-Codes / Family-Code FILL RATE for Dutchess (the maternal-link availability
+ * that gates the calibration case study), and pull the full county cohort. See
+ * memory-bank/assessment-dutchess-calibration-case-study-jul19.md §6.2.
+ *
+ * COURTESY: NESRI is a public scholarly project. Prefer a DATA REQUEST to the team for a bulk CSV; this
+ * scraper is the fallback (user-approved 2026-07-19). Runs RATE-LIMITED, read-only, connects to the
+ * existing debug Chrome (:9222) in a NEW tab (never launches; never touches other tabs).
+ *
+ * The results are Caspio "list" cards rendered as concatenated "Label Value Label Value…" text with
+ * non-standard classes; we parse by splitting each card on the KNOWN 38 field labels (reliable).
+ *
+ *   node scripts/scrapers/nesri-scraper.js --county Dutchess --max-pages 10 --out worksheets/nesri-dutchess.jsonl
+ */
+'use strict';
+const puppeteer = require('puppeteer-extra');
+const fs = require('fs');
+const path = require('path');
+
+const opt = (f, d) => { const i = process.argv.indexOf(f); return i > -1 ? process.argv[i + 1] : d; };
+const COUNTY = opt('--county', 'Dutchess');
+const STATE = opt('--state', 'NY');
+const TAG = opt('--tag', null);          // e.g. REG (birth registration) — fills "Search Based on a Tag"
+const MAX_PAGES = parseInt(opt('--max-pages', '10'), 10);
+const OUT = opt('--out', `worksheets/nesri-${COUNTY.toLowerCase()}.jsonl`);
+const PAGE_DELAY_MS = parseInt(opt('--delay', '4000'), 10);   // respectful cadence
+
+// The 38 NESRI field labels, longest-first so multi-word labels win when splitting concatenated cards.
+const FIELDS = [
+  'Enslaved Person Unique Code', 'Enslaved Person Family Code', 'Enslaver Unique Code',
+  'Unique NESRI Record Identifier', 'Record Type', 'Search Based on a Tag', 'Year of Record',
+  'Owner Last Name', 'Owner First Name', 'Owner Birth Year', 'Owner Death Year', 'County or Borough',
+  'Locality', 'Address of Owner or Name of House or Vessel', 'Cemetery', 'Number of Enslaved Persons',
+  'Adult Male Enslaved Persons', 'Adult Female Enslaved Persons', 'Minor Male Enslaved Persons',
+  'Minor Female Enslaved Persons', 'Enslaved Person  Last Name', 'Enslaved Person First Name',
+  'Enslaved Person  Birth Year', 'Enslaved Person  Death Year', 'Number of All Persons',
+  'Source Document', 'Website Address', 'Comments', 'Related State or Nation', 'Art Site', 'ShipName',
+  'Cohort', 'Advocate Last name', 'Advocate First name', 'Sibling ID Codes', 'Parent ID Codes',
+  'Enslaved Person Spouse', 'State',
+].sort((a, b) => b.length - a.length);
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/** Parse one card's innerText into {field: value} by splitting on the known labels. */
+function parseCard(text) {
+  const t = text.replace(/\s+/g, ' ').trim();
+  // Build a regex that finds each label; capture the text between a label and the next label.
+  const labelAlt = FIELDS.map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const re = new RegExp('(' + labelAlt + ')\\s*(.*?)(?=(?:' + labelAlt + ')|$)', 'g');
+  const rec = {}; let m;
+  while ((m = re.exec(t)) !== null) {
+    const key = m[1].replace(/\s+/g, ' ').trim();
+    const val = (m[2] || '').trim();
+    if (!(key in rec)) rec[key] = val;   // first occurrence wins
+  }
+  return rec;
+}
+
+async function scrape() {
+  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null });
+  const page = await browser.newPage();
+  const records = [];
+  try {
+    await page.goto('https://nesri.commons.gc.cuny.edu/search/', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await sleep(8000);
+    if (COUNTY) await page.type('input[name=Value13_1]', COUNTY, { delay: 40 });   // County or Borough
+    if (TAG) await page.type('input[name=Value7_1]', TAG, { delay: 40 });          // Search Based on a Tag (e.g. REG)
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => null),
+      page.click('input.cbSearchButton'),
+    ]);
+    await sleep(8000);
+
+    for (let p = 1; p <= MAX_PAGES; p++) {
+      const { cards, count, hasNext } = await page.evaluate(() => {
+        const txt = document.body.innerText || '';
+        const m = txt.match(/1\s*[-–]\s*\d+\s*of\s*([\d,]+)/i);
+        // Each result record is a repeated block; Caspio wraps them — grab the largest repeated
+        // container set. Fallback: split the results region by the record-identifier label.
+        let blocks = [...document.querySelectorAll('[class*=cbResultSet] tr, [class*=cbResultSetListView] > *, [class*=Record]')];
+        let cards = blocks.map(b => (b.innerText || '').trim()).filter(s => /Record Type|County or Borough/.test(s) && s.length > 30);
+        if (!cards.length) {
+          // whole-results-text fallback: split on the leading field of each record
+          const region = txt.split(/Records?\s*1\s*[-–]/)[1] || txt;
+          cards = region.split(/(?=State\s+(?:NY|CT|NJ|MA|ME|NH|RI|VT|PA)\s+Record Type)/).map(s => s.trim()).filter(s => s.length > 30 && /Record Type/.test(s));
+        }
+        // Caspio "Next" lives in .cbResultSetNavigationLinks as an <a> wrapping an <img alt=Next>.
+        const nav = document.querySelector('.cbResultSetNavigationLinks');
+        const nextEl = nav && [...nav.querySelectorAll('a')].find(a => /next/i.test(a.textContent + ' ' + (a.querySelector('img')?.alt || '')));
+        return { cards, count: m ? m[1] : null, hasNext: !!nextEl };
+      });
+      for (const c of cards) records.push(parseCard(c));
+      console.log(`  page ${p}: ${cards.length} cards${p === 1 && count ? ` (total ${count})` : ''}`);
+      if (!hasNext || !cards.length) break;
+      const clicked = await page.evaluate(() => {
+        const nav = document.querySelector('.cbResultSetNavigationLinks');
+        const nx = nav && [...nav.querySelectorAll('a')].find(a => /next/i.test(a.textContent + ' ' + (a.querySelector('img')?.alt || '')));
+        if (nx) { nx.click(); return true; } return false;
+      });
+      if (!clicked) break;
+      await sleep(PAGE_DELAY_MS);
+    }
+  } catch (e) { console.log('SCRAPE ERR:', e.message); }
+  await page.close();
+  await browser.disconnect();
+  return records;
+}
+
+(async () => {
+  console.log(`NESRI scrape: county=${COUNTY} state=${STATE} max-pages=${MAX_PAGES}`);
+  const recs = await scrape();
+  console.log(`\nparsed ${recs.length} records`);
+  if (!recs.length) { console.log('no records parsed — results markup may have changed; inspect the page.'); return; }
+
+  const nonEmpty = (v) => v != null && String(v).trim() !== '' && String(v).trim() !== '-';
+  const rate = (f) => { const n = recs.filter(r => nonEmpty(r[f])).length; return `${n}/${recs.length} (${(100 * n / recs.length).toFixed(0)}%)`; };
+  const byType = {};
+  for (const r of recs) { const t = r['Record Type'] || '?'; byType[t] = (byType[t] || 0) + 1; }
+
+  console.log('\n=== FILL RATES (the calibration-critical fields) ===');
+  console.log('  Record Type breakdown:', JSON.stringify(byType));
+  for (const f of ['Parent ID Codes', 'Enslaved Person Family Code', 'Sibling ID Codes',
+    'Enslaved Person First Name', 'Owner Last Name', 'Year of Record', 'Search Based on a Tag',
+    'Enslaved Person Spouse']) {
+    console.log(`  ${f.padEnd(32)}: ${rate(f)}`);
+  }
+  // The maternal-link question, scoped to Enslaved-Person records:
+  const ep = recs.filter(r => /enslaved person/i.test(r['Record Type'] || ''));
+  if (ep.length) {
+    const pc = ep.filter(r => nonEmpty(r['Parent ID Codes'])).length;
+    const fc = ep.filter(r => nonEmpty(r['Enslaved Person Family Code'])).length;
+    console.log(`\n  AMONG ${ep.length} Enslaved-Person records:`);
+    console.log(`    Parent ID Codes populated:  ${pc}/${ep.length} (${(100 * pc / ep.length).toFixed(0)}%)  ← maternal-link fill rate`);
+    console.log(`    Family Code populated:      ${fc}/${ep.length} (${(100 * fc / ep.length).toFixed(0)}%)`);
+  }
+
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
+  fs.writeFileSync(OUT, recs.map(r => JSON.stringify(r)).join('\n') + '\n');
+  console.log(`\nwrote ${recs.length} records → ${OUT}`);
+})().catch(e => { console.error('FATAL', e); process.exit(1); });
