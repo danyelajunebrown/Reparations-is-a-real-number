@@ -272,6 +272,44 @@ _Additional sources: NYGBS (First Reformed Poughkeepsie; New Hackensack register
 (New Hackensack RDC records); ldsgenealogy.com Dutchess church records; Evans, Records of the Reformed
 Dutch Church (archive.org); wikitree DRC baptism space._
 
+## 6.2 CORRECTION + completability — NESRI has STRUCTURED GENEALOGY FIELDS (live recon, Jul 19)
+
+Drove the NESRI Caspio search form directly (puppeteer new tab on the :9222 Chrome, FS tabs untouched;
+WebFetch 403s the site). Read the full 38-field schema. **This CORRECTS §6.1's "index carries
+child→owner, not child→mother":** the NESRI record actually has, among its 38 fields —
+`Enslaved Person Family Code`, **`Parent ID Codes`**, **`Sibling ID Codes`**, `Enslaved Person Spouse`,
+plus `Owner Last/First Name`, `Owner Birth/Death Year`, `County or Borough`, `Locality`, `Enslaved
+Person Last/First Name`, `Enslaved Person Birth/Death Year`, `Search Based on a Tag` (the "REG" tag),
+`Source Document`, `Comments`. So the index **DOES model parent→child + sibling + family + spouse
+links via ID codes** — the maternal genealogical link CAN be in NESRI directly, where populated.
+
+**This upgrades the maternal-spine outlook again:** if NESRI's compilers populated `Parent ID Codes` /
+`Family Code` for the Dutchess cohort, the mother→child edges are pullable from the index itself — no
+church-baptism cross-ref needed for those rows (baptisms remain the corroborator + the fill-the-gaps
+source). The maternal link is potentially THREE-source-corroborable: civil REG (owner-certain) ×
+NESRI parent-codes × church baptism (parent-named).
+
+**THE REMAINING EMPIRICAL UNKNOWN — the `Parent ID Codes` FILL RATE for Dutchess — NOT yet measured.**
+The Caspio search form (Caspio DataPage `c0abd177.caspio.com/dp/ab865…`) needs proper submit→results→
+pagination automation to sample it; a one-off JS-inject submit did not execute the query cleanly.
+That is a small SCRAPER build, not a one-liner — deferred pending the user's go (the prompt gates
+scraping; and see below).
+
+**COMPLETABILITY (user's Q, "can NESRI be completed for the entire estate/region?"): YES.** NESRI is a
+bounded, structured search DB (2,406 Dutchess rows; 38k NY; 94k across 9 NE states) — every field
+above is retrievable. Two routes, in order of preference:
+1. **DATA REQUEST to the NESRI/CUNY-GC team** (preferred). It is a public scholarly project (presents
+   to the NY State Legislature; NY.gov hosts their deck). Ask for the Dutchess (or NY, or full)
+   extract as CSV — respects their infra, gets clean structured data incl. the ID-code linkage
+   fields, and is faster than scraping 2,406 paginated Caspio rows. This is the right first move.
+2. **Bounded, rate-limited scraper** of the Caspio DataPage (fallback if no data-share) — feasible
+   (form fields mapped: County=`Value13_1`, State=`Value5_1`, Type=`Value6_1`, Tag=`Value7_1`),
+   built like the FS-probate scraper, respectful cadence. Needs the user's explicit go per the
+   prompt's "no scraping without checking" + scholarly-source courtesy.
+
+Either route yields the full Dutchess cohort WITH the parent/sibling/family-code linkage — which is
+both the corroboration-rate measurement AND the Stage-1 maternal spine. Recommend route 1 first.
+
 ## 7. LAND / CHAIN-OF-TITLE (user, Jul 19): "I have Massena title chain + can get others"
 
 Separate axis from calibration — this feeds the WEALTH-OVER-TIME / disgorgement side, now SAFE to
