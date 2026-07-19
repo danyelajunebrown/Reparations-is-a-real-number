@@ -1,6 +1,6 @@
 # Tracing Antebellum Wealth Forward: A Lineage-Specific, Land-Primary Methodology
 
-**Status:** Draft v0.1 — Apr 18, 2026
+**Status:** Draft v0.2 — Apr 18, 2026; **amended Jul 18, 2026 (land NON-CLAIM principle — see §2.5)**
 **Authors:** Danyela June Brown; methodology scaffolded by project assistant
 **Intended audience:** Project collaborators (internal) → scholarly peer review (eventual)
 **Companion files:** `migrations/038-land-tracing-and-flagrant-assets.sql`, `memory/project_wealth_tracing_pivot.md`
@@ -38,6 +38,41 @@ Three claims structure the methodology:
 **Claim 3 (Land as primary trace):** Among documented wealth categories, land is the most reliably traceable across the 160+-year span from the antebellum period to the present. The reasons are structural. (a) Total U.S. arable acreage is approximately fixed; parcels have been continuously subdivided and re-aggregated but not created ex nihilo except in narrow cases (federal land patents 1803–1912, Hawaii annexation, Alaska purchase). (b) Transfer documentation has been legally mandatory at the county level since the colonial era; recording is a prerequisite for legal title defense. (c) Parcels stay in families for longer periods than business equity because land does not experience the same market churn — IPOs, acquisitions, bankruptcies — that destroys corporate lineages. (d) Modern county GIS systems and assessor databases provide present-day parcel IDs that can be back-linked to historical deed records through metes-and-bounds or plat descriptions.
 
 Other heirloom asset categories — named inter vivos trusts, individual stock certificates with traceable bearer chains, identifiable art and jewelry in probate inventories, family silver, bearer instruments, life insurance policies — are in scope as supplementary traces. They cannot serve as primary threads because their documentation is weaker and less continuous, but they corroborate land-based traces and occasionally substitute for them when courthouse records fail.
+
+## 2.5 The land NON-CLAIM principle (amendment, Jul 18 2026)
+
+**Land is the primary VALUATION INSTRUMENT, never a claimed ASSET.** This amendment reconciles the
+land-primary methodology above (Claim 3) with a hard constraint the original draft lacked (user
+directive, 2026-07-17): a descendant DAA must **make no claim to the land of the Native peoples** on
+which the enslaver's wealth was built — that land is owed to the Native nations and must be
+**restituted separately**.
+
+The reconciliation is a distinction the original framework collapsed:
+
+- **The chain of title MEASURES enslaver wealth over time** — this is what §4.2 and the deed-chain
+  work are for, and it remains central. Massena (Barrytown, Dutchess County) is the reference
+  instrument: 22 links, 1688→2024, with a real consideration series ($50k 1853 → $1.15M 1974 → ~$14M
+  2024). That series is legitimate *evidence of the scale of the wealth*.
+- **The DAA CLAIMS the value of stolen LABOR** (Craemer), not the land. Land value is context for the
+  scale of the debt, never a dollar the enslaved-descendant collects.
+
+**Link 0 — the origin the land-primary methodology never represented.** Every chain of title in this
+scope does not bottom out in a legitimate title: the enslaver's patent traces to a Native cession
+(the 1688 Schuyler Patent recites land *"Purchased of and from the Indyans, Naturall Owners &
+Possessors"*; the 1686 Rhinebeck deed traded it for guns, kettles, blankets, 40 fathoms of wampum,
+rum). The methodology traced *forward* from the enslaver's holding and never looked *backward past
+the patent*. Migration 125 (`indigenous_land_provenance`) is the schema anchor for Link 0.
+
+**The guardrail is code, not a footnote.** `DisgorgementCalculator.forEnslaver` now splits its output:
+`native_land_restitution_usd` (land value, owed to the Native successor nation — Stockbridge-Munsee
+for Dutchess — restituted separately) is EXCLUDED from `descendant_claimable_usd` (the only figure a
+DAA descendant-claim may sum). `DAAOrchestrator` writes the descendant ledger from
+`descendant_claimable_usd`. `tests/integration/land-nonclaim-guardrail.test.cjs` asserts land never
+enters a descendant claim. Absence of an `indigenous_land_provenance` record does NOT grant a claim —
+land value without provenance is FLAGGED for review, never silently claimed (fail toward non-claim).
+
+This corrects the §8 limit that read "interpretation is a separate layer": the non-claim to Native
+land is not interpretation deferred downstream — it is enforced at calculation time.
 
 ---
 

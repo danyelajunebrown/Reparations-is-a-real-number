@@ -1902,7 +1902,10 @@ class DAAOrchestrator {
                 const result = this.reconciler.combine({
                     craemer:      craemerLineage != null ? { usd: craemerLineage, confidence: 0.7 } : null,
                     wealthGap:    estDescendants > 0 ? { usd: wealthGapLineage, confidence: 0.5 } : null,
-                    disgorgement: { usd: disg.total_usd, confidence: disg.confidence, evidence: disg.evidence },
+                    // LAND NON-CLAIM: feed the reconciler the DESCENDANT-CLAIMABLE disgorgement, which
+                    // excludes Native land value (routed to disg.native_land_restitution_usd, owed to the
+                    // Native nation, settled separately). Never disg.total_usd here. (directive 2026-07-17)
+                    disgorgement: { usd: disg.descendant_claimable_usd, confidence: disg.confidence, evidence: disg.evidence },
                     lineItem:     lineItemLineage != null ? { usd: lineItemLineage, confidence: 0.6 } : null,
                 });
 
@@ -1959,7 +1962,7 @@ class DAAOrchestrator {
                     result.reconciled_obligation_usd,
                     craemerLineage,
                     wealthGapLineage,
-                    disg.total_usd,
+                    disg.descendant_claimable_usd,   // land value EXCLUDED — never claimed by descendant (Native-restitution, separate)
                     lineItemLineage,
                     result.reconciled_obligation_usd,
                     result.confidence,
