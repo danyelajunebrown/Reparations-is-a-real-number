@@ -26,3 +26,13 @@ COMMENT ON INDEX idx_embeddings_hnsw_dococr IS
   'Partial HNSW over doc_ocr embeddings only — the set RagService.retrieve filters to. Avoids the '
   'post-filter recall loss of the full idx_embeddings_hnsw (person_profile crowding). Query still '
   'needs hnsw.ef_search SET (RagService does this); unset ef_search returns 0 rows on Neon.';
+
+-- Drop the over-broad full HNSW index. It covered ALL content_kinds; the planner PREFERRED it for
+-- the doc_ocr query's ORDER BY, so its ANN candidate set (~62% person_profile) filtered down to ~0
+-- doc_ocr rows — the recall failure this migration exists to fix. With it gone the planner uses the
+-- partial index above and retrieval returns full top-k across the whole 83k doc_ocr corpus (verified
+-- 2026-07-18: "Lewis Morris Morrisania enslaved" 0→6 hits, Morrisania doc at 0.70).
+-- SAFE: person_profile embeddings have NO vector reader (orphan-audit finding #2 — 137k rows nothing
+-- reads); RagService is doc_ocr-only. REVERSIBLE: if a person_profile RAG reader is ever added, give
+-- IT its own partial index (WHERE content_kind='person_profile') rather than restoring this full one.
+DROP INDEX IF EXISTS idx_embeddings_hnsw;
