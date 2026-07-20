@@ -336,6 +336,47 @@ strong **enslaved-person → enslaver** attribution layer + a near-complete **en
 county (which dovetails with our 1714/1755 census + wills — same families), and the aggregate census
 denominators (1,864 enslaved in Dutchess 1790, etc.) for the reference-class mass calculations.
 
+## 6.4 CORROBORATION RATE — EMPIRICALLY PROBED; the baptism side is THIN too (Jul 19 2026)
+
+User: "nail the corroboration rate empirically." Probed both sides against real records (read-only).
+
+**Baptism side (measured on the Kingston, Ulster old Dutch Reformed register — Hoes transcription,
+archive.org, 184k lines; the immediate-region, same-tradition analog for Dutchess DRC):** enslaved
+baptisms ARE present but recorded MINIMALLY. Actual entry forms found: *"A negro of Hendrik de Joong,"*
+*"A negro of Johannes Wynkoop,"* *"A negro child (female) of Elisabeth [No witnesses named]."* Pattern:
+- the enslaved **CHILD is frequently UNNAMED** (just "a negro child, female");
+- the **MOTHER is often absent or given-name-only** (no surname);
+- the **OWNER is inconsistently recorded** (sometimes the "of [Name]" is the owner, sometimes the mother).
+Only a handful of clearly-tagged enslaved entries surfaced in the whole register — enslaved baptisms
+are sparse AND under-detailed relative to free-family entries. (Poughkeepsie context: Rev. Beardsley
+reported baptizing **99 "black Infants" in 1773 alone** — so the EVENT volume was high; the surviving
+RECORD detail per event is what's thin.) Christ Church Poughkeepsie vol. 2 (archive.org) = administrative,
+no register. NESRI = no maternal field (§6.3).
+
+**VERDICT (honest, per the prompt's "I'd rather hear the coverage isn't there"):** the baptism↔
+registration corroboration rate cannot be driven high, because BOTH surviving record types recorded
+enslaved children with minimal genealogy:
+| source | child named | mother named | owner named |
+|---|---|---|---|
+| civil 1799 REG | yes | *sometimes* (statutorily optional) | **yes** |
+| DRC baptism | **often NO** | sometimes (given-name only) | sometimes |
+A (owner+child+date) match needs the child named in BOTH — but the baptism often omits the child's
+name; a (mother+child) match needs the mother in both — but the registration often omits her. So the
+**cleanly-corroborable subset is SMALL**; the maternal-edge ground truth `F(e)` for the calibration
+study will be **SPARSE at county scale** — a real constraint, not a fixable-by-sample-size one.
+
+**What this means for the case study:** the strong, dense documentary ground truth is on the
+**enslaved↔ENSLAVER** edge (census + wills + NESRI + owner-named registrations + owner-named baptisms),
+NOT the child↔MOTHER edge. Design implication: calibrate `f` on the edge the records actually support —
+**P(person descends from a documented enslaved person of enslaver E | evidence)** anchored on the
+enslaver-attribution spine — and treat the maternal micro-link as a sparse, separately-scored layer,
+not the calibration backbone. This REVISES §3's `f` toward an enslaver-anchored linkage.
+
+**To push the number higher would require** the handwritten Dutchess DRC registers (Rhinebeck Flats
+1731-1800, Poughkeepsie, Fishkill, New Hackensack) pulled as FS images + OCR + manual enslaved-entry
+extraction (the FS-logged-in :9222 Chrome + DocAI can do this; scrapers approved) — a real multi-step
+extraction project, and even then the ceiling is set by how minimally the clerks recorded these children.
+
 **Completability / "all these states?" (user Q, Jul 19): YES.** The scraper is parameterized by
 `--state`/`--county`/`--tag`; the form carries all 9 state radios; Dutchess's 108-page run proves the
 pagination. It generalizes to any state/county slice of the 94k-record NESRI. For the FULL multi-state
