@@ -107,7 +107,15 @@ p/E; NOT certified multicalibration (below the floors).
   they move dollars, not `f`. Keep `f` probabilistic and separate from the dollar calc.
 
 ## Open items before building (unchanged + new)
-1. Confirm `Calculator.js` is live vs legacy on the DAA path.
+1. ~~Confirm `Calculator.js` is live vs legacy.~~ **RESOLVED (Jul 19): LEGACY, not on any live path.**
+   `DAAOrchestrator` does NOT import `Calculator.js`; the CLI DAA uses `DAAOrchestrator`; only
+   `index.js` (ReparationsSystem facade) requires `Calculator.js` and NOTHING imports `index.js` (no
+   api route / server / CLI). So the flagged free params (dailyWageBase 120, humanDignityValue 15000,
+   compoundInterestRate 0.04, inflationRate 0.035) affect NO DAA the system produces — dead code. The
+   LIVE free parameters to scrutinize instead: Craemer $0.80/day + 3% (DAAGenerator), TieredPayment
+   PLACEHOLDER thresholds (THRESHOLDS_FINALIZED=false), RateResolver anchors (DisgorgementCalculator),
+   WealthGapCalculator constants. (Consider deleting Calculator.js + the dead index.js facade — a
+   separate cleanup.)
 2. Migration 126 `linkage_verdicts` — sign-off to apply.
 3. Dutchess FS climb has 0 coverage — Stage-1 step 3 needs the FS climb pointed at Dutchess seeds
    (FS-logged-in :9222 Chrome; scrapers approved).
