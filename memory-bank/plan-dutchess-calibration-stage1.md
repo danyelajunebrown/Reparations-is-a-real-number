@@ -82,14 +82,36 @@ Do not oversell it as "calibrated"; it is "population-level p/E on one county."
 enslaved), ~1,225 imaged wills, NESRI roster + census denominators (1790: 1,864 enslaved). RAG live.
 
 **Stage 1 — FIRST READ ON p. Effort ~1–2 wk. n(links) ≈ 40–90.**
-1. Apply migration 126 (`linkage_verdicts`) — on sign-off.
-2. For the ~85 named enslaved seeds, assemble the DENSE enslaver-edge documentary verdicts: match each
-   across census × will × NESRI × (owner-named) registration → `confirmed` attribution verdicts
-   (enslaved person ↔ enslaver). This is documentary `F(e)` on the ATTRIBUTION link, available NOW.
-3. Run the climb `f` for a handful of Dutchess-seeded lineages (needs FS climb on Dutchess — 0 today);
-   score each asserted link's `model_confidence` and bin vs the verdicts.
-4. **Deliverable: first empirical per-link p on the enslaver-attribution edge.** If p < ~0.99, STOP —
-   fix the linker/thresholds (OwnerPromotion promotes at 0.80; assessment §4) before scaling.
+1. ~~Apply migration 126.~~ **DONE (Jul 19, badee2ffd)** — `linkage_verdicts` live.
+2. **DONE + EMPIRICAL FINDING (Jul 19, `scripts/build-dutchess-linkage-verdicts.mjs`):** cross-source
+   verdict pass over our 3 held sources (1714 census, 1755 census, colonial wills). **Result: the
+   documentary ground truth is BROAD but SHALLOW.** Of **48 distinct Dutchess enslaver families**, only
+   **~1–2 are multiply-corroborated** (Vosburgh in 1714+1755; Kip/Keip missed by spelling-normalization
+   — so ~2); the rest are SINGLE-SOURCE. Enslaved-person-level cross-source truth ≈ **0** (census 62
+   names × wills 16 names → 2 collisions "Jack"/"Tom", which are Biscoe-DISTINCT people, not verdicts).
+   1 confirmed verdict written to `linkage_verdicts` — the pipeline is proven end-to-end, but the
+   `confirmed` set is **far too small to estimate per-link p.** The FS-climb step (3) is moot until
+   there is denser ground truth AND a modern seed (assessment §1: climb runs modern→enslaver, 0
+   Dutchess coverage, enslavers are leads not canonical).
+   **WHY sparse:** our 3 sources cover largely DIFFERENT families across DIFFERENT times (1714 vs 1755
+   vs colonial wills), so the same attribution rarely appears twice; and colonial enslaved first-names
+   collide, so enslaved-level matching is unreliable by construction (Biscoe).
+   **DENSIFICATION PATH (the real Stage-1 unblock):** ingest **NESRI's Dutchess enslaver roster**
+   (~hundreds of census-derived enslavers, 1790–1820 — overlaps our 1755 families heavily → many
+   cross-CENSUS-year enslaver-identity confirmations) + **fully ingest the colonial wills** (26 named
+   enslaved + testators, currently only in a worksheet) + manumissions. THEN re-run the cross-source
+   pass → a real `confirmed` set large enough for calibration. The scraper for NESRI exists
+   (`nesri-scraper.js`, scrapers approved); the wills ingest is a modest build.
+3. Run the climb `f` for Dutchess-seeded lineages — BLOCKED (no modern seed; enslavers are leads).
+   Deferred behind densification + either a Dutchess-descended participant or forward tracing.
+4. **Deliverable: first empirical per-link p.** NOT reachable yet — the multiply-corroborated ground
+   truth (~2) is too small. Reachable after densification (step 2 path). If p < ~0.99, STOP + fix the
+   linker/thresholds (OwnerPromotion 0.80; assessment §4) before scaling.
+
+**STAGE-1 HONEST STATUS (Jul 19):** pipeline BUILT + PROVEN (`linkage_verdicts` + verdict-builder), but
+the documentary ground truth in hand is too sparse (~2 confirmed) to read p. The gate is now a DATA
+step — densify via NESRI-roster + full-wills ingest — not a modeling step. This is the honest "coverage
+isn't there YET, here's exactly what closes it."
 
 **Stage 2 — second model + E. Effort ~2–4 wk. n ≈ 100–300.** Run WikiTree `f₂` over the same seeds;
 record both f and f₂ per link; compute E + the Reconcile disagreement region.
