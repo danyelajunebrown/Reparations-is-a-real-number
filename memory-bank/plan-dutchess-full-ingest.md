@@ -21,6 +21,29 @@ enslaved / 43,412 total; 1800: 1,609; 1810: 1,262).
 REMAINING for "all": the full NESRI Dutchess roster (2,569 records — we've pulled ~24 families), the
 full will corpus (1,225 imaged docs — only 13 extracted), and the church/manumission/court layers.
 
+## EXECUTION LOG (2026-07-19→27, Phase 1 in progress)
+- **Dedicated Chrome :9223 LAUNCHED** (`open -na "Google Chrome for Testing" --args
+  --remote-debugging-port=9223 --user-data-dir=/tmp/nesri-chrome`) — FS :9222 untouched. Scraper
+  hardened: `--browser-url` (default :9223) + `protocolTimeout:240000` (the 30s default was what killed
+  long runs). This un-flakes NESRI.
+- **BETTER MECHANISM FOUND — NESRI "Download Data" (Caspio CSV export).** The results page has
+  `a.cbResultSetDownloadLink` → a native CSV with ALL 38 columns (incl. the genealogy fields). Capture
+  via CDP `Page.setDownloadBehavior`. This BEATS card-scraping (no parsing, every field). **BUT Caspio
+  caps each export at ~250 rows** — so the full 2,569 needs SLICED searches (each <250) → one CSV each →
+  `ingest-nesri-csv.mjs` per slice. Slicing is slow to probe (each NESRI search ~15s w/ reload); a clean
+  slice key (≤250/slice covering all Enslaver rows) is still TBD — surname-initial or year are candidates.
+- **PARENT-CODE QUESTION DEFINITIVELY CLOSED:** the CSV exposes Parent ID Codes / Enslaved Person
+  Family / Sibling ID Codes / Enslaver Genealogical Link as real columns → **0 fill across all 250 rows
+  (incl. all 16 Enslaved-Person rows).** NESRI genealogy fields are genuinely EMPTY for Dutchess (not a
+  display artifact). Maternal link is NOT in NESRI — baptisms remain the (sparse) maternal layer.
+- **`ingest-nesri-csv.mjs` BUILT + batch-1 (250 rows) ingested:** 218 enslaver + 21 enslaved leads
+  (id_system 'nesri'), census rows → benchmarks (not persons), site/college skipped. Dedup 0 auto-links
+  (Biscoe-conservative — same as census/wills; corroboration is recorded via `nesri-crossref` verdicts
+  + carried resolve-candidates, NOT auto-merge). Batch 1 = the alphabetical-first ~250; **remaining
+  ~2,300 need the sliced downloads.**
+- **CSV→ingest is the pattern going forward:** slice NESRI search under 250 → Download Data CSV →
+  `ingest-nesri-csv.mjs <csv> --apply`. Idempotent (externalId = NESRI Enslaver/Enslaved Person Code).
+
 ## INFRA PREREQUISITE (do first) — a DEDICATED Chrome
 The NESRI 108-page pull degrades on the SHARED FS Chrome (:9222) — protocol timeouts under contention.
 Launch a SECOND debug Chrome for NESRI, leaving :9222 for FS/climb:

@@ -30,6 +30,7 @@ const opt = (f, d) => { const i = process.argv.indexOf(f); return i > -1 ? proce
 const COUNTY = opt('--county', 'Dutchess');
 const STATE = opt('--state', 'NY');
 const TAG = opt('--tag', null);          // e.g. REG (birth registration) — fills "Search Based on a Tag"
+const BROWSER_URL = opt('--browser-url', 'http://127.0.0.1:9223');   // DEDICATED NESRI Chrome (not the FS :9222)
 const MAX_PAGES = parseInt(opt('--max-pages', '10'), 10);
 const OUT = opt('--out', `worksheets/nesri-${COUNTY.toLowerCase()}.jsonl`);
 const PAGE_DELAY_MS = parseInt(opt('--delay', '4000'), 10);   // respectful cadence
@@ -75,7 +76,9 @@ function parseCard(text) {
 }
 
 async function scrape() {
-  const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', defaultViewport: null });
+  // protocolTimeout raised — the default 30s Runtime.callFunctionOn timeout was what killed long runs
+  // on the shared Chrome. Dedicated :9223 + a generous protocol timeout = the 108-page pull completes.
+  const browser = await puppeteer.connect({ browserURL: BROWSER_URL, defaultViewport: null, protocolTimeout: 240000 });
   const page = await browser.newPage();
   const records = [];
   try {
