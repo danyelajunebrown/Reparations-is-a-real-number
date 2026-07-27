@@ -113,6 +113,24 @@ the documentary ground truth in hand is too sparse (~2 confirmed) to read p. The
 step — densify via NESRI-roster + full-wills ingest — not a modeling step. This is the honest "coverage
 isn't there YET, here's exactly what closes it."
 
+**DENSIFICATION DONE (Jul 19) — ground truth 2 → 16 confirmed:**
+- **Full colonial-wills ingest** (`ingest-dutchess-colonial-wills.mjs`, applied): 9 enslaver + 26
+  IMAGE-BACKED enslaved leads + 18 owner→enslaved edges + 12 will docs now evidencing (Philip
+  false-positive flagged not asserted).
+- **NESRI cross-reference** (`nesri-crossref-dutchess-enslavers.js`, applied): targeted per-family
+  NESRI searches → **15 of ~24 checked Dutchess enslaver families CONFIRMED** in NESRI's independent
+  census-derived roster (Hoffman 43, Van Benthouse 14, Keip 9, Heermanse/Van Benthuysen 6,
+  Knickerbacker 4, …). Written as cross-source `confirmed` verdicts.
+- **linkage_verdicts now holds 16 confirmed** enslaver-identity verdicts (was 1). A FLOOR: 4 families
+  errored transiently (Teller/Kniffen/Kip/Siemon — re-runnable on a dedicated Chrome) and ~15 remain
+  unchecked. The enslaved-PERSON edge stays sparse (colonial first-names) — the calibration backbone is
+  the enslaver-identity attribution, as designed.
+
+**REMAINING TO CLOSE STAGE 1 (n for p):** (a) finish the NESRI cross-ref tail (dedicated Chrome) →
+~30+ confirmed families; (b) still need the MODERN endpoint — a Dutchess-descended participant OR
+forward tracing — before per-link p on the full modern→enslaver chain is measurable. The DOCUMENTARY
+enslaver-identity ground truth is now real; the modern-link ground truth is the next gap.
+
 **Stage 2 — second model + E. Effort ~2–4 wk. n ≈ 100–300.** Run WikiTree `f₂` over the same seeds;
 record both f and f₂ per link; compute E + the Reconcile disagreement region.
 
