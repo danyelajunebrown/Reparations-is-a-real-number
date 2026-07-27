@@ -1,7 +1,50 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-11 (frontend overhaul a→e COMPLETE + deployed + smoke/verify guardrails; gate-lift
-pipeline fixed + 5 flagship enslavers surfaced; Liberty NOT being rescraped)_
+_Last updated: 2026-07-19 (DUTCHESS pivot: audit → land non-claim guardrail → 4 Dutchess sources ingested
+→ RAG outage fixed → calibration-study assessment + Stage-1 pipeline; NEXT = full-Dutchess ingest)_
+
+---
+
+## DUTCHESS AUDIT → LAND GUARDRAIL → SOURCES → RAG FIX → CALIBRATION (2026-07-17→19) → [[finding-land-nonclaim-and-dutchess-audit-jul17]] · [[assessment-dutchess-calibration-case-study-jul19]] · [[plan-dutchess-calibration-stage1]] · [[plan-dutchess-full-ingest]]
+Very long session, branch `frontend/light-redesign`. Goal: end-to-end DAAs for Dutchess Co. enslavers +
+enslaved, cognizant of wealth over time, making NO claim to Native land. ~20 commits. Highlights:
+
+- **AUDIT + DEPS:** removed 11 unused packages (web3/truffle/ipfs-http-client/xlsx/… all zero-import) →
+  npm audit 191→49, 0 prod criticals, unblocked `--force`. DAA CLI was dead (`corporateConnections is
+  not iterable`, DAAOrchestrator:1581/:1762) — FIXED (default `[]` not `false`). `Calculator.js` is
+  LEGACY (nothing on the DAA path imports it; the flagged free params 120/15000/0.04/0.035 affect no
+  DAA — dead code; consider deleting it + the dead index.js facade).
+- **LAND NON-CLAIM GUARDRAIL (core directive):** the system was ALREADY monetizing Native land into a
+  descendant obligation (`DisgorgementCalculator` summed `land_transfer_events.consideration_usd` →
+  ledger → descendant). Fixed: migration 125 `indigenous_land_provenance` (Link 0; seeded Dutchess/
+  Massena → Stockbridge-Munsee), `forEnslaver` now splits `native_land_restitution_usd` (owed to the
+  Native nation, separate) OUT of `descendant_claimable_usd`; DAAOrchestrator writes the descendant
+  ledger from `descendant_claimable_usd`. 8-assertion test passes. Framework §2.5 amended. **Land VALUES
+  wealth, never creates a descendant land claim.**
+- **DUTCHESS SOURCES INGESTED (was 0 canonical/3 leads this morning):** 1714 census (14 enslavers,
+  counts) + 1755 Census of Slaves (Dutchess+Westchester: 195 enslavers, 246 named enslaved, 246 edges)
+  + colonial wills (26 IMAGE-BACKED enslaved, 18 edges) — all via PersonService dedup (Biscoe-safe, 0
+  auto-merge) + owner→enslaved edges + district docs EMBEDDED (RAG). Secondary tier 0.85. 1790 Brownell
+  edition NOT ingested (omits the slaves column). Massena chain-of-title packet is the wealth-over-time
+  reference instrument (22 links 1688→2024, Beekman/Livingston/Ten Broeck = our census families).
+- **RAG WAS SILENTLY BROKEN PLATFORM-WIDE — FIXED:** `RagService.retrieve` returned 0 for EVERY query
+  (219k embeddings present) — unset `hnsw.ef_search` returns 0 rows on Neon + full HNSW index post-
+  filter loss. Fix: SET ef_search + partial `doc_ocr` HNSW index (migration 124, dropped the full one;
+  person_profile has no reader). Verified full-corpus retrieval. **EMBED + RAG run LOCALLY on the
+  MacBook** — `nomic-embed-text` on ollama :11434 (the corpus model); the Mini-offline embed-debt
+  excuse is GONE (`EMBED_SOURCE=ollama`).
+- **CALIBRATION STUDY (Roth & Tolbert):** assessment says ground-truth n ≈ 0 (climb runs modern→
+  enslaver, 0 Dutchess, ~2 human verdicts DB-wide). Maternal-link edge is SPARSE in both civil regs
+  (mother optional) AND church baptisms (child often unnamed) — empirically probed. RE-SCOPED f to the
+  ENSLAVER-anchored edge. Built: migration 126 `linkage_verdicts` (the verdict table the audit packet
+  never wrote back to); cross-source verdict builder; NESRI cross-ref → **16 confirmed enslaver-identity
+  verdicts** (Hoffman 43, Van Benthouse 14, Keip 9, …). Enslaver-identity ground truth is now real; the
+  MODERN endpoint (Dutchess participant / forward tracing) is the remaining gap.
+- **NESRI capability proven:** `scripts/scrapers/nesri-scraper.js` + `nesri-crossref-dutchess-enslavers.js`
+  — the NY/Northeast Slavery Records Index (CUNY, Caspio; 2,569 Dutchess records, 38-field schema incl.
+  Enslaver/Enslaved names, County, Year, Source) is scrapable per-search reliably; the 108-page full
+  pull degrades on the SHARED FS Chrome (protocol timeouts) — needs a DEDICATED Chrome.
+- **NEXT (user directive 2026-07-19): INGEST ALL OF DUTCHESS COUNTY.** See [[plan-dutchess-full-ingest]].
 
 ---
 
