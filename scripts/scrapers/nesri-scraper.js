@@ -83,14 +83,13 @@ async function scrape() {
   const records = [];
   try {
     await page.goto('https://nesri.commons.gc.cuny.edu/search/', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await sleep(8000);
-    if (COUNTY) await page.type('input[name=Value13_1]', COUNTY, { delay: 40 });   // County or Borough
-    if (TAG) await page.type('input[name=Value7_1]', TAG, { delay: 40 });          // Search Based on a Tag (e.g. REG)
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => null),
-      page.click('input.cbSearchButton'),
-    ]);
-    await sleep(8000);
+    await sleep(9000);   // the Caspio deploy renders the form async — 8s was occasionally too tight
+    if (COUNTY) { const f = await page.$('input[name=Value13_1]'); await f.click(); await f.type(COUNTY, { delay: 60 }); } // focus THEN type (blind type missed the field)
+    if (TAG) { const t = await page.$('input[name=Value7_1]'); await t.click(); await t.type(TAG, { delay: 60 }); }
+    // The Caspio search is AJAX — there is NO page navigation, so the old waitForNavigation() sat idle for
+    // its full 25s timeout and desynced the run. Click and wait a fixed beat for the result set to render.
+    await page.click('input.cbSearchButton');
+    await sleep(12000);
 
     // Scrape the current results page into card texts + total-pages, via the whole-results-text split
     // on each record's leading "State XX Record Type" (Caspio list cards have non-standard classes).
@@ -116,11 +115,8 @@ async function scrape() {
       if (!jf) break;
       await jf.click({ clickCount: 3 });
       await jf.type(String(p + 1), { delay: 50 });
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => null),
-        page.keyboard.press('Enter'),
-      ]);
-      await sleep(PAGE_DELAY_MS);
+      page.keyboard.press('Enter');   // AJAX paginate — no navigation; wait a fixed beat for re-render
+      await sleep(PAGE_DELAY_MS + 4000);
     }
   } catch (e) { console.log('SCRAPE ERR:', e.message); }
   await page.close();
