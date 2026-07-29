@@ -66,8 +66,7 @@ const stats = { enslaverC: 0, enslaverL: 0, enslavedC: 0, enslavedL: 0, edges: 0
         await pool.query(
           `UPDATE person_documents
               SET ${col} = COALESCE(${col}, $2),
-                  name_as_appears = CASE WHEN COALESCE(name_as_appears,'') IN ('', 'Image ' || collection_page_number::text) THEN $3 ELSE name_as_appears END,
-                  testator_name = COALESCE(testator_name, $3)
+                  name_as_appears = CASE WHEN COALESCE(name_as_appears,'') IN ('', 'Image ' || COALESCE(collection_page_number::text,'')) THEN $3 ELSE name_as_appears END
             WHERE id = $1 AND canonical_person_id IS NULL`,
           [w.doc_id, enslaverRef.subject_id, enslaverName]).catch((e) => { if (stats.docsLinked === 0) console.log('   link err:', e.message.slice(0, 50)); });
         stats.docsLinked = (stats.docsLinked || 0) + 1;
