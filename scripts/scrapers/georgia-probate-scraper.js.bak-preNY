@@ -6,10 +6,6 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const S3Service = require('../../src/services/storage/S3Service');
-const { classifyTranscript } = require('../../src/services/probate/document-classifier');
-const { isValidPersonName } = require('../../src/utils/person-name-validator');
-const { notify } = require('../../src/utils/notify');
-const os = require('os');
 const pg = require('pg');
 
 puppeteer.use(StealthPlugin());
@@ -37,25 +33,15 @@ const LIMIT            = parseInt(opt('--limit', '0'), 10);
 const VERBOSE          = flag('--verbose');
 const CLEAR_SITEMAP    = flag('--clear-sitemap');
 
-// --- Collection parameters (defaults reproduce the original Georgia run) ---
-// This scraper is generic over any FamilySearch probate-by-county collection.
-//   Georgia  Probate Records 1742-1990 -> --collection 1999178 --state GA --region georgia      --region-label "Georgia"
-//   New York Probate Records 1629-1971 -> --collection 1920234 --state NY --region new-york      --region-label "New York"
-const COLLECTION_ID   = opt('--collection', '1999178');
-const STATE           = opt('--state', 'GA');
-const REGION_SLUG     = opt('--region', 'georgia');         // s3 path + collection key (kebab-case)
-const REGION_LABEL    = opt('--region-label', 'Georgia');   // human-readable state name
-const REGION_KEY      = REGION_SLUG.replace(/-/g, '_');      // jsonb metadata key prefix (snake_case)
-const METHODOLOGY_NAME = opt('--methodology-name', 'georgia_probate_liberty_county_1858_1867');
-const PROVENANCE      = `${REGION_SLUG}-probate-scraper`;    // created_by / ingested_by label
-
 // --- Constants ---
+const COLLECTION_ID   = '1999178';
+const STATE           = 'GA';
 const BROWSER_DEBUG_PORT = 9222;
 const S3_BUCKET       = process.env.S3_BUCKET_NAME || 'reparations-them';
-const SITEMAP_FILE    = path.join(__dirname, `../../tmp/${REGION_SLUG}-probate-sitemap.json`);
+const SITEMAP_FILE    = path.join(__dirname, '../../tmp/georgia-probate-sitemap.json');
 
-// Fix 3: Confirmed-working waypoints URL (Level 1 — all counties in the collection).
-const WAYPOINTS_URL   = `https://www.familysearch.org/search/image/index?owc=${encodeURIComponent('https://www.familysearch.org/platform/records/collections/' + COLLECTION_ID + '/waypoints')}`;
+// Fix 3: Confirmed working waypoints URL (Level 1 — all 130 counties in collection 1999178)
+const WAYPOINTS_URL   = 'https://www.familysearch.org/search/image/index?owc=https%3A%2F%2Fwww.familysearch.org%2Fplatform%2Frecords%2Fcollections%2F1999178%2Fwaypoints';
 
 // --- Cookie injection ---
 const FS_SESSION_COOKIE = process.env.FS_SESSION_COOKIE || null;
@@ -75,94 +61,6 @@ function log(...args) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// --- Session-loss detection + human re-auth wait (resilience) ---
-// A FamilySearch session can drop mid-crawl (token expiry or an Incapsula /
-// hCaptcha wall). When it does, FS 302-redirects *every* request to its identity
-// login page. If we don't detect that, scrapeOneRoll mistakes the login page for
-// "this roll has no images", marks the roll failed, and immediately navigates to
-// the next roll — machine-gunning the login/hCaptcha endpoint every few seconds.
-// That re-triggers the captcha on every navigation (so a human can never finish
-// logging in) and risks getting the account blocked. Detect it and PAUSE instead.
-const PAUSE_SENTINEL = path.join(os.homedir(), `.probate-scraper-paused-${COLLECTION_ID}.json`);
-
-function isSessionLostUrl(url) {
-    if (!url) return true;
-    return /\/identity\/login/i.test(url)      // ident.familysearch.org/identity/login
-        || /hcaptcha\.com/i.test(url)          // captcha challenge frame became the top doc
-        || !/familysearch\.org/i.test(url);    // bounced off FS entirely
-}
-
-function writePauseSentinel(reason) {
-    try {
-        fs.writeFileSync(PAUSE_SENTINEL, JSON.stringify(
-            { reason, since: new Date().toISOString(), pid: process.pid, collection: COLLECTION_ID }, null, 2));
-    } catch (_) { /* sentinel is best-effort */ }
-}
-function clearPauseSentinel() {
-    try { if (fs.existsSync(PAUSE_SENTINEL)) fs.unlinkSync(PAUSE_SENTINEL); } catch (_) {}
-}
-
-// Block until a human logs back in on the Mini. CRITICAL: we must NOT navigate
-// while waiting — every page.goto() would yank the login page out from under the
-// operator and spawn a fresh hCaptcha. We only poll page.url() (cheap, no nav).
-async function waitForReauth(contextLabel) {
-    let url;
-    try { url = page.url(); } catch (_) { url = ''; }
-    if (!isSessionLostUrl(url)) return true; // already healthy — nothing to do
-
-    log(`  SESSION LOST during ${contextLabel}. Top URL: ${url}`);
-    log('  PAUSING navigation. Log back in to FamilySearch in the scraper tab on the Mini (VNC vnc://100.114.130.16). Polling without navigating.');
-    writePauseSentinel(`session lost during ${contextLabel}`);
-    await notify(
-        `FamilySearch session dropped during ${REGION_LABEL} probate scrape (${contextLabel}). Scraper is PAUSED — log in on the Mini (VNC vnc://100.114.130.16) and it resumes on its own.`,
-        { severity: 'error', title: 'probate-scrape session lost', tags: ['scraper', 'probate', 'login'] }
-    );
-
-    const POLL_MS = 30000;
-    const REPROBE_MS = 180000; // every 3 min, gently re-navigate to portal to
-                               // test+heal a transient redirect: with valid cookies
-                               // FS loads content (we recover); a genuine logout
-                               // bounces back to login (we keep waiting). This is
-                               // infrequent enough not to disrupt a human captcha,
-                               // and stops a stale redirect from hanging forever.
-    let waited = 0;
-    let nextReAlert = 600000; // re-page every 10 min while still locked out
-    let nextReprobe = REPROBE_MS;
-    while (true) {
-        await sleep(POLL_MS);
-        waited += POLL_MS;
-
-        if (waited >= nextReprobe) {
-            nextReprobe += REPROBE_MS;
-            log('  Re-probing session health (gentle nav to portal)...');
-            try {
-                await page.goto('https://www.familysearch.org/home/portal/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-                await sleep(3000);
-            } catch (_) { /* probe is best-effort */ }
-        }
-
-        let u;
-        try { u = page.url(); } catch (_) { u = ''; }
-        if (!isSessionLostUrl(u)) {
-            log(`  Session restored after ${Math.round(waited / 60000)}m. Resuming. URL: ${u}`);
-            clearPauseSentinel();
-            await notify(
-                `${REGION_LABEL} probate scrape session restored after ${Math.round(waited / 60000)}m — resuming.`,
-                { severity: 'info', title: 'probate-scrape resumed', tags: ['scraper', 'probate'] }
-            );
-            await sleep(3000);
-            return true;
-        }
-        if (waited >= nextReAlert) {
-            nextReAlert += 600000;
-            await notify(
-                `Still logged out of FamilySearch (${Math.round(waited / 60000)}m). ${REGION_LABEL} probate scrape still paused — log in on the Mini.`,
-                { severity: 'warn', title: 'probate-scrape still paused', tags: ['scraper', 'probate', 'login'] }
-            );
-        }
-    }
 }
 
 // --- Unicode / control-char sanitizer ---
@@ -303,12 +201,7 @@ async function ensureLoggedIn() {
     }
 
     const cookiesInjected = await injectCookies();
-    // Navigate straight to the authenticated dashboard: logged in it stays on
-    // /home/portal/, logged out FamilySearch redirects to the login page. This
-    // is far more reliable than loading the root marketing page and probing
-    // header DOM selectors that FamilySearch changes periodically (the old check
-    // reported "Not logged in" even on a valid session).
-    await page.goto('https://www.familysearch.org/home/portal/', { waitUntil: 'domcontentloaded' });
+    await page.goto("https://www.familysearch.org/home/portal/", { waitUntil: "domcontentloaded" });
     await sleep(cookiesInjected ? 3000 : 2000);
 
     const checkLoggedIn = async () => {
@@ -333,36 +226,19 @@ async function ensureLoggedIn() {
         return;
     }
 
-    log('Not logged in. Waiting for manual login in the Chrome window on the Mini (VNC vnc://100.114.130.16).');
-    log('  Will NOT reload while a captcha/login challenge is on screen (reloading re-triggers the captcha and yanks your in-progress solve).');
-    writePauseSentinel('startup: waiting for manual login');
-    await notify(
-        `${REGION_LABEL} probate scrape is waiting for a manual FamilySearch login on the Mini (VNC vnc://100.114.130.16).`,
-        { severity: 'warn', title: 'probate-scrape login needed', tags: ['scraper', 'probate', 'login'] }
-    );
+    log('Not logged in. Please log in in the Chrome window. Waiting up to 3 minutes...');
     let loggedIn = false;
-    const POLL_MS = 5000;
-    const MAX_WAIT_MS = 30 * 60 * 1000; // patient: 30 min, not 3
-    let waited = 0;
-    let lastReloadAt = 0;
-    while (waited < MAX_WAIT_MS) {
-        await sleep(POLL_MS);
-        waited += POLL_MS;
-        if (await checkLoggedIn()) { loggedIn = true; break; }
-        // Only reload to refresh state when we are NOT sitting on a login/captcha
-        // challenge, and at most once a minute. A human's login navigates the page
-        // away from the challenge on its own — we just need to notice it happened.
-        let url; try { url = page.url(); } catch (_) { url = ''; }
-        if (!isSessionLostUrl(url) && (waited - lastReloadAt) >= 60000) {
-            lastReloadAt = waited;
-            try { await page.reload({ waitUntil: 'domcontentloaded' }); await sleep(2000); } catch (_) {}
+    for (let i = 0; i < 18; i++) {
+        await sleep(10000);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await sleep(2000);
+        if (await checkLoggedIn()) {
+            loggedIn = true;
+            break;
         }
     }
-    clearPauseSentinel();
     if (!loggedIn) {
-        log('Login timed out after 30m. Exiting.');
-        await notify(`${REGION_LABEL} probate scrape exited: manual login not completed within 30m.`,
-            { severity: 'error', title: 'probate-scrape login timeout', tags: ['scraper', 'probate', 'login'] });
+        log('Login timed out. Exiting.');
         process.exit(1);
     }
     log('Successfully logged in to FamilySearch.');
@@ -406,10 +282,10 @@ async function checkAndApplyMigrations() {
         // Fetch methodology UUID
         const mRes = await client.query(`
             SELECT id FROM estimation_methodology_registry
-            WHERE name = $1
+            WHERE name = 'georgia_probate_liberty_county_1858_1867'
               AND version = 'v1.0.0'
             LIMIT 1;
-        `, [METHODOLOGY_NAME]);
+        `);
         if (mRes.rows.length > 0) {
             methodologyId = mRes.rows[0].id;
             if (VERBOSE) log(`Methodology UUID: ${methodologyId}`);
@@ -479,16 +355,8 @@ async function buildSitemap(sitemap) {
         return results;
     });
 
-    // Fix 3: Hard stop if zero counties found — UNLESS we already have a cached
-    // sitemap. The waypoints SPA intermittently renders zero links (slow load,
-    // A/B page variant), which on a RESUME would needlessly kill a crawl whose
-    // counties are all already indexed. Only a genuinely empty first-run build
-    // is fatal; otherwise fall back to the cached sitemap and proceed.
+    // Fix 3: Hard stop if zero counties found
     if (countyLinks.length === 0) {
-        if (sitemap.counties.length > 0) {
-            log(`WARNING: Waypoints page returned zero county links, but sitemap already has ${sitemap.counties.length} counties — using cached sitemap and continuing.`);
-            return sitemap;
-        }
         log('ERROR: Waypoints page returned zero county links. The URL or DOM structure may have changed.');
         log(`  URL used: ${WAYPOINTS_URL}`);
         log('  Open this URL in Chrome DevTools, find the county links, and update the selector.');
@@ -521,7 +389,7 @@ async function buildSitemap(sitemap) {
             await page.goto(countyIndexUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await sleep(4000);
 
-            rolls = await page.evaluate((collectionId) => {
+            rolls = await page.evaluate(() => {
                 const results = [];
                 const links = Array.from(document.querySelectorAll('a[href*="owc="]'));
                 for (const link of links) {
@@ -535,12 +403,12 @@ async function buildSitemap(sitemap) {
                     const dgs = owcParts[1].trim();
                     const title = (link.textContent || '').trim();
                     if (groupId && dgs && title) {
-                        const rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(groupId + ':' + dgs + '?cc=' + collectionId)}&cc=${collectionId}`;
+                        const rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(groupId + ':' + dgs + '?cc=1999178')}&cc=1999178`;
                         results.push({ title, groupId, dgs, rollIndexUrl, imageCount: null, status: 'pending' });
                     }
                 }
                 return results;
-            }, COLLECTION_ID);
+            });
 
             // Deduplicate by groupId
             const seen = new Set();
@@ -583,17 +451,6 @@ function buildImageUrl(arkId) {
 async function scrapeOneRoll(countyObj, roll, isDryRun) {
     log(`Roll: "${roll.title}" [${roll.groupId}] in ${countyObj.county}`);
 
-    // Skip malformed sitemap entries. A real FS roll groupId looks like "Q7P3-N3X";
-    // the waypoints crawl occasionally emits a stray collection-level row whose
-    // groupId got mis-parsed as "https". Its bogus rollIndexUrl just redirects to
-    // the login page and trips the session-loss guard for nothing. Mark it complete
-    // so it is never revisited.
-    if (!/^[0-9A-Z]{4}-[0-9A-Z]{2,5}$/i.test(roll.groupId || '')) {
-        log(`  Skipping malformed roll entry (groupId="${roll.groupId}").`);
-        roll.status = 'complete';
-        return;
-    }
-
     // Backfill rollIndexUrl for sitemaps built before this change
     if (!roll.rollIndexUrl) {
         roll.rollIndexUrl = `https://www.familysearch.org/en/search/image/index?owc=${encodeURIComponent(roll.groupId + ':' + roll.dgs + '?cc=' + COLLECTION_ID)}&cc=${COLLECTION_ID}`;
@@ -607,26 +464,6 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         log(`  ERROR navigating to roll index ${roll.groupId}: ${e.message}. Skipping roll.`);
         roll.status = 'failed';
         return;
-    }
-
-    // Resilience: if FS bounced us to its login / hCaptcha wall, pause for human
-    // re-auth (without navigating) and re-load the roll index. NEVER treat a
-    // logout as an empty roll — that is what caused the captcha-hammering spiral.
-    if (isSessionLostUrl(page.url())) {
-        await waitForReauth(`roll ${roll.groupId} (${countyObj.county})`);
-        try {
-            await page.goto(roll.rollIndexUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await sleep(4000);
-        } catch (e) {
-            log(`  ERROR re-navigating to roll index ${roll.groupId} after re-auth: ${e.message}. Skipping roll.`);
-            roll.status = 'failed';
-            return;
-        }
-        if (isSessionLostUrl(page.url())) {
-            log(`  Still walled after re-auth for roll ${roll.groupId}; deferring roll for a later retry.`);
-            roll.status = 'failed';
-            return;
-        }
     }
 
     // Step 2: Click the first image thumbnail to enter the viewer
@@ -689,64 +526,51 @@ async function scrapeOneRoll(countyObj, roll, isDryRun) {
         }
     }
 
-    // Step 5: Build the list of image numbers we still need. On --resume we skip
-    // already-written images by JUMPING the viewer directly to each remaining
-    // target via the number-input — so a long run of already-written images
-    // collapses into one jump instead of stepping +1 through each (which cost
-    // ~6s/image: a 750-image resume-skip was ~75m of dead time + nuisance
-    // watchdog stall alerts). A fully-written roll now costs ~0 instead of N*6s.
-    const targets = [];
-    for (let n = 1; n <= imageCount; n++) {
-        if (!(RESUME && writtenImages.has(n))) targets.push(n);
-    }
-    if (RESUME && writtenImages.size > 0) {
-        log(`  RESUME: ${writtenImages.size} already-written; ${targets.length} image(s) left to fetch (jumping directly).`);
-    }
-
-    let currentImage = 1; // we entered the viewer on image 1
-    for (const target of targets) {
+    // Step 5: Process image 1 (already in viewer), then advance via input field for images 2…N
+    for (let imageNumber = 1; imageNumber <= imageCount; imageNumber++) {
         if (LIMIT > 0 && totalImagesProcessed >= LIMIT) {
             log(`  Global limit of ${LIMIT} images reached.`);
             return;
         }
 
-        // Jump the viewer directly to the target image (no-op if already there).
-        if (target !== currentImage) {
-            const advanced = await advanceViewerToImage(target);
-            if (!advanced) {
-                // Distinguish a real failure from a session drop. If FS logged us
-                // out mid-roll, pause for re-auth, then mark the roll failed so it
-                // is re-scraped from the top later (don't let the caller mark a
-                // truncated roll 'complete' — that silently drops the tail images).
-                if (isSessionLostUrl(page.url())) {
-                    await waitForReauth(`mid-roll ${roll.groupId} at image ${target}`);
-                    log(`  Session restored; deferring roll ${roll.groupId} for a clean re-scrape from the top.`);
-                    roll.status = 'failed';
-                    return;
-                }
-                log(`  WARNING: Could not advance viewer to image ${target}. Stopping roll.`);
-                break;
+        if (RESUME && writtenImages.has(imageNumber)) {
+            if (VERBOSE) log(`  RESUME: Skipping image ${imageNumber}.`);
+            // Advance viewer so it stays in sync, then read the new ARK
+            if (imageNumber < imageCount) {
+                await advanceViewerToImage(imageNumber + 1);
+                const advUrl = page.url();
+                const advMatch = advUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+                if (advMatch) currentArkId = advMatch[1];
             }
-            currentImage = target;
-            const jumpUrl = page.url();
-            const jumpMatch = jumpUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
-            if (jumpMatch) {
-                currentArkId = jumpMatch[1];
-                if (VERBOSE) log(`  Image ${target} ARK: ${currentArkId}`);
-            } else {
-                log(`  WARNING: Could not extract ARK for image ${target} (URL: ${jumpUrl}). Using placeholder.`);
-                currentArkId = `unknown-${target}`;
-            }
+            continue;
         }
 
-        await processImage(countyObj, roll, target, currentArkId, isDryRun);
+        await processImage(countyObj, roll, imageNumber, currentArkId, isDryRun);
         totalImagesProcessed++;
 
         await sleep(3000 + Math.random() * 2000);
 
-        if (totalImagesProcessed % 50 === 0) {
-            log(`  Session check at image ${target}...`);
+        if (imageNumber % 50 === 0) {
+            log(`  Session check at image ${imageNumber}...`);
             await ensureLoggedIn();
+        }
+
+        // Advance to next image via viewer input field and capture new ARK
+        if (imageNumber < imageCount) {
+            const advanced = await advanceViewerToImage(imageNumber + 1);
+            if (!advanced) {
+                log(`  WARNING: Could not advance viewer to image ${imageNumber + 1}. Stopping roll.`);
+                break;
+            }
+            const newUrl = page.url();
+            const newArkMatch = newUrl.match(/3:1:([A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)/i);
+            if (newArkMatch) {
+                currentArkId = newArkMatch[1];
+                if (VERBOSE) log(`  Image ${imageNumber + 1} ARK: ${currentArkId}`);
+            } else {
+                log(`  WARNING: Could not extract ARK for image ${imageNumber + 1} (URL: ${newUrl}). Using placeholder.`);
+                currentArkId = `unknown-${imageNumber + 1}`;
+            }
         }
     }
 }
@@ -873,12 +697,12 @@ async function writeToDbAndS3(
 
         // Fix 2: Dynamic S3 key
         const countySlug = county.toLowerCase().replace(/\s+/g, '-');
-        const s3Key = `probate/${REGION_SLUG}/${countySlug}/${roll.groupId}/image-${String(imageNumber).padStart(4, '0')}-${baseArkId}.jpg`;
+        const s3Key = `probate/georgia/${countySlug}/${roll.groupId}/image-${String(imageNumber).padStart(4, '0')}-${baseArkId}.jpg`;
 
         // Fix 2: Dynamic collection strings
-        const collectionName = `${county} County ${STATE} Probate Records — ${roll.title}`;
-        const collectionKey = `${REGION_SLUG}-probate-${countySlug}-${roll.groupId}`;
-        const sourcePageTitle = `${county} County ${REGION_LABEL} Probate Records, ${roll.title}, Image ${imageNumber}`;
+        const collectionName = `${county} County GA Probate Records — ${roll.title}`;
+        const collectionKey = `georgia-probate-${countySlug}-${roll.groupId}`;
+        const sourcePageTitle = `${county} County Georgia Probate Records, ${roll.title}, Image ${imageNumber}`;
 
         let s3Url = '';
         if (screenshotBuffer) {
@@ -898,21 +722,13 @@ async function writeToDbAndS3(
         };
         const docType = docTypeMap[recordType] || 'other';
 
-        // extraction_confidence reflects the strength of the record-type
-        // classification signal (0 = no recognised anchor — e.g. continuation
-        // or index page). It is NOT a transcript-quality score. The column
-        // schema default is 0.70; writing it explicitly avoids every row
-        // silently inheriting that default regardless of what was matched.
-        const extractionConfidence = parsedData?.classificationConfidence ?? 0;
-
         const pdResult = await client.query(`
             INSERT INTO person_documents
                 (s3_key, s3_url, document_type, filename, file_size, mime_type,
                  source_type_label, collection_name, collection_key,
                  collection_page_number, name_as_appears, document_year,
-                 created_by, ocr_text, source_url, source_type, image_number,
-                 extraction_confidence)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                 created_by, ocr_text, source_url, source_type, image_number)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
             ON CONFLICT DO NOTHING
             RETURNING id;
         `, [
@@ -924,12 +740,11 @@ async function writeToDbAndS3(
             collectionName, collectionKey, imageNumber,
             testatorName || `Image ${imageNumber}`,
             parsedData?.recordYear || null,
-            PROVENANCE,
+            'georgia-probate-scraper',
             safeTranscript,
             url,
             'familysearch',
-            imageNumber,
-            extractionConfidence
+            imageNumber
         ]);
 
         if (!pdResult.rows[0]) {
@@ -947,10 +762,6 @@ async function writeToDbAndS3(
             testatorCanonicalPersonId = await upsertCanonicalPerson(
                 client, testatorName, 'enslaver', parsedData.recordYear, county, STATE
             );
-        }
-        // Dependent writes run only when the testator resolved to a real
-        // person — upsertCanonicalPerson returns null for a rejected non-name.
-        if (testatorCanonicalPersonId) {
             await client.query(
                 `UPDATE person_documents SET canonical_person_id = $1 WHERE id = $2`,
                 [testatorCanonicalPersonId, personDocumentId]
@@ -960,19 +771,18 @@ async function writeToDbAndS3(
                 INSERT INTO enslaver_evidence_compendium
                     (canonical_person_id, evidence_source_table, evidence_source_id,
                      evidence_strength, claim_summary, methodology_id, ingested_at, ingested_by)
-                VALUES ($1, 'person_documents', $2::text, 'direct_primary', $3, $4, NOW(), $5)
+                VALUES ($1, 'person_documents', $2::text, 'direct_primary', $3, $4, NOW(), 'georgia-probate-scraper')
                 ON CONFLICT DO NOTHING;
             `, [
                 testatorCanonicalPersonId, personDocumentId,
-                `Named as testator in ${county} County ${STATE} probate ${parsedData.recordYear}, type: ${recordType}`,
-                methodologyId,
-                PROVENANCE
+                `Named as testator in ${county} County GA probate ${parsedData.recordYear}, type: ${recordType}`,
+                methodologyId
             ]);
 
             if (parsedData.estateValue) {
                 const notesJson = JSON.stringify({
-                    [`${REGION_KEY}_probate_estate_value`]: parsedData.estateValue,
-                    [`${REGION_KEY}_probate_year`]: parsedData.recordYear,
+                    georgia_probate_estate_value: parsedData.estateValue,
+                    georgia_probate_year: parsedData.recordYear,
                     roll: roll.title,
                     county,
                 });
@@ -1006,7 +816,7 @@ async function writeToDbAndS3(
         const heirNameToId = {};
         if (parsedData?.heirs?.length > 0) {
             for (const heir of parsedData.heirs) {
-                if (!heir.name || !isValidPersonName(heir.name)) continue;
+                if (!heir.name) continue;
                 // Use a SAVEPOINT per heir so a constraint violation or other error on one
                 // heir does not leave the connection in "aborted" state for subsequent heirs.
                 await client.query('SAVEPOINT before_heir_upsert');
@@ -1014,11 +824,6 @@ async function writeToDbAndS3(
                     const heirId = await upsertCanonicalPerson(
                         client, heir.name, 'unknown', parsedData.recordYear, county, STATE
                     );
-                    // upsertCanonicalPerson returns null for a rejected non-name — skip.
-                    if (!heirId) {
-                        await client.query('RELEASE SAVEPOINT before_heir_upsert');
-                        continue;
-                    }
                     heirNameToId[normalizeName(heir.name).toLowerCase()] = heirId;
 
                     if (testatorCanonicalPersonId) {
@@ -1183,15 +988,10 @@ function isValidEnslavedPersonName(token) {
     return true;
 }
 
-// isValidPersonName — gates every canonical_persons creation in this scraper
-// (testators and heirs). Shared with NameResolver via src/utils so the rule
-// cannot drift; required at the top of this file.
-
 // --- Transcript Parser ---
 function parseTranscript(rawText, imageNumber, arkId) {
     const result = {
         recordType: 'other',
-        classificationConfidence: 0,
         testatorName: null,
         recordYear: null,
         enslavedPersons: [],
@@ -1204,22 +1004,24 @@ function parseTranscript(rawText, imageNumber, arkId) {
         arkId,
     };
 
-    // Record-type classification is delegated to the shared classifier
-    // (src/services/probate/document-classifier.js) so the scraper and the
-    // roll-level segmenter apply identical rules. The old substring rule
-    // ("executor" AND "will" anywhere) tagged almost every probate page as a
-    // will — see the classifier header for the post-mortem.
-    const classified = classifyTranscript(rawText);
-    result.recordType = classified.recordType;
-    result.classificationConfidence = classified.confidence;
+    const textLow = rawText.toLowerCase();
 
-    // #67: probate collections span well beyond the 19th century (NY = 1629–1971).
-    // The old /18\d{2}/ matched ONLY 1800–1899, so every colonial (16xx/17xx) and
-    // 20th-c document had its year NULLed, and the rest clamped to 1800–1899. Widen
-    // to the full plausible 4-digit range 1600–1999. Math.min keeps the earliest
-    // stated year as a conservative proxy for the document date (a will/inventory
-    // page's earliest token is usually its signing/recording year).
-    const yearMatches = rawText.match(/\b(1[6-9]\d{2})\b/g);
+    if (textLow.includes('last will and testament') ||
+        (textLow.includes('executor') && textLow.includes('will')) ||
+        textLow.includes('give and bequeath') ||
+        textLow.includes('i give to')) {
+        result.recordType = 'will';
+    } else if (textLow.includes('inventory') || textLow.includes('appraisement') || textLow.includes('appraised')) {
+        result.recordType = 'inventory';
+    } else if ((textLow.includes('account') && textLow.includes('executor')) || textLow.includes('in account')) {
+        result.recordType = 'estate_account';
+    } else if (textLow.includes('guardian') && textLow.includes('account')) {
+        result.recordType = 'guardian_account';
+    } else if (textLow.includes('letters of administration') || textLow.includes('letters testamentary')) {
+        result.recordType = 'letters';
+    }
+
+    const yearMatches = rawText.match(/\b(18\d{2})\b/g);
     if (yearMatches && yearMatches.length > 0) {
         result.recordYear = Math.min(...yearMatches.map(y => parseInt(y, 10)));
     }
@@ -1232,12 +1034,9 @@ function parseTranscript(rawText, imageNumber, arkId) {
     ];
     for (const pat of namePatterns) {
         const m = rawText.match(pat);
-        if (m && m[1]) {
-            const candidate = normalizeName(m[1]);
-            if (isValidPersonName(candidate)) {
-                result.testatorName = candidate;
-                break;
-            }
+        if (m && m[1] && m[1].length > 2) {
+            result.testatorName = normalizeName(m[1]);
+            break;
         }
     }
 
@@ -1253,14 +1052,15 @@ function parseTranscript(rawText, imageNumber, arkId) {
     while ((hm = heirRelationPattern.exec(rawText)) !== null) {
         const relation = hm[1].toLowerCase();
         const name = normalizeName(hm[2]);
-        if (isValidPersonName(name) && !result.heirs.find(h => h.name === name)) {
+        if (name.length > 1 && !result.heirs.find(h => h.name === name)) {
             result.heirs.push({ name, relation, personType: 'unknown' });
         }
     }
     while ((hm = giveBequeath.exec(rawText)) !== null) {
         const name = normalizeName(hm[1]);
         const relation = hm[2] ? hm[2].toLowerCase() : 'unknown';
-        if (isValidPersonName(name) && !result.heirs.find(h => h.name === name)) {
+        if (name.length > 2 && !/^(My|The|His|Her|All|Said|Each)$/i.test(name) &&
+            !result.heirs.find(h => h.name === name)) {
             result.heirs.push({ name, relation, personType: 'unknown' });
         }
     }
@@ -1269,7 +1069,7 @@ function parseTranscript(rawText, imageNumber, arkId) {
     let em;
     while ((em = execPattern.exec(rawText)) !== null) {
         const name = normalizeName(em[1]);
-        if (isValidPersonName(name)) result.executors.push({ name });
+        if (name.length > 1) result.executors.push({ name });
     }
 
     const enslavedPatterns = [
@@ -1329,12 +1129,6 @@ function parseTranscript(rawText, imageNumber, arkId) {
 
 // --- Canonical Person Upsert (unchanged) ---
 async function upsertCanonicalPerson(client, name, personType, deathYearEstimate, primaryCounty, primaryState) {
-    // Last line of defense: never create a canonical_persons row for a string
-    // that is not a person's name. Callers must treat a null return as "skip".
-    if (!isValidPersonName(name)) {
-        if (VERBOSE) log(`    Rejected non-name "${name}" — not creating canonical_person`);
-        return null;
-    }
     const normalizedName = normalizeName(name);
     const nameParts = normalizedName.split(/\s+/);
     const firstName = nameParts[0] || null;
@@ -1394,7 +1188,7 @@ async function upsertCanonicalPerson(client, name, personType, deathYearEstimate
     `, [
         normalizedName, firstName, lastName, personType,
         primaryCounty, primaryState, deathYearEstimate || null,
-        `Auto-created by ${PROVENANCE}. Type: ${personType}.`
+        `Auto-created by georgia-probate-scraper. Type: ${personType}.`
     ]);
     const newId = insertRes.rows[0].id;
     if (VERBOSE) log(`    Created canonical_person id=${newId} for "${normalizedName}"`);
@@ -1403,7 +1197,7 @@ async function upsertCanonicalPerson(client, name, personType, deathYearEstimate
 
 // --- Main ---
 async function main() {
-    log(`Starting ${REGION_LABEL} Probate Scraper (multi-county/multi-roll) — collection ${COLLECTION_ID}, state ${STATE}...`);
+    log('Starting Georgia Probate Scraper (multi-county/multi-roll)...');
     log(`  COUNTY_FILTER=${COUNTY_FILTER || 'all'}, ROLL_TITLE_FILTER=${ROLL_TITLE_FILTER || 'all'}`);
     log(`  DRY_RUN=${DRY_RUN}, APPLY=${APPLY}, RESUME=${RESUME}, LIMIT=${LIMIT || 'none'}`);
 

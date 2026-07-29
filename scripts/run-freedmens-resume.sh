@@ -23,6 +23,7 @@
 set -uo pipefail
 cd "$HOME/Desktop/Reparations-is-a-real-number"
 set -a; [ -f .env ] && source .env; set +a
+export USE_DOCUMENT_AI=true
 
 OUT=/tmp/freedmens-resume
 mkdir -p "$OUT"

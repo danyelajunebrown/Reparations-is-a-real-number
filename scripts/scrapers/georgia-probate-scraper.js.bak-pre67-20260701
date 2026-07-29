@@ -847,10 +847,10 @@ async function processImage(countyObj, roll, imageNumber, currentArkId, isDryRun
             log('    Enslaved:', parsedData.enslavedPersons.map(e => `${e.name} [to: ${e.bequestRecipientName || 'unknown'}]`).join(', ') || 'none');
         }
         // Still record progress in dry-run mode so status is visible
-        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId, countyObj.county);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
     } else {
         // status === 'failed'
-        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId, countyObj.county);
+        await updateProgress(imageNumber, currentArkId, status, errorText, recordType, testatorName, enslavedCount, null, null, roll.groupId);
     }
 }
 
@@ -935,7 +935,7 @@ async function writeToDbAndS3(
         if (!pdResult.rows[0]) {
             await client.query('COMMIT');
             log(`  person_documents: duplicate for image ${imageNumber}, skipping.`);
-            await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, null, s3Key, roll.groupId, county);
+            await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, null, s3Key, roll.groupId);
             return;
         }
         const personDocumentId = pdResult.rows[0].id;
@@ -1104,21 +1104,21 @@ async function writeToDbAndS3(
         }
 
         await client.query('COMMIT');
-        await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, personDocumentId, s3Key, roll.groupId, county);
+        await updateProgress(imageNumber, baseArkId, 'written', null, recordType, testatorName, enslavedCount, personDocumentId, s3Key, roll.groupId);
     } catch (e) {
         await client.query('ROLLBACK');
         log(`  ERROR writing image ${imageNumber}: ${e.message}`);
-        await updateProgress(imageNumber, baseArkId, 'failed', e.message, recordType, testatorName, enslavedCount, null, null, roll.groupId, county);
+        await updateProgress(imageNumber, baseArkId, 'failed', e.message, recordType, testatorName, enslavedCount, null, null, roll.groupId);
     } finally {
         client.release();
     }
 }
 
-// --- Progress tracking ---
+// --- Progress tracking (updated for roll_group_id) ---
 async function updateProgress(
     imageNumber, arkId, status, errorText = null,
     recordType = null, testatorName = null, enslavedCount = 0,
-    personDocumentId = null, s3Key = null, rollGroupId = null, county = null
+    personDocumentId = null, s3Key = null, rollGroupId = null
 ) {
     const client = await pool.connect();
     try {
@@ -1140,7 +1140,8 @@ async function updateProgress(
                 processed_at       = NOW();
         `, [
             COLLECTION_ID,
-            county || 'unknown', STATE,
+            // county and state are not available here without extra params — use defaults
+            rollGroupId || 'unknown', STATE,
             imageNumber, arkId, rollGroupId, status, recordType,
             testatorName, enslavedCount, personDocumentId, s3Key, errorText
         ]);
@@ -1213,13 +1214,7 @@ function parseTranscript(rawText, imageNumber, arkId) {
     result.recordType = classified.recordType;
     result.classificationConfidence = classified.confidence;
 
-    // #67: probate collections span well beyond the 19th century (NY = 1629–1971).
-    // The old /18\d{2}/ matched ONLY 1800–1899, so every colonial (16xx/17xx) and
-    // 20th-c document had its year NULLed, and the rest clamped to 1800–1899. Widen
-    // to the full plausible 4-digit range 1600–1999. Math.min keeps the earliest
-    // stated year as a conservative proxy for the document date (a will/inventory
-    // page's earliest token is usually its signing/recording year).
-    const yearMatches = rawText.match(/\b(1[6-9]\d{2})\b/g);
+    const yearMatches = rawText.match(/\b(18\d{2})\b/g);
     if (yearMatches && yearMatches.length > 0) {
         result.recordYear = Math.min(...yearMatches.map(y => parseInt(y, 10)));
     }

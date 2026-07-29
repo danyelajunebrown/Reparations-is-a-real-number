@@ -42,6 +42,7 @@
     "@aws-sdk/lib-storage": "^3.470.0",
     "@aws-sdk/s3-request-presigner": "^3.948.0",
     "@google-cloud/documentai": "^9.6.0",
+    "@google-cloud/logging": "^11.2.1",
     "@google-cloud/vision": "^4.0.2",
     "@neondatabase/serverless": "^1.0.2",
     "adm-zip": "^0.5.16",
