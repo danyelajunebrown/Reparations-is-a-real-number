@@ -37,8 +37,12 @@ const stats = { enslaverC: 0, enslaverL: 0, enslavedC: 0, enslavedL: 0, edges: 0
 
 (async () => {
   console.log(APPLY ? '=== APPLY (writing) ===' : '=== DRY RUN (resolve+report only) ===');
+  // Process EVERY doc with a recovered testator OR named enslaved — not just the named-enslaved subset.
+  // Linking the ~312 testator docs to their enslaver is the LINKAGE unlock the retrievability rubric flagged
+  // (docs were logged+embedded but 7.6% linked → invisible downstream). Enslaved leads/edges still only
+  // when named enslaved are present (no fabricated persons from a testator alone).
   const rows = fs.readFileSync(path.resolve(__dirname, '../worksheets/dutchess-colonial-yield.jsonl'), 'utf8')
-    .trim().split('\n').map(l => JSON.parse(l)).filter(o => o.enslaved_named?.length);
+    .trim().split('\n').map(l => JSON.parse(l)).filter(o => o.testator || o.enslaved_named?.length);
 
   for (const w of rows) {
     const place = w.place || 'Dutchess';
@@ -55,6 +59,19 @@ const stats = { enslaverC: 0, enslaverL: 0, enslavedC: 0, enslavedL: 0, edges: 0
       }, { dryRun: !APPLY });
       if (er.action === 'linked') stats.enslaverL++; else if (er.action === 'created' || er.action === 'would_create') stats.enslaverC++; else stats.rejected++;
       enslaverRef = er.ref;
+      // LINK the will document to its testator/enslaver (the rubric's LINKED metric) + set the display name.
+      // A will is "about" the testator; the enslaved are linked via edges, not the doc's primary person.
+      if (APPLY && enslaverRef) {
+        const col = enslaverRef.subject_table === 'canonical_persons' ? 'canonical_person_id' : 'unconfirmed_person_id';
+        await pool.query(
+          `UPDATE person_documents
+              SET ${col} = COALESCE(${col}, $2),
+                  name_as_appears = CASE WHEN COALESCE(name_as_appears,'') IN ('', 'Image ' || collection_page_number::text) THEN $3 ELSE name_as_appears END,
+                  testator_name = COALESCE(testator_name, $3)
+            WHERE id = $1 AND canonical_person_id IS NULL`,
+          [w.doc_id, enslaverRef.subject_id, enslaverName]).catch((e) => { if (stats.docsLinked === 0) console.log('   link err:', e.message.slice(0, 50)); });
+        stats.docsLinked = (stats.docsLinked || 0) + 1;
+      }
     }
 
     // ── enslaved leads + owner→enslaved edges ──
