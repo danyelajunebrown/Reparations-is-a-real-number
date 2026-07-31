@@ -11,6 +11,7 @@
 // Usage: node scripts/extract-dutchess-wills-llm.mjs [--limit N] [--apply]   (dry-run default)
 
 import 'dotenv/config';
+import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import pg from 'pg';
 const require = createRequire(import.meta.url);
@@ -53,13 +54,18 @@ async function main() {
       WHERE ocr_text ILIKE '%dutchess%' AND unconfirmed_person_id IS NULL AND canonical_person_id IS NULL
         AND length(COALESCE(ocr_text,'')) > 300
       ORDER BY id LIMIT $1`, [LIMIT]);
-  console.log(`LLM extract: ${rows.length} unlinked Dutchess docs · model=${MODEL}${APPLY ? '' : ' [DRY-RUN]'}`);
-  const st = { extracted: 0, dutchess: 0, otherCounty: 0, badName: 0, linked: 0, enslaved: 0, edges: 0, err: 0 };
+  console.log(`LLM extract: ${rows.length} unlinked "%dutchess%" docs · model=${MODEL}${APPLY ? '' : ' [DRY-RUN]'}`);
+  const st = { extracted: 0, noTestator: 0, dutchess: 0, otherCounty: 0, badName: 0, linked: 0, enslaved: 0, edges: 0, err: 0 };
+  const countyBreakdown = {};                 // LEARN: the TRUE county composition of the "Dutchess" cohort
+  const analysis = [];                        // per-doc {doc_id, testator, county, enslaved} — de-contamination map
   for (const d of rows) {
     let ex; try { ex = await llmExtract(d.ocr); } catch (e) { st.err++; continue; }
-    if (!ex || !ex.testator) continue;
+    if (!ex || !ex.testator) { st.noTestator++; analysis.push({ doc_id: d.id, testator: null, county: null }); continue; }
     st.extracted++;
     const county = (ex.residence_county || '').toLowerCase();
+    const cKey = county ? county.replace(/\s*(co\.?|county|borough).*/, '').trim() || 'unknown' : '(none)';
+    countyBreakdown[cKey] = (countyBreakdown[cKey] || 0) + 1;
+    analysis.push({ doc_id: d.id, testator: ex.testator, county: ex.residence_county || null, enslaved: ex.enslaved_named || [] });
     // FILTER: only treat as Dutchess when the testator's residence is Dutchess (or none given but the doc is);
     // a named OTHER county means this province-book page is that county's, not Dutchess → skip.
     if (county && !county.includes('dutchess')) { st.otherCounty++; continue; }
@@ -93,6 +99,11 @@ async function main() {
     } catch (e) { st.err++; if (st.err <= 3) console.log(`   link err doc#${d.id}: ${e.message.slice(0, 50)}`); }
   }
   await pool.end();
+  // LEARN: write the per-doc analysis + print the true-county composition of the "%dutchess%" cohort
+  try { fs.writeFileSync('worksheets/dutchess-residue-analysis.jsonl', analysis.map((a) => JSON.stringify(a)).join('\n') + '\n'); } catch { /* ok */ }
+  const cb = Object.entries(countyBreakdown).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}:${v}`).join(', ');
   console.log(`\n=== ${JSON.stringify(st)} ===`);
+  console.log(`=== TRUE county composition (of docs where a testator+county was found): ${cb} ===`);
+  console.log(`=== ${st.noTestator} docs had NO extractable testator (fragments/index/continuation pages) ===`);
 }
 main().catch((e) => { console.error('FATAL:', e.message); process.exit(1); });
