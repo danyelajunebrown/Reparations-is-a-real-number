@@ -181,7 +181,7 @@ class DAAOrchestrator {
 
         // Step 2: Get all documented slaveholders
         console.log('Step 2: Retrieving documented slaveholders...');
-        const slaveholders = await this.getDocumentedSlaveholders(climbSession.id);
+        let slaveholders = await this.getDocumentedSlaveholders(climbSession.id);
         console.log(`   ✓ Found ${slaveholders.length} documented slaveholder(s)`);
 
         if (slaveholders.length === 0) {
@@ -245,7 +245,16 @@ class DAAOrchestrator {
         // When a user's probate records arrive (user's 5 DC ancestors,
         // Apr 18, 2026 request), they get ingested into land_transfer_events
         // and this gate releases automatically.
-        await this._enforceProbateGate(slaveholders);
+        const probateGate = await this._enforceProbateGate(slaveholders);
+        // Subset generation: the DAA math + naming carry ONLY the documented
+        // slaveholders; undocumented matches are held as pendingDocumentation
+        // (rendered "suspected — pending primary-source documentation", never
+        // asserted as holding, never counted in the debt).
+        const pendingDocumentation = probateGate.pending;
+        slaveholders = slaveholders.filter(s => probateGate.documentedIds.has(s.slaveholder_id));
+        if (pendingDocumentation.length > 0) {
+            console.log(`   → DAA will name ${slaveholders.length} documented ancestor(s); ${pendingDocumentation.length} held as pending documentation.`);
+        }
 
         // ── CHAIN-OF-CUSTODY GATE: every EDGE on the lineage must be proven ──
         //
@@ -380,7 +389,11 @@ class DAAOrchestrator {
             docxPath,
             slaveholderData,
             debtCalculation,
-            climbSession
+            climbSession,
+            // Undocumented matched ancestors — surfaced to the caller/renderer as
+            // "suspected, pending primary-source documentation" (not asserted,
+            // not in the debt). Empty [] when every matched ancestor is documented.
+            pendingDocumentation
         };
     }
 
@@ -519,8 +532,11 @@ class DAAOrchestrator {
             FROM origins o
         `, [enslaverIds, PROBATE_DOC_TYPES, SCHEDULE_DOC_TYPES, SPOUSE_FAMILY_REL_TYPES]);
 
-        const passed = [];
-        const missing = [];
+        // documentedIds → carry into the DAA debt math; pending → rendered as
+        // "suspected, pending primary-source documentation" (asserts no holding).
+        const documentedIds = new Set();
+        const passed = [];       // display strings for the documented set
+        const pending = [];      // [{name, id}] for the pending-documentation banner
         for (const r of q.rows) {
             const hasAny = r.tier_a || r.tier_b || r.tier_c || r.tier_b_schedule;
             if (hasAny) {
@@ -530,22 +546,34 @@ class DAAOrchestrator {
                     r.tier_c && 'C-schedule',
                     r.tier_b_schedule && 'B-schedule-doc',
                 ].filter(Boolean).join(',');
+                documentedIds.add(r.enslaver_id);
                 passed.push(`${r.canonical_name} [${tiers}]`);
             } else {
-                missing.push(`  • ${r.canonical_name} (id=${r.enslaver_id}): no evidence in any tier`);
+                pending.push({ name: r.canonical_name, id: r.enslaver_id });
             }
         }
 
         console.log(`   → Probate gate evidence check:`);
         for (const p of passed) console.log(`      ✓ ${p}`);
-        if (missing.length > 0) {
-            console.log(`   → ${missing.length} ancestor(s) with NO documentary evidence:`);
-            for (const m of missing) console.log('   ' + m);
+
+        // POLICY (user directive 2026-07-31, subset + pending flag): generate the
+        // DAA for the DOCUMENTED slaveholders and render the undocumented ones as
+        // "suspected — pending documentation" — a usable instrument that asserts
+        // nothing undocumented. STRICT mode (DAA_STRICT_PROBATE_GATE=1) restores
+        // the old all-or-nothing block (must document EVERY matched ancestor).
+        // Either way, a DAA that names ZERO documented slaveholders cannot be
+        // generated (there is no debt to assert). Policy reference:
+        // memory/project_debt_distribution_architecture.md.
+        const STRICT = process.env.DAA_STRICT_PROBATE_GATE === '1';
+        const missingLines = pending.map(p => `  • ${p.name} (id=${p.id}): no evidence in any tier`);
+
+        if (documentedIds.size === 0) {
+            for (const m of missingLines) console.log('   ' + m);
             throw new DAAProbateGateError(
-                'DAA generation blocked: the following slaveholder ancestors ' +
-                'have no documentary evidence in any tier (land_transfer_events, ' +
+                'DAA generation blocked: NONE of the matched slaveholder ancestors ' +
+                'have documentary evidence in any tier (land_transfer_events, ' +
                 'probate-type person_documents, or family_relationships slave-' +
-                'schedule presence):\n' + missing.join('\n') +
+                'schedule presence):\n' + missingLines.join('\n') +
                 '\n\nRequest primary-source records (probate / deed / 1850 or ' +
                 '1860 slave schedule page / DC compensated emancipation petition) ' +
                 'for these ancestors and ingest via the wealth-tracing pipeline, ' +
@@ -554,7 +582,23 @@ class DAAOrchestrator {
             );
         }
 
-        console.log(`   ✓ Probate gate passed: ${passed.length} slaveholders have documentary evidence`);
+        if (STRICT && pending.length > 0) {
+            for (const m of missingLines) console.log('   ' + m);
+            throw new DAAProbateGateError(
+                'DAA generation blocked (STRICT mode): the following slaveholder ' +
+                'ancestors have no documentary evidence in any tier:\n' +
+                missingLines.join('\n') +
+                '\n\nUnset DAA_STRICT_PROBATE_GATE to generate a subset DAA for the ' +
+                `${documentedIds.size} documented ancestor(s), or ingest primary sources for the missing ones.`
+            );
+        }
+
+        if (pending.length > 0) {
+            console.log(`   ⚑ ${pending.length} matched ancestor(s) UNDOCUMENTED — carried as "suspected, pending documentation" (excluded from debt math):`);
+            for (const m of missingLines) console.log('   ' + m);
+        }
+        console.log(`   ✓ Probate gate passed: ${documentedIds.size} slaveholder(s) with documentary evidence carry the DAA`);
+        return { documentedIds, pending, documentedDesc: passed };
     }
 
     /**
