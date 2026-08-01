@@ -63,4 +63,41 @@ function isValidPersonName(name) {
   return realTokens >= 1;                            // ≥1 capitalised name word
 }
 
-module.exports = { isValidPersonName, NON_NAME_TOKENS };
+// Place-words and status/role/boilerplate words that recur as FAKE decedents/enslavers in the probate
+// corpus. Unlike NON_NAME_TOKENS (fragment detection), these are whole "names" that pass isValidPersonName
+// (they have a vowel and a capital) but are not people: the county they were filed in ("Albany"), the
+// province ("New York"), or their legal role ("Deceased", "Sole", "Widow"). The Jul-2026 NY-probate audit
+// found "Albany"×5, "New York"×3, "Sole"×4, "Deceased"×5 minted as ASSERTABLE enslavers. Promoted here from
+// scripts/build-probate-estate-index.mjs so the mint gate (PersonService.findOrCreateLead) can decline them.
+const SUSPECT_WORDS = new Set([
+  // place-words (NY corpus + general jurisdiction terms)
+  'schenectady', 'albany', 'newyork', 'york', 'county', 'state', 'city', 'town', 'manor',
+  'colony', 'province', 'court', 'surrogate', 'register', 'dutchess', 'ulster', 'kings',
+  'queens', 'richmond', 'westchester', 'rensselaer', 'fishkill', 'poughkeepsie', 'rhinebeck',
+  'england', 'america', 'district', 'ward', 'precinct', 'township', 'parish', 'borough',
+  // status / role / legal-boilerplate words that recur as fake decedents
+  'deceased', 'sole', 'late', 'widow', 'widower', 'estate', 'administrator', 'administratrix',
+  'executor', 'executrix', 'guardian', 'heir', 'heirs', 'infant', 'minor', 'unknown', 'ditto',
+  'same', 'aforesaid', 'decedent', 'testator', 'esquire',
+]);
+
+/**
+ * True when `name` is a place-word / status-word / digit-bearing string that passes isValidPersonName but
+ * is NOT a person (a jurisdiction or a legal role, not a human). Role-agnostic and deliberately NARROW: it
+ * does NOT reject single given names ("Jack", "Bardecu") — legitimate enslaved single-names must still mint.
+ * Biscoe rule: a suspect name is DECLINED at mint, never deleted.
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isNameSuspect(name) {
+  if (!name) return true;
+  const clean = String(name).trim();
+  if (/\d/.test(clean)) return true;                                   // residual digits (dates / liber-folio refs)
+  const toks = clean.toLowerCase().split(/[\s,]+/).map((t) => t.replace(/[^a-z]/g, '')).filter(Boolean);
+  if (!toks.length) return true;
+  if (toks.every((t) => SUSPECT_WORDS.has(t))) return true;            // all place/status words ("Albany", "Sole", "Albany County")
+  if (toks.length === 2 && SUSPECT_WORDS.has(toks.join(''))) return true; // "New York"
+  return false;
+}
+
+module.exports = { isValidPersonName, isNameSuspect, NON_NAME_TOKENS, SUSPECT_WORDS };

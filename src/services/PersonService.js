@@ -13,6 +13,8 @@
  */
 'use strict';
 
+const { isValidPersonName, isNameSuspect } = require('../utils/person-name-validator');
+
 const SUBJECT_TABLES = {
   canonical_persons:        { idCol: 'id',      nameCol: 'canonical_name', kind: 'canonical' },
   unconfirmed_persons:      { idCol: 'lead_id', nameCol: 'name',           kind: 'lead' },
@@ -302,6 +304,15 @@ class PersonService {
       return { ref: res.match, action: 'linked', candidates: res.candidates };
     }
     if (!record.name) return { ref: null, action: 'rejected_no_name', candidates: res.candidates };
+    // MINT GATE (Jul-2026 NY-probate audit): the door is the one place every ingest passes through, so it is
+    // where junk is stopped. A name that is a parsed fragment (isValidPersonName) or a place-word / legal-role
+    // ("Albany", "New York", "Sole", "Deceased" — isNameSuspect) must NOT become a person. Biscoe rule: decline
+    // to mint, never delete. Callers already handle a null ref / rejected_* action (counted as rejected).
+    // opts.skipNameGate lets a caller that has already validated (or intentionally seeds a non-name subject)
+    // bypass — but the default is to gate.
+    if (!opts.skipNameGate && (!isValidPersonName(record.name) || isNameSuspect(record.name))) {
+      return { ref: null, action: 'rejected_suspect_name', candidates: res.candidates };
+    }
     if (dry) return { ref: { subject_table: 'unconfirmed_persons', subject_id: null }, action: 'would_create', candidates: res.candidates };
 
     const ins = await this.db.query(
