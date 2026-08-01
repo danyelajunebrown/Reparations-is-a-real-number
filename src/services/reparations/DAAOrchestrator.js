@@ -225,26 +225,32 @@ class DAAOrchestrator {
         }
         console.log();
 
-        // ── HARD GATE: refuse to generate a DAA without probate records ─────
+        // ── SUBSET GATE: name only the documented slaveholders ─────────────
         //
-        // Policy decision 2026-04-20 (see
-        // memory/project_debt_distribution_architecture.md):
+        // Policy decision 2026-04-20, revised 2026-07-31 to SUBSET generation
+        // (see memory/project_debt_distribution_architecture.md):
         //
-        //   No DAA is generated unless the enslaver lineage has documented
-        //   probate / deed / administration records in `land_transfer_events`
-        //   (migration 038) that support per-descendant inheritance-share
-        //   computation. The alternative — generating a DAA with a "share
-        //   pending" methodology note — was explicitly rejected by the user
-        //   as releasing an incomplete legal instrument.
+        //   The DAA math and naming carry ONLY the enslaver ancestors that
+        //   have documented probate / deed / administration evidence (Tier A
+        //   land_transfer_events per migration 038, or Tier B/C document /
+        //   slave-schedule presence) supporting per-descendant inheritance-
+        //   share computation. Matched ancestors WITHOUT such evidence are not
+        //   dropped and not asserted — they are held as `pendingDocumentation`
+        //   and rendered "suspected — pending primary-source documentation",
+        //   counted in no debt total.
         //
-        //   A DAA that assigns 100% of ancestral debt to a single descendant
-        //   is mathematically wrong; one that assigns share = "TBD" is
-        //   ethically indefensible. So we block generation until the
-        //   primary sources required for real share math are in the DB.
+        //   This supersedes the earlier all-or-nothing block. The distinction
+        //   the earlier policy drew still holds — a DAA that assigns share =
+        //   "TBD" for an ancestor whose estate math cannot be computed is
+        //   indefensible — but the fix is to EXCLUDE that ancestor from the
+        //   instrument (pending), not to block the whole DAA when at least one
+        //   ancestor IS fully documented. A DAA naming zero documented
+        //   slaveholders still cannot be generated (no debt to assert); STRICT
+        //   mode (DAA_STRICT_PROBATE_GATE=1) restores the old block.
         //
         // When a user's probate records arrive (user's 5 DC ancestors,
         // Apr 18, 2026 request), they get ingested into land_transfer_events
-        // and this gate releases automatically.
+        // and the pending ancestor promotes into the documented subset.
         const probateGate = await this._enforceProbateGate(slaveholders);
         // Subset generation: the DAA math + naming carry ONLY the documented
         // slaveholders; undocumented matches are held as pendingDocumentation
@@ -274,7 +280,16 @@ class DAAOrchestrator {
         // built yet, so a hard block would fail every current DAA including the
         // Hopewell fixture. Set DAA_KINSHIP_GATE=enforce to fail closed once the
         // harvest lands and edges carry kinship documents.
-        await this._enforceKinshipGate(slaveholders, climbSession.id);
+        //
+        // SURFACING (audit-mode twin of pendingDocumentation): the gate returns
+        // `lineageUnproven` — one {slaveholder, generation} per named ancestor
+        // whose participant→slaveholder path has an unproven parent→child edge.
+        // Carried on the generate() result so the renderer can annotate that
+        // ancestor "lineage unproven at generation N" (standard §7). This does
+        // NOT block — the kinship gate stays non-enforcing by default; we are
+        // SURFACING the weak link, not gating on it.
+        const kinshipGate = await this._enforceKinshipGate(slaveholders, climbSession.id);
+        const lineageUnproven = (kinshipGate && kinshipGate.lineageUnproven) || [];
 
         // Step 3: Aggregate enslaved persons for each slaveholder
         console.log('Step 3: Aggregating enslaved persons with primary sources...');
@@ -393,7 +408,15 @@ class DAAOrchestrator {
             // Undocumented matched ancestors — surfaced to the caller/renderer as
             // "suspected, pending primary-source documentation" (not asserted,
             // not in the debt). Empty [] when every matched ancestor is documented.
-            pendingDocumentation
+            pendingDocumentation,
+            // Named ancestors whose participant→slaveholder chain of custody has
+            // an unproven parent→child edge — surfaced as "lineage unproven at
+            // generation N" (the EDGE-side twin of pendingDocumentation, per
+            // standard-genealogical-edge-evidence.md §7). Audit-only: these are
+            // still named/in the debt (the kinship gate does not block by
+            // default); the flag tells the renderer to caveat the descent claim.
+            // Empty [] when every named ancestor's lineage is fully documented.
+            lineageUnproven
         };
     }
 
@@ -627,7 +650,7 @@ class DAAOrchestrator {
             ? opts.enforce
             : (process.env.DAA_KINSHIP_GATE || '').toLowerCase() === 'enforce';
 
-        if (!slaveholders || slaveholders.length === 0) return; // probate gate handles empties
+        if (!slaveholders || slaveholders.length === 0) return { lineageUnproven: [] }; // probate gate handles empties
 
         // Pull the FS-ID lineage paths recorded by the climb for this session,
         // so we can walk the edges even for slaveholders that entered via the
@@ -735,12 +758,20 @@ class DAAOrchestrator {
         }
 
         // Evaluate: every edge on a slaveholder's path must be assertable.
+        // `lineageUnproven` is the structured surfacing payload (returned to the
+        // generate flow): one {slaveholder, generation} per named ancestor whose
+        // path has a gap, so the renderer can print "lineage unproven at
+        // generation N". `blocked` is the human-readable log twin.
         const proven = [];
         const blocked = [];
+        const lineageUnproven = [];
         for (const s of perSlaveholder) {
             if (!s.pathKnown) {
                 blocked.push(`  • ${s.name} (Gen ${s.gen != null ? s.gen : '?'}): ` +
                     `lineage path has no FS IDs recorded — chain of custody cannot be verified`);
+                // Whole path unverifiable — surface at the slaveholder's own
+                // generation (or null when even that is unknown).
+                lineageUnproven.push({ slaveholder: s.name, generation: s.gen != null ? s.gen : null });
                 continue;
             }
             let firstGap = null;
@@ -754,6 +785,7 @@ class DAAOrchestrator {
                 blocked.push(`  • ${s.name}: lineage unproven at generation ${firstGap.gen} — ` +
                     `"${child}" → "${parent}" has no S3-stored kinship document ` +
                     `(census co-residence, marriage/death/birth naming parents, or will naming heir)`);
+                lineageUnproven.push({ slaveholder: s.name, generation: firstGap.gen });
             } else {
                 proven.push(`${s.name} [${s.edges.length} edge(s) documented]`);
             }
@@ -786,6 +818,11 @@ class DAAOrchestrator {
             console.log(`   ⚠ Kinship gate AUDIT ONLY — ${blocked.length} unproven lineage(s) would block ` +
                 `under DAA_KINSHIP_GATE=enforce (harvest not yet built; see standard §5/§9).`);
         }
+
+        // Surfaced to the generate flow (audit-mode; never blocks by default):
+        // each entry annotates a NAMED ancestor "lineage unproven at generation
+        // N". The EDGE-side twin of the probate gate's `pending` list.
+        return { lineageUnproven };
     }
 
     /**
