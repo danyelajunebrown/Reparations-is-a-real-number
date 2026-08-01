@@ -1602,26 +1602,44 @@ class DAAOrchestrator {
 
         const { enslavedCountFor } = require('./enslaved-count');
         for (const data of slaveholderData) {
-            const enslavedForCalculation = data.enslavedPersons.map(person => ({
-                name: person.enslaved_name,
-                yearsEnslaved: person.years_enslaved,
-                startYear: person.start_year || 1800,
-                relationship: person.relationship_type
-            }));
+            // Only persons with DOCUMENTED dates feed the per-person Craemer dollar math.
+            // We filter on years_enslaved AND start_year both non-null — the SAME rule
+            // DAAGenerator.calculateComprehensiveDebt applies (see line ~234). Note that
+            // aggregateEnslavedData sets years_enslaved to a non-null value ONLY when a real
+            // birth year plus a freedom/death year exist (and start_year := that birth year),
+            // so this filter never lets an invented startYear reach the money math.
+            const enslavedForCalculation = data.enslavedPersons
+                .filter(person => person.years_enslaved != null && person.start_year != null)
+                .map(person => ({
+                    name: person.enslaved_name,
+                    yearsEnslaved: person.years_enslaved,
+                    startYear: person.start_year,
+                    relationship: person.relationship_type
+                }));
 
-            // #142: reconcile the NAMED persons with the DOCUMENTED count (person_documents.enslaved_count
-            // from slave-schedule walks / probate) — the SAME reconciler contribute.js uses, so the DAA and
-            // the person view can no longer diverge. A walked slaveholder (e.g. Joshua Ward — 1,100 enslaved
-            // documented on schedules, few NAMED) must contribute the documented count, not ~0. Pad the
-            // shortfall with unnamed, schedule-documented enslaved at a default duration (audit: each traces
-            // to a stored doc; MAX-reconciled so overlapping sources never double-count).
+            // #142 (audit-rule-#1 fix): reconcile the NAMED persons with the DOCUMENTED COUNT
+            // (person_documents.enslaved_count from slave-schedule walks / probate) via the SAME
+            // reconciler contribute.js uses, so the DAA head-count and the person view can't diverge.
+            // A walked slaveholder (e.g. Joshua Ward — 1,100 enslaved documented, few NAMED with
+            // dates) must still contribute the documented COUNT, not ~0.
+            //
+            // BUT a documented count carries NO per-person durations or start years. We therefore do
+            // NOT invent years/start-years for the unnamed remainder, and we do NOT run them through
+            // the Craemer dollar math. The prior code padded each unnamed person with
+            // yearsEnslaved:20/startYear:1850 and fed them to calculatePreview, which produced a real
+            // dollar figure from fabricated dates — a number tracing to no row, no citation, no
+            // documented duration. That violates audit rule #1 ("No number on a DAA may trace to
+            // fabricated data"). Instead the documented total is represented as a head-count only
+            // (each unit traces to a stored, MAX-reconciled doc so overlapping sources never
+            // double-count); the DOLLAR total reflects exclusively persons with documented dates.
             const canonId = data.slaveholder.slaveholder_id || data.slaveholder.canonical_id || data.slaveholder.id;
+            let documentedCount = enslavedForCalculation.length;
             try {
-                const ec = await enslavedCountFor(this.db, canonId, { namedCount: enslavedForCalculation.length });
-                for (let i = enslavedForCalculation.length; i < ec.count; i++) {
-                    enslavedForCalculation.push({ name: null, yearsEnslaved: 20, startYear: 1850, relationship: 'documented_unnamed' });
-                }
-            } catch (e) { /* non-fatal — keep the named count */ }
+                // Pass the full NAMED count (not the dated subset) so MAX reconciliation is against
+                // the true named roster, matching the person-view reconciler.
+                const ec = await enslavedCountFor(this.db, canonId, { namedCount: data.enslavedPersons.length });
+                documentedCount = Math.max(documentedCount, ec.count);
+            } catch (e) { /* non-fatal — fall back to the dated/named count */ }
 
             const preview = this.daaGenerator.calculatePreview(
                 enslavedForCalculation,
@@ -1630,13 +1648,15 @@ class DAAOrchestrator {
 
             slaveholderCalculations.push({
                 slaveholder: data.slaveholder,
-                debt: preview.totalDebt,
-                enslavedCount: enslavedForCalculation.length,
+                debt: preview.totalDebt,                    // dated persons only — no fabricated figure
+                enslavedCount: documentedCount,             // documented head-count (traces to rows)
+                valuedFromDates: enslavedForCalculation.length,
+                documentedButUndatedCount: documentedCount - enslavedForCalculation.length,
                 calculations: preview.calculations
             });
 
             totalDebt += preview.totalDebt;
-            totalEnslavedCount += enslavedForCalculation.length;
+            totalEnslavedCount += documentedCount;
         }
 
         // ── Tiered Payment (replaces flat 2%) ────────────────────────
