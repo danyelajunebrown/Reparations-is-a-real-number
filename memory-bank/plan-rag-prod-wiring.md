@@ -1,3 +1,5 @@
+> **REALITY-CHECK (2026-07-31).** RagService is built but imported by ~zero live code (orphaned); live reads are still ILIKE keyword. Retrievability requires WIRING RAG to a live read surface, not just embedding. An untracked `src/api/routes/rag.js` may be an in-progress fix.
+
 # RUNBOOK — wire /api/rag/query to work in production (make "Ask the archive" live)
 
 _Created 2026-07-07. The frontend Ask surface + eval harness are built and deployed; they

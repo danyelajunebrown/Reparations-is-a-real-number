@@ -1,3 +1,5 @@
+> **PARTIALLY SUPERSEDED (May 20 2026).** The generic scraper + local-LLM extractor (`probate-llm-extractor.js`, `probate-drip.mjs`) shipped. Extraction (not acquisition) remains the bottleneck; fold colonial-will anchors into the shared `probate-entity-extractor.js` rather than a new extractor.
+
 # Plan — Georgia Probate Scraper: Extraction Quality Rebuild
 
 **Date:** 2026-05-20

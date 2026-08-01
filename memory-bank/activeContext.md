@@ -1,7 +1,89 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-19 (DUTCHESS pivot: audit → land non-claim guardrail → 4 Dutchess sources ingested
-→ RAG outage fixed → calibration-study assessment + Stage-1 pipeline; NEXT = full-Dutchess ingest)_
+_Last updated: 2026-07-31 (EVIDENCE-QUALITY round: DAA subset-gate → Dutchess LLM extraction → Bard/
+modern-endpoint finding → migrations 127/128/129 (edge info-type, research_findings, Massena parcel
+spine) → memory-bank full reconciliation. Prior top entry: 2026-07-19 Dutchess pivot.)_
+
+---
+
+## EVIDENCE-QUALITY ROUND + STRATEGIC REFRAME (2026-07-31) — branch `feat/evidence-quality-parcel-spine`
+→ [[standard-canonical-person-and-document-gate]] · [[finding-land-nonclaim-and-dutchess-audit-jul17]] · [[finding-bb1-deed-parcel-spine]] · [[assessment-dutchess-calibration-case-study-jul19]]
+
+**DAA now RUNS (#147).** `_enforceProbateGate` was ALL-OR-NOTHING — it blocked the whole DAA if ANY matched
+slaveholder lacked documentary evidence, so no DAA ever generated (climbs routinely match undocumented
+ancestors). Per user directive, changed to **SUBSET generation**: the DAA carries the DOCUMENTED slaveholders
+and holds undocumented matches as `pendingDocumentation` ("suspected — pending primary-source documentation",
+never asserted, never in the debt). Gate returns `{documentedIds, pending, documentedDesc}`; throws only when
+ZERO documented (no debt to assert) or under STRICT mode (`DAA_STRICT_PROBATE_GATE=1`). Fail-closed preserved:
+name-only climb matches (null id) only exist when zero documented → still throws. **Verified: Adrian Brown
+(P4RF-PFQ) generated DAA-000021** on 2 documented Hopewell ancestors (was `DAAProbateGateError`). Aligned with
+the per-proposition canonical gate (all-or-nothing was stricter than the standard). TWO refinements still open:
+(a) the kinship PATH gate is orthogonal + unbuilt (0/4,922 edges carry a kinship doc) — subset generation
+increases DAAs riding UNPROVEN lineages; render "lineage unproven at gen N" alongside pending-doc (audit-only,
+not a blocker); (b) stale comment block DAAOrchestrator:228-247 contradicts the new directive.
+
+**STRATEGIC REFRAME (memory-bank read, corrects earlier plans):**
+- **Dutchess is a CALIBRATION study, not a volume-ingest** (Roth & Tolbert 2025 multicalibration; calibrates
+  per-link `p`). It is **blocked on the MODERN endpoint** (a Dutchess-descended participant / forward tracing) —
+  NOT on more counties. Climb runs modern→enslaver, **0 Dutchess coverage**. "Do NOT scale nationally until
+  Stage 1 returns `p`." So Ulster/Albany/Kings breadth is PREMATURE; the modern endpoint is the leverage.
+- **Do NOT build a 4th extractor.** `georgia-probate-scraper.js` is already `--county`-parameterized;
+  `probate-llm-extractor.js` + `probate-drip.mjs --prefix` + `extract-probate-estates.mjs` are generic.
+  Real gap = fold colonial-will anchors into the SHARED `probate-entity-extractor.js`. **EXTRACTION, not
+  ACQUISITION, is the bottleneck** — do not scrape more counties first. "Albany County" is the province-wide
+  will-book (same %dutchess% contamination); derive county from the OCR residence phrase (fix
+  `link-ny-probate-testators.mjs:54`). Before any batch: fix reextract→recomputeGate sync (else gate never
+  lifts) + gate `isNameSuspect` at mint (else "Albany"/"Deceased" mint as enslavers).
+- **NESRI = cross-index, NOT genealogy** (genealogy fields empirically 0-fill). Prefer a CUNY-GC data request
+  over scraping. **Retrievability rubric** composes with the existing `retrieval-health-audit.mjs`/M106 ledger.
+  **RAG is orphaned** (imported by ~zero live code; reads still ILIKE) — the untracked `src/api/routes/rag.js`
+  is the in-progress wiring; embedding ≠ retrievable.
+
+**BARD COLLEGE = candidate Dutchess MODERN ENDPOINT (grounded).** DB query: **Samuel Bard** and **William Bard**
+are in the data as `enslaver`, Dutchess County NY, sourced from **NESRI** (leads 3579208/3579211, codes
+`NY_BardSamu_01`/`NY_BardWill_01` — not yet canonical, no image). Continuity chain: Samuel Bard (Hyde Park
+physician) → Bard family estate → grandson John Bard founds St. Stephen's/Bard College (1860) on the family
+land → Bard College = modern institutional successor. Land instrument = the **Massena chain** (migration 129,
+below) which is literally the Bard campus parcel. NEXT: attach a Samuel-Bard image → promote; harvest the
+Bard→enslaved roster; log the deed/roster searches (incl. nulls) in `research_findings`.
+
+**DUTCHESS LLM EXTRACTION (finished on the Mini).** qwen2.5 over the 479 unlinked `%dutchess%` residue:
+**81 new true-Dutchess testators linked** → the true-Dutchess cohort (814 docs) went 41.4% → **50.9% linked**
+(clears the rubric's 50% bar). 381/479 (80%) had NO extractable testator = structural fragment/index ceiling
+(don't chase the tail). Local LLM doubled the 25.5% regex testator ceiling. 11 other-county contamination
+confirmed (Albany 3, Suffolk 2, Queens, Westchester). Migration 126 (chunk_index) + `embed-doc-chunks.mjs`
+gave passage-level RAG (whole-doc 0.445 → chunk 0.634).
+
+**MIGRATIONS 127/128/129 (this round, applied + committed):**
+- **127** — `canonical_family_edges.information_type` (primary/secondary/undetermined) + `informant_role` +
+  `event_to_record_gap_years`. Genealogical proof-standard typing (a tier-1 doc can carry SECONDARY info);
+  gap>~5yr = mechanical downgrade. Substrate for the DAA kinship gate.
+- **128** — `research_findings`: first-class log of research ACTIONS incl. NULL results. `'truncated'` is
+  load-bearing (a capped sweep is not a 'none'). Polymorphic subject (M103).
+- **129** — **Massena parcel spine** (first real chain-of-title instrument, #112): Bard campus land,
+  Barrytown/Red Hook, Dutchess. 12 named links 1688→2024 seeded from finding §4 (packet has 22; S3-archival
+  + reconciliation pending). ALL links `implicates_enslaver=FALSE` (land-non-claim). Beekman+Livingston links
+  = Dutchess enslaver families. Wealth series $50k(1853)→$20k→$1.15M→$14M(2024); modern link → Bard College.
+
+**ISSUE BUNDLE for this round** (theme = chain-of-custody & evidence-quality for wealth tracing): CORE #112,
+#72, #147, #113, #70+#101, #78, #75; ADJACENT #130, #123. DEFERRED (separate rounds): international ingest
+(#119-145, EPIC #135), benchmark/anchor layer (#79-91,#116,#121), identity-spine (#96,#98,#105,#92).
+
+**EARLIER THIS SESSION (pre-compaction arc):** living-person bridge (Piper Hill — FS hides living TREE
+profiles, use consented data → deceased great-grandparent seeds); kinship-edge M103 harvest; intake-validator
+hardening (placeholder-FS + garbage-name + impossible-gap BLOCKING); oral-history→directed-leads (McCain →
+43 held enslavers); retrievability rubric (`rag-retrievability-audit.mjs`, 4 stages logged→embedded→readable
+→RETRIEVED); Mini migration (heavy lifting back on the Mini). **Note: `land_transfer_events` is 116 rows now,
+NOT 1 (CLAUDE.md was stale).** Migration numbering COLLIDES (113/121/122/126 each have two files — PK is the
+filename, both apply); several 122-126 are applied-but-untracked in `schema_migrations`; 123 (CONCURRENTLY)
+never applied.
+
+**MEMORY-BANK RECONCILIATION (this session):** `techContext.md` heavy-rewritten (dead individuals/
+unconfirmed_persons schema + blockchain gutted; PersonService/two-driver/RULE 0.5-0.6/three-machine/RAG-orphaned
+added; S3 us-east-2 + 393,975 goal + scraper constants salvaged). `systemPatterns.md` fixed (blockchain removed,
+Repository-Pattern two-driver rowCount trap, descendant→DAA model; design-rationale preserved). 8 stale
+snapshots bannered (architecture-apr24, end-to-end-readiness-apr23, report-jun17, plan-lead-identity-resolution,
+plan-may20, finding-ny-probate-audit-jul01 stale-counts, both RAG plans reality-checked).
 
 ---
 
