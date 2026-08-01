@@ -49,7 +49,7 @@ class DAADocumentGenerator {
     /**
      * Generate comprehensive DAA DOCX document
      */
-    async generateDOCX(daaRecord, slaveholderData, debtCalculation, acknowledgerInfo) {
+    async generateDOCX(daaRecord, slaveholderData, debtCalculation, acknowledgerInfo, disclosures = {}) {
         // Enrich daaRecord with fields from acknowledgerInfo so every
         // downstream method (createLegalFramework, createDebtAcknowledgment,
         // etc.) sees the obligor's name/email/income even though DAAGenerator.
@@ -98,6 +98,16 @@ class DAADocumentGenerator {
             ...this.createDebtAcknowledgment(daaRecord, slaveholderData, debtCalculation)
         );
 
+        // Documentation Status & Limitations (subset-generation disclosure) — only when there is
+        // something to disclose. Renders the surfaced-but-previously-unrendered pendingDocumentation
+        // (undocumented NODES) and lineageUnproven (unproven EDGES) so the instrument is honest about
+        // what it does NOT assert.
+        const _pending = disclosures.pendingDocumentation || [];
+        const _unproven = disclosures.lineageUnproven || [];
+        if (_pending.length || _unproven.length) {
+            sections.push(...this.createDocumentationStatus(_pending, _unproven));
+        }
+
         // Article II: Payment Terms
         sections.push(
             ...this.createPaymentTerms(daaRecord, acknowledgerInfo)
@@ -145,6 +155,59 @@ class DAADocumentGenerator {
         fs.writeFileSync(filepath, buffer);
 
         return filepath;
+    }
+
+    /**
+     * Documentation Status & Limitations — renders what the DAA does NOT assert, so the instrument is
+     * honest under subset generation (2026-07-31 policy). `pending` = undocumented matched slaveholder
+     * NODES ({name}); `unproven` = participant→slaveholder EDGES that lack a kinship document
+     * ({slaveholder, generation}). Neither is named as a debtor or included in any debt number.
+     */
+    createDocumentationStatus(pending = [], unproven = []) {
+        const out = [
+            this.createPageBreak(),
+            new Paragraph({
+                text: 'DOCUMENTATION STATUS & LIMITATIONS',
+                heading: HeadingLevel.HEADING_1,
+                spacing: { before: 400, after: 200 }
+            }),
+            new Paragraph({
+                children: [new TextRun({
+                    text: 'This instrument names as debtors only those slaveholder ancestors with documentary evidence in the record, and only on lineage paths that are proven. The following are disclosed in the interest of completeness. They are NOT asserted, NOT named as debtors, and are excluded from every figure in this instrument.',
+                    italics: true
+                })],
+                spacing: { after: 200 }
+            })
+        ];
+        if (pending.length) {
+            out.push(new Paragraph({
+                text: 'A. Suspected slaveholder ancestors — pending primary-source documentation',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 }
+            }));
+            for (const p of pending) {
+                const name = (p && (p.name || p.canonical_name || p.slaveholder_name)) || (typeof p === 'string' ? p : 'Unnamed ancestor');
+                out.push(new Paragraph({
+                    text: `• ${name} — suspected slaveholder ancestor; no documentary evidence (land, probate, or slave-schedule) located to date. Not named as a debtor; not included in the debt.`,
+                    spacing: { after: 60 }
+                }));
+            }
+        }
+        if (unproven.length) {
+            out.push(new Paragraph({
+                text: 'B. Lineage not yet proven (chain-of-custody gap)',
+                heading: HeadingLevel.HEADING_2,
+                spacing: { before: 200, after: 100 }
+            }));
+            for (const u of unproven) {
+                const gen = (u && u.generation != null) ? u.generation : 'N';
+                out.push(new Paragraph({
+                    text: `• ${(u && u.slaveholder) || 'Ancestor'} — lineage unproven at generation ${gen}: a parent–child link on the descent path lacks a proposition-specific kinship document. Named subject to confirmation of descent.`,
+                    spacing: { after: 60 }
+                }));
+            }
+        }
+        return out;
     }
 
     /**

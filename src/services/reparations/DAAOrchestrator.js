@@ -373,7 +373,8 @@ class DAAOrchestrator {
             daaRecord,
             slaveholderData,
             debtCalculation,
-            acknowledgerInfo
+            acknowledgerInfo,
+            { pendingDocumentation, lineageUnproven }
         );
         console.log(`   ✓ Document saved: ${docxPath}`);
         console.log();
