@@ -145,7 +145,10 @@ the enslaver's to hold in the first place.
 ## 4. The Massena chain of title — the reference instrument
 
 User supplied `Massena_Chain_of_Title_PACKET.pdf` (Barrytown, Town of Red Hook, **Dutchess County**;
-Bard College campus). **22 links, 1688 → 2024, ~336 years, continuous.**
+Bard College campus). **15 links, 1688 → 2024, ~336 years, continuous.** _(2026-07-31: the FULL 126pp packet
+was supplied and states 15 links — this corrects the earlier "22" estimate. The chain is now ingested as
+the `Massena` parcel spine (migration 129 + `reconcile-massena-full-chain.mjs`), both source PDFs archived
+to S3, all links `implicates_enslaver=FALSE` per land-non-claim.)_
 
 Muhheaconneok (Mohican)/Munsee homeland → **1688 Schuyler Patent** → De Witt → **Beekman 1715** →
 **Margaret Beekman Livingston 1776** → **John R. Livingston 1785/1800** (builds Massena 1796) →
