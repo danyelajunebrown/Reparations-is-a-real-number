@@ -70,6 +70,7 @@ const flag = (name) => { const p = A.find(a => a === `--${name}` || a.startsWith
 const APPLY = !!flag('apply');
 const ONLY = typeof flag('only') === 'string' ? String(flag('only')).toLowerCase() : null;
 const CONFIRM_WILLIAM_SON = !!flag('confirm-william-son');
+const FORCE = !!flag('force');   // force a FRESH canonical past same-name namesakes (operator-confirmed distinct person)
 const BUCKET = process.env.S3_BUCKET || 'reparations-them';
 const REGION = process.env.S3_REGION || 'us-east-2';
 
@@ -77,9 +78,11 @@ const REGION = process.env.S3_REGION || 'us-east-2';
 const TARGETS = [
   { key: 'samuel', leadId: 3579208, name: 'Samuel Bard', censusYear: 1800, enslaved: 7,
     s3Key: 'sources/census/bard-1800-dutchess.jpg', viewerUrl: flag('samuel-url') === true ? null : (flag('samuel-url') || null),
+    file: flag('samuel-file') === true ? null : (flag('samuel-file') || null),
     role: 'GRANDFATHER of Bard College founder John Bard; Hyde Park physician.' },
   { key: 'william', leadId: 3579211, name: 'William Bard', censusYear: 1810, enslaved: 4,
     s3Key: 'sources/census/bard-1810-dutchess.jpg', viewerUrl: flag('william-url') === true ? null : (flag('william-url') || null),
+    file: flag('william-file') === true ? null : (flag('william-file') || null),
     role: 'FATHER of founder John Bard; PROBABLE son of Samuel Bard (the identity this pull confirms).' },
 ].filter(t => !ONLY || t.key === ONLY);
 
@@ -158,17 +161,27 @@ async function main() {
       continue;
     }
 
-    const page = await browser.newPage();
     const dir = `/tmp/bard-census-${t.key}`;
+    let page = null;   // declared OUTSIDE the try so the finally (page.close) can see it
     try {
-      fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
-      // FS is an SPA — domcontentloaded, never networkidle (CLAUDE.md).
-      await page.goto(t.viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      // per-image ARK from the settled viewer URL (never the group ARK).
-      const perImageArk = (page.url().match(/ark:\/61903\/([^?&#]+)/) || [])[1] || null;
+      let imageBuffer = null, indexText = '', crumb = '', signedIn = true, perImageArk = null;
+      if (t.file) {
+        // FILE FALLBACK: the operator downloaded the full-res page JPG via FS's own "Download" button
+        // (the automated toolbar-click capture is brittle across FS viewer variants — issue #124). We
+        // archive + promote from that file; the ark is taken from the viewer URL if one was also given.
+        imageBuffer = fs.readFileSync(t.file);
+        perImageArk = (t.viewerUrl && (t.viewerUrl.match(/ark:\/61903\/([^?&#]+)/) || [])[1]) || null;
+        console.log(`   📄 using downloaded file ${t.file} (${(imageBuffer.length / 1024).toFixed(0)}KB)`);
+      } else {
+        page = await browser.newPage();
+        fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+        // FS is an SPA — domcontentloaded, never networkidle (CLAUDE.md).
+        await page.goto(t.viewerUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // per-image ARK from the settled viewer URL (never the group ARK).
+        perImageArk = (page.url().match(/ark:\/61903\/([^?&#]+)/) || [])[1] || null;
+        ({ imageBuffer, indexText, crumb, signedIn } = await captureFamilySearchImage(page, dir));
+      }
       const arkUrl = perImageArk ? `https://www.familysearch.org/ark:/61903/${perImageArk}` : t.viewerUrl;
-
-      const { imageBuffer, indexText, crumb, signedIn } = await captureFamilySearchImage(page, dir);
       if (!signedIn) {
         console.log('   ⚠ SIGN-IN WALL — FS session expired. Re-login via VNC into the :9222 Chrome, then re-run.');
         await logFinding(pool, { question: q, repository: repo, index_searched: `ark:/61903/${perImageArk || '?'}`, result: 'inaccessible', hit_count: null, subject_id: t.leadId, note: 'Sign-in wall — FS session expired in the :9222 debug Chrome. Manual re-login required (reference_familysearch_session_reauth).' });
@@ -209,7 +222,7 @@ async function main() {
           evidenceStrength: 'primary', documentYear: t.censusYear, nameAsAppears: t.name,
         },
       };
-      const out = await svc.promoteToCanonical({ subject_table: 'unconfirmed_persons', subject_id: t.leadId }, evidence, { dryRun: false });
+      const out = await svc.promoteToCanonical({ subject_table: 'unconfirmed_persons', subject_id: t.leadId }, evidence, { dryRun: false, forceCreate: FORCE });
       const canonicalId = out.ref?.subject_id || null;
       console.log(`   promote → ${out.action}${canonicalId ? ' canonical#' + canonicalId : ''} | gate assertable_slaveowner=${out.gate?.assertable_slaveowner}`);
 
@@ -235,7 +248,7 @@ async function main() {
       console.log(`   ❌ ${e.message}`);
       await logFinding(pool, { question: q, repository: repo, index_searched: 'Dutchess Co NY, surname Bard', result: 'inaccessible', hit_count: null, subject_id: t.leadId, note: `Pull errored: ${e.message.slice(0, 200)}` });
     } finally {
-      await page.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); await sleep(3000);
+      if (page) await page.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); await sleep(3000);
     }
   }
   browser.disconnect();

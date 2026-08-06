@@ -402,10 +402,14 @@ class PersonService {
 
     const personType = evidence.personType || subj.person_type || null;
     const res = await this.resolve({ name: subj.name, birthYear: subj.birth_year, location: subj.state, sex: subj.sex, externalId: evidence.externalId, idSystem: evidence.idSystem, personType });
-    if (res.ambiguous) return { ref: null, action: 'needs_review', candidates: res.candidates };
+    // opts.forceCreate: HAND-CONFIRMED promotion to a FRESH canonical, bypassing both the ambiguity stop and
+    // any namesake canonical link — for when the operator has verified this lead is a distinct person from the
+    // same-name candidates (Biscoe: never auto, only on explicit operator decision). e.g. the Dutchess Bard
+    // census pull, where "William Bard" collides with other-state William Bards that must NOT be merged.
+    if (res.ambiguous && !opts.forceCreate) return { ref: null, action: 'needs_review', candidates: res.candidates };
 
     let canonicalId, action;
-    if (res.match && res.match.subject_table === 'canonical_persons') {
+    if (!opts.forceCreate && res.match && res.match.subject_table === 'canonical_persons') {
       canonicalId = res.match.subject_id; action = 'linked';
       if (dry) return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, candidates: res.candidates };
     } else {
