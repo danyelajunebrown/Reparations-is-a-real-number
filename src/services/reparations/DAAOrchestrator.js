@@ -1883,7 +1883,15 @@ class DAAOrchestrator {
             const result = await this.db.query(`
                 SELECT
                     annual_income,
-                    net_worth,
+                    -- The column is estimated_net_worth (M036). Selecting a
+                    -- non-existent "net_worth" threw for EVERY participant, the
+                    -- catch below swallowed it, dbRow stayed null, and this
+                    -- function returned bare defaults — so the entire M037
+                    -- wealth fingerprint (trust corpus, land, corporate ties,
+                    -- wealth_flag_*) never reached the calculators. Verified
+                    -- against the live DB 2026-08-03: 'column "net_worth" does
+                    -- not exist'.
+                    estimated_net_worth AS net_worth,
                     corporate_connections,
                     corporate_connection_type,
                     trust_beneficiary,

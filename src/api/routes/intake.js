@@ -99,13 +99,23 @@ function fsIdClean(v) {
     if (!v) return null;
     const s = String(v).trim().toUpperCase();
     if (!/^[A-Z0-9]{4}-[A-Z0-9]{2,4}$/.test(s)) return null;
-    // Reject placeholder/example IDs that the form's instruction text uses
-    // (XXXX-XXX, GXXX-XXX, "EXAMPLE", etc.). Real FamilySearch IDs always
-    // contain at least one digit AND at least one letter, and never have
-    // 3+ repeating characters in a row.
-    if (!/[0-9]/.test(s)) return null;
-    if (!/[A-Z]/.test(s)) return null;
-    if (/(.)\1{2,}/.test(s.replace('-', ''))) return null;
+
+    // Reject the form's own instruction text echoed back as an answer
+    // ("XXXX-XXX", "Xxxx-xxx", "XXXX-CXX").
+    //
+    // NOT by requiring a digit + a letter with no 3-in-a-row repeats — that was
+    // the previous rule and it is WRONG. Real FamilySearch IDs may be all
+    // letters and may repeat a character three times. Verified against the
+    // 2026-08-03 intake export, that rule rejected LTVZ-WSF, LTVZ-VSP and
+    // PXGL-LLW — all genuine IDs — which made the endpoint answer a valid
+    // submission with a 400 "looks like a placeholder", and silently discarded
+    // 8 climb seeds in the CSV path.
+    //
+    // Real placeholders are characterised by using almost no distinct
+    // characters, so test variety instead.
+    const body = s.replace('-', '');
+    if (new Set(body).size < 3) return null;   // XXXXXXX (1 distinct), XXXXCXX (2)
+    if (/^X+-X+$/.test(s)) return null;        // explicit, in case of a 3rd char
     return s;
 }
 

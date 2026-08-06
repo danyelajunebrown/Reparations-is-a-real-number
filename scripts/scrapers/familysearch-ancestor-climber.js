@@ -577,9 +577,41 @@ async function ensureLoggedIn(startFsId) {
         await new Promise(r => setTimeout(r, 5000));
     }
 
+    // ── FAIL CLOSED ON A LOGGED-OUT SESSION ──────────────────────────────
+    // The render check above passes on a SIGN-IN page: `hasH1` is true because
+    // the login screen has an <h1> too. Before this guard existed the climber
+    // printed "Page rendered: Sign-in to your account", then "✓ Logged in and
+    // ready to climb", visited 1 ancestor, found 0 parents, and wrote a
+    // status='completed' session.
+    //
+    // That result is INDISTINGUISHABLE from a genuine dead end (a living person,
+    // or an ancestor with no parents attached). Since negative findings are
+    // first-class evidence in this project — a documented "we looked and found
+    // nothing" — silently recording an auth failure as a null result corrupts
+    // the evidence base for a real participant. Refuse to proceed instead.
+    // Observed 2026-08-03 on seed G21Y-X4B (session 9a60969b, later invalidated).
+    const postLoginUrl = page.url();
+    if (postLoginUrl.includes('ident.familysearch') || postLoginUrl.includes('/auth/') ||
+        /^sign[- ]?in\b/i.test(await page.title())) {
+        throw new Error(
+            `FamilySearch session is NOT logged in (landed on ${new URL(postLoginUrl).host}). ` +
+            `Refusing to climb — a logged-out climb produces a false negative finding. ` +
+            `Sign in to the :9222 debug Chrome (--user-data-dir=/tmp/familysearch-ancestor-climber), then re-run.`);
+    }
+
     // Check if the starting person actually exists
     const startPageText = await page.evaluate(() => document.body.innerText);
     const pageTitle = await page.title();
+
+    // Second signal: a real person page always carries one of these sections.
+    // Absent ALL of them, we are not looking at person data whatever the URL says.
+    const looksLikePersonPage = ['Family Members', 'Parents and Siblings', 'Vital Information',
+                                 'Person Not Found', 'UNKNOWN'].some(s => startPageText.includes(s));
+    if (!looksLikePersonPage) {
+        throw new Error(
+            `Person page for ${startFsId} did not render recognisable person content ` +
+            `(title: "${pageTitle}"). Refusing to climb rather than record an empty result as a finding.`);
+    }
     // Check for living person FIRST — FS shows both "UNKNOWN" and "Person Not Found"
     // in the body text for living people, so the order matters
     if (pageTitle.includes('[Unknown Name]') || pageTitle.includes('UNKNOWN') ||
