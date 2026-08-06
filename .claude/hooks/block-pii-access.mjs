@@ -74,7 +74,13 @@ function verdict(toolName, input) {
   }
 
   // SQL reaching PII columns, or a bare SELECT * against a PII table.
-  if (PII_TABLES.test(subject)) {
+  //
+  // Require actual QUERY context, not a bare mention. Naming a column in prose
+  // — a commit message, a comment, a plan doc — is schema discussion, not a
+  // disclosure, and blocking it produced false positives that taught nothing.
+  // A real query always pairs SELECT with FROM (or is a COPY/\copy).
+  const looksLikeQuery = /\bselect\b[\s\S]{0,400}?\bfrom\b/i.test(subject) || /\bcopy\b/i.test(cmd);
+  if (PII_TABLES.test(subject) && looksLikeQuery) {
     const hit = PII_COLUMNS.find(c => new RegExp(`\\b${c}\\b`, 'i').test(subject));
     if (hit) {
       return `Blocked: query selects PII column "${hit}" from a participant table.\n` +

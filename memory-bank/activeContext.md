@@ -1,8 +1,94 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-31 (EVIDENCE-QUALITY round: DAA subset-gate → Dutchess LLM extraction → Bard/
-modern-endpoint finding → migrations 127/128/129 (edge info-type, research_findings, Massena parcel
-spine) → memory-bank full reconciliation. Prior top entry: 2026-07-19 Dutchess pivot.)_
+_Last updated: 2026-08-03 (INTAKE + PII round: participant-PII lockdown, 5 new participants ingested,
+3 production bugs fixed, intake/climb redesign scoped. Prior top entry: 2026-07-31 evidence-quality.)_
+
+---
+
+## INTAKE REALITY CHECK + PII LOCKDOWN (2026-08-03) — branch `feat/evidence-quality-parcel-spine`
+→ [[plan-intake-form-revamp]] · [[plan-intake-and-climb-redesign]]
+
+**THE PII DIRECTIVE (user, mid-session — treat as standing).** A participant intake CSV was dropped in the
+repo and read straight into model context: 7 real people's names, DOB, birthplaces, income, net worth, an
+email, plus 24 relatives' names and FS IDs. User: *"people's data needs to be protected from the claude
+model."* Correct, and `permissions.deny` alone does not do it — Bash (`cat`, `node -e`, `psql`) reaches the
+same bytes. **Three layers now live, verified blocking:**
+1. PII moved OUT of the repo → `~/Documents/reparations-pii/` (mode 700). `worksheets/intake-csv/` deleted.
+2. `.claude/settings.json` — `permissions.deny` on the PII paths.
+3. **`.claude/hooks/block-pii-access.mjs`** — `PreToolUse` guard on Bash|Read|Grep|Glob. Blocks PII paths
+   AND SQL naming PII columns / `SELECT *` on participant tables. Exempts `scripts/pii/`. Fails OPEN on
+   internal error (never brick a session), CLOSED on any positive match. **Proven live** — `cat` of the CSV
+   returned blocked.
+**The rule:** deterministic code touches PII, the model reads only emissions (UUIDs, counts, error codes).
+This is audit rule 1 ("model orchestrates, code computes") applied to PII. New lane = `scripts/pii/`:
+`load-intake-csv.mjs`, `inspect-redacted.mjs` (structure without values), `launch-climbs.mjs`.
+**Migration 130** — `participants_safe` view (UUID, state, birth DECADE, income/net-worth BANDS, pipeline
+counts; no names/DOB/address/email/FS IDs) + `participant_family.lineage_hint` / `source_block_index`.
+**NOT undone:** the exposure already went to the model API, and `~/.claude/projects/…` transcripts (86 MB)
+still hold earlier participant queries. Transcript scrub NOT run (resume-safety unverified).
+**COMPLIANCE GAP:** the consent text says data is used *"only to count automated ancestor climbs"* — it
+does not disclose LLM processing. Must be fixed in the form rewrite.
+
+**THREE PRODUCTION BUGS FIXED (all found by working blind through the redacted inspector):**
+- **`fsIdClean()` (`src/api/routes/intake.js`) rejected REAL FamilySearch IDs.** It required a digit AND a
+  letter with no 3-in-a-row repeats. But FS IDs may be all letters and may repeat: `LTVZ-WSF`, `LTVZ-VSP`,
+  `PXGL-LLW` are genuine and were 400'd as "placeholder". Discarded **8 climb seeds** across 6 CSV rows and
+  misfiled Piper as a QA row. Replaced with a character-VARIETY test (`<3 distinct chars` = placeholder).
+- **`DAAOrchestrator:1885` selected `net_worth`; the column is `estimated_net_worth`** (M036). Verified live:
+  *column "net_worth" does not exist*. Query threw → catch swallowed → `dbRow` null → returned bare defaults,
+  so the **entire M037 wealth fingerprint never reached the calculators**. Fixed with an aliased select.
+- **`ensureLoggedIn` did NOT fail closed.** The render check passes on a sign-in page (`hasH1` is true for
+  "Sign In"), so a logged-out climb printed "✓ Logged in", visited 1 ancestor, and wrote
+  `status='completed'` — **indistinguishable from a genuine negative finding**. Since null results are
+  first-class evidence here, that corrupts the evidence base for a real participant. Now throws on an auth
+  host or on a page lacking person content. Observed on seed `G21Y-X4B` (session `9a60969b`, invalidated to
+  `status='aborted_not_logged_in'`).
+
+**5 NEW PARTICIPANTS INGESTED** (`intake_source='google_form_csv'`). QA row auto-skipped; Piper deduped
+against her existing `google_form` row via self_fs_id (cross-source check). **Relationships written
+NEUTRALLY** (`parent_1`…`grandparent_4`) — the form says only "Parent 1/2" and "Grandparent 1-4", no sex, no
+lineage, yet the webhook hardcoded father/mother/pat_grandfather. Checked against this export that mislabels
+a MAJORITY: **4 of 6 submissions put a woman in the 'father' slot** and 4 of 6 in 'pat_grandfather'. The
+participant's own "whom is their child" answer is stored verbatim in `lineage_hint`; real relationships get
+resolved from records. No fabricated data (audit rule 5).
+
+**WHAT THE 5 SUBMISSIONS PROVE ABOUT THE FORM** (the empirical core of both plan docs):
+- **ALL FIVE** are `self_living_unclimbable`. Measured: `LTVZ-D9S` (living participant) → **1 ancestor,
+  0 matches**, twice. `LTVZ-D8M` (deceased) → **906 / 138**. `LX39-1MY` (deceased) → **5,260 / 548**.
+  The DAA anchors on `participants.self_fs_id` (`daa.js:51` → `ensureClimbComplete:849`) — i.e. on precisely
+  the ID that returns nothing. **The required unit must become "oldest DECEASED ancestor per line."**
+- **NONE has an email.** No way to deliver a DAA to any of them.
+- **4 of 5 are non-US-origin lineages** (Mexican, Puerto Rican, Italian, Punjabi). Under today's
+  name+county match against US enslavers these mostly dead-end. The international-chain revision is not
+  hypothetical.
+- Data quality as predicted by the user's "people don't have this on hand": one participant's 4 grandparent
+  birth years are `N/A`/`June 6`; one grandparent is `unknown/unknown/n/a`; one grandparent FS ID is a
+  copy-paste of the parent's; **every** respondent ticked "I verified all links are correct", including the
+  two who then reported gaps.
+- Highest-value field remains the free text: *"allegedly we get our last name because our ancestors made
+  yarn on the plantation"* — an occupational-surname → plantation lead, same shape as Adrian's McCain lore
+  (43 held enslavers). Plus a name-change lead. It is question 61 of 62 and optional.
+
+**COLUMN-MAP CORRECTION (I had this wrong first pass).** The webhook's `FORM_COLUMNS` 0-67 **does** match
+the live sheet. Google Forms appends LATER-ADDED questions at the END of the sheet, not inline — hence
+"whom is their child" at 69/70 and a re-created living-question at 68. The six 5-column person blocks are
+NOT shifted. Real defects: **col 46 is permanently blank** (its live answer moved to 68, so
+`pat_grandfather.is_living` is always null), 69/70 are duplicates of each other and unread, and the sheet
+carries ghost columns (the "Column 5" placeholder; email/address at 9-13 deleted from the form). → build a
+NEW form + NEW response sheet rather than editing.
+
+**CLIMBS RUNNING (Mini).** 4 seeds queued sequentially via `scripts/pii/launch-climbs.mjs` for the two
+US-prospect participants. Mini is BACK ONLINE (Chrome :9222 live, probate PM2 jobs stopped). Two ops traps
+hit: `ssh host cmd` does not source the login profile → bare PATH → `node` exits 127 (now exported
+explicitly in the generated runner); and node resolves modules from the SCRIPT's dir, not cwd, so probe
+scripts must live inside the repo. **FS session state must be PROBED, never inferred from tab titles** —
+stale ARK tabs rendered fine while the session was dead.
+
+**NEXT:** rebuild the form per [[plan-intake-form-revamp]] §2 (new sheet + new `FORM_COLUMNS`); generalize
+`public-record-bridge.mjs` into the DB-driven record-walk agent (**4 of 4,924 `canonical_family_edges` carry
+a source document** — 0.08%); fan the DAA over multiple anchors (`ensureClimbComplete` consumes ONE session
+from ONE seed, so 3 of 4 anchors are collected and unused). MacBook disk is at **98% (4.9 GB free)** —
+~115 GB sits outside the home dir, likely APFS snapshots; user decision pending.
 
 ---
 
