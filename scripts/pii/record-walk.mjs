@@ -68,8 +68,42 @@ if (!targets.length) {
   await pool.end(); process.exit(0);
 }
 
+/**
+ * Country is DERIVED from the person's stated birthplace, never assumed.
+ *
+ * The first run hardcoded `f.recordCountry=United States` and returned 23 records
+ * with 0 confirmed — for a participant whose grandparents were Italian-born. US
+ * collections do not hold their vital records, so the filter guaranteed a null
+ * result and would have been logged as "not found" rather than "wrong index".
+ *
+ * When the birthplace does not name a country we emit NO country filter and let
+ * FamilySearch search globally. A wider search is noisier, but noise is
+ * recoverable and a wrongly-scoped null is not.
+ */
+const COUNTRY_HINTS = [
+  [/\b(italy|italia|sicil|calabria|napoli|roma|milano)\b/i, 'Italy'],
+  [/\b(mexico|méxico|jalisco|oaxaca|chihuahua|michoac)\b/i, 'Mexico'],
+  [/\b(puerto rico|ponce|mayag)\b/i, 'Puerto Rico'],
+  [/\b(india|punjab|delhi|chandigarh|kerala)\b/i, 'India'],
+  [/\b(ireland|eire)\b/i, 'Ireland'],
+  [/\b(england|scotland|wales|united kingdom|uk)\b/i, 'England'],
+  [/\b(germany|deutschland|bayern|prussia)\b/i, 'Germany'],
+  [/\b(u\.?s\.?a?|united states|america)\b/i, 'United States'],
+];
+const US_STATE = /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b|\b(Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming)\b/;
+
+function inferCountry(place) {
+  const s = String(place || '');
+  if (!s.trim()) return null;
+  for (const [re, country] of COUNTRY_HINTS) if (re.test(s)) return country;
+  if (US_STATE.test(s)) return 'United States';
+  return null;                                   // unknown → search globally
+}
+
 const searchUrl = (given, surname, place, birth) => {
-  const p = new URLSearchParams({ 'q.givenName': given, 'q.surname': surname, 'f.recordCountry': 'United States' });
+  const p = new URLSearchParams({ 'q.givenName': given, 'q.surname': surname });
+  const country = inferCountry(place);
+  if (country) p.set('f.recordCountry', country);
   if (place) p.set('q.birthLikePlace', place);
   if (birth) { p.set('q.birthLikeDate.from', String(birth - 3)); p.set('q.birthLikeDate.to', String(birth + 3)); }
   return 'https://www.familysearch.org/search/record/results?' + p.toString();

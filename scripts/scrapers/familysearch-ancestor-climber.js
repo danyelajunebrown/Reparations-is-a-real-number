@@ -2648,6 +2648,20 @@ async function saveMatch(sessionId, modernPerson, match) {
                 session_id,
                 modern_person_name,
                 modern_person_fs_id,
+                -- The canonical_persons row this match resolved to. It was being
+                -- DROPPED: findEnslaverMatch selects the id and spreads the row into
+                -- the match object, but neither INSERT below listed the column, so
+                -- every match this climber wrote had slaveholder_id NULL. Downstream
+                -- that is fatal — DAAOrchestrator.getDocumentedSlaveholders joins on
+                -- it, so an unresolved match can never carry a document, never pass
+                -- the probate gate, and never reach a DAA. Verified 2026-08-06: a
+                -- fresh 36-match climb had 36/36 NULL. (The 274 populated rows
+                -- DB-wide predate this writer; nothing in the repo backfills it.)
+                --
+                -- Storing the id is PROVENANCE for a lead, not an identity
+                -- assertion: match_type is preserved, so a name_only_match stays
+                -- name-only and the Biscoe rule still forbids auto-merging it.
+                slaveholder_id,
                 slaveholder_name,
                 slaveholder_fs_id,
                 slaveholder_birth_year,
@@ -2667,6 +2681,7 @@ async function saveMatch(sessionId, modernPerson, match) {
                 ${sessionId},
                 ${modernPerson.name},
                 ${modernPerson.fs_id || 'NAME-ONLY'},
+                ${match.match.id || null},
                 ${match.match.canonical_name || match.match.full_name},
                 ${match.person.fs_id},
                 ${match.person.birth_year},
@@ -2691,11 +2706,13 @@ async function saveMatch(sessionId, modernPerson, match) {
                 await sql`
                     INSERT INTO ancestor_climb_matches (
                         session_id, modern_person_name, modern_person_fs_id,
+                        slaveholder_id,
                         slaveholder_name, slaveholder_fs_id, slaveholder_birth_year,
                         generation_distance, lineage_path, lineage_path_fs_ids,
                         match_type, match_confidence, classification, classification_reason
                     ) VALUES (
                         ${sessionId}, ${modernPerson.name}, ${modernPerson.fs_id || 'NAME-ONLY'},
+                        ${match.match.id || null},
                         ${match.match.canonical_name || match.match.full_name},
                         ${match.person.fs_id}, ${match.person.birth_year},
                         ${match.generation}, ${match.path}, ${[]},
