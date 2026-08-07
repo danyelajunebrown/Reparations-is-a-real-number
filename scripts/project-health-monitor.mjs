@@ -13,6 +13,7 @@
 
 import 'dotenv/config';
 import { createRequire } from 'node:module';
+import { statfs } from 'node:fs/promises';
 import pg from 'pg';
 const require = createRequire(import.meta.url);
 
@@ -79,6 +80,15 @@ async function main() {
     add('drip_liveness', stalled ? 'warn' : 'ok', `${docEmb}/${probEx}`,
       stalled ? `no embed OR extraction growth in ${hrs.toFixed(0)}h (drips may be down)` : 'embeddings/extractions advancing');
   } else add('drip_liveness', 'ok', `${docEmb}/${probEx}`, 'first run — baseline recorded');
+
+  // ── 5b. DISK SPACE: the recurring "clear me some disk" pain. Scrapers/OCR/embeddings fill it silently. ──
+  try {
+    const st = await statfs('/');
+    const freePct = st.bfree / st.blocks;
+    const freeGb = (st.bfree * st.bsize) / 1e9;
+    add('disk_free', freePct < 0.05 ? 'critical' : freePct < 0.12 ? 'warn' : 'ok', `${(freePct * 100).toFixed(0)}%`,
+      `${freeGb.toFixed(1)}GB free (${(freePct * 100).toFixed(0)}%) — scrapers/OCR/embeddings fill disk silently`);
+  } catch (e) { add('disk_free', 'warn', 'err', `could not stat disk: ${e.message.slice(0, 40)}`); }
 
   // ── 6. retrievability (the rubric's live stage): sample recent doc_ocr, confirm the doc surfaces for its own text ──
   if (!SKIP_RETRIEVE) {
