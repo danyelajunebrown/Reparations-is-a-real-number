@@ -17,18 +17,8 @@ import pg from 'pg';
 const require = createRequire(import.meta.url);
 
 const SKIP_RETRIEVE = process.argv.includes('--no-retrieve');
-const NTFY_URL = process.env.NTFY_URL || null;                 // e.g. https://ntfy.sh
-const NTFY_TOPIC = process.env.NTFY_TOPIC || 'reparations-health';
-
-async function ntfy(title, body, priority = 'default') {
-  if (!NTFY_URL) return;
-  try {
-    await fetch(`${NTFY_URL.replace(/\/$/, '')}/${NTFY_TOPIC}`, {
-      method: 'POST', headers: { Title: title, Priority: priority, Tags: 'warning' },
-      body: body.slice(0, 3500), signal: AbortSignal.timeout(15000),
-    });
-  } catch { /* alerting must never crash the monitor */ }
-}
+// Reuse the project's notification helper (posts to OPS_NOTIFY_WEBHOOK — the ntfy the scrapers/watchdogs use).
+const { notify } = require('../src/utils/notify');
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 120000 });
@@ -118,7 +108,7 @@ async function main() {
   for (const c of checks) console.log(`  ${c.status === 'ok' ? '✓' : c.status === 'warn' ? '⚠' : '✗'} ${c.name.padEnd(26)} ${c.detail}`);
 
   const bad = checks.filter(c => c.status !== 'ok');
-  if (bad.length) await ntfy(`Reparations health: ${worst.toUpperCase()}`, bad.map(c => `${c.status.toUpperCase()} ${c.name}: ${c.detail}`).join('\n'), worst === 'critical' ? 'high' : 'default');
+  if (bad.length) await notify(`Reparations health: ${worst.toUpperCase()}\n` + bad.map(c => `${c.status.toUpperCase()} ${c.name}: ${c.detail}`).join('\n'), { severity: worst === 'critical' ? 'critical' : 'warning' }).catch(() => {});
 
   await pool.end();
   process.exit(worst === 'critical' ? 1 : 0);
