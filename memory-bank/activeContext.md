@@ -78,6 +78,40 @@ Mini `.env` (activates auto-issue-filing); optionally sync the Mini to the branc
 
 ---
 
+## IDENTITY GATE — the DAA's second proposition was never gated (2026-08-07)
+→ commits `ffdee08a9` (climber id fix) · `3fc284020` (identity gate)
+
+**A bug was masking a hole.** The climber's `saveMatch` never listed `slaveholder_id` in either INSERT, so
+every match it wrote had it NULL → `getDocumentedSlaveholders` resolved nothing → the probate gate threw
+"no slaveholders resolved". Fixing that unmasked the real problem: **the gate validates only "did this
+person hold slaves", never "is this person the participant's ancestor."** Two independent propositions;
+one gate.
+
+**Measured, same seed re-climbed (`G21Y-X4B`):** before 687 anc / 32 matches / **0 resolved**; after
+727 anc / 33 matches / **33 resolved**, 31 serve a document, 9 serve an image. But **all 33 are
+`name_only_match`** — and 20 documented ones would have entered the DEBT MATH. A DAA names a real person
+as a slaveholder; asserting that on a name collision against ~420k enslavers is what the Biscoe rule and
+audit rule 5 forbid. Identity gate added: identity-unproven ancestors move to `pending` (suspected,
+excluded from debt) rather than being dropped — subset generation preserved. **Effect: 20 assertable → 0.**
+
+**CONFIDENCE LAUNDERING (subtle, fixed).** `getDocumentedSlaveholders` re-resolves with its OWN vocabulary.
+Now that a `slaveholder_id` exists, a `name_only_match` takes the `existing_id` branch and is stamped
+**0.90 — higher than the 0.85** it would get from re-matching on name, on identical evidence. The original
+climb `match_type` is now carried as `climb_match_type` so the gate judges real provenance. Identity is
+proven ONLY by: external identifier, date+place agreement, curated dataset, or a human verdict
+(`ancestor_climb_matches.verified`). Escape hatch `DAA_ALLOW_NAME_ONLY_IDENTITY=1` (backfill/testing only).
+
+**Also this round:** record-walk now DERIVES `f.recordCountry` from birthplace (was hardcoded US, which
+searched US collections for Italian-born grandparents and guaranteed a null). But recall got WORSE
+(12→0 on the Italian blocks) — **unresolved**: either FS's Italian collections lack them, or `Italy` is not
+a valid facet token. A control-name facet probe is written (`logs/facet-chain.sh`) but FAILED to run:
+the operator closed the :9222 Chrome window, and the relaunched instance is **signed out**. Needs VNC login.
+**MacBook disk:** the 40 GB `CoreSimulator` cannot be `rm -rf`'d — those are MOUNTED read-only APFS volumes;
+real bytes are in SIP-protected `/System/Library/AssetsV2/…SimulatorRuntime`, and `simctl` ships with
+Xcode.app which is not installed. Reclaim elsewhere.
+
+---
+
 ## INTAKE REALITY CHECK + PII LOCKDOWN (2026-08-03) — branch `feat/evidence-quality-parcel-spine`
 → [[plan-intake-form-revamp]] · [[plan-intake-and-climb-redesign]]
 
