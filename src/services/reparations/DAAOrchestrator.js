@@ -577,8 +577,76 @@ class DAAOrchestrator {
             }
         }
 
+        // ── IDENTITY GATE (2026-08-07) ───────────────────────────────────────
+        // The check above validates ONE proposition: "this canonical person held
+        // people in slavery." It never asks the other: "this canonical person is
+        // THE PARTICIPANT'S ANCESTOR." Those are independent, and until now only
+        // the first was gated.
+        //
+        // Why it surfaced now: the climber was dropping slaveholder_id on every
+        // match, so getDocumentedSlaveholders resolved nothing and this gate threw
+        // "no slaveholders resolved" — the identity hole was masked by a bug.
+        // Fixing the bug unmasked it. Measured on one re-climb: 33 matches, all
+        // match_type='name_only_match', of which 22 would have entered the debt
+        // math and 6 are image-backed. A DAA is a signed instrument naming a real
+        // person as a slaveholder; asserting that on a bare name collision against
+        // 419,689 candidate enslavers is precisely the fabrication the Biscoe rule
+        // ("NEVER auto-merge name-only") and audit rule 5 forbid.
+        //
+        // This is the same discipline the slaveowning proposition already gets,
+        // applied to the identity proposition: a name match licenses RESEARCH, not
+        // assertion. Identity-unproven ancestors are not dropped — they move to
+        // `pending`, where the DAA renders them as suspected and excludes them from
+        // the debt. That preserves the subset-generation directive (2026-07-31):
+        // the instrument still generates, it just refuses to assert what it cannot
+        // prove.
+        //
+        // Set DAA_ALLOW_NAME_ONLY_IDENTITY=1 to restore the prior behaviour
+        // (name-only identity treated as sufficient) — for backfill//testing only.
+        const IDENTITY_PROVEN_TYPES = new Set([
+            'external_id_match',        // matched on a shared external identifier
+            'exact_fs_match',           // matched on FamilySearch ID
+            'fs_external_id',
+            'name_date_location_match', // name + date + place all agree
+            'name_location_match',
+            'exact_name_location_match',
+            'slavevoyages_enslaver',    // matched into a curated voyage dataset
+        ]);
+        const ALLOW_NAME_ONLY = process.env.DAA_ALLOW_NAME_ONLY_IDENTITY === '1';
+
+        // slaveholder_id → strongest identity evidence seen for that person
+        const identityById = new Map();
+        for (const s of slaveholders) {
+            if (s.slaveholder_id == null) continue;
+            const prev = identityById.get(s.slaveholder_id);
+            const proven = s.climb_verified === true
+                || IDENTITY_PROVEN_TYPES.has(s.climb_match_type)
+                || IDENTITY_PROVEN_TYPES.has(s.match_type);
+            if (!prev || (proven && !prev.proven)) {
+                identityById.set(s.slaveholder_id, { proven, type: s.climb_match_type || s.match_type || 'unknown' });
+            }
+        }
+
+        const identityUnproven = [];
+        if (!ALLOW_NAME_ONLY) {
+            for (const id of [...documentedIds]) {
+                const ident = identityById.get(id);
+                if (ident && !ident.proven) {
+                    documentedIds.delete(id);
+                    const name = (q.rows.find(r => r.enslaver_id === id) || {}).canonical_name || `id=${id}`;
+                    identityUnproven.push({ name, id, type: ident.type });
+                    pending.push({ name, id, reason: `identity unproven (${ident.type})` });
+                }
+            }
+        }
+
         console.log(`   → Probate gate evidence check:`);
         for (const p of passed) console.log(`      ✓ ${p}`);
+        if (identityUnproven.length) {
+            console.log(`   → Identity gate: ${identityUnproven.length} documented ancestor(s) held back — ` +
+                        `slaveholding is evidenced but the link to this participant is a bare name match:`);
+            for (const u of identityUnproven) console.log(`      ⊘ ${u.name} (id=${u.id}, ${u.type})`);
+        }
 
         // POLICY (user directive 2026-07-31, subset + pending flag): generate the
         // DAA for the DOCUMENTED slaveholders and render the undocumented ones as
@@ -593,6 +661,21 @@ class DAAOrchestrator {
 
         if (documentedIds.size === 0) {
             for (const m of missingLines) console.log('   ' + m);
+            // Distinguish the two ways this set empties, or the error misdiagnoses
+            // the problem: "go find probate records" is useless advice when the
+            // records exist and it is the IDENTITY link that is unproven.
+            if (identityUnproven.length > 0) {
+                throw new DAAProbateGateError(
+                    `DAA generation blocked: ${identityUnproven.length} ancestor(s) have documentary ` +
+                    'evidence of slaveholding, but NONE is linked to this participant by anything ' +
+                    'stronger than a name match:\n' +
+                    identityUnproven.map(u => `  • ${u.name} (id=${u.id}): ${u.type}`).join('\n') +
+                    '\n\nA name collision against ~420k candidate enslavers is not identity. Resolve ' +
+                    'the link with an external identifier, a date+place agreement, or a human verdict ' +
+                    '(ancestor_climb_matches.verified), then re-run. Do NOT relax this to ship a DAA — ' +
+                    'the instrument names a real person as a slaveholder.'
+                );
+            }
             throw new DAAProbateGateError(
                 'DAA generation blocked: NONE of the matched slaveholder ancestors ' +
                 'have documentary evidence in any tier (land_transfer_events, ' +
@@ -918,6 +1001,7 @@ class DAAOrchestrator {
                 acm.lineage_path,
                 acm.match_type,
                 acm.match_confidence,
+                acm.verified as climb_verified,
                 acm.slaveholder_id as existing_match_id
             FROM ancestor_climb_matches acm
             WHERE acm.session_id = $1
@@ -1084,6 +1168,16 @@ class DAAOrchestrator {
                     lineage_path: ancestor.lineage_path,
                     match_type: matchType,
                     match_confidence: matchConf,
+                    // Preserve the ORIGINAL climb match_type. `matchType` above is
+                    // this method's own re-resolution vocabulary, and it silently
+                    // UPGRADES weak identity: a climb row whose match_type is
+                    // 'name_only_match' now supplies a slaveholder_id, so the
+                    // `existing_id` branch stamps it 0.90 — higher than the 0.85 it
+                    // would have got from re-matching on name. The underlying
+                    // evidence is still a bare name. The identity gate needs the
+                    // original, so carry it rather than let it be overwritten.
+                    climb_match_type: ancestor.match_type || null,
+                    climb_verified: ancestor.climb_verified === true,
                     climb_match_confidence: ancestor.match_confidence,
                     primary_state: matched.primary_state,
                     primary_county: matched.primary_county,
