@@ -30,6 +30,7 @@ const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer');
 const S3 = require('../src/services/storage/S3Service');
 const PersonService = require('../src/services/PersonService');
+const { transcribeImage } = require('../src/services/vision/vision-router');  // OCR fallback (Qwen-VL router)
 
 const A = process.argv.slice(2);
 const flag = (n) => { const p = A.find(a => a === `--${n}` || a.startsWith(`--${n}=`)); return p ? (p.includes('=') ? p.split('=').slice(1).join('=') : true) : undefined; };
@@ -124,11 +125,19 @@ async function processOne(pool, ps, browser, src) {
   const { ark_url: arkUrl, queue_id } = src;
   const dir = `/tmp/acp-${(arkUrl.match(/ark:\/61903\/([^?&#]+)/) || [])[1]?.replace(/[^\w-]/g, '') || 'x'}`;
   console.log(`\n▶ ${arkUrl}`);
-  const { perImageArk, signedIn, text, imageBuffer } = await scrapeFullText(browser, arkUrl, dir);
+  let { perImageArk, signedIn, text, imageBuffer } = await scrapeFullText(browser, arkUrl, dir);
   if (!signedIn) { console.log('  ⚠ sign-in wall — FS session expired (re-login via VNC)');
     await logFinding(pool, arkUrl, 'inaccessible', 0, 'FS sign-in wall — session expired (re-login via VNC)'); return { status: 'inaccessible' }; }
-  if (!text || text.length < 40) { console.log('  ⚠ no transcription text');
-    await logFinding(pool, arkUrl, 'none', 0, 'no transcription text scraped — FS fullText is canvas-rendered, not in DOM/network; needs image-OCR source'); return { status: 'none' }; }
+  // OCR FALLBACK — FS fullText is canvas-rendered (not in DOM/network), so text-scrape returns nothing. When we
+  // captured the image, OCR it ourselves with the vision-router (Qwen-VL-72B, uncapped). This is the correct
+  // image-first source: RULE 0.6 needs the S3 image anyway, so OUR OCR of it is the transcription (source-agnostic).
+  if ((!text || text.length < 40) && imageBuffer) {
+    console.log('  ↻ no DOM/network transcription — OCR-ing the captured image (vision-router)…');
+    try { const ocr = (await transcribeImage(imageBuffer, { mimeType: 'image/jpeg' }) || '').trim();
+      if (ocr.length >= 40) { text = ocr; console.log(`  ✓ image OCR → ${ocr.length} chars`); } } catch (e) { console.log('  OCR err:', e.message.slice(0, 60)); }
+  }
+  if (!text || text.length < 40) { console.log('  ⚠ no transcription text (scrape + image-OCR both empty)');
+    await logFinding(pool, arkUrl, 'none', 0, 'no text from DOM/network scrape or image-OCR — image may be undownloadable (FS restriction) or absent'); return { status: 'none' }; }
   console.log(`  transcription: ${text.length} chars; image: ${imageBuffer ? (imageBuffer.length / 1024 | 0) + 'KB' : 'none'}`);
 
   const ex = await ollamaExtract(text);
