@@ -2501,3 +2501,34 @@ conclusion.
 thing that manufactures tier-1 kinship documents. No participant has an email, so no DAA can be
 delivered. The consent text does not disclose LLM processing. MacBook disk needs
 `sudo rm -rf /Library/Developer/CoreSimulator` (~40 GB, root-owned; Xcode.app is not even installed).
+
+---
+
+## Session 2026-08-07 (cont.) — the DAA's IDENTITY proposition was never gated
+
+Commits `ffdee08a9` (climber persists slaveholder_id), `3fc284020` (identity gate), `fc26e4e98` (docs).
+Durable lesson in memory `project_daa_two_propositions`.
+
+**A bug was masking a hole.** The climber's `saveMatch` never listed `slaveholder_id` in either INSERT, so
+every match it wrote resolved to NULL and the probate gate threw "no slaveholders resolved". Fixing that
+unmasked the real defect: **the gate validates only "did this person hold slaves", never "is this person
+the participant's ancestor".** Two independent propositions; one gate. A DAA names a real person as a
+slaveholder — proposition 2 failing libels someone AND tells a descendant a false story about their family.
+
+**Measured, same seed re-climbed (`G21Y-X4B`):** before 687 anc / 32 matches / **0 resolved**; after
+727 anc / 33 matches / **33 resolved** (31 serve a document, 9 an image). All 33 `name_only_match`;
+**20 documented ones would have entered the debt math.** Identity gate routes them to `pending`
+(suspected, excluded from debt) rather than dropping them — subset generation preserved.
+**Effect: 20 assertable → 0.** Daniel's DAA now correctly refuses rather than naming 20 people on a
+name collision against ~420k candidate enslavers.
+
+**CONFIDENCE LAUNDERING found + fixed.** `getDocumentedSlaveholders` re-resolves with its own vocabulary;
+once a `slaveholder_id` exists a `name_only_match` takes the `existing_id` branch and is stamped **0.90 —
+higher than the 0.85** it would earn by re-matching on name, on identical evidence. Original provenance is
+now carried as `climb_match_type`. Rule: a confidence that rises without new evidence is a bug.
+
+**Also:** record-walk now derives `f.recordCountry` from birthplace (was hardcoded US — searched US
+collections for Italian-born grandparents). Recall got WORSE (12→0); **unresolved** whether FS's Italian
+collections lack them or `Italy` is an invalid facet token. Control probe written, blocked on a signed-out
+:9222 Chrome. **Disk:** `CoreSimulator`'s 40 GB cannot be `rm -rf`'d (mounted read-only APFS volumes;
+SIP-protected assets; `simctl` ships with Xcode.app, not installed). ~11 GB reclaimed elsewhere.

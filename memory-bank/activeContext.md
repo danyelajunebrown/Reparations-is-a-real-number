@@ -2,8 +2,9 @@
 
 _Last updated: 2026-08-07 (MODERN-ENDPOINT PROGRAM + FREE AUTOMATION round: 3 endpoints built (Bard COMPLETE,
 Amherst, Georgetown), Bard census pull closed, NY-probate de-silo, and a free/deterministic monitoring +
-auto-issue-filing suite (NO Claude API — user directive). Prior top entries: 2026-08-03 intake/PII,
-2026-07-31 evidence-quality.)_
+auto-issue-filing suite (NO Claude API — user directive). ALSO 2026-08-07: the DAA **IDENTITY GATE** — the
+instrument's second proposition ("is this person your ancestor") was never gated; 20 name-only matches would
+have entered the debt math. Prior top entries: 2026-08-03 intake/PII, 2026-07-31 evidence-quality.)_
 
 ---
 
