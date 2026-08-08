@@ -83,7 +83,7 @@ const profileText = (p) => [p.canonical_name, p.person_type, p.primary_state, p.
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'canonical_persons', u.sid, 'person_profile', $2, u.v::vector, u.h
            FROM unnest($1::text[], $3::text[], $4::text[]) AS u(sid, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, MODEL, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, MODEL, vecs, hashes]);
       done += results.length;
     }
     batches++;

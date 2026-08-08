@@ -99,7 +99,7 @@ async function preflight() {
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'person_documents', u.sid, 'doc_ocr', u.m, u.v::vector, u.h
            FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS u(sid, m, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, models, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, models, vecs, hashes]);
       done += results.length;
     }
     batches++;

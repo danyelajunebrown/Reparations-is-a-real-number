@@ -13,6 +13,8 @@
  */
 'use strict';
 
+const { isValidPersonName, isNameSuspect } = require('../utils/person-name-validator');
+
 const SUBJECT_TABLES = {
   canonical_persons:        { idCol: 'id',      nameCol: 'canonical_name', kind: 'canonical' },
   unconfirmed_persons:      { idCol: 'lead_id', nameCol: 'name',           kind: 'lead' },
@@ -215,6 +217,19 @@ class PersonService {
         [query.name || '', query.birthYear || null, query.location || null, query.personType || null, query.externalId, query.idSystem]);
       const t1 = r.rows.find(x => x.match_tier === 1);
       if (t1) { out.match = { subject_table: 'canonical_persons', subject_id: t1.canonical_person_id, kind: 'canonical', name: t1.canonical_name, tier: 1, confidence: Number(t1.match_confidence), signals: ['external_id'] }; return out; }
+
+      // Tier 1b — external id on a LEAD (M117 polymorphic person_external_ids). find_person_match
+      // resolves CANONICAL ext-ids only; without this a re-ingest of the same (idSystem, externalId)
+      // duplicates the lead instead of linking (the Amherst/Trask dupe class). Canonical is checked
+      // first (above), so a promoted lead resolves to its canonical, not the stale lead row.
+      const le = await this.db.query(
+        `SELECT subject_id FROM person_external_ids
+          WHERE id_system = $1 AND external_id = $2 AND subject_table = 'unconfirmed_persons'
+          ORDER BY subject_id LIMIT 1`, [query.idSystem, query.externalId]);
+      if (le.rows[0]) {
+        out.match = { subject_table: 'unconfirmed_persons', subject_id: Number(le.rows[0].subject_id), kind: 'lead', tier: 1, confidence: 0.95, signals: ['external_id'] };
+        return out;
+      }
     }
 
     // Gather candidate subjects from the unified blocking pool + find_person_match name tiers.
@@ -302,6 +317,15 @@ class PersonService {
       return { ref: res.match, action: 'linked', candidates: res.candidates };
     }
     if (!record.name) return { ref: null, action: 'rejected_no_name', candidates: res.candidates };
+    // MINT GATE (Jul-2026 NY-probate audit): the door is the one place every ingest passes through, so it is
+    // where junk is stopped. A name that is a parsed fragment (isValidPersonName) or a place-word / legal-role
+    // ("Albany", "New York", "Sole", "Deceased" — isNameSuspect) must NOT become a person. Biscoe rule: decline
+    // to mint, never delete. Callers already handle a null ref / rejected_* action (counted as rejected).
+    // opts.skipNameGate lets a caller that has already validated (or intentionally seeds a non-name subject)
+    // bypass — but the default is to gate.
+    if (!opts.skipNameGate && (!isValidPersonName(record.name) || isNameSuspect(record.name))) {
+      return { ref: null, action: 'rejected_suspect_name', candidates: res.candidates };
+    }
     if (dry) return { ref: { subject_table: 'unconfirmed_persons', subject_id: null }, action: 'would_create', candidates: res.candidates };
 
     const ins = await this.db.query(
@@ -378,10 +402,14 @@ class PersonService {
 
     const personType = evidence.personType || subj.person_type || null;
     const res = await this.resolve({ name: subj.name, birthYear: subj.birth_year, location: subj.state, sex: subj.sex, externalId: evidence.externalId, idSystem: evidence.idSystem, personType });
-    if (res.ambiguous) return { ref: null, action: 'needs_review', candidates: res.candidates };
+    // opts.forceCreate: HAND-CONFIRMED promotion to a FRESH canonical, bypassing both the ambiguity stop and
+    // any namesake canonical link — for when the operator has verified this lead is a distinct person from the
+    // same-name candidates (Biscoe: never auto, only on explicit operator decision). e.g. the Dutchess Bard
+    // census pull, where "William Bard" collides with other-state William Bards that must NOT be merged.
+    if (res.ambiguous && !opts.forceCreate) return { ref: null, action: 'needs_review', candidates: res.candidates };
 
     let canonicalId, action;
-    if (res.match && res.match.subject_table === 'canonical_persons') {
+    if (!opts.forceCreate && res.match && res.match.subject_table === 'canonical_persons') {
       canonicalId = res.match.subject_id; action = 'linked';
       if (dry) return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, candidates: res.candidates };
     } else {

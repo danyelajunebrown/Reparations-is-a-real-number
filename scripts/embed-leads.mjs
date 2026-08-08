@@ -58,7 +58,7 @@ const profileText = (p) => [p.full_name, p.person_type, p.context_text,
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'unconfirmed_persons', u.sid, 'person_profile', $2, u.v::vector, u.h
            FROM unnest($1::text[], $3::text[], $4::text[]) AS u(sid, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, MODEL, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, MODEL, vecs, hashes]);
       done += results.length;
       if (done % 1000 < CONC) process.stdout.write(`\r  embedded ${done}, skipped ${skip}, err ${err}   `);
     }
