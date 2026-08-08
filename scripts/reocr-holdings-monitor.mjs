@@ -117,7 +117,8 @@ async function main() {
   if (!docs.length) { console.log('nothing to (re)OCR right now.'); await pool.end(); return; }
   console.log(`picked ${docs.length} doc(s) (prioritising never-OCR'd)`);
 
-  const tally = { ocr_filled: 0, ocr_improved: 0, ocr_kept: 0, ocr_failed: 0, skipped: 0, embedded: 0 };
+  const tally = { ocr_filled: 0, ocr_improved: 0, ocr_kept: 0, ocr_sparse: 0, ocr_empty: 0, ocr_failed: 0, skipped: 0, embedded: 0 };
+  let emptyStreak = 0;  // consecutive empty OCR results ⇒ likely provider quota/exhaustion, not blank pages
   for (const d of docs) {
     const ext = extOf(d.s3_key);
     let text = '', action = 'ocr_failed', note = '';
@@ -126,12 +127,20 @@ async function main() {
       if (buf.length > 25 * 1024 * 1024) { action = 'skipped'; note = `oversized ${(buf.length / 1e6) | 0}MB`; }
       else {
         text = (await ocrObject(d.s3_key, buf) || '').trim();
-        if (!text) { action = 'ocr_failed'; note = `no text returned from ${ext} (provider empty / unreadable)`; }
-        else if (text.length < MIN_TEXT) { action = 'ocr_sparse'; note = `${text.length} chars — cover/divider/blank page`; }  // OCR succeeded; page just has ~no text. Don't write/embed noise; don't retry.
+        // '' is AMBIGUOUS — a blank page OR a quota wall (the router returns '' after exhausting providers).
+        // We can't tell from one result, so we watch for a STREAK (below) before trusting it.
+        if (!text) { action = 'ocr_empty'; note = `no text from ${ext} (blank page OR provider quota)`; }
+        else if (text.length < MIN_TEXT) { action = 'ocr_sparse'; note = `${text.length} chars — cover/divider/blank page`; }  // OCR succeeded; ~no text. Don't write/embed noise; don't retry.
         else if (d.prev_len >= MIN_TEXT && text.length <= d.prev_len) { action = 'ocr_kept'; note = `new ${text.length} <= existing ${d.prev_len}`; }
         else { action = d.prev_len >= MIN_TEXT ? 'ocr_improved' : 'ocr_filled'; }
       }
     } catch (e) { action = 'ocr_failed'; note = e.message.slice(0, 120); }
+
+    // CIRCUIT BREAKER: 5 empties in a row is almost certainly the vision provider hitting a daily/rate cap,
+    // NOT five consecutive blank pages. Abort WITHOUT persisting these — else the REVISIT_DAYS guard would
+    // poison 5+ genuinely-OCR-able docs for two weeks. Leaves them untouched for the next (quota-fresh) run.
+    if (action === 'ocr_empty') { if (++emptyStreak >= 5) { console.log('  ⚠ 5 consecutive empty OCR results — likely provider quota; aborting run (these docs left for next run).'); break; } }
+    else emptyStreak = 0;
 
     tally[action] = (tally[action] || 0) + 1;
     const wrote = (action === 'ocr_filled' || action === 'ocr_improved');
