@@ -126,7 +126,8 @@ async function main() {
       if (buf.length > 25 * 1024 * 1024) { action = 'skipped'; note = `oversized ${(buf.length / 1e6) | 0}MB`; }
       else {
         text = (await ocrObject(d.s3_key, buf) || '').trim();
-        if (!text || text.length < MIN_TEXT) { action = 'ocr_failed'; note = `only ${text.length} chars from ${ext}`; }
+        if (!text) { action = 'ocr_failed'; note = `no text returned from ${ext} (provider empty / unreadable)`; }
+        else if (text.length < MIN_TEXT) { action = 'ocr_sparse'; note = `${text.length} chars — cover/divider/blank page`; }  // OCR succeeded; page just has ~no text. Don't write/embed noise; don't retry.
         else if (d.prev_len >= MIN_TEXT && text.length <= d.prev_len) { action = 'ocr_kept'; note = `new ${text.length} <= existing ${d.prev_len}`; }
         else { action = d.prev_len >= MIN_TEXT ? 'ocr_improved' : 'ocr_filled'; }
       }
