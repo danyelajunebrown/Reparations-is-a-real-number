@@ -38,7 +38,7 @@ const ONE = !!flag('one');
 const ARK_IN = typeof flag('ark') === 'string' ? flag('ark') : null;
 const OLLAMA_GEN = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace('/api/embeddings', '') + '/api/generate';
 const OLLAMA_EMB = (process.env.OLLAMA_URL || 'http://127.0.0.1:11434/api/embeddings');
-const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b';
+const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:3b';  // 3b >> 7b throughput on the Intel Mini (7b cold-load ~8min)
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function ollamaExtract(text) {
@@ -46,7 +46,7 @@ async function ollamaExtract(text) {
 {"doc_type":"<will|probate|deed|petition|census|inventory|other>","primary_person":"<the record's main person / testator / grantor / petitioner, or null>","persons":[{"name":"<full name>","person_type":"<enslaver|enslaved|free_person|unknown>","role":"<how they appear>"}],"place":"<county, state or null>","year":<integer or null>}
 Rules: do NOT invent. Only individually-NAMED people (never a count). Normalize names ('BISCOE, GEO. W.' -> 'George W. Biscoe'). Text:\n\n${String(text).slice(0, 6000)}`;
   const r = await fetch(OLLAMA_GEN, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, prompt, stream: false, format: 'json', options: { temperature: 0 } }), signal: AbortSignal.timeout(120000) });
+    body: JSON.stringify({ model: MODEL, prompt, stream: false, format: 'json', options: { temperature: 0 } }), signal: AbortSignal.timeout(300000) });
   if (!r.ok) throw new Error('ollama gen ' + r.status);
   try { return JSON.parse((await r.json()).response); } catch { return null; }
 }
@@ -63,16 +63,43 @@ async function scrapeFullText(browser, arkUrl, dir) {
     fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
     const client = await page.target().createCDPSession();
     await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dir }).catch(() => {});
-    await page.goto(arkUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await sleep(9000);
-    const perImageArk = (page.url().match(/ark:\/61903\/([^?&#]+)/) || [])[1] || null;
-    const meta = await page.evaluate(() => {
-      const signedIn = !/sign in|create.*free account/i.test(document.body.innerText.slice(0, 4000));
-      // fullText transcription lives in the text panel; fall back to the whole visible text.
-      const panel = document.querySelector('[data-testid*="transcript"], .transcription, article, main');
-      const text = (panel ? panel.innerText : document.body.innerText).replace(/\s+/g, ' ').trim();
-      return { signedIn, text: text.slice(0, 12000) };
+    // FS renders the fullText transcription from a network response, NOT into the DOM — capture the
+    // response bodies (json/text) and mine the richest for the transcription (robust to the API shape).
+    const netBodies = [];
+    page.on('response', async (resp) => {
+      try { const ct = (resp.headers()['content-type'] || ''); if (!/json|text|plain/.test(ct)) return;
+        const t = await resp.text(); if (t && t.length > 300) netBodies.push(t); } catch { /* ignore */ }
     });
+    page.__netBodies = netBodies;
+    await page.goto(arkUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const perImageArk = (page.url().match(/ark:\/61903\/([^?&#]+)/) || [])[1] || null;
+    // FS fullText transcription loads lazily — poll for it (up to ~40s), scrolling to trigger render.
+    let meta = { signedIn: true, text: '' };
+    for (let i = 0; i < 10; i++) {
+      await sleep(4000);
+      await page.evaluate(() => window.scrollBy(0, 800)).catch(() => {});
+      meta = await page.evaluate(() => {
+        const signedIn = !/sign in to view|create a free account|please sign in/i.test(document.body.innerText.slice(0, 4000));
+        // grab the LARGEST text block (the transcription panel), robust to unknown DOM; ignore tiny nav bits.
+        let best = '', bestLen = 0;
+        for (const el of document.querySelectorAll('div,section,article,main,pre,p')) {
+          const t = (el.innerText || '');
+          if (t.length > bestLen && t.length < 60000) { bestLen = t.length; best = t; }
+        }
+        const text = (best || document.body.innerText).replace(/\s+/g, ' ').trim();
+        return { signedIn, text: text.slice(0, 12000) };
+      });
+      if (!meta.signedIn) break;   // stop only on a wall; keep polling to let response bodies settle
+    }
+    // The transcription is in a captured NETWORK response, not the DOM — pick the richest by name-like content.
+    let text = meta.text;
+    if (page.__netBodies?.length) {
+      const domNames = (text.match(/\b[A-Z][a-z]+\b/g) || []).length;
+      const best = page.__netBodies
+        .map(raw => ({ raw, names: (raw.replace(/[{}\[\]",:]/g, ' ').match(/\b[A-Z][a-z]+\b/g) || []).length }))
+        .sort((a, b) => b.names - a.names)[0];
+      if (best && best.names > domNames) text = best.raw.replace(/[{}\[\]\\"]/g, ' ').replace(/\s+/g, ' ').slice(0, 14000);
+    }
     // try the Download button for the image (best-effort; text is the primary signal here)
     let imageBuffer = null;
     try {
@@ -81,7 +108,7 @@ async function scrapeFullText(browser, arkUrl, dir) {
         const files = fs.readdirSync(dir).filter(f => /\.(jpg|jpeg|png|pdf)$/i.test(f));
         if (files.length) { const fp = dir + '/' + files[0]; await sleep(1000); if (fs.statSync(fp).size > 40000) imageBuffer = fs.readFileSync(fp); } }
     } catch { /* image optional */ }
-    return { perImageArk, signedIn: meta.signedIn, text: meta.text, imageBuffer };
+    return { perImageArk, signedIn: meta.signedIn, text, imageBuffer };
   } finally { await page.close().catch(() => {}); }
 }
 
