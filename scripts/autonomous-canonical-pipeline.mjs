@@ -112,17 +112,28 @@ async function scrapeFullText(browser, arkUrl, dir) {
   } finally { await page.close().catch(() => {}); }
 }
 
+// Durable outcome log so the platform can flag its OWN broken adapters (auto-issue-monitor detector #4)
+// keys off these rows). A null result is evidence too — RULE 0.7: the codebase surfaces its QC gaps.
+async function logFinding(pool, arkRef, result, hit, note) {
+  await pool.query(`INSERT INTO research_findings (question, repository, index_searched, result, hit_count, evidence_note, searched_by)
+    VALUES ($1,'FamilySearch fullText',$2,$3,$4,$5,'autonomous-canonical-pipeline')`,
+    ['Autonomous ingest', arkRef, result, hit, note]).catch(() => {});
+}
+
 async function processOne(pool, ps, browser, src) {
   const { ark_url: arkUrl, queue_id } = src;
   const dir = `/tmp/acp-${(arkUrl.match(/ark:\/61903\/([^?&#]+)/) || [])[1]?.replace(/[^\w-]/g, '') || 'x'}`;
   console.log(`\n▶ ${arkUrl}`);
   const { perImageArk, signedIn, text, imageBuffer } = await scrapeFullText(browser, arkUrl, dir);
-  if (!signedIn) { console.log('  ⚠ sign-in wall — FS session expired (re-login via VNC)'); return { status: 'inaccessible' }; }
-  if (!text || text.length < 40) { console.log('  ⚠ no transcription text'); return { status: 'none' }; }
+  if (!signedIn) { console.log('  ⚠ sign-in wall — FS session expired (re-login via VNC)');
+    await logFinding(pool, arkUrl, 'inaccessible', 0, 'FS sign-in wall — session expired (re-login via VNC)'); return { status: 'inaccessible' }; }
+  if (!text || text.length < 40) { console.log('  ⚠ no transcription text');
+    await logFinding(pool, arkUrl, 'none', 0, 'no transcription text scraped — FS fullText is canvas-rendered, not in DOM/network; needs image-OCR source'); return { status: 'none' }; }
   console.log(`  transcription: ${text.length} chars; image: ${imageBuffer ? (imageBuffer.length / 1024 | 0) + 'KB' : 'none'}`);
 
   const ex = await ollamaExtract(text);
-  if (!ex || !ex.persons?.length) { console.log('  ⚠ ollama found no named persons'); return { status: 'none', extract: ex }; }
+  if (!ex || !ex.persons?.length) { console.log('  ⚠ ollama found no named persons');
+    await logFinding(pool, arkUrl, 'none', 0, `text scraped (${text.length} chars) but ollama extracted 0 persons — likely wrong response body, not the transcription`); return { status: 'none', extract: ex }; }
   console.log(`  extracted: doc=${ex.doc_type} primary="${ex.primary_person}" persons=${ex.persons.length} (${ex.place || '?'}, ${ex.year || '?'})`);
   if (!APPLY) { console.log('  [DRY-RUN] would archive + dedupe + gate + embed'); return { status: 'dry', extract: ex }; }
 

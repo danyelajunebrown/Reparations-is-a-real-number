@@ -86,6 +86,27 @@ async function main() {
       body: `COUNT=${silo} image-backed leads serve an S3 image but were never promoted to canonical (RULE 0.6 says they should be) — and the count grew vs the last check (was ${prevN}). The promotion pipeline is falling behind ingestion (the de-siloing regression). See promote-image-backed-leads.mjs / promote-probate-extractions.mjs.` });
   }
 
+  // 4. PIPELINE ADAPTER FAILURE — the autonomous canonical pipeline (the inception→canonical QC path) is
+  //    logging repeated "no persons"/"inaccessible" outcomes: its source adapter is not producing extractable
+  //    text (e.g. FS fullText is canvas-rendered, not in DOM/network). The platform flags its OWN broken scraper.
+  try {
+    const rf = (await pool.query(
+      `SELECT result, count(*)::int n, max(searched_at) last FROM research_findings
+       WHERE searched_by='autonomous-canonical-pipeline' AND result IN ('none','inaccessible')
+         AND searched_at > now() - interval '7 days' GROUP BY result`)).rows;
+    const noneN = Number(rf.find(r => r.result === 'none')?.n || 0);
+    const inaccN = Number(rf.find(r => r.result === 'inaccessible')?.n || 0);
+    const hits = Number((await pool.query(
+      `SELECT count(*)::int n FROM research_findings WHERE searched_by='autonomous-canonical-pipeline'
+         AND result='hit' AND searched_at > now() - interval '7 days'`)).rows[0].n);
+    // Only a concern if failures dominate (adapter broken) — not if it's simply idle or mostly succeeding.
+    if (noneN + inaccN >= 3 && (noneN + inaccN) > hits) {
+      findings.push({ fingerprint: 'pipeline:adapter-no-persons', category: 'breakage',
+        title: '[auto-monitor] Autonomous canonical pipeline: source adapter yielding no persons',
+        body: `The autonomous-canonical-pipeline logged ${noneN} "no persons/text" + ${inaccN} "inaccessible" vs only ${hits} "hit" in the last 7d — the inception→canonical path is stalled for these sources.\n\nMost likely cause: the FS-fullText transcription is rendered client-side onto the image (canvas/overlay) and is provably NOT in the DOM or any network response, so text-scraping returns nothing. Correct fix: switch the text source to **OCR of the archived image** (image-first, RULE 0.6 requires the S3 image anyway) using a local vision model on the Mini — not scraping FS's transcription overlay. Auto-filed by scripts/auto-issue-monitor.mjs.` });
+    }
+  } catch { /* research_findings not present */ }
+
   // ── file / dedup / record ──
   const open = await ghOpenIssues();  // null if no token
   let filed = 0, recorded = 0;
