@@ -15,7 +15,8 @@ the Mini's local ollama + the GitHub REST API — **never a paid Claude-Code age
 | `promote-probate-extractions.mjs` | 6h | de-silo LLM-extraction output → the person spine |
 | `embed-documents.mjs` (sweep) | nightly | embed newly-OCR'd docs (RULE 0.5) |
 | `auto-issue-monitor.mjs` | 8h | detect silent-failures/breakage/siloing → file GitHub issues |
-| `reocr-holdings-monitor.mjs` | 30m | (re-)OCR archived s3 images → fill ocr_text + embed (de-silo RULE 0.5) |
+| `reocr-holdings-monitor.mjs` | 30m (:00/:30) | (re-)OCR archived s3 images → fill ocr_text + embed (de-silo RULE 0.5) |
+| `run-source-extraction.mjs` | 30m (:15/:45) | ocr_text → per-source-type typed structured rows (free DocAI analog) |
 | `retrieval-health-audit.mjs` | 6h | (pre-existing) gate/doc-fetchability |
 
 ## `reocr-holdings-monitor.mjs` — re-OCR everything we hold, again and again (2026-08-08)
@@ -34,6 +35,27 @@ poison-pill guard). Circuit-breaker: **5 consecutive empty OCRs ⇒ abort unpers
 - **COST/SPEED lever (operator's call):** unsetting `VISION_PROVIDERS` restores the router's PAID primary
   (OpenRouter Qwen2.5-VL-72B, **uncapped** → drains the backlog in days, but per-image cost). Left OFF by
   default to honour the FREE directive; the operator can enable it to burst.
+
+## `run-source-extraction.mjs` — per-source-type structured extraction (the free DocAI analog, 2026-08-08)
+_User: "doc ai is the way [but] no paid." DocAI is paid at every tier (OCR/Form Parser/Custom Extractor)._
+Reproduces DocAI's DESIGN (a per-source-type schema + a model that pulls typed fields) with FREE execution:
+`src/services/extraction/source-type-registry.js` maps `detectSourceType(s3_key, collection_key)` → a handler
+with its own schema + system prompt, run over `ocr_text` by the EXISTING free multi-provider LLM router
+(`probate-llm-extractor.callLLM`, now `system`-overridable). Handlers: **freedmens** (26-field depositor form),
+**probate/will** (reuse `extractEstate` wholesale — bakeoff-validated on financials), **census_slave_schedule
++ generic** (named-person + enslaver/enslaved role). Output → `structured_extractions` (migration 132; unified
+typed-fields ledger, idempotent on `(person_document_id, source_type)`). FREE providers proven live:
+`meta-llama/llama-3.3-70b-instruct:free` (OpenRouter) → Groq → Gemini; the catch is per-minute **429 rate
+limits**, so the driver has `GAP_MS` inter-doc pacing + a 5-in-a-row circuit-breaker and runs low-and-slow.
+
+### Two follow-ons (NOT built yet — next session)
+1. **Promotion `structured_extractions` → canonical_persons/edges.** The driver only produces typed ROWS.
+   Turning them into persons (depositor=enslaved, last_master=enslaver, kin edges; probate decedent/enslaved)
+   is a SEPARATE gated step — reuse the Biscoe-safe promoters (`promote-probate-extractions` pattern +
+   PersonService). This is what finally makes the 236K de-siloed pages into DAA-usable persons/edges.
+2. **Freedmen's docs aren't in `person_documents` by an s3_key `~ 'freedmen'`** — they were DocAI-field-
+   extracted into a different store, so the freedmens handler won't fire until those images carry `ocr_text`.
+   Verify where the freedmens depositor images live + backfill their `person_documents.s3_key`/`ocr_text`.
 
 **PM2 watchdogs:** `probate-watchdog-ny` (restarts the scraper) + `probate-session-heal-ny` (FS session).
 
