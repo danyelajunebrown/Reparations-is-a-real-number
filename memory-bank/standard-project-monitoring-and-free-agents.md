@@ -15,7 +15,25 @@ the Mini's local ollama + the GitHub REST API — **never a paid Claude-Code age
 | `promote-probate-extractions.mjs` | 6h | de-silo LLM-extraction output → the person spine |
 | `embed-documents.mjs` (sweep) | nightly | embed newly-OCR'd docs (RULE 0.5) |
 | `auto-issue-monitor.mjs` | 8h | detect silent-failures/breakage/siloing → file GitHub issues |
+| `reocr-holdings-monitor.mjs` | 30m | (re-)OCR archived s3 images → fill ocr_text + embed (de-silo RULE 0.5) |
 | `retrieval-health-audit.mjs` | 6h | (pre-existing) gate/doc-fetchability |
+
+## `reocr-holdings-monitor.mjs` — re-OCR everything we hold, again and again (2026-08-08)
+_User directive: "re-OCR-ing everything we have again and again is exactly the internal monitoring we need."_
+236,421 of 341,790 s3-backed `person_documents` had NULL/short `ocr_text` — a retrieval silo (no ocr_text ⇒
+not embedded ⇒ invisible to RAG/search/modals). The monitor drips through them: fetch the S3 image →
+transcribe with the **existing** bakeoff-validated `vision-router` (REUSE, don't re-derive) → fill `ocr_text`
+→ re-embed with **local nomic** (free). PDFs rasterized with `pdftoppm -r 150` (installed via `brew install
+poppler` 2026-08-08), each page transcribed. Migration 131 adds `person_documents.ocr_model/ocr_ran_at` +
+the `document_ocr_runs` ledger (append-only; `action=ocr_failed/ocr_empty` with a recent `ran_at` is the
+poison-pill guard). Circuit-breaker: **5 consecutive empty OCRs ⇒ abort unpersisted** (a quota wall returns
+`''`, indistinguishable from a blank page — persisting it would poison good docs for REVISIT_DAYS=14).
+- **FREE default (RULE 0.7):** the cron runs `VISION_PROVIDERS=gemini` (Gemini free-tier). Proven live: rich
+  fills (20k+ char records) + embeddings, all local-embed. Free-tier is **daily-capped**, so the 236K backlog
+  drains slowly (months) — the circuit-breaker no-ops gracefully once the daily quota is spent.
+- **COST/SPEED lever (operator's call):** unsetting `VISION_PROVIDERS` restores the router's PAID primary
+  (OpenRouter Qwen2.5-VL-72B, **uncapped** → drains the backlog in days, but per-image cost). Left OFF by
+  default to honour the FREE directive; the operator can enable it to burst.
 
 **PM2 watchdogs:** `probate-watchdog-ny` (restarts the scraper) + `probate-session-heal-ny` (FS session).
 
