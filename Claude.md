@@ -27,6 +27,18 @@ per standard rule 8), AND (3) **is embedded in RAG** (`embeddings`). "Every cano
 is in RAG." This tightens the older gate model (secondary-only *gated* canonicals) for all NEW promotions;
 existing image-less canonicals are a backfill DEBT. Order for image-rich sources: attach-scan drip →
 promote (image-backed only) → embed. Detail in `standard-canonical-person-and-document-gate.md`.
+RULE 0.6 clause 3 (embed) is now **enforced by `project-health-monitor.mjs`** — a recent promotion left
+unembedded is a CRITICAL (it's how the Bard census pull slipped). Don't skip the embed step.
+
+## RULE 0.7 — Recurring agency must be FREE (user directive, 2026-08-07)
+
+Automated monitoring / self-healing / issue-filing runs as **deterministic scripts + local ollama + the
+GitHub REST API** on Mini crons + PM2 watchdogs — **NEVER a paid Claude-Code agent** for recurring work.
+The suite: `project-health-monitor.mjs` (RULE 0.6/gate/retrievability/disk/orphaning → ntfy + non-zero exit),
+`auto-issue-monitor.mjs` (silent-failure/breakage/siloing → auto-files GitHub issues, deduped),
+`promote-probate-extractions.mjs` + nightly `embed-documents` (de-silo + embed), `probate-drip` (guarded).
+Alerts go to `OPS_NOTIFY_WEBHOOK`. The Mini runs a **stale checkout** (scripts are scp'd) and is a **single
+point of failure** — known structural debt. Detail in `standard-project-monitoring-and-free-agents.md`.
 
 ## What this project actually is
 

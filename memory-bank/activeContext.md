@@ -1,7 +1,80 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-08-03 (INTAKE + PII round: participant-PII lockdown, 5 new participants ingested,
-3 production bugs fixed, intake/climb redesign scoped. Prior top entry: 2026-07-31 evidence-quality.)_
+_Last updated: 2026-08-07 (MODERN-ENDPOINT PROGRAM + FREE AUTOMATION round: 3 endpoints built (Bard COMPLETE,
+Amherst, Georgetown), Bard census pull closed, NY-probate de-silo, and a free/deterministic monitoring +
+auto-issue-filing suite (NO Claude API — user directive). Prior top entries: 2026-08-03 intake/PII,
+2026-07-31 evidence-quality.)_
+
+---
+
+## MODERN-ENDPOINT PROGRAM + FREE AUTOMATION SUITE (2026-08-07) — branch `feat/evidence-quality-parcel-spine`
+→ [[plan-modern-endpoints-program]] · [[plan-nesri-roster-completion]] · [[standard-canonical-person-and-document-gate]] · [[finding-land-nonclaim-and-dutchess-audit-jul17]]
+
+**MODERN ENDPOINTS — 3 built, TWO types proven.** Continuity-of-holding to a modern institution now has two
+templates: **LAND** (`land_transfer_events`/`properties`) and **CAPITAL** (`corporate_entities` +
+`corporate_slavery_disclosures` + `inheritance_edges`). Reckoning-institutions ranked in the program plan
+(Georgetown → Harvard → UVA → Princeton → Brown); Amherst is the reusable capital template.
+- **Bard College (LAND) — COMPLETE.** Census pull closed it: **Samuel Bard → canonical #907115** (1800 census,
+  7 enslaved, Dutchess/Clinton) and **William Bard → canonical #907116** (1810, 4), both image-backed
+  (S3+Wayback) + RAG-embedded (RULE 0.6 fully met) + assertable_slaveowner. **Kinship edge #8114 VERIFIED
+  (tier 2)** — census corroborates the genealogy. Land = the **Massena 15-link chain** (1688→2024, deed-backed,
+  all `implicates_enslaver=FALSE` per land-non-claim) → Bard College holds it. GAPS: **no wills/probate, no DAA,
+  assets = census COUNTS only** (no land/estate-valuation linked to them as persons, no named enslaved). NEXT =
+  ingest **Samuel Bard's will (1821) + William's (1858)** for the inheritance edge + full assets.
+- **Amherst College (CAPITAL).** Israel Trask (250+ enslaved, MS/LA cotton) funded it: **$800 documented**
+  ($500 receipt + $300 will bequest) + the 1862 $50k donor list; college histories ERASED him (1862→1951).
+  corporate_entity + disclosure; Nicka Sewell-Smith's **Trask 250** (9,208 descendants) CITED not scraped;
+  living descendants logged for opt-in, NOT minted.
+- **Georgetown University (CAPITAL, applied).** 1838 sale of **272** enslaved for **$115,000** funded the
+  college; Mulledy/McSherry sellers, Isaac/Cornelius Hawkins + Frank Campbell named; DTRF descendant side.
+
+**CENSUS-PULL OPERATIONAL LESSONS (reusable):** FS restricts the in-Chrome "Download" for census images → the
+operator downloads via **Safari** (image-PDF) → `pull-bard-census.mjs --samuel-file/--william-file` archives
+from the file. Read the open ARK viewer URLs straight from the **Chrome debug protocol** (`curl :9222/json`).
+`PersonService.promoteToCanonical` gained **opts.forceCreate** (operator-confirmed fresh canonical past
+same-name namesakes — "William Bard" collides with other-state William Bards that must NOT merge). The 1810
+image is FS-FILED under "Allegany" but shows **Clinton township** (= Dutchess) + 4 enslaved (matching NESRI) —
+an FS **film-group mislabel**, operator-confirmed. `let page` must be declared OUTSIDE the try (finally scope).
+
+**NY PROBATE + de-silo:** mint gate — `isNameSuspect` promoted into `person-name-validator.js`, wired into
+`findOrCreateLead` (declines place-words/legal-roles: "Albany"/"Deceased"/"Sole"). County-from-residence at
+mint (`link-ny-probate-testators.mjs`) + **backfill of 2,475 existing** NY canonicals (34 real counties;
+"Albany" mislabel → Dutchess/Ulster/Kings). **`promote-probate-extractions.mjs`** de-silos the LLM-extraction
+output (`probate_estate_extractions`) → enslaver leads + linked docs + named enslaved (the old linker read the
+wrong table). `probate-drip.mjs` **poison-pill guard** (un-extractable segments no longer pin the antebellum
+queue — 1,076 wasted ticks on roll Q7P7-7MS).
+
+**MIGRATIONS 127/128/129 + DAA (#147):** 127 `canonical_family_edges.information_type` (primary/secondary/
+undetermined + informant_role + gap-years); 128 `research_findings` (null-result log, 'truncated' load-bearing);
+129 Massena parcel spine. DAA subset gate (documented ancestors carry it; undocumented = `pendingDocumentation`)
++ `lineageUnproven` — both now RENDERED in the DOCX ("DOCUMENTATION STATUS & LIMITATIONS"). Fixed: gate-less
+`generate-daa-pdf.js` hard-deprecated; invented dates (`yearsEnslaved:20/startYear:1850`) removed from the money
+math; `generate-comprehensive-daa` runs end-to-end (DAA-000021+).
+
+**KEY FIXES (dedup/embed class):** `PersonService.resolve` now matches **LEADS by external id** (Tier-1b) — the
+Amherst/Trask dupe class (re-ingest duplicated leads); `forceCreate` for hand-confirmed fresh promotion. Migration
+126 (chunk_index) had **broken the 4 embed scripts' `ON CONFLICT`** — fixed (add chunk_index). RULE 0.6 clause 3
+(embed) was **skipped on the Bard promotion** — caught reactively, now ENFORCED by the monitor.
+
+**FREE AUTOMATION SUITE (user directive: recurring agency must be FREE — NO Claude API).** Removed a paid
+headless-Claude-Code setup. Now all deterministic + local-ollama + `gh`-REST:
+- **Mini crons:** `probate-drip` (3h, guarded) · `project-health-monitor` (4h) · `promote-probate-extractions`
+  (6h) · `embed-documents` sweep (nightly) · `auto-issue-monitor` (8h).
+- **PM2 watchdogs:** `probate-watchdog-ny` (scraper) + `probate-session-heal-ny` (FS session).
+- **`project-health-monitor.mjs`** — RULE 0.6 embed-compliance (recent promotions unembedded = CRITICAL, would
+  have caught the Bard miss), gate over-assertion, embed backlog, orphaned image-leads, drip liveness, disk
+  space, retrievability (live-retrieve). → `monitor_health_runs` ledger + ntfy (`OPS_NOTIFY_WEBHOOK`) + non-zero
+  exit.
+- **`auto-issue-monitor.mjs`** — FREE detector+filer: silent-failure log-scan (cron logs for FATAL/ERROR/does-
+  not-exist), migration drift, siloing (growing) → auto-files deduped GitHub issues via REST+PAT (no `gh`
+  install), falls back to `monitor_issues` + ntfy when no token.
+
+**STANDING DEBTS (surfaced by the monitor — not yet fixed):** retrievability **20%** on recent docs; **5 marquee
+enslavers** (Calhoun/Franklin/Carroll/Madison/Duncan) assert-without-image; **~103K** image-backed docs
+unembedded; **~107K** image-leads unpromoted. **STRUCTURAL:** the Mini runs a **stale checkout** (scripts are
+scp'd one-by-one — needs a branch sync); the Mini is a **single point of failure** (Tailscale drop = no
+recovery, no Pi-side watchdog); Claude auth removed (free-only). **NEEDS FROM USER:** a free GitHub PAT in the
+Mini `.env` (activates auto-issue-filing); optionally sync the Mini to the branch + a Pi→Mini watchdog.
 
 ---
 

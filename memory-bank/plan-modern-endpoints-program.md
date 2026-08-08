@@ -1,3 +1,8 @@
+> **STATUS (2026-08-07):** **Bard College is COMPLETE** (LAND path — Samuel #907115 / William #907116 census
+> canonicals, edge #8114 verified, Massena 15-link chain; see activeContext). **Amherst** and **Georgetown
+> (GU272)** are APPLIED (CAPITAL path). **Harvard / UVA / Princeton / Brown** remain scoped-not-built below —
+> build each on the Amherst template (`ingest-amherst-trask-endpoint.mjs`), user-vetted like Amherst was.
+
 # plan-modern-endpoints-program.md — the reckoning-institution capital-path endpoints
 
 > Scoping doc. Reckoning-institution *modern endpoints*: living institutions that HOLD enslaver wealth
