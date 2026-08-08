@@ -27,6 +27,8 @@ const APPLY = process.argv.includes('--apply');
 const ONLY_TYPE = (() => { const i = process.argv.indexOf('--type'); return i > -1 ? process.argv[i + 1] : null; })();
 const BATCH = parseInt(process.env.BATCH || '30', 10);
 const MIN_TEXT = 120;   // below this a "record" is a cover/sparse page — not worth a structured pass
+const GAP_MS = parseInt(process.env.GAP_MS || '1500', 10);   // inter-doc pause: free-tier providers 429 under rapid fire
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 180000 });
@@ -72,6 +74,7 @@ async function main() {
          ON CONFLICT (person_document_id, source_type) DO UPDATE SET fields=EXCLUDED.fields, model=EXCLUDED.model, n_persons=EXCLUDED.n_persons, validated=EXCLUDED.validated, created_at=now()`,
         [d.id, d.s3_key, type, JSON.stringify(fields), MODEL, n, true]);
     }
+    if (processed < BATCH) await sleep(GAP_MS);
   }
 
   const bt = Object.entries(tally.by_type).map(([k, v]) => `${k}=${v}`).join(' ');
