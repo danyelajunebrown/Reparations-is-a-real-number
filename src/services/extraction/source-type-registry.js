@@ -44,6 +44,27 @@ function freedmensPrompt(ocr) {
     `SCHEMA:\n${FREEDMENS_SCHEMA}\n\nOCR:\n"""\n${ocr.slice(0, 12000)}\n"""\n\nReturn only the JSON object.`;
 }
 
+// ── Freedmen's Bureau letters / registers (post-emancipation case narratives) ────────────────────────────
+// These "spill the tea": named freedpeople, their FORMER ENSLAVERS, kin torn apart by sale, and the specific
+// harm done. We capture the harm VERBATIM (it is DAA evidence) + every connection point to a canonical person.
+const FREEDMENS_LETTER_SYSTEM =
+  'You extract case facts from a Freedmen\'s Bureau letter/register entry (Reconstruction, 1865-1872). These ' +
+  'record a freedperson\'s grievance — family separation by sale, a child held in "apprenticeship", violence, ' +
+  'withheld wages/estate, destitution, political persecution. Extract EVERY named person and the SPECIFIC harm ' +
+  'exactly as stated; never soften or invent. STRICT JSON only.';
+const FREEDMENS_LETTER_SCHEMA = `{
+  "freedperson": string|null,            "former_enslaver": string|null,   "county": string|null, "date": string|null,
+  "case_type": "family_separation"|"apprenticeship_dispute"|"violence"|"labor_or_wage_dispute"|"estate_withholding"|"destitution"|"political_persecution"|"other",
+  "kin": [ { "name": string, "relation": string } ],       // children/spouse/siblings named (parentage edges)
+  "other_parties": [ { "name": string, "role": string } ], // whites, officials, buyers, holders named
+  "usct_service": string|null,                             // e.g. "Private Co D, 5th US Colored Troops"
+  "harm_narrative": string                                 // THE TEA — the wrong done, quoted/close-paraphrased VERBATIM
+}`;
+function freedmensLetterPrompt(ocr) {
+  return `Extract this Freedmen's Bureau letter into the schema. Preserve the harm exactly.\n` +
+    `SCHEMA:\n${FREEDMENS_LETTER_SCHEMA}\n\nLETTER:\n"""\n${ocr.slice(0, 12000)}\n"""\n\nReturn only the JSON object.`;
+}
+
 // ── Generic named-person extraction (census schedules, misc records) ─────────────────────────────────────
 const GENERIC_SYSTEM =
   'You are a forensic archivist extracting the named PEOPLE and their roles from a transcribed 18th-20th ' +
@@ -77,6 +98,11 @@ const REGISTRY = {
   will: {
     extract: async (ocr) => await extractEstate(ocr),
     count: (f) => nonEmpty(f?.enslaved_persons) + nonEmpty(f?.testator) + nonEmpty(f?.heirs),
+  },
+  freedmens_letter: {
+    extract: async (ocr) => (await callLLM(freedmensLetterPrompt(ocr), { system: FREEDMENS_LETTER_SYSTEM, maxTokens: 3000 })).json,
+    // people to connect: the freedperson (enslaved→freed), the former enslaver, and every named kin/party
+    count: (f) => nonEmpty(f?.freedperson) + nonEmpty(f?.former_enslaver) + nonEmpty(f?.kin) + nonEmpty(f?.other_parties),
   },
   census_slave_schedule: {
     extract: async (ocr) => (await callLLM(genericPrompt(ocr), { system: GENERIC_SYSTEM, maxTokens: 3000 })).json,
