@@ -41,28 +41,48 @@ async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 120000 });
 
   if (has('--seed')) {
-    const limit = +val('--limit', '200');
-    // Priority: enslavers who ANCHOR the ledger but have thin corroboration (no death year / few docs) — the
-    // people whose identity most needs a second source before a DAA cites them.
+    const limit = +val('--limit', '600');
+    const county = val('--county', null);   // county-saturation mode: seed ALL enslavers in the county + record-sets
+    const clean = (county || '').replace(/[^a-zA-Z ]/g, '');
+    const where = county
+      ? `person_type='enslaver' AND canonical_name IS NOT NULL AND primary_county ILIKE '%${clean}%'
+         AND id NOT IN (SELECT canonical_person_id FROM ancestry_corroboration_queue WHERE canonical_person_id IS NOT NULL)`
+      : `person_type='enslaver' AND canonical_name IS NOT NULL AND death_year_estimate IS NULL
+         AND id NOT IN (SELECT canonical_person_id FROM ancestry_corroboration_queue WHERE canonical_person_id IS NOT NULL)`;
     const rows = (await pool.query(
-      `SELECT id, canonical_name, primary_state, birth_year_estimate
-         FROM canonical_persons
-        WHERE person_type='enslaver' AND canonical_name IS NOT NULL
-          AND (death_year_estimate IS NULL OR id IN (SELECT canonical_person_id FROM canonical_persons c2 WHERE FALSE))
-          AND id NOT IN (SELECT canonical_person_id FROM ancestry_corroboration_queue WHERE canonical_person_id IS NOT NULL)
+      `SELECT id, canonical_name, primary_state, birth_year_estimate FROM canonical_persons WHERE ${where}
         ORDER BY (SELECT count(*) FROM person_documents d WHERE d.canonical_person_id = canonical_persons.id) ASC, id
         LIMIT ${limit}`)).rows;
     let n = 0;
     for (const r of rows) {
       const url = searchUrl(r.canonical_name, r.primary_state, r.birth_year_estimate);
-      const confirm = `Confirm birth/death years, PARENTAGE (father — the Biscoe-rule key), residence; note any 1862 petition / slave schedule / will.`;
+      const confirm = `Confirm birth/death, PARENTAGE (father), residence; note any slave schedule / will / estate inventory naming the ENSLAVED this owner held.`;
       await pool.query(
         `INSERT INTO ancestry_corroboration_queue (canonical_person_id, person_name, search_url, what_to_confirm, priority)
          VALUES ($1,$2,$3,$4,$5) ON CONFLICT (canonical_person_id) DO NOTHING`,
         [r.id, r.canonical_name, url, confirm, 100]);
       n++;
     }
-    console.log(`seeded ${n} into the queue (priority: thin-evidence enslavers).`);
+    // County-saturation: seed the high-value county record-SETS (the bridge documents that name the enslaved), priority 10.
+    let recs = 0;
+    if (county) {
+      const ev = `_${clean.replace(/ /g, '+')}-Virginia-USA`;
+      const SETS = [
+        [`${clean} Co VA — 1866 Cohabitation Register`, `keyword=cohabitation`, `THE BRIDGE: formerly-enslaved couples + their former ENSLAVER. FREE at Library of Virginia (Virginia Untold) + FamilySearch. Pull → auto-match enslaver names vs our ${clean} owners.`],
+        [`${clean} Co VA — 1860 Slave Schedule`, `keyword=slave+schedule`, `Enslaved (age/sex) under each owner. FREE: FamilySearch / NARA M653.`],
+        [`${clean} Co VA — 1850 Slave Schedule`, `keyword=slave+schedule+1850`, `FREE: FamilySearch / NARA M432.`],
+        [`${clean} Co VA — Wills / Estate Inventories`, `keyword=will+estate+slaves`, `Named enslaved in estate divisions (like the Farm Book). FREE: Library of Virginia will books / Chancery Records Index.`],
+        [`${clean} Co VA — Freedmen's Bureau`, `keyword=freedmen`, `Labor contracts naming enslaved↔enslaver. FREE: FamilySearch / NARA M1913.`],
+        [`${clean} Co VA — 1870 Census (freedpeople)`, `keyword=1870+census`, `First census naming freedpeople → descendant chains. FREE: FamilySearch.`],
+      ];
+      for (const [name, kw, free] of SETS) {
+        if ((await pool.query(`SELECT 1 FROM ancestry_corroboration_queue WHERE canonical_person_id IS NULL AND person_name=$1`, [name])).rows.length) continue;
+        await pool.query(`INSERT INTO ancestry_corroboration_queue (canonical_person_id, person_name, search_url, what_to_confirm, priority)
+          VALUES (NULL,$1,$2,$3,10)`, [name, `https://www.ancestrylibrary.com/search/?event=${ev}&${kw}`, free]);
+        recs++;
+      }
+    }
+    console.log(`seeded ${n} enslavers${county ? ' in ' + clean : ''} + ${recs} county record-sets into the queue.`);
   }
 
   else if (has('--notify-next')) {
