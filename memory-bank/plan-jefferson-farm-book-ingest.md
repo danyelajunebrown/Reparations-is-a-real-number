@@ -38,7 +38,17 @@ source_artifacts · person_documents · canonical_persons/unconfirmed_persons ·
 canonical_family_edges · chattel_transfer_events/inheritance_edges · estate_valuations/reparations_line_items ·
 embeddings · DAAOrchestrator + person modal · the Phase B resolver · Getting Word intake. **Massive — tracked.**
 
-## Status
-Stage 1 RUNNING (drip, ~11/174 pages on the modal at first check). Stages 2-8 are the multi-turn program,
-executed and gold-validated stage by stage. Stage 5 doubles as Phase B2. Applies to the full Farm Book AND
-generalizes to other plantation ledgers.
+## Status (2026-08-09, verify/debug per stage)
+- **Stage 1 ACQUIRE** — running; 71/174 pages on the modal, all linked to Jefferson #828182, images archived.
+- **Stage 2 EMBED** — running (embed-documents, local nomic); 62 pages embedded, keeping pace. → in RAG.
+- **Stage 3 ROSTER** — running (`extract-farm-book-roster.mjs` → `farm_book_persons`, mig 135). 123 mentions,
+  91 distinct names, 68 with birth years; status marks (*/+/-) read correctly. Quality good.
+- **Stage 4 PARENTAGE — TRIAGED ISSUE:** Baron's transcription **linearizes the roll family-brackets**, so
+  mother→child from the ROLLS is NOT recoverable from text (0/123 so far). Fix: (a) birth-register pages
+  (21,22,28,31,87-94, e.g. "Martin (Abram & Doll)") give parentage INLINE → recoverable as the drip reaches
+  them; (b) roll-bracket parentage needs a VISION pass over those roll IMAGES (bracket structure) — a Stage 4
+  refinement, not the transcription. The Getting Word family tree can also supply/validate Hemings parentage.
+- **Stages 5-8** — queued: 5 resolve mentions→distinct people (Phase B2, validate vs Getting Word); 6
+  inheritance (Wayles/mother); 7 financial→DAA (labour £18-8, provisioning, land, losses → reparations_line_items);
+  8 descendant chain (Betty Hemings→Shorter→living, e.g. Dr. Mary Lee Brady-Atkins).
+Stage 5 doubles as Phase B2. Generalizes to other plantation ledgers.
