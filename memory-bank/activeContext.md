@@ -1,10 +1,121 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-08-07 (MODERN-ENDPOINT PROGRAM + FREE AUTOMATION round: 3 endpoints built (Bard COMPLETE,
-Amherst, Georgetown), Bard census pull closed, NY-probate de-silo, and a free/deterministic monitoring +
-auto-issue-filing suite (NO Claude API — user directive). ALSO 2026-08-07: the DAA **IDENTITY GATE** — the
-instrument's second proposition ("is this person your ancestor") was never gated; 20 name-only matches would
-have entered the debt math. Prior top entries: 2026-08-03 intake/PII, 2026-07-31 evidence-quality.)_
+_Last updated: 2026-08-08 (DESCENT-FIRST DIRECTIVE — the climb is demoted from spine to corroborator; lines
+are built DOWN from documented people, dripping, multi-source, gated. Prior top entries: 2026-08-07
+modern-endpoints + free automation + DAA identity gate, 2026-08-03 intake/PII, 2026-07-31 evidence-quality.)_
+
+---
+
+## DESCENT-FIRST LINEAGE — build DOWN from documented people, not UP from living ones (2026-08-08)
+→ [[plan-descent-first-lineage]] · [[assessment-climb-architecture-gap-jun30]] · [[standard-genealogical-edge-evidence]]
+
+**User directive:** *"we have been approaching this ancestor climb impossibly. we have real people in
+database and we should be drip building all lines down not up in all cases using as many sources as possible
+and insisting on standards."* Accepted as the governing architecture. Full plan in
+[[plan-descent-first-lineage]]; the short version:
+
+**The measurement that settles it (live 2026-08-08):** 420,566 enslaver + 229,062 enslaved + 82,565
+freedperson canonicals, 48,119 of the enslavers image-backed (RULE 0.6-grade anchors), 716,065
+`person_documents`, 11,792 `inheritance_edges`, 48,985 `chattel_transfer_events` — and
+**`canonical_family_edges` = 4,924 rows of which 4 carry a `source_document_id` (0.08%).** Three-quarters of
+a million documented people and four documented kinship edges. The genealogical budget has been going
+upward into the FS collaborative tree and starving the only thing a DAA needs.
+
+**Why up cannot be repaired:** frontier doubles per generation while evidence density collapses (86% of one
+climb's 2,675 ancestors born pre-1700, 96% of lines SPECULATIVE); the terminal step throws a NAME into a
+haystack of 420,566 (all 33 matches on the 2026-08-07 re-climb were `name_only_match` — the Biscoe-forbidden
+operation at scale); FS tree edges are tier-3 inert by our own standard; and it is throughput-bound on one
+logged-in Chrome. **Descent inverts the epistemics — you never match a name into the corpus, you START at a
+person a source document already identified.**
+
+**Why down is also the thesis:** a will names the children AND assigns the estate — one descent step yields
+the tier-1 kinship edge *and* the `inheritance_edges` row. Continuity-of-holding is a forward-time claim.
+The 3 modern endpoints already built (Bard/Amherst/Georgetown) are hand-run descents; this generalizes them
+to the corpus. It is also the only direction that crosses the 1870 wall for the enslaved line — from above,
+where the person is named.
+
+**Standards it must not bend:** descendants land as LEADS via `PersonService.findOrCreateLead` (never a
+direct canonical INSERT — the climb's original sin was a second uncontrolled door); no edge is written
+without its `source_document_id` + M127 information_type/informant_role/gap-years; spouse-or-sibling-or-
+second-source = CONFIRMED, single-record = CANDIDATE (human review), name-only = REJECTED not stored;
+source-class disagreement is a signal → `linkage_verdicts` (M126); nulls → `research_findings` (M128);
+living people searched NEVER minted (PII lane only); free/deterministic drip cron per RULE 0.7; embed per
+RULE 0.5.
+
+**BUILD ORDER — step 2 needs no scraping and no acquisition.** (1) Migration **133** `descent_anchors` +
+`descent_frontier`, seeded from the 48,119 image-backed enslavers. (2) **`descend-from-probate.mjs`** —
+generation-1 heirs out of `probate_estate_extractions` (5,937) / `will_extractions` (20) into documented
+edges + inheritance edges, **from data already on disk**; fastest path from 4 documented edges to thousands,
+and it validates the loop before anything is acquired. (3) `descent-drip.mjs` + guarded Mini cron.
+(4) monitor wiring. (5) **THE BLOCKER: a 1870→1950 census/vital forward corridor** — no such table exists,
+so every line stalls ~1880; one acquisition unblocks BOTH classes. (6) Freedmen's Bank (enslaved-side
+generation zero; field 21 names the former enslaver — 415K leads staged). (7) Re-point the DAA: a
+participant JOINS an already-built documented descent line; the climb + intake support agent walk up only
+far enough to meet it. Both halves meeting in the middle, each carrying documents, is the assertable
+lineage the identity gate keeps refusing.
+
+**DEAD, do not extend:** `slave_owner_descendants_suspected`/`_confirmed` (M013, **9 rows**, keys the legacy
+`individuals` table, stores descendant email/phone in the main DB), `DescendantMapper.js` + `WikiTreeScraper.js`
+(WikiTree is a collaborative tree = tier 3 = same inert class as the FS tree; keep as corroborator only).
+
+**FULL RUN + RAG CORRECTION (2026-08-09)** → [[finding-retrievability-metric-and-doc-tails-aug09]]
+Full corpus run: **634 estates → 1,308 documented kinship edges** (877 parent_of / 242 spouse / 189
+sibling_of), 274 anchors, 877 pending frontier steps, 440 parked bequests, 392 null findings.
+**`canonical_family_edges` documented: 4 → 1,312.** Invariants clean (0 undocumented, 0 self-verified).
+**The producer shipped with NO EMBED PHASE — a RULE 0.5 violation, caught by the user, not by the monitor.**
+Fixed by running `embed-leads.mjs --id-system probate_heir` (1,308/1,308), by printing the step on every
+applying run, and by enforcing it (`descent_leads_embedded` CRITICAL). **The `retrievability` 0% CRITICAL
+was a BROKEN METRIC, not an outage** — exact-document recall is unanswerable on 108K near-identical probate
+pages (verified with the ANN index bypassed: still misses top-10, 4/4). Replaced with entity-relevance →
+**75%, green**. Real silo found underneath: **21,176 long docs embedded HEAD-ONLY** (`doc_tail_unindexed`);
+remedy is `embed-doc-chunks.mjs`, free, and belongs in the Mini nightly sweep.
+**MINT GATE FIXED (2026-08-09)** → [[finding-name-validator-false-rejects-aug09]]
+640 estates had no decedent on the spine because **`isValidPersonName` was silently rejecting REAL people**.
+Five defects, each looking like prudence: (1) initials read as function words — the `NON_NAME_TOKENS` lookup
+ran BEFORE the middle-initial branch, so `A.`→article `a` and `I.`→pronoun `i`, killing `A. S. Bacon`,
+`D. I. Dawson`; (2) **`y` was not a vowel** — `Byrd`, `Smyth`, `Flynn`, `Lynch`, `Van Dyck`; (3) vowel-less
+generational suffixes `Sr.`/`Jr.` rejected the whole name — and those sit on the patriarchs an inheritance
+chain runs through; (4) vowel-less honorifics `Mrs`/`Dr`/`Rev` did the same — **and honorifics are the
+principal way probate records name WOMEN, so the rule's effect was biased**; (5) `Wm`/`Hy`, the standard
+period abbreviations, rejected as noise. Same class as `fsIdClean()` discarding 8 real climb seeds: a
+validator written from an IDEA of the data rather than from the corpus.
+**A false reject is the expensive direction** — junk is visible and deletable; a rejected row never exists,
+so nothing surfaces it. Rule going forward: *a validator is a claim about the corpus and must be tested
+against it, in both directions.*
+Fixed + tightened (relaxing honorifics admitted `Mrs Sandiford's four daughters`, a CLASS of heirs → group
+nouns/cardinals now rejected). **Measured: 353 decedent names newly accepted, 0 regressions; 636/647
+unpromoted heir-bearing decedents now pass.** Guarded by `tests/fixtures/person-names.json` (54 real-corpus
+cases, 4 directions) + `tests/unit/test-person-name-validator.js`, 54/54 — but **the repo has no `npm test`
+runner** (placeholder `exit 1`), so it is not yet enforced anywhere. Deliberate residual rejects documented
+(month-surnames like `John March`; will-preamble bleed `God Amen George Owens` — an EXTRACTOR defect, not a
+validator one).
+**CHAIN RUN 2026-08-09 (promote → descend → embed), post-validator-fix. FINAL:**
+- **Step 1** `promote-probate-extractions --apply`: 3,282 extractions → **3,216 decedents minted**,
+  22,744 documents linked, 136 named enslaved + 136 owner edges, **only 66 rejected**. Pre-fix that batch
+  would have lost hundreds — every `Wm.`, `Mrs.`, `Sr.`, and y-vowel surname.
+- **Step 2** `descend-from-probate --apply`: 1,348 estates, 5,692 heirs → **2,798 documented kinship edges**
+  (1,882 parent_of / 562 spouse / 354 sibling_of), 595 anchors, 1,882 pending frontier steps, 956 parked
+  bequests, 1,145 null findings. OCR: 2,299 strong / 562 weak / 29 absent.
+- **Step 3** embed: heirs 2,798/2,798. **AND `--id-system probate_estate` embedded 7,683 with ZERO skips —
+  meaning the ~4,467 decedent leads promoted BEFORE today had NEVER been embedded either.** A pre-existing
+  RULE 0.5 silo, closed incidentally; `promote-probate-extractions.mjs` has no embed phase and should get
+  one (or be paired in the Mini cron), or it re-silos on every run.
+
+**NET FOR THE SESSION: `canonical_family_edges` 4,924 → 7,722 total; DOCUMENTED 4 → 2,802.** Invariants
+clean (0 undocumented, 0 self-verified, 100% embedded). The project went from four documented kinship edges
+to 2,802 without a single scrape, a single acquisition, or one FamilySearch session — entirely out of
+probate already on disk.
+
+**STILL OPEN:** the `descent-drip.mjs` tick (largely inert until a forward corridor exists) · the 1870→1950
+census/vital corridor (blocks BOTH classes; Ancestry Library Edition posture questions in
+[[plan-descent-first-lineage]] §4c) · Freedmen's Bank · `embed-doc-chunks.mjs` over the 21,180 head-only
+docs · no `npm test` runner · the 090 migration checksum drift.
+
+**OPEN DECISION for the user:** which class the drip serves first — enslaver-side (buildable today from
+probate, feeds the debt ledger) or enslaved-side (blocked until Freedmen's Bank + census corridor land,
+feeds the claimant side). Recommendation: build the ENGINE on the enslaver-probate side because its evidence
+is already on disk, and run the Freedmen's Bank + census-corridor acquisition in parallel so the enslaved
+side starts the moment its documents exist.
 
 ---
 
