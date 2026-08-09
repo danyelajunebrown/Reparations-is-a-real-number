@@ -49,8 +49,8 @@ async function main() {
 
   let done = 0, archived = 0, textPages = 0, chars = 0, blank = 0;
   for (let n = FROM; n <= TO; n++) {
-    if (APPLY) {
-      const seen = await pool.query(`SELECT 1 FROM source_artifacts WHERE artifact_key=$1`, [`jefferson-farm-book:${n}`]);
+    if (APPLY) {   // resume on the GOAL (the modal doc), not just the archived image
+      const seen = await pool.query(`SELECT 1 FROM person_documents WHERE source_type='jefferson_farm_book' AND source_url=$1`, [DOC(n)]);
       if (seen.rows.length) { done++; continue; }
     }
     let text = '', buf = null;
