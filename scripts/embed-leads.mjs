@@ -11,7 +11,9 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const IDSYS = (() => { const i = process.argv.indexOf('--id-system'); return i > -1 ? process.argv[i + 1] : null; })();
-if (!IDSYS) { console.error('usage: node scripts/embed-leads.mjs --id-system <sys>'); process.exit(1); }
+// Some cohorts (e.g. freedmens depositors) have NO person_external_ids — they're keyed by extraction_method.
+const XMETHOD = (() => { const i = process.argv.indexOf('--extraction-method'); return i > -1 ? process.argv[i + 1] : null; })();
+if (!IDSYS && !XMETHOD) { console.error('usage: node scripts/embed-leads.mjs (--id-system <sys> | --extraction-method <m[,m2]>)'); process.exit(1); }
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 const SOURCE = process.env.EMBED_SOURCE || 'ollama';
 const MODEL = SOURCE === 'gemini' ? 'gemini-embedding-001' : (process.env.EMBED_MODEL || 'nomic-embed-text');
@@ -28,17 +30,23 @@ const profileText = (p) => [p.full_name, p.person_type, p.context_text,
   (p.locations && p.locations.length) ? 'addr: ' + p.locations.slice(0, 2).join('; ') : null].filter(Boolean).join(' | ');
 
 (async () => {
-  console.log(`embed-leads: id_system=${IDSYS} source=${SOURCE} model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
+  console.log(`embed-leads: ${XMETHOD ? 'extraction_method=' + XMETHOD : 'id_system=' + IDSYS} source=${SOURCE} model=${MODEL} ${LIMIT ? 'LIMIT=' + LIMIT : '(full)'}`);
   try { const v = await embed('preflight'); if (!Array.isArray(v) || v.length !== 768) throw new Error(`bad dim ${Array.isArray(v) ? v.length : 'n/a'}`); }
   catch (e) { console.error(`FATAL preflight: ${e.message} (is ollama up at ${OLLAMA}?)`); process.exit(3); }
   let lastId = 0, done = 0, skip = 0, err = 0;
   for (;;) {
     const { rows } = await pool.query(
-      `SELECT u.lead_id AS id, u.full_name, u.person_type, u.context_text, u.locations
-         FROM unconfirmed_persons u
-         JOIN person_external_ids e ON e.subject_table='unconfirmed_persons' AND e.subject_id = u.lead_id
-        WHERE e.id_system=$1 AND u.full_name IS NOT NULL AND u.lead_id > $2
-        ORDER BY u.lead_id LIMIT $3`, [IDSYS, lastId, BATCH]);
+      XMETHOD
+        ? `SELECT u.lead_id AS id, u.full_name, u.person_type, u.context_text, u.locations
+             FROM unconfirmed_persons u
+            WHERE u.extraction_method = ANY($1::text[]) AND u.full_name IS NOT NULL AND u.lead_id > $2
+            ORDER BY u.lead_id LIMIT $3`
+        : `SELECT u.lead_id AS id, u.full_name, u.person_type, u.context_text, u.locations
+             FROM unconfirmed_persons u
+             JOIN person_external_ids e ON e.subject_table='unconfirmed_persons' AND e.subject_id = u.lead_id
+            WHERE e.id_system=$1 AND u.full_name IS NOT NULL AND u.lead_id > $2
+            ORDER BY u.lead_id LIMIT $3`,
+      [XMETHOD ? XMETHOD.split(',') : IDSYS, lastId, BATCH]);
     if (!rows.length) break;
     lastId = rows[rows.length - 1].id;
     const have = new Set((await pool.query(
