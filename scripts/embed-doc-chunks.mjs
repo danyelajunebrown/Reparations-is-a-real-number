@@ -77,6 +77,12 @@ async function embed(text) {
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket. Node kills the process on an
+  // unhandled 'error' event, so a single Neon blip takes down a multi-hour sweep — and in a log it reads as
+  // "stalled", not "crashed". That is what ended the run at ~11,200 of 20,055 docs:
+  //     Error: read EADDRNOTAVAIL ... Emitted 'error' event on BoundPool instance
+  // The work itself is idempotent and resumable, so an idle-connection failure must never be fatal.
+  pool.on('error', (e) => console.log(`  [pool] idle client error, continuing: ${e.message}`));
   const rows = UNCHUNKED
     ? (await pool.query(
         `SELECT id, ocr_text FROM person_documents d
