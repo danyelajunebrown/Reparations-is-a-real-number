@@ -241,6 +241,27 @@ WikiTree is a collaborative tree, i.e. tier 3, i.e. the same inert evidence clas
 3. **`descent-drip.mjs`** + Mini cron (free, guarded, ntfy) — works `descent_frontier`, one generation-step
    per tick, resumable, poison-pill guarded, logs nulls to `research_findings`. **NOT YET BUILT** — and
    largely inert until step 5, since `probate` is the only source class in the ladder that exists.
+
+   ### 3a · NULL RESULT — the probate corpus is EXHAUSTED for descent (measured 2026-08-09)
+   Three candidate ways to go deeper *without acquisition* were measured before building any of them.
+   All three are dead ends, and the measurements are recorded so nobody re-runs them:
+
+   | Candidate | Hypothesis | Measured | Verdict |
+   |---|---|---|---|
+   | **Generation-2 self-join** (an heir of estate A is the decedent of estate B) | chains the corpus to itself | **67** chainable names → **42** estates, 281 gen-2 heirs | real but negligible vs 1,882 pending frontier steps; and it needs Biscoe-grade identity work to justify each link |
+   | **Relation recovery, adjacency** ("my son Richard Baker" in the OCR) | the extractor dropped relations that ARE in the text | **5%** of null-relation heirs; ~57% descent-relevant; visible false positives across comma boundaries (`"Widow , John Mullin"`) | not worth building |
+   | **Relation recovery, list distribution** ("my sons John, William and Thomas") | the dominant will construction adjacency can't see | adds **2 more** on a 449-heir sample → **3% combined** | dead |
+
+   **Why, and this is the load-bearing part:** the missing relations are not a extraction defect, they are a
+   property of the record type. Null-relation rate by document: **`will` 19%** vs **`estate_account` 43%**,
+   **`inventory` 46%**, **`appraisement` 32%**. Inventories, accounts and appraisements list distributees and
+   creditors *without stating kinship, because kinship is not what those documents record.* The wills — the
+   documents that DO record it — are already at 81% relation-stated, which is close to their ceiling.
+
+   **Consequence:** generation 1 (2,798 edges) is essentially everything this corpus can give. Descent cannot
+   go deeper on documents already on disk. **Step 5 is therefore not one option among several — it is the
+   only path forward, for both classes.** A prior assessment in this session that relation recovery was "the
+   biggest free win available" was WRONG; it was projected, not measured, and the measurement refuted it.
 4. ✅ **`project-health-monitor.mjs` wired 2026-08-08** — 4 descent checks, all green on first run:
    `descent_edge_documented` (CRITICAL if any `produced_by LIKE 'descent/%'` edge lacks a source document —
    the engine's core contract, now enforced forever), `descent_edge_unverified` (CRITICAL on

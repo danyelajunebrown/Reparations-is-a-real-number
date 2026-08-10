@@ -106,6 +106,22 @@ clean (0 undocumented, 0 self-verified, 100% embedded). The project went from fo
 to 2,802 without a single scrape, a single acquisition, or one FamilySearch session — entirely out of
 probate already on disk.
 
+**RESUMPTION 2026-08-09 (three parked threads restarted)** → [[finding-chunk-sweep-timeout-and-amelia-image-backing-aug09]]
+(1) **Chunk sweep was dead, not slow** — killed by its own hardcoded 30s embed timeout: ollama QUEUES embeds
+(idle 0.2s, at `--conc 6` 39.6s, CPU 10%), so the ceiling guaranteed failures. Added `--timeout`/`--retries`;
+restarted at `--conc 3`, **0 err, ~70 docs/min**. Worse bug underneath: a doc that embedded 7 of 8 passages
+**left the `--unchunked` pool forever** with the 8th silently missing — partials are now rolled back and
+re-swept (4 already-gapped docs repaired). (2) **Amelia: 23 scans → S3 + 23/23 Wayback + person_documents,
+pages hand-read from the images, and 10/10 `harm_events` now carry `source_document_id`** — citations became
+evidence. Done from the MacBook; AWS creds are local, the Mini was never needed. Gaps kept honest: the scans
+have NO `ocr_text` (RAG-silo; fix = store the hand transcription, not a fake OCR pass), and they contain
+cases the ingest never captured (Georgianna/Thrift, Frank Patterson, Pop Goode & Milly, Benj Lewis).
+(3) **Mini SSH is broken and is NOT the FS captcha** — key is accepted then denied; Mini-side `StrictModes`
+perms or Remote Login user list, needs VNC. **The RULE 0.7 monitors have not been running.**
+(4) Obligation ledger verified live: M136/M137 applied, `report-obligation-reached-class.mjs` runs and
+prints Georgetown/Amherst as documented-origination vs. the banks that cannot open an account at all;
+`extraction_regimes`/`obligation_accounts` are still **0 rows** — the ledger has schema, not yet entries.
+
 **STILL OPEN:** the `descent-drip.mjs` tick (largely inert until a forward corridor exists) · the 1870→1950
 census/vital corridor (blocks BOTH classes; Ancestry Library Edition posture questions in
 [[plan-descent-first-lineage]] §4c) · Freedmen's Bank · `embed-doc-chunks.mjs` over the 21,180 head-only
