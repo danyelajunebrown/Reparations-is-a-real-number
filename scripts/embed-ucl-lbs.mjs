@@ -13,6 +13,10 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const SOURCE = process.env.EMBED_SOURCE || 'ollama';
 const MODEL = SOURCE === 'gemini' ? 'gemini-embedding-001' : (process.env.EMBED_MODEL || 'nomic-embed-text');
 const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';

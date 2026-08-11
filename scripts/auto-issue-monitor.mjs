@@ -45,6 +45,10 @@ async function ghCreate(title, body) {
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 90000 });
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   await pool.query(`CREATE TABLE IF NOT EXISTS monitor_issues (
     id BIGSERIAL PRIMARY KEY, fingerprint TEXT UNIQUE, category TEXT, title TEXT, body TEXT,
     filed_url TEXT, first_seen TIMESTAMPTZ DEFAULT now(), last_seen TIMESTAMPTZ DEFAULT now(), seen_count INT DEFAULT 1)`);

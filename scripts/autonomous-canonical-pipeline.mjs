@@ -195,6 +195,10 @@ async function processOne(pool, ps, browser, src) {
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 180000 });
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   await pool.query(`CREATE TABLE IF NOT EXISTS source_ingest_queue (
     queue_id BIGSERIAL PRIMARY KEY, ark_url TEXT UNIQUE, source_kind TEXT DEFAULT 'fs_fulltext',
     status TEXT DEFAULT 'pending', result JSONB, added_by TEXT, added_at TIMESTAMPTZ DEFAULT now(), processed_at TIMESTAMPTZ)`);

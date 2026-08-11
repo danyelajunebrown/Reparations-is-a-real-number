@@ -55,6 +55,14 @@ async function main() {
   fs.writeFileSync(LOCK, String(process.pid));
 
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   const stamp = new Date(fs.statSync(LOCK).mtimeMs).toISOString();
   try {
     const count = async (w) => (await pool.query(`SELECT count(*)::int n FROM ${w}`)).rows[0].n;

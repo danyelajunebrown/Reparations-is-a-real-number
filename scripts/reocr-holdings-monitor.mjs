@@ -99,6 +99,10 @@ async function embedNomic(text) {
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 180000 });
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   if (S3._regionVerifiedPromise) await S3._regionVerifiedPromise;   // presigned URLs need the verified region
   console.log(`=== reocr-holdings-monitor — model=${VISION_MODEL} BATCH=${BATCH} ${APPLY ? 'APPLY' : 'DRY-RUN'} ===`);
   if (VISION_MODEL === 'none') { console.error('FATAL: no vision provider key (OPENROUTER_API_KEY / GEMINI_API_KEY)'); process.exit(1); }

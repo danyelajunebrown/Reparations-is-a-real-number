@@ -35,6 +35,10 @@ const arr = (v) => (Array.isArray(v) ? v.map(clean).filter(Boolean) : (clean(v) 
 
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, statement_timeout: 120000 });
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   const ps = new PersonService(pool);
   console.log(APPLY ? '=== APPLY ===' : '=== DRY RUN ===');
 
