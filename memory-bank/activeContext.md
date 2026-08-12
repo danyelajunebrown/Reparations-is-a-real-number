@@ -2186,3 +2186,35 @@ schema_migrations: uses 'filename' column (NOT migration_id / migration_name)
 - **CONSTRAINT**: Do NOT overwrite `person_documents.ocr_text` for id=19 (FamilySearch transcription is higher quality)
 - **person_documents.will_extraction_id** column MISSING — `backfill-inheritance-edges-from-will-extractions.js` will fail
 - **WillPipeline.js** does NOT exist — `POST /api/wills/ingest` is a stub
+
+---
+
+## SESSION CLOSE 2026-08-11 — eight issues filed for what was touched and not resolved
+→ [[finding-duplication-interoperability-retrievability-aug10]] · [[standard-targeted-harvesting]] ·
+[[finding-chunk-sweep-timeout-and-amelia-image-backing-aug09]]
+
+**Landed:** Farm Book extracted (445 leads / 169 edges / 445 embedded) + Stage 5 reconciler (157 mentions
+resolved, 281 name-ambiguous REFUSED) · Amelia 23 scans archived S3+Wayback, **10/10 harm_events
+image-backed**, 14 kin edges graded per informant · Shepherd chain graded per link (Pannon documented;
+Fisher recorded as searched-and-not-found) · 22 letter↔1860-schedule corroboration pairs seeded at priority
+10 · **research_findings 1,173/1,173 embedded — "what did we already fail to find" is now answerable** ·
+7,053 canonicals reclassified enslaver→unknown (typed by a DEFAULT VALUE) · Mini SSH restored (it was a
+passphrase-protected local key, never the server) · chunk sweep fixed + supervised.
+
+**OPEN — filed, do not re-derive:**
+| # | |
+|---|---|
+| #149 | 249 estates naming enslaved people not on the spine — **Moses S. Jones, 85 people, 1855** |
+| #150 | Obligation ledger: schema, zero entries; `extraction_mechanism` 0/19 |
+| #151 | Embed the verbs: 49k transfers; 46% of canonicals have no embedding path |
+| #152 | Interoperability: transfers can't reference leads; ~8k docs under the wrong state |
+| #153 | Amelia: ~10 harms never ingested; scans have no OCR text |
+| #154 | Duplicate pipelines; Hemings pages (p.139) still unparsed |
+| #155 | Ops fragility: ~222 scripts still lack pool error handlers |
+| #156 | Targeted harvesting: **Virginia probate is the next harvest** |
+
+**Two corrections worth carrying:** (1) I claimed Albany NY "structurally cannot yield" from the 1827
+abolition date — it is the **second-richest county in the corpus** (98 estates, 247 people named); the waste
+was Cayuga + Allegany, 1,903 estates for 11 people. (2) I named a schema gap as the blocker for the Shepherd
+chain when the real blocker is that **Virginia probate has never been scraped**. Both were arguments made
+without looking, and the operator caught both.
