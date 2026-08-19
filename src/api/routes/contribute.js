@@ -304,13 +304,41 @@ router.get('/search/:query', async (req, res) => {
         let unconfirmedWhere = `${whereClause} AND (status IS NULL OR status != 'duplicate')`;
         let enslavedWhere = whereClause;
         // For canonical_persons, we search canonical_name instead of full_name.
-        // Fix 3: Exclude climb-sourced descendant rows from public search results.
-        // person_type 'descendant'/'modern_person' are populated by ancestor_climb_sessions
-        // and must NEVER appear in public slavery records search.
-        const EXCLUDED_SEARCH_TYPES = `('descendant', 'modern_person', 'participant', 'merged')`;
+        //
+        // SEARCH VISIBILITY IS GATED ON LIVING STATUS, NOT ON HOW THE PERSON ARRIVED.
+        // The original rule excluded person_type='descendant' wholesale, to keep living people out of a
+        // public slavery-records search. But 'descendant' does not mean "alive" -- it means "entered via an
+        // ancestor climb". Measured 2026-08-18: 13,354 descendant canonicals, of which **12,562 are
+        // historical** (they carry a death year, or were born on/before 1916) and only **30** are plausibly
+        // living. So the rule was hiding twelve and a half thousand ancestors to protect thirty people.
+        //
+        // Concretely: Wyatt Goodwin, born 1818, was unfindable -- a man dead for a century hidden by a
+        // privacy rule written for the living. This project exists to make exactly those people findable.
+        //
+        // Typing by PROVENANCE rather than by STATUS is the same error the NY probate scraper made in the
+        // other direction, where being found in a probate roll made a decedent an "enslaver".
+        //
+        // The gate now:
+        //   * 'merged'      -> always hidden (a dedup tombstone, not a person)
+        //   * 'modern_person', 'participant' -> ALWAYS hidden, unconditionally (PII lane; never relax this)
+        //   * 'descendant'  -> visible ONLY if demonstrably historical: a death year, or a birth year at
+        //                      least LIVING_THRESHOLD_YEARS ago. No dates => stays hidden (fail closed).
+        const LIVING_THRESHOLD_YEARS = 110;
+        const HISTORICAL_CUTOFF_YEAR = new Date().getFullYear() - LIVING_THRESHOLD_YEARS;
+        // Always-hidden types, regardless of dates.
+        const NEVER_SEARCHABLE_TYPES = `('modern_person', 'participant', 'merged')`;
+        // A descendant is searchable only when we can show they are not living.
+        const CANONICAL_VISIBILITY = `(
+            person_type NOT IN ${NEVER_SEARCHABLE_TYPES}
+            AND (
+                 person_type <> 'descendant'
+              OR death_year_estimate IS NOT NULL
+              OR (birth_year_estimate IS NOT NULL AND birth_year_estimate <= ${HISTORICAL_CUTOFF_YEAR})
+            )
+        )`;
         let canonicalWhere = hasTextSearch
-            ? `(${words.map((_, i) => `canonical_name ILIKE $${i + 1}`).join(' AND ')}) AND person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`
-            : `person_type NOT IN ${EXCLUDED_SEARCH_TYPES}`;
+            ? `(${words.map((_, i) => `canonical_name ILIKE $${i + 1}`).join(' AND ')}) AND ${CANONICAL_VISIBILITY}`
+            : CANONICAL_VISIBILITY;
         // External-assertion gate: hide canonicals with no stored proposition-specific document
         // from public search (admin/research token bypasses). enslaved_individuals + unconfirmed
         // leads are a separate tier (not gated by these canonical flags).
@@ -3379,9 +3407,14 @@ router.get('/search', async (req, res) => {
                     CONCAT_WS(', ', primary_county, primary_state) as locations,
                     notes as "contextText", created_at, 'canonical_persons' as table_source
                 FROM canonical_persons
-                -- Fix 3: Exclude climb-sourced descendant/modern rows from search
+                -- Visibility gated on LIVING STATUS, not provenance (see the CANONICAL_VISIBILITY note
+                -- above): 'merged'/'modern_person'/'participant' always hidden; a 'descendant' is shown only
+                -- when demonstrably historical (death year, or born <= now-110). Fails closed on no dates.
                 WHERE canonical_name ILIKE $1
-                  AND person_type NOT IN ('descendant', 'modern_person', 'participant', 'merged')
+                  AND person_type NOT IN ('modern_person', 'participant', 'merged')
+                  AND (person_type <> 'descendant'
+                       OR death_year_estimate IS NOT NULL
+                       OR (birth_year_estimate IS NOT NULL AND birth_year_estimate <= EXTRACT(YEAR FROM now())::int - 110))
             ) combined
             ORDER BY confidence DESC NULLS LAST, created_at DESC
             LIMIT $3
