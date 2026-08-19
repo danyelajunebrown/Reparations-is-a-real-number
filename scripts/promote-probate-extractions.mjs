@@ -69,7 +69,7 @@ async function main() {
     PREFIX ? [ID_SYSTEM, PREFIX] : [ID_SYSTEM]);
   console.log(`extractions to promote: ${rows.length}${PREFIX ? ' (prefix ' + PREFIX + ')' : ''}`);
 
-  const st = { enslavers: 0, linked: 0, docsLinked: 0, enslaved: 0, edges: 0, rejected: 0, skipped: 0 };
+  const st = { enslavers: 0, linked: 0, docsLinked: 0, enslaved: 0, edges: 0, rejected: 0, rescuedEstates: 0, skipped: 0 };
   for (const r of rows) {
     const county = countyFromCollection(r.collection_key);
     const state = stateFromCollection(r.collection_key);
@@ -83,10 +83,33 @@ async function main() {
       context: `Probate decedent (LLM-extracted estate, roll ${r.roll_group_id})${held > 0 ? '; estate names ' + held + ' enslaved' : ''}.`,
       dataQualityFlags: { source_tier: 'secondary', max_evidence_tier: 'secondary', extraction: 'probate_llm', roll: r.roll_group_id, enslaved_count_documented: held, requires_human_review: true },
     }, { dryRun: !APPLY });
-    if (!er.ref) { st.rejected++; continue; }            // mint gate declined (place-word / junk decedent)
-    if (er.action === 'linked' || er.action === 'linked_extid') st.linked++; else st.enslavers++;
+    // MINT GATE DECLINED THE DECEDENT -- but that must not discard the ESTATE.
+    // The gate is right to refuse "Lewis Heirs", "Est Mathr Bennett", "To Amount", "Front St Executor":
+    // those are OCR/segmentation artifacts, not people, and minting them would be fabricated data.
+    // But `continue` also threw away the NAMED ENSLAVED PEOPLE in those estates -- 49 in "Lewis Heirs",
+    // 17 in "Est Mathr Bennett". 66 documented human beings were invisible because their holder's name was
+    // garbled. The gate was right and the outcome was wrong.
+    // So: refuse to mint a non-person AS A PERSON, and still mint the people they held, carrying the
+    // holder's name as TEXT (enslaved_owner_relationships.owner_name) with no owner person row, plus a
+    // research_findings row so the unresolved decedent is a known question rather than a silent drop.
+    const decedentRejected = !er.ref;
+    if (decedentRejected) {
+      st.rejected++;
+      if (!APPLY || held === 0) continue;   // nothing held → nothing to rescue
+      st.rescuedEstates++;
+      await pool.query(
+        `INSERT INTO research_findings (question, repository, index_searched, result, hit_count, subject_table, subject_id, evidence_note, searched_by)
+         VALUES ($1,$2,$3,'partial',$4,'probate_estate_extractions',$5,$6,$7) ON CONFLICT DO NOTHING`,
+        [`Who is the decedent of the probate estate recorded as "${r.decedent_name}" (roll ${r.roll_group_id})?`,
+         'FamilySearch probate (LLM extraction)', `roll ${r.roll_group_id}`, held, String(r.id),
+         `The extracted decedent name failed the person mint gate (isValidPersonName/isNameSuspect) — it appears to be an OCR or segmentation artifact rather than a person. The ESTATE is real and names ${held} enslaved people, who ARE minted and carry "${r.decedent_name}" as owner_name text. Resolve the true decedent from the imaged pages to attach an owner person.`,
+         'probate-ext-promote']).catch(() => {});
+      await pool.query(`UPDATE person_documents SET evidences_enslaved_holding=TRUE, enslaved_count=GREATEST(COALESCE(enslaved_count,0),$2) WHERE id=ANY($1::int[])`, [r.page_doc_ids, held]).catch(() => {});
+    } else {
+      if (er.action === 'linked' || er.action === 'linked_extid') st.linked++; else st.enslavers++;
+    }
 
-    if (APPLY && er.ref) {
+    if (APPLY && !decedentRejected) {
       const col = er.ref.subject_table === 'canonical_persons' ? 'canonical_person_id' : 'unconfirmed_person_id';
       // link this estate's imaged pages to the decedent (only unlinked docs)
       const upd = await pool.query(
@@ -97,7 +120,10 @@ async function main() {
       if (held > 0 && upd.rows.length) {
         await pool.query(`UPDATE person_documents SET evidences_enslaved_holding=TRUE, enslaved_count=GREATEST(COALESCE(enslaved_count,0),$2) WHERE id=ANY($1::int[])`, [r.page_doc_ids, held]).catch(() => {});
       }
-      // named enslaved → leads + owner edges (documented COUNT never becomes rows; only names)
+    }
+
+    // NAMED ENSLAVED — runs whether or not the decedent survived the gate.
+    if (APPLY) {
       for (const nm of enslavedNames(r.enslaved_persons)) {
         const nr = await ps.findOrCreateLead({
           name: nm, personType: 'enslaved', locations: [[county && county + ' County', state].filter(Boolean).join(', ')].filter(Boolean),
@@ -109,10 +135,14 @@ async function main() {
         }, {});
         if (!nr.ref) continue;
         st.enslaved++;
+        // owner_subject_* are NULL when the decedent was refused: the holding is recorded by NAME, and the
+        // person link is restored later by the research_findings question above. A relationship to a named
+        // holder we cannot yet identify is still evidence; a discarded estate is not.
         await pool.query(
           `INSERT INTO enslaved_owner_relationships (enslaved_name, owner_name, relationship_type, relationship_source, source_url, source_context, confidence_score, verification_status, created_by, enslaved_subject_table, enslaved_subject_id, owner_subject_table, owner_subject_id)
            VALUES ($1,$2,'enslaved_by','probate_extraction',$3,$4,0.55,'unverified','probate-ext-promote',$5,$6,$7,$8) ON CONFLICT DO NOTHING`,
-          [nm, r.decedent_name, 'FamilySearch probate', `roll ${r.roll_group_id}`, nr.ref.subject_table, nr.ref.subject_id, er.ref.subject_table, er.ref.subject_id]).catch(() => {});
+          [nm, r.decedent_name, 'FamilySearch probate', `roll ${r.roll_group_id}`, nr.ref.subject_table, nr.ref.subject_id,
+           er.ref ? er.ref.subject_table : null, er.ref ? er.ref.subject_id : null]).catch(() => {});
         st.edges++;
       }
     }
