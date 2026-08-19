@@ -76,7 +76,12 @@ async function embed(text) {
 }
 
 async function main() {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  // statement_timeout + connection reaping: the pool.on('error') handler below stops a dropped socket from
+  // KILLING the process, but on its own it let an in-flight query hang forever instead -- the sweep sat at
+  // 7,150/8,862 for a week, alive and doing nothing. Converting a loud crash into a silent stall is the
+  // worse trade. A query must fail so the supervisor can restart it.
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false },
+    statement_timeout: 120000, query_timeout: 120000, idleTimeoutMillis: 30000, connectionTimeoutMillis: 30000 });
   // pg-pool emits 'error' on IDLE clients when the server drops a socket. Node kills the process on an
   // unhandled 'error' event, so a single Neon blip takes down a multi-hour sweep — and in a log it reads as
   // "stalled", not "crashed". That is what ended the run at ~11,200 of 20,055 docs:
