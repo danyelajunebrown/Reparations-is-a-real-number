@@ -123,6 +123,113 @@ const KINDS = {
         `${r.source_citation ? ' Source: ' + String(r.source_citation).slice(0, 400) : ''}`;
     },
   },
+
+  // ── INSTRUMENTS AND ASSETS ────────────────────────────────────────────────────────────────────────
+  // Operator, 2026-08-20: "RAG should be just as concerned with the instruments and assets as the
+  // genealogy." Correct, and the first pass under-built it: kin edges, transfers and findings were
+  // embedded while the voyages, holdings, inheritances, insurance policies and estate transfers -- the
+  // reparations-relevant half -- were left unretrievable. A ledger you cannot query is a filing cabinet.
+
+  ownership: {
+    table: 'enslaved_owner_relationships', idCol: 'id', contentKind: 'ownership_claim',
+    sql: `SELECT r.id, r.enslaved_name, r.owner_name, r.relationship_type, r.start_year, r.end_year,
+                 r.relationship_source, r.source_context, r.confidence_score, r.verification_status
+            FROM enslaved_owner_relationships r
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='enslaved_owner_relationships'
+                              AND e.subject_id=r.id::text AND e.content_kind='ownership_claim')`,
+    text: (r) => {
+      if (!r.enslaved_name) return null;
+      const yrs = [r.start_year, r.end_year].filter(Boolean).join('-');
+      return `${r.enslaved_name} was held as enslaved${r.owner_name ? ' by ' + r.owner_name : ' (holder not identified)'}` +
+        `${yrs ? ' (' + yrs + ')' : ''}. Relationship: ${r.relationship_type || 'enslaved_by'}, ` +
+        `source: ${r.relationship_source || 'unstated'}, confidence ${r.confidence_score}, ${r.verification_status || 'unverified'}.` +
+        `${r.source_context ? ' ' + String(r.source_context).slice(0, 300) : ''}`;
+    },
+  },
+
+  voyages: {
+    table: 'slavevoyages_voyages', idCol: 'voyageid', contentKind: 'slaving_voyage',
+    sql: `SELECT v.voyageid AS id, v.shipname, v.nationality, v.captain_a, v.owners,
+                 v.port_departure, v.port_arrival, v.year_departure, v.year_arrival,
+                 v.enslaved_embarked, v.enslaved_disembarked, v.enslaved_died_crossing, v.tonnage
+            FROM slavevoyages_voyages v
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='slavevoyages_voyages'
+                              AND e.subject_id=v.voyageid::text AND e.content_kind='slaving_voyage')`,
+    text: (r) => {
+      const died = r.enslaved_died_crossing;
+      return `The slaving voyage of the ship ${r.shipname || '(unnamed)'}` +
+        `${r.nationality ? ' (' + r.nationality + ')' : ''}${r.tonnage ? ', ' + r.tonnage + ' tons' : ''}` +
+        `${r.captain_a ? ', captain ' + r.captain_a : ''}${r.owners ? ', owners ' + String(r.owners).slice(0, 120) : ''}. ` +
+        `Departed ${r.port_departure || 'unknown port'}${r.year_departure ? ' in ' + r.year_departure : ''}, ` +
+        `arrived ${r.port_arrival || 'unknown port'}${r.year_arrival ? ' in ' + r.year_arrival : ''}. ` +
+        `${r.enslaved_embarked || 0} people embarked, ${r.enslaved_disembarked || 0} disembarked` +
+        `${died ? `, ${died} DIED DURING THE CROSSING` : ''}.`;
+    },
+  },
+
+  inheritance: {
+    table: 'inheritance_edges', idCol: 'id', contentKind: 'inheritance',
+    sql: `SELECT i.id, i.relationship_to_testator, i.asset_type, i.asset_description, i.asset_value_usd_est,
+                 i.enslaved_persons_count, i.document_year, i.document_jurisdiction, i.document_reference,
+                 i.evidence_tier, i.confidence, i.verified,
+                 COALESCE(ct.canonical_name, ut.full_name) AS testator,
+                 COALESCE(ch.canonical_name, uh.full_name) AS heir
+            FROM inheritance_edges i
+            LEFT JOIN canonical_persons ct ON ct.id = i.testator_id
+            LEFT JOIN canonical_persons ch ON ch.id = i.heir_id
+            LEFT JOIN unconfirmed_persons ut ON ut.lead_id = i.testator_id
+            LEFT JOIN unconfirmed_persons uh ON uh.lead_id = i.heir_id
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='inheritance_edges'
+                              AND e.subject_id=i.id::text AND e.content_kind='inheritance')`,
+    text: (r) => {
+      const who = [r.testator, r.heir].filter(Boolean).length;
+      if (!who) return null;
+      return `${r.testator || 'An unidentified testator'} bequeathed to ${r.heir || 'an unidentified heir'}` +
+        `${r.relationship_to_testator ? ' (' + r.relationship_to_testator + ')' : ''}: ` +
+        `${r.asset_type || 'unspecified assets'}${r.asset_description ? ' — ' + String(r.asset_description).slice(0, 200) : ''}. ` +
+        `${r.enslaved_persons_count ? `THIS BEQUEST INCLUDED ${r.enslaved_persons_count} ENSLAVED PEOPLE. ` : ''}` +
+        `${r.asset_value_usd_est ? 'Estimated value $' + r.asset_value_usd_est + '. ' : ''}` +
+        `${r.document_year ? r.document_year + ' ' : ''}${r.document_jurisdiction || ''} ${r.document_reference || ''}`.trim() +
+        `. Evidence tier ${r.evidence_tier}, confidence ${r.confidence}${r.verified ? ', verified' : ', unverified'}.`;
+    },
+  },
+
+  insurance: {
+    table: 'slave_era_insurance_policies', idCol: 'policy_id', contentKind: 'insurance_policy',
+    sql: `SELECT p.policy_id AS id, p.policy_number, p.underwriter_name, p.modern_successor, p.policy_year,
+                 p.slaveholder_name, p.slaveholder_state, p.enslaved_name, p.enslaved_age,
+                 p.enslaved_occupation, p.face_value_usd, p.premium_usd, p.registry_source
+            FROM slave_era_insurance_policies p
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='slave_era_insurance_policies'
+                              AND e.subject_id=p.policy_id::text AND e.content_kind='insurance_policy')`,
+    text: (r) => `Life insurance policy${r.policy_number ? ' no. ' + r.policy_number : ''} underwritten by ` +
+      `${r.underwriter_name || 'an unnamed insurer'}${r.modern_successor ? ' (modern successor: ' + r.modern_successor + ')' : ''}` +
+      `${r.policy_year ? ' in ' + r.policy_year : ''}, insuring the life of the enslaved person ` +
+      `${r.enslaved_name || '(unnamed)'}${r.enslaved_age ? ', age ' + r.enslaved_age : ''}` +
+      `${r.enslaved_occupation ? ', ' + r.enslaved_occupation : ''}, for the benefit of the slaveholder ` +
+      `${r.slaveholder_name || '(unnamed)'}${r.slaveholder_state ? ' of ' + r.slaveholder_state : ''}. ` +
+      `${r.face_value_usd ? 'Face value $' + r.face_value_usd + '. ' : ''}${r.premium_usd ? 'Premium $' + r.premium_usd + '. ' : ''}` +
+      `The insurer profited from premiums on a human being. Source: ${r.registry_source || 'unstated'}.`,
+  },
+
+  estates: {
+    table: 'wealth_transfer_events', idCol: 'id', contentKind: 'wealth_transfer',
+    sql: `SELECT w.id, w.display_name, w.event_type, w.event_year, w.debtor_name_denormalized,
+                 w.state_or_province, w.county, w.court_or_authority, w.total_estate_value_usd,
+                 w.enslaved_persons_count, w.enslaved_persons_appraised_value_usd, w.primary_citation
+            FROM wealth_transfer_events w
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='wealth_transfer_events'
+                              AND e.subject_id=w.id::text AND e.content_kind='wealth_transfer')`,
+    text: (r) => `${r.display_name || r.event_type || 'A wealth transfer event'}` +
+      `${r.debtor_name_denormalized ? ' — estate of ' + r.debtor_name_denormalized : ''}` +
+      `${r.event_year ? ', ' + r.event_year : ''}${r.county ? ', ' + r.county + ' County' : ''}` +
+      `${r.state_or_province ? ', ' + r.state_or_province : ''}` +
+      `${r.court_or_authority ? ' (' + r.court_or_authority + ')' : ''}. ` +
+      `${r.enslaved_persons_count ? `${r.enslaved_persons_count} enslaved people were part of this estate. ` : ''}` +
+      `${r.enslaved_persons_appraised_value_usd ? `They were appraised at $${r.enslaved_persons_appraised_value_usd}. ` : ''}` +
+      `${r.total_estate_value_usd ? `Total estate value $${r.total_estate_value_usd}. ` : ''}` +
+      `${r.primary_citation ? 'Source: ' + String(r.primary_citation).slice(0, 200) : ''}`,
+  },
 };
 
 async function runKind(pool, key) {
@@ -155,7 +262,7 @@ async function runKind(pool, key) {
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
-  const kinds = KIND === 'all' ? ['findings', 'edges', 'transfers'] : [KIND];
+  const kinds = KIND === 'all' ? ['findings', 'edges', 'transfers', 'ownership', 'inheritance', 'insurance', 'estates', 'voyages'] : [KIND];
   for (const k of kinds) await runKind(pool, k);
   await pool.end();
 }

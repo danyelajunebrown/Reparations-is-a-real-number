@@ -993,6 +993,19 @@ async function extractPreIndexedData(imageUrl, metadata = {}) {
 /**
  * Store extracted person in database
  */
+// A slave schedule COUNTS enslaved people; it does not name them. The extractor synthesises
+// "Unknown (Female, age 4)" per tally mark, which is precisely the placeholder row audit rule 5 forbids
+// ("No 'Unnamed enslaved person(s)' placeholder rows. Real or absent."). 1,455,019 such rows were
+// quarantined on 2026-08-19 -- and 1,621 MORE appeared within 24 hours, because the backlog was cleaned
+// and the source was not. Quarantining at CREATION stops the bleeding without discarding the observation:
+// an enumerator really did record a 4-year-old girl held by a named person in a named county, and that
+// belongs as a count on the holder, the way probate carries enslaved_count.
+// NOTE: matches only the synthesised "Unknown (Male|Female, ...)" shape. A bare "Unknown" is left alone --
+// that may be a real person whose name was illegible, and a false quarantine hides a human.
+function isTallyPlaceholder(name) {
+    return typeof name === 'string' && /^(unknown|unnamed)\s*\((male|female|m|f)\b[^)]*\)$/i.test(name.trim());
+}
+
 async function storePerson(personData, dryRun = false) {
     if (!sql || dryRun) {
         console.log(`      → Would store: ${personData.name} (${personData.type})`);
@@ -1041,7 +1054,7 @@ async function storePerson(personData, dryRun = false) {
             INSERT INTO unconfirmed_persons (
                 full_name, person_type, source_url, context_text,
                 confidence_score, extraction_method, gender,
-                locations, relationships
+                locations, relationships, status, data_quality_flags
             ) VALUES (
                 ${personData.name},
                 ${personData.type},
@@ -1051,7 +1064,12 @@ async function storePerson(personData, dryRun = false) {
                 ${personData.extractionMethod || 'census_ocr_extraction'},
                 ${personData.sex || null},
                 ${locations},
-                ${JSON.stringify(relationships)}
+                ${JSON.stringify(relationships)},
+                ${isTallyPlaceholder(personData.name) ? 'placeholder_aggregate' : null},
+                ${isTallyPlaceholder(personData.name)
+                    ? JSON.stringify({ placeholder_aggregate: true, not_a_person: true,
+                        reason: 'Slave schedules COUNT enslaved people by age/sex/colour and do not name them. This row is one tally mark, not a person (audit rule 5). Quarantined AT CREATION so it never enters the person population; the observation is preserved as a count on the holder.' })
+                    : null}
             )
             RETURNING lead_id
         `;
