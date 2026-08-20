@@ -2218,3 +2218,48 @@ abolition date — it is the **second-richest county in the corpus** (98 estates
 was Cayuga + Allegany, 1,903 estates for 11 people. (2) I named a schema gap as the blocker for the Shepherd
 chain when the real blocker is that **Virginia probate has never been scraped**. Both were arguments made
 without looking, and the operator caught both.
+
+---
+
+## 2026-08-19/20 — FABRICATION SWEEP, THE ASSERTION-STORE ANSWER, AND DLAS RECONNAISSANCE
+→ [[standard-assertion-store-and-inference-decisions]] · [[standard-targeted-harvesting]] ·
+[[finding-duplication-interoperability-retrievability-aug10]]
+
+**FOUR FABRICATION CLASSES FOUND AND FIXED.** Every one was an IMPLICIT INFERENCE no human approved:
+| implicit rule | cost | fix |
+|---|---|---|
+| a probate decedent is an enslaver | 7,053 canonicals | reclassified -> unknown, 279 evidence-backed kept |
+| a tally mark is a person | **1,456,640** rows | quarantined `placeholder_aggregate` **+ source patched** |
+| family-tree provenance ⇒ maybe alive | 12,562 ancestors hidden | search gated on LIVING STATUS, not provenance |
+| a rejected decedent NAME voids the estate | 66 enslaved people invisible | mint gate decoupled; 65 recovered |
+Real named enslaved leads after the sweep: **692,197** (was 2,147,162, most of it fiction).
+
+**THE STORAGE ANSWER (operator: "is a table even the best storage at scale?").** No — and `person_facts`
+(497,851 rows) already IS the answer: open `fact_type` vocabulary, dates+places, related person, full source
+chain, confidence, and **`contested` + `contested_reason`**. DLAS's 127 terms become fact_type VALUES, not
+86 tables. My "68% have no home" was WRONG — `manumission`/`escape`/`free_status`/`occupation` were already
+in use. Fifth asserted-absence-without-checking of the session. **Three layers: ledger tables for what must
+be SUMMED · person_facts for what must be CLAIMED · embeddings for what must be FOUND.**
+
+**FREEDOM IS REVOCABLE** (operator): people were kidnapped, re-enslaved, jailed, bound out. `contested` is
+how a `free_status` fact gets revoked with a reason. Used **0 times** so far.
+
+**RETRIEVABILITY.** Verbs embedded: kin edges 7,905 · transfers 48,987 · findings 1,173 · ownership 29,524+
+· inheritance · insurance · estates · voyages (Mini) · **person_facts 497,851 (running)**. Proven working:
+"who was sold from one enslaver to another in Louisiana in 1789" and "have we already searched for James
+Fisher in Powhatan" both return correct top hits.
+
+**YIELD COMPARISON that settles targeting:** NY probate 88,870 pages -> **290** enslaved named (**306
+pages/person**) · Liberty Co GA 14,452 pages -> **1,373** (**11 pages/person**) · DLAS 17,487 petitions ->
+**~80,000 enslaved**. Collections assembled FOR this question beat general record sets by ~30x-500x.
+
+**DLAS RECONNAISSANCE (steps 1-2 of the O-of-O done).** 127-term controlled vocabulary captured to
+`bibliography_sources`. robots.txt permits crawling. **NEXT = STEP 3: sample ~200 petitions across
+states/courts/decades and measure which fields actually populate BEFORE writing a person row.**
+
+**OTHER LIVE ITEMS:** 1860 tail (65 locations, FS session re-authed, runner fixed — the old one reported
+"ALL STATES DONE" with work remaining because its grep checked the whole log) · Knighten petition #21382436
+(Fairfield SC 1824: executor Moses Knighton the younger sold 3 estate slaves "in a secret and fraudulent
+manner", court partially granted, hiring values + sale prices in depositions 1812-1826) · two coastwise
+manifests archived (#740386 Gold Hunter of BOSTON, #740387 Fashion of NEW YORK — northern vessels; the form
+separates SHIPPER from OWNER/CONSIGNEE, which chattel_transfer_events collapses) · issues #149-#158.

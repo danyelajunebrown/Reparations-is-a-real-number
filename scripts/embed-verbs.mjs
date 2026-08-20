@@ -230,6 +230,42 @@ const KINDS = {
       `${r.total_estate_value_usd ? `Total estate value $${r.total_estate_value_usd}. ` : ''}` +
       `${r.primary_citation ? 'Source: ' + String(r.primary_citation).slice(0, 200) : ''}`,
   },
+
+  // ── THE ASSERTION STORE ───────────────────────────────────────────────────────────────────────────
+  // person_facts is the answer to "is a table even the right storage at scale?" (operator, 2026-08-20).
+  // It is a typed, provenanced, CONTESTABLE assertion store: open fact_type vocabulary, dates with
+  // precision, place to locality, related person, full source chain, confidence, and -- crucially --
+  // `contested` + `contested_reason`. So DLAS's 127 subject terms become fact_type VALUES, not 86 new
+  // tables. And freedom is modelled correctly: a free_status fact can be CONTESTED and revoked, which is
+  // what actually happened (kidnapping of free people, re-enslavement, apprenticeship, vagrancy law).
+  // 497,851 rows and NONE embedded -- the largest unretrievable store in the system, and the layer the
+  // whole three-layer design (ledger tables / assertions / vectors) rests on.
+  facts: {
+    table: 'person_facts', idCol: 'id', contentKind: 'person_fact',
+    sql: `SELECT f.id, f.fact_type, f.date_text, f.date_year, f.place_text, f.place_state, f.place_county,
+                 f.value_text, f.related_name_text, f.source_citation, f.confidence,
+                 f.verification_status, f.contested, f.contested_reason,
+                 COALESCE(cp.canonical_name, up.full_name) AS person
+            FROM person_facts f
+            LEFT JOIN canonical_persons cp ON cp.id = f.person_id
+            LEFT JOIN unconfirmed_persons up ON up.lead_id = f.person_id
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='person_facts'
+                              AND e.subject_id = f.id::text AND e.content_kind='person_fact')`,
+    text: (r) => {
+      if (!r.person && !r.related_name_text) return null;
+      const who = r.person || 'An unidentified person';
+      const when = r.date_text || (r.date_year ? String(r.date_year) : '');
+      const where = [r.place_locality, r.place_county && r.place_county + ' County', r.place_state]
+        .filter(Boolean).join(', ') || r.place_text || '';
+      return `${who} — ${String(r.fact_type).replace(/_/g, ' ')}` +
+        `${r.value_text ? ': ' + String(r.value_text).slice(0, 200) : ''}` +
+        `${r.related_name_text ? ' (relating to ' + r.related_name_text + ')' : ''}` +
+        `${when ? ', ' + when : ''}${where ? ', ' + where : ''}. ` +
+        `${r.contested ? `THIS FACT IS CONTESTED: ${r.contested_reason || 'reason unstated'}. ` : ''}` +
+        `Confidence ${r.confidence ?? 'unstated'}, ${r.verification_status || 'unverified'}.` +
+        `${r.source_citation ? ' Source: ' + String(r.source_citation).slice(0, 250) : ''}`;
+    },
+  },
 };
 
 async function runKind(pool, key) {
@@ -262,7 +298,7 @@ async function runKind(pool, key) {
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
-  const kinds = KIND === 'all' ? ['findings', 'edges', 'transfers', 'ownership', 'inheritance', 'insurance', 'estates', 'voyages'] : [KIND];
+  const kinds = KIND === 'all' ? ['findings', 'edges', 'transfers', 'ownership', 'inheritance', 'insurance', 'estates', 'voyages', 'facts'] : [KIND];
   for (const k of kinds) await runKind(pool, k);
   await pool.end();
 }
