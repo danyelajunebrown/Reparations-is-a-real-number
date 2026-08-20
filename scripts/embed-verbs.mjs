@@ -266,6 +266,41 @@ const KINDS = {
         `${r.source_citation ? ' Source: ' + String(r.source_citation).slice(0, 250) : ''}`;
     },
   },
+
+  // ── CANONICAL PERSONS, EMBEDDED DIRECTLY ─────────────────────────────────────────────────────────
+  // Canonicals were retrievable only INDIRECTLY, through the lead they were promoted from -- so ~46% had
+  // no embedding path at all, and the rest were indexed by stale PRE-promotion text (#151). Worse, some
+  // promoters mint the canonical without writing confirmed_individual_id back on the lead OR copying the
+  // external id across, leaving the canonical orphaned from both directions: 4,540 named enslaved people
+  // promoted 2026-08-19 were fully embedded as leads and unreachable as canonicals. A status written
+  // without its pointer -- the same defect as 68,320 enslaved leads marked 'promoted' with a null link.
+  // Embedding the canonical from its CURRENT profile removes the dependency on a traversal that may not
+  // exist, and indexes what the person actually is now rather than what the lead said before merges.
+  canonicals: {
+    table: 'canonical_persons', idCol: 'id', contentKind: 'canonical_profile',
+    sql: `SELECT cp.id, cp.canonical_name, cp.person_type, cp.birth_year_estimate, cp.death_year_estimate,
+                 cp.sex, cp.primary_state, cp.primary_county, cp.primary_plantation,
+                 cp.assertable_slaveowner, cp.assertable_enslaved, cp.created_by,
+                 (SELECT count(*) FROM person_documents d WHERE d.canonical_person_id=cp.id AND d.s3_key IS NOT NULL)::int AS scans
+            FROM canonical_persons cp
+           WHERE cp.person_type <> 'merged'
+             AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='canonical_persons'
+                              AND e.subject_id = cp.id::text AND e.content_kind='canonical_profile')`,
+    text: (r) => {
+      if (!r.canonical_name) return null;
+      const life = [r.birth_year_estimate ? 'b. ' + r.birth_year_estimate : '',
+                    r.death_year_estimate ? 'd. ' + r.death_year_estimate : ''].filter(Boolean).join(', ');
+      const place = [r.primary_plantation, r.primary_county && r.primary_county + ' County', r.primary_state]
+        .filter(Boolean).join(', ');
+      const role = { enslaved: 'an enslaved person', enslaver: 'an enslaver', freedperson: 'a freedperson',
+                     descendant: 'a descendant', unknown: 'a person of undetermined role' }[r.person_type] || r.person_type;
+      return `${r.canonical_name} — ${role}${r.sex ? ', ' + r.sex : ''}${life ? ', ' + life : ''}` +
+        `${place ? ', of ' + place : ''}. ` +
+        `${r.scans ? `${r.scans} archived source document(s).` : 'No archived source document.'} ` +
+        `${r.assertable_enslaved ? 'Documented as enslaved. ' : ''}${r.assertable_slaveowner ? 'Documented as a slaveholder. ' : ''}` +
+        `Record established by ${r.created_by || 'an unrecorded process'}.`;
+    },
+  },
 };
 
 async function runKind(pool, key) {

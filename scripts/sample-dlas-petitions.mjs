@@ -39,23 +39,18 @@ const UA = 'reparations-research/1.0 (db7613@bard.edu; academic reparations rese
 const BASE = 'https://dlas.uncg.edu';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Seed terms chosen to spread the frame across the corpus rather than cluster it: surnames common in
-// different regions, plus subject words that pull different COURT types and record shapes.
-// Balanced deliberately. A first 12-petition probe came back court='General Assembly' 8 of 12 -- i.e.
-// almost all LEGISLATIVE petitions -- while 14,512 of the corpus's 17,487 are COUNTY COURT. Legislative and
-// county-court petitions are different documents: the county-court ones carry the depositions, hiring
-// values and sale prices (the Knighten equity petition had all three; the legislative sample had
-// depositions 0%, hiring_value 8%). Sampling the wrong stratum would have told us the corpus is thin on
-// exactly the financial evidence it is richest in.
-const SEEDS = [
-  // county-court / equity language
-  'executor', 'estate', 'dower', 'hire', 'partition', 'legatee', 'administrator', 'trespass',
-  'mortgage', 'deed of trust', 'guardian', 'heirs', 'inventory', 'appraisement',
-  // freedom / status
-  'manumission', 'freedom', 'emancipation', 'kidnap', 'apprentice',
-  // legislative-leaning (kept, to retain the stratum rather than eliminate it)
-  'petition of', 'runaway',
-];
+// STRATIFIED FRAME, not seed-word luck.
+// The first 200-petition run came back 84% LEGISLATIVE against a corpus that is 83% COUNTY COURT, and
+// Delaware drew 56/200. Seed words sample whatever the relevance ranker likes, which is not the corpus.
+// The search form exposes real facets, discovered 2026-08-20:
+//     l / st = state (16 + DC)   ·   y = decade (177=1770s .. 186=1860s)   ·   r = PERSON ROLE
+//     r: 1 petitioner · 2 defendant · 3 ENSLAVED · 4 FPOC · 5 ENSLAVED OWNER · 10001 unknown
+// So we walk state x decade and pull with r=3 (enslaved). A role facet for enslaved people is a better
+// axis than court type anyway: it selects the petitions that NAME the people this project exists to name.
+// Results cap at 25 per query, which is fine — we want spread, not depth.
+const STATES = ['al','ar','de','dc','fl','ga','ky','la','md','ms','mo','nc','sc','tn','tx','va'];
+const DECADES = ['177','178','179','180','181','182','183','184','185','186'];
+const ROLE_ENSLAVED = '3';
 
 async function get(url) {
   const r = await fetch(url, { headers: { 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30000) });
@@ -92,20 +87,27 @@ const PROBES = {
 };
 
 async function main() {
-  console.log(`sampling up to ${N} DLAS petitions across ${SEEDS.length} seed terms (~1 req/sec)\n`);
+  console.log(`sampling up to ${N} DLAS petitions, stratified across ${STATES.length} states x ${DECADES.length} decades, role=enslaved (~1 req/sec)\n`);
 
-  // ── collect ids across seeds so the frame is spread, not clustered ──
+  // ── walk state x decade, filtered to petitions with an ENSLAVED party ──
   const ids = new Set();
-  for (const seed of SEEDS) {
-    if (ids.size >= N * 1.4) break;
+  const cells = [];
+  for (const st of STATES) for (const y of DECADES) cells.push([st, y]);
+  // interleave so an early stop still spans states rather than finishing Alabama
+  cells.sort((a, b) => (a[1] === b[1] ? 0 : a[1] < b[1] ? -1 : 1));
+  const perCell = Math.max(2, Math.ceil((N * 1.3) / cells.length));
+  let cellsHit = 0;
+  for (const [st, y] of cells) {
+    if (ids.size >= N * 1.3) break;
     try {
-      const html = await get(`${BASE}/petitions/?s=${encodeURIComponent(seed)}&t=1`);
-      const found = [...html.matchAll(/\/petitions\/petition\/(\d+)/g)].map((m) => m[1]);
-      found.slice(0, Math.ceil((N * 1.4) / SEEDS.length)).forEach((i) => ids.add(i));
-      console.log(`  seed "${seed}": ${found.length} hits, running total ${ids.size}`);
-    } catch (e) { console.log(`  seed "${seed}": ${e.message}`); }
-    await sleep(1100);
+      const html = await get(`${BASE}/petitions/?s=&t=1&st=${st}&l=${st}&y=${y}&r=${ROLE_ENSLAVED}`);
+      const found = [...new Set([...html.matchAll(/\/petitions\/petition\/(\d+)/g)].map((m) => m[1]))];
+      found.slice(0, perCell).forEach((i) => ids.add(i));
+      if (found.length) { cellsHit++; console.log(`  ${st.toUpperCase()} ${y}0s: ${found.length} hits, total ${ids.size}`); }
+    } catch (e) { /* empty cell is a valid answer */ }
+    await sleep(900);
   }
+  console.log(`\nframe: ${cellsHit} of ${cells.length} state x decade cells returned petitions`);
 
   const list = [...ids].slice(0, N);
   console.log(`\nfetching ${list.length} petitions…`);
@@ -151,7 +153,7 @@ async function main() {
        VALUES ($1,$2,$3,'partial',$4,$5,'sample-dlas-petitions')`,
       ['What does a DLAS petition actually contain, and which fields populate often enough to build an ingest on?',
        'Digital Library on American Slavery (UNCG) — Race and Slavery Petitions Project',
-       `sampled ${ok} petitions across ${SEEDS.length} seed terms`, ok,
+       `stratified sample: ${STATES.length} states x ${DECADES.length} decades, role=enslaved; ${ok} petitions fetched`, ok,
        `FIELD CENSUS ${JSON.stringify(census)} FRAME ${JSON.stringify(frame)} — measured BEFORE designing an ingest, per the O-of-O in standard-assertion-store-and-inference-decisions.md §5.`]);
     console.log('\n✓ field census saved to research_findings');
     await pool.end();
