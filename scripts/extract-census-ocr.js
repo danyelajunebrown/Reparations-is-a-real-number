@@ -26,6 +26,24 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { neon } = require('@neondatabase/serverless');
 const axios = require('axios');
 const { transcribeImage } = require('../src/services/vision/vision-router');
+
+// Did we BORROW the shared :9222 browser, or launch our own? This decides teardown, and getting it wrong
+// is expensive: on 2026-08-21 this script finished Delaware, called browser.close() on the SHARED Chrome,
+// and killed the FamilySearch session for everything else on the Mini. Every subsequent state then failed
+// with "no authenticated Chrome on :9222" — the guard worked, but the browser it guarded was gone, taken
+// down by the run before it. close() was harmless while this script launched its own Chrome; the moment it
+// started connecting to a shared one, close() became a way to sabotage the next fifteen states.
+let connectedToExisting = false;
+
+// Release the browser: DISCONNECT when borrowed, close only what we ourselves launched.
+async function releaseBrowser(b) {
+    const target = b || browser;
+    if (!target) return;
+    try {
+        if (connectedToExisting) { await target.disconnect(); }
+        else { await target.close(); }
+    } catch (_) { /* teardown must never mask the real error */ }
+}
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
@@ -209,6 +227,7 @@ async function initBrowser() {
                 defaultViewport: null
             });
             console.log('   ✅ Connected to existing Chrome');
+            connectedToExisting = true;   // we BORROWED this browser — never close it, only disconnect
         } catch (e) {
             // DO NOT fall back to launching a fresh Chrome. That fallback is what produced eighteen
             // OCR'd copies of the FamilySearch login form: a new profile is never signed in, so the run
@@ -279,7 +298,7 @@ async function ensurePageValid() {
             // Browser itself is dead — full relaunch
             console.log('⚠️ Browser connection lost, relaunching Chrome...');
             try {
-                await browser.close().catch(() => {});
+                await releaseBrowser();
             } catch (_) {}
             await new Promise(r => setTimeout(r, 3000));
             page = await initBrowser();
@@ -1527,7 +1546,7 @@ async function main() {
 
     if (locations.length === 0) {
         console.log('\n✅ No unscraped locations found. Exiting.');
-        await browser.close();
+        await releaseBrowser();
         return;
     }
 
@@ -1569,7 +1588,7 @@ async function main() {
             // recovery kicks in before too many locations are skipped.
             if (consecutiveErrors >= 3) {
                 console.log(`   ⚠️ ${consecutiveErrors} consecutive failures — hard browser relaunch to recover session...`);
-                try { await browser.close().catch(() => {}); } catch (_) {}
+                try { await releaseBrowser(); } catch (_) {}
                 await new Promise(r => setTimeout(r, 5000));
                 page = await initBrowser();
                 await ensureLoggedIn();
@@ -1595,7 +1614,7 @@ async function main() {
     printStats();
 
     // Cleanup
-    await browser.close();
+    await releaseBrowser();
 }
 
 function printStats() {

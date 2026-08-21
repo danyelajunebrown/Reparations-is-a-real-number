@@ -1,8 +1,107 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-08-08 (DESCENT-FIRST DIRECTIVE — the climb is demoted from spine to corroborator; lines
-are built DOWN from documented people, dripping, multi-source, gated. Prior top entries: 2026-08-07
-modern-endpoints + free automation + DAA identity gate, 2026-08-03 intake/PII, 2026-07-31 evidence-quality.)_
+_Last updated: 2026-08-21 (FABRICATION PURGE → EVIDENCE-BACKLOG SPLIT → SILENT-FAILURE SWEEP. Prior top
+entries: 2026-08-08 DESCENT-FIRST DIRECTIVE — the climb demoted from spine to corroborator, lines built DOWN
+from documented people; 2026-08-07 modern-endpoints + free automation + DAA identity gate; 2026-08-03
+intake/PII; 2026-07-31 evidence-quality.)_
+
+---
+
+## 2026-08-19→21 · FABRICATION PURGE, THE BACKLOG SPLIT, AND FOUR SILENT FAILURES
+→ [[finding-fabrication-classes-aug19-20]] · [[standard-assertion-store-and-inference-decisions]] ·
+[[finding-marronnage-corpus-aug20]] · [[standard-targeted-harvesting]] · [[standard-project-monitoring-and-free-agents]]
+
+**READ THIS FIRST, IT IS THE THEME:** every serious defect in these three days was a **failure that looked
+like a completion**. Not a crash — a green light over an empty room. Enumerated, because the shape recurs:
+
+| what it claimed | what was true |
+|---|---|
+| 1,456,640 person rows from slave schedules | one row per TALLY MARK — invented people |
+| 7,053 probate decedents typed `enslaver` | provenance mistaken for evidence |
+| 1860 scrape "0 locations to process" for months | 977 CONTAINER nodes (waypoint_id NULL) counted as work; only 60 real leaves left |
+| 1860 OCR "extracted 301 characters" ×18 | it was transcribing the FamilySearch **login form** |
+| `sample-dlas-petitions` → 0 petitions, saved as a finding | `s` is a REQUIRED param; a malformed query and an empty archive both return HTTP 200 |
+| `audit-source-inference` → "NOT EMBEDDABLE YET" ×5 tables | all five 99–100% embedded; the monitor held a stale hardcoded map |
+| 9,601 canonicals promoted, RULE 0.5 "fine" | `promoteToCanonical` writes neither `confirmed_individual_id` back nor the external id across — orphaned from BOTH directions |
+
+**Rule earned:** *a status written without its link is not a status.* And: **assert the query worked before
+recording what it found** — `.catch(()=>{})`, a caught 403, and an empty result set are indistinguishable
+from an answer unless something insists otherwise.
+
+### THE MEASUREMENT THAT SHOULD DRIVE THE NEXT SESSION → `audit-evidence-backlog-split.mjs`
+The "unevidenced" backlog is **60.2% our own bookkeeping, not archive absence**:
+
+|  | total | evidenced | doc known, no S3 | no doc anywhere | evidenced but GATE NOT LIFTED |
+|---|---|---|---|---|---|
+| freedperson | 82,565 | 0 | **78,212 (94.7%)** | 4,353 (5.3%) | 0 |
+| enslaver | 413,513 | 41,066 | **293,078 (70.9%)** | 79,305 (19.2%) | 6,520 |
+| enslaved | 233,602 | 72,957 | 1 | **160,644 (68.8%)** | 0 |
+| unknown | 23,211 | 10,783 | 2 | 12,426 | **10,776 (46.4%)** |
+
+**OUR debt 388,653 · REAL archive gap 256,728.** The freedperson "0% evidenced" headline is almost entirely
+*unarchived*: 78,212 carry a `familysearch_record` row **with a source ARK**, `s3_key` simply NULL. Only
+`enslaved` is a genuine archive gap — and that is precisely what the new sources are for. **Only bucket D
+belongs in a sentence beginning "we do not have records for…".**
+
+### DONE
+* **Fabrication purged:** 1,455,019 + 1,621 tally-mark rows quarantined `placeholder_aggregate`;
+  `extract-census-ocr.js` now quarantines at creation so the source stops fabricating. 7,053 unevidenced
+  probate `enslaver` → `unknown` (279 evidence-backed kept).
+* **RULE 0.5 closed:** `canonical_profile` **766,245 / 766,245 = 100%** via a new `canonicals` facet that
+  embeds profiles DIRECTLY instead of depending on a lead traversal that often does not exist (also the real
+  fix for #151). Verbs all 99–100%: voyages 64,853 · ownership 32,625 · inheritance 11,792 · insurance 675 ·
+  wealth 128. `person_fact` in progress (~294K/497,851, on cron).
+* **Search visibility:** 748,351 → 760,913 searchable — `descendant` was blanket-excluded, hiding 12,562
+  historical ancestors. Replaced with a living-status gate (110y); 0 PII leaked.
+* **4,540 named enslaved promoted** off slave schedules (deterministic `sched:<doc_id>:<name>` ids). NB the
+  promoter's id+image join is DISJOINT for the enslaved (248,958 ids/no image · 105,230 image/no id · **0
+  both**) — relaxing that gate would have minted ~100k fabricated people. It was a guardrail, not a bug.
+* **1860 UNBLOCKED after months.** Three stacked defects: Vision key suspended (#126) → 403 caught and
+  returned `''` → read as "may be title page" → `scraped_at` written UNCONDITIONALLY. Underneath all of it,
+  the script called `puppeteer.launch()` on its own never-signed-in profile while the authenticated session
+  sat in `:9222`. Now: connects to `:9222` by DEFAULT and **refuses** to launch unauthenticated; OCR via
+  `vision-router` (Qwen-VL→Gemini, built for this in #142) with auth/quota THROWING; `scraped_at` only on
+  actual yield; OCR head printed. **Also: `browser.close()` on a BORROWED browser killed the shared FS
+  session for the whole Mini — now `releaseBrowser()` disconnects when borrowed.**
+* **Six free agents cronned** (RULE 0.7): facts/canonical embeds (pgrep-guarded), `populate-blocking-keys` +
+  `resolve-canonical-dedup --apply` (writes to `dedup_candidate_pairs`, a REVIEW queue — Biscoe gold
+  passes: b1799-vs-b1844 excluded, Ann Biscoe/Ann Briscoe separated at name JW 0.98), by-source audit,
+  archival compliance, 1860 tail. 22 entries. **7,833 dedup pairs queued.**
+* **`check-archival-compliance.mjs`** — rules 8 / audit-5 / 0.5 / 0.6 now self-report with non-zero exit.
+  Found the 23-artifact Wayback leak (20 of them Jefferson Farm Book, i.e. standing, not new).
+
+### SOURCES MEASURED, NO PEOPLE WRITTEN (O-of-O §5 respected)
+* **Marronnage** — 22,485 self-liberation ads 1765–1833, 7 colonies (Saint-Domingue 17,308). Exact counts
+  from the source's own index: **`étampé`/BRANDED 9,915 (44%)**, `nation`/African ethnonym 2,975,
+  `récompense` 4,367, `geôle` 721, `cicatrice` 778. Curated `noms` index verified usable (12/12, francophone
+  AND anglophone) → deterministic named-person ingest, not regex-over-free-text. 67% carry scans under
+  `/documents/` (robots disallows only `/images/`). **My stratified sample said branded=1%; equalising cells
+  under-weighted Saint-Domingue 77%→22%. RULE: when the source exposes exact counts, COUNT.**
+* **DLAS** — the CSV export `/petitions/tocsv/` returns the index in ~16 requests, not 17,487 page fetches.
+  15,684 petitions · 29,934 enslaved · 129,351 enslavers. `enslavedCount` is the targeting key: **2,922
+  petitions (19%) queued in `source_ingest_queue`** carrying 29,786 named enslaved (SC 718/13,429 leads).
+  Coverage caveat recorded: keyword-`slave` reaches ~90% and biases AWAY from FPOC (385 vs ~8,000) — full
+  coverage needs a UNION over terms deduped on `petitonIdentifier`.
+
+### STILL OPEN / NEXT
+1. **Re-run the gate** on ~17,296 already-evidenced-but-ungated people (`recompute-assertion-gates.mjs`) —
+   cheapest possible win; they are provable *today* and simply are not being asserted.
+2. **Archive the 371,290 known-but-unarchived ARKs** (rule 8 at scale). All FamilySearch, so it runs through
+   the authenticated `:9222` Chrome at FS-safe pace — a long crawl, not a quick backfill. Queue AFTER 1860.
+3. **Harvest for the 256,728 genuine gaps** — but see the 08-08 entry: the real blocker is the
+   **1870→1950 forward corridor**, which neither DLAS nor Marronnage crosses. Do not let new-source
+   enthusiasm substitute for the acquisition that unblocks both classes.
+4. 1860 tail: 60 true leaves → then **1850**. Named-person ingest design for DLAS + Marronnage.
+5. Fix `promoteToCanonical` to write `confirmed_individual_id` AND copy the external id (root cause of the
+   9,601 orphans and of 68,320 leads with `status='promoted'` + null pointer).
+6. `retrieval-health-audit` cannot call `s3:GetBucketLocation` (IAM); falls back to a redirect probe.
+
+**PROCESS NOTE, recorded because it cost the day:** this session ran without reading `activeContext.md`
+first — a direct RULE 0 violation. Consequences: `freedperson = 82,565` was re-"discovered" though recorded
+08-08; "the RULE 0.7 monitors have not been running" was re-diagnosed though recorded 08-09; and the harvest
+plan was re-derived from scratch *worse* than the existing one, because the memory bank already names the
+1870→1950 corridor as THE blocker. **The memory bank is not a place to write to. It is the place to read
+from, before deciding anything.**
 
 ---
 
