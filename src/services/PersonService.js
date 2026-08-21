@@ -60,6 +60,17 @@ const OWNER_CONTENT = [
 ];
 const ENSLAVED_NAMED = [
   'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
+  // 'slave_register' added 2026-08-21. A colonial slave REGISTER names the enslaved person directly --
+  // it is the enslaved-side analogue of 'census_slave_schedule' on the owner list, and it was simply
+  // missing. Its absence was about to un-assert 68,319 named people from the Suriname HDSC registers
+  // (Jeannette, Constantia, Rosette...), every one of them carrying a PRIMARY, s3-archived folio scan.
+  // The gate was not judging their evidence; it was judging a document_type nobody had listed.
+  // NOTE THE ASYMMETRY THIS EXPOSED: the OWNER predicate offers four corroboration routes (owner edge,
+  // probate enslaved_count, evidences_enslaved_holding -- the last added so an enslaver whose estate
+  // names NO ONE can still be asserted), while the ENSLAVED predicate offered one: an
+  // enslaved_owner_relationships edge, of which SEVEN exist in the entire database. Benefit of the
+  // doubt was structurally available to the enslaver and structurally unavailable to the enslaved.
+  'slave_register',
   'narrative', 'evacuation_roll', 'enslaved_census', 'enslaved_census_brazil',
   'probate_enslaved_records',
 ];
