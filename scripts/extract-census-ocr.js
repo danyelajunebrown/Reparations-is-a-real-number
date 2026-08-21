@@ -25,6 +25,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { neon } = require('@neondatabase/serverless');
 const axios = require('axios');
+const { transcribeImage } = require('../src/services/vision/vision-router');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
@@ -187,7 +188,15 @@ function initDatabase() {
  */
 async function initBrowser() {
     const userDataDir = process.env.CHROME_PROFILE || path.join(process.cwd(), '.chrome-profile');
-    const remotePort = process.env.CHROME_REMOTE_PORT || null;
+    // DEFAULT TO :9222 (CLAUDE.md: "puppeteer.connect() to http://127.0.0.1:9222 only. Never
+    // puppeteer.launch()"). This defaulted to null, so the script launched its OWN Chrome against
+    // .chrome-profile — a browser that has never been signed in to FamilySearch. Every page it fetched
+    // was therefore the login wall, and on 2026-08-21 the OCR faithfully transcribed the sign-in form
+    // eighteen times in a row ("Sign In / Use My Phone / Continue with Google / Username danyelebrown"),
+    // reporting "✅ OCR extracted 301 characters" and 0 people each time. The FS session was live the
+    // whole while — in the OTHER Chrome. Two browsers, one signed in, and the script picked the wrong one.
+    // Set CHROME_REMOTE_PORT explicitly to override.
+    const remotePort = process.env.CHROME_REMOTE_PORT || '9222';
 
     console.log('🚀 Launching Chrome...');
 
@@ -201,21 +210,16 @@ async function initBrowser() {
             });
             console.log('   ✅ Connected to existing Chrome');
         } catch (e) {
-            console.log(`   ⚠️ Could not connect to port ${remotePort}: ${e.message}`);
-            console.log('   Falling back to launching new Chrome...');
-            browser = await puppeteer.launch({
-                headless: !INTERACTIVE,
-                executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                userDataDir: userDataDir,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--window-size=1920,1200',
-                    '--disable-infobars'
-                ],
-                ignoreDefaultArgs: ['--enable-automation'],
-                defaultViewport: null
-            });
+            // DO NOT fall back to launching a fresh Chrome. That fallback is what produced eighteen
+            // OCR'd copies of the FamilySearch login form: a new profile is never signed in, so the run
+            // "succeeds" while extracting nothing. Failing loudly here costs one run; falling back
+            // silently costs the pages, because they get marked scraped and never revisited.
+            console.error(`   ❌ Could not connect to Chrome on port ${remotePort}: ${e.message}`);
+            console.error('   Refusing to launch an unauthenticated browser — it would OCR the login wall.');
+            console.error('   Start it with: open -na "Google Chrome" --args --remote-debugging-port=9222 \\');
+            console.error('                    --user-data-dir=/tmp/familysearch-ancestor-climber');
+            console.error('   (then sign in to FamilySearch in THAT window), or set CHROME_REMOTE_PORT.');
+            throw new Error(`no authenticated Chrome on :${remotePort}`);
         }
     } else {
         browser = await puppeteer.launch({
@@ -540,33 +544,43 @@ async function archiveToS3(imageBuffer, sourceUrl, metadata) {
 /**
  * Perform OCR on image using Google Vision API
  */
+// MIGRATED 2026-08-21 from the Google Vision REST API to src/services/vision/vision-router.
+//
+// WHY, and why this mattered so much more than it looks:
+//   The Vision key has been SUSPENDED since issue #126. This function kept calling it anyway, got HTTP
+//   403 on every image, CAUGHT THE ERROR, and returned ''. The caller read '' as "OCR returned little
+//   text - may be title page" and moved on — then the location was marked scraped_at. So a dead API key
+//   became a title page became a completed scrape, and the rows were silently lost.
+//   Observed live: Florida/Champlin and Florida/Gausden marked done with ZERO persons extracted.
+//
+//   It also explains why the 1860 tail has looked unfinishable for months. Locations WITH pre-indexed
+//   FamilySearch data never call this function and completed fine (Louisiana: 27,701 enslaved people).
+//   The stragglers are exactly the locations with NO pre-indexed data — every one of them lands here,
+//   and every one of them has been failing since the key was suspended.
+//
+//   vision-router was built FOR this job (issue #142: "1860 cursive OCR needs a model that is BOTH
+//   accurate AND uncapped") and already routes Qwen2.5-VL-72B → Gemini → gpt-4o, falling through on
+//   429/5xx. It lists "Google Vision → key SUSPENDED" in its own header. This script simply never got
+//   migrated to the thing written to replace it.
+//
+// A HARD FAILURE NOW THROWS instead of returning ''. An empty page and a broken pipeline must never
+// again be indistinguishable to the caller.
 async function performOCR(imageBuffer) {
-    if (!GOOGLE_VISION_API_KEY) {
-        console.log('   ⚠️ No GOOGLE_VISION_API_KEY - skipping OCR');
-        return '';
-    }
+    const resizedBuffer = await sharp(imageBuffer)
+        .resize(2500, null, { fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
 
     try {
-        // Resize for optimal OCR
-        const resizedBuffer = await sharp(imageBuffer)
-            .resize(2500, null, { fit: 'inside', withoutEnlargement: true })
-            .png()
-            .toBuffer();
-
-        const response = await axios.post(
-            `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
-            {
-                requests: [{
-                    image: { content: resizedBuffer.toString('base64') },
-                    features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
-                }]
-            },
-            { timeout: 120000 }
-        );
-
-        return response.data.responses[0]?.fullTextAnnotation?.text || '';
+        return await transcribeImage(resizedBuffer, { mimeType: 'image/png' }) || '';
     } catch (error) {
-        console.log(`   ⚠️ OCR error: ${error.message}`);
+        // Distinguish "this page is blank" (return '') from "the pipeline is broken" (throw).
+        // Auth/quota/exhausted-providers are pipeline failures: they are not evidence about the page.
+        const msg = error?.message || String(error);
+        if (/40[13]|quota|exhaust|unauthor|api key|credential|all providers/i.test(msg)) {
+            throw new Error(`OCR PIPELINE FAILURE (not a blank page): ${msg}`);
+        }
+        console.log(`   ⚠️ OCR error (page-level, continuing): ${msg}`);
         return '';
     }
 }
@@ -1125,6 +1139,9 @@ async function storeRelationship(ownerName, enslavedName, sourceUrl, dryRun = fa
  */
 async function processLocation(location, dryRun = false) {
     console.log(`\n📍 Processing: ${location.state} > ${location.county} > ${location.district || 'N/A'}`);
+    // Baseline so we can tell, at the end, whether THIS location actually produced people. See the
+    // scraped_at guard below: a location that yields nothing must not be marked complete.
+    const personsAtStart = stats.personsExtracted;
 
     if (!location.waypoint_url || !location.waypoint_id) {
         console.log('   ⚠️ No waypoint URL - skipping');
@@ -1228,6 +1245,12 @@ async function processLocation(location, dryRun = false) {
             }
 
             console.log(`      ✅ OCR extracted ${ocrText.length} characters`);
+            // Show what we actually got. A character COUNT is not evidence that we read a census page:
+            // during the 2026-08-21 migration every image returned exactly 301 chars and 0 people, which a
+            // count alone made look like success. Print the head so a human can see whether this is a
+            // schedule or the viewer's UI chrome (issue #124: FS serves tiled <img>, so a viewport
+            // screenshot can capture furniture instead of the document).
+            console.log(`      📝 OCR head: ${JSON.stringify(ocrText.slice(0, 140))}`);
 
             // Archive to S3 for permanent preservation (non-blocking)
             archiveToS3(screenshot, image.url, {
@@ -1268,8 +1291,17 @@ async function processLocation(location, dryRun = false) {
         await new Promise(r => setTimeout(r, 2000));
     }
 
-    // Mark location as scraped
-    if (sql && !dryRun) {
+    // Mark location as scraped — ONLY if it actually yielded something.
+    //
+    // This used to run unconditionally, so a location whose every image failed was recorded as complete
+    // and never revisited. Combined with the swallowed Vision 403 above, that is how Florida/Champlin and
+    // Florida/Gausden were marked done with zero people extracted. A scrape that produced nothing is not
+    // a finished scrape; it is an unanswered question, and it must stay on the work list.
+    //
+    // `scraped_at` is left NULL rather than backfilled for the same reason we did not backfill the 977
+    // container rows: never write a completion you did not earn.
+    const yielded = (stats.personsExtracted || 0) > personsAtStart;
+    if (sql && !dryRun && yielded) {
         try {
             await sql`
                 UPDATE familysearch_locations
@@ -1280,6 +1312,8 @@ async function processLocation(location, dryRun = false) {
         } catch (e) {
             // Ignore update errors
         }
+    } else if (!yielded) {
+        console.log(`   ⏭️  ${location.county}: 0 people extracted from ${images.length} image(s) — LEAVING UNSCRAPED for retry`);
     }
 
     stats.locationsProcessed++;
