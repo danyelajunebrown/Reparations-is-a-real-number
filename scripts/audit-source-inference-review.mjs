@@ -64,16 +64,25 @@ async function main() {
       FROM canonical_persons GROUP BY 1 ORDER BY rows DESC`)).rows;
 
   // ── 3. THE VERBS: relationships, transactions, harms, findings ───────────────────────────────────
+  // Count embeddings by subject_table, NOT by a hardcoded content_kind map.
+  //
+  // WHY: this audit previously carried `null` for enslaved_owner_relationships, slavevoyages_voyages,
+  // inheritance_edges, slave_era_insurance_policies and wealth_transfer_events, and printed
+  // "NOT EMBEDDABLE YET" for each. By 2026-08-21 all five were 99-100% embedded (voyages 64,853;
+  // ownership 32,625; inheritance 11,792; insurance 675; wealth transfers 128) — the map was stale, so a
+  // MONITOR was manufacturing a false alarm that would have sent someone to redo finished work. A monitor
+  // that lies is worse than no monitor, because it spends attention. Ask the data what it holds; never
+  // hardcode what it ought to hold.
   const verbs = [];
-  for (const [t, kind] of [['canonical_family_edges', 'kin_edge'], ['chattel_transfer_events', 'chattel_transfer'],
-                           ['research_findings', 'research_finding'], ['harm_events', 'harm_narrative'],
-                           ['enslaved_owner_relationships', null], ['slave_era_insurance_policies', null],
-                           ['wealth_transfer_events', null], ['slavevoyages_voyages', null],
-                           ['corporate_financial_instruments', null], ['inheritance_edges', null]]) {
+  for (const t of ['canonical_family_edges', 'chattel_transfer_events', 'research_findings', 'harm_events',
+                   'enslaved_owner_relationships', 'slave_era_insurance_policies', 'wealth_transfer_events',
+                   'slavevoyages_voyages', 'corporate_financial_instruments', 'inheritance_edges']) {
     try {
       const n = (await pool.query(`SELECT count(*)::int n FROM ${t}`)).rows[0].n;
-      const e = kind ? (await pool.query(`SELECT count(*)::int n FROM embeddings WHERE content_kind=$1`, [kind])).rows[0].n : 0;
-      verbs.push({ table: t, rows: n, embedded: e, retrievable: kind ? `${pct(e, n)}%` : 'NOT EMBEDDABLE YET' });
+      const e = (await pool.query(
+        `SELECT count(*)::int n FROM embeddings WHERE subject_table=$1`, [t])).rows[0].n;
+      verbs.push({ table: t, rows: n, embedded: e,
+        retrievable: n === 0 ? '(empty table)' : e === 0 ? 'NOT EMBEDDED — invisible to RAG' : `${pct(e, n)}%` });
     } catch { /* table absent */ }
   }
 
