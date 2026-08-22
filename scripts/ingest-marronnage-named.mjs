@@ -128,7 +128,18 @@ async function main() {
   if (!arr) { console.error('FATAL: could not find the curated names array — page structure changed.'); process.exit(1); }
   const names = JSON.parse(arr);
   console.log(`curated name index: ${names.length} names`);
-  const slice = names.slice(OFFSET, OFFSET + LIMIT);
+  // RESUME. At ~2.5 names/min a full pass is ~24 hours, so it WILL be interrupted — every long job today
+  // was. Rather than track an offset (bookkeeping that goes stale the moment the name list changes), ask
+  // the DATABASE which names are already done and skip them. Idempotent, order-independent, and it makes
+  // "how do I know it finished?" answerable from the data instead of from a log tail.
+  const doneRows = (await pool.query(
+    `SELECT DISTINCT split_part(external_id, ':', 3) AS n FROM person_external_ids
+      WHERE id_system = 'marronnage_named'`)).rows;
+  const done = new Set(doneRows.map((r) => r.n).filter(Boolean));
+  const remaining = names.filter((n) => !done.has(norm(n)));
+  console.log(`already ingested: ${done.size} · remaining: ${remaining.length}`);
+  const slice = remaining.slice(OFFSET, OFFSET + LIMIT);
+  if (!slice.length) { console.log('MARRONNAGE COMPLETE — every curated name has been attempted.'); await pool.end(); return; }
   console.log(`${APPLY ? '=== APPLY ===' : '=== DRY RUN ==='} names ${OFFSET}..${OFFSET + slice.length}`);
 
   const st = { names: 0, docs: 0, created: 0, linked: 0, rejected: 0, harms: 0, facts: 0, scans: 0, err: 0 };
