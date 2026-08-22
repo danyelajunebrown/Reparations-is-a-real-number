@@ -159,34 +159,52 @@ async function main() {
           const ref = out.ref; if (!ref) { st.rejected++; continue; }
           const isLead = ref.subject_table === 'unconfirmed_persons';
 
-          // document — permalink + full archival citation. NO s3_key: DLAS serves an abstract, not a scan.
+          // DOCUMENT — columns verified against information_schema. person_documents has NO
+          // source_citation column and page_reference is varchar(100); the first version of this script
+          // used both and every insert failed behind a .catch(()=>{}), so 18 people were created with no
+          // evidence attached while the run printed docs:0 as if that were a result. Same defect I had
+          // already fixed in ingest-marronnage-named.mjs and did not carry across — the fix has to travel
+          // with the lesson, not sit in one file.
           await pool.query(
             `INSERT INTO person_documents (${isLead ? 'unconfirmed_person_id' : 'canonical_person_id'},
-               document_type, source_url, source_citation, name_as_appears, evidence_strength, document_date)
-             SELECT $1,'court_petition',$2,$3,$4,'secondary',$5
+               name_as_appears, document_type, source_url, source_type, collection_name, page_reference,
+               person_type, evidence_strength, document_date, document_year, created_by)
+             SELECT $1,$2,'court_petition',$3,'secondary',$4,$5,$6,'secondary',$7,$8,'ingest-dlas-petitions'
               WHERE NOT EXISTS (SELECT 1 FROM person_documents d
-                 WHERE d.${isLead ? 'unconfirmed_person_id' : 'canonical_person_id'}=$1 AND d.source_url=$2)`,
-            [ref.subject_id, meta.petition_url, citation, p.name,
-             meta.file_year ? `${meta.file_year}-01-01` : null])
-            .then(() => { st.docs++; }).catch(() => {});
+                 WHERE d.${isLead ? 'unconfirmed_person_id' : 'canonical_person_id'}=$1 AND d.source_url=$3)`,
+            [ref.subject_id, p.name, meta.petition_url,
+             (meta.repository || 'Digital Library on American Slavery (UNCG)').slice(0, 255),
+             `PAR ${pid}${meta.filing_court ? ' · ' + meta.filing_court : ''}${meta.file_year ? ' · ' + meta.file_year : ''}`.slice(0, 100),
+             ptype,
+             meta.file_year && /^\d{4}$/.test(String(meta.file_year)) ? `${meta.file_year}-01-01` : null,
+             /^\d{4}$/.test(String(meta.file_year)) ? +meta.file_year : null])
+            .then(() => { st.docs++; })
+            .catch((e) => { st.err++; if (st.err <= 5) console.error(`   ! document: ${e.message.slice(0, 90)}`); });
 
-          // facts — the source's OWN vocabulary, verbatim. race/role/status/subjects.
-          const facts = [];
-          if (p.race) facts.push(['race_as_recorded', p.race]);
-          if (p.role) facts.push(['role_in_document', p.role]);
-          if (p.status) facts.push(['enslavement_status', p.status]);
-          for (const s of subjects) facts.push(['petition_subject', s]);
-          for (const [ft, vt] of facts) {
-            await pool.query(
-              `INSERT INTO person_facts (subject_table, subject_id, fact_type, value_text, date_year,
-                 place_state, place_county, source_table, source_external_system, source_external_id,
-                 source_url, source_citation, confidence, verification_status)
-               SELECT $1,$2,$3,$4,$5,$6,$7,'source_ingest_queue','dlas',$8,$9,$10,0.8,'unverified'
-                WHERE NOT EXISTS (SELECT 1 FROM person_facts f WHERE f.subject_table=$1 AND f.subject_id=$2
-                                    AND f.fact_type=$3 AND f.value_text=$4)`,
-              [ref.subject_table, ref.subject_id, ft, vt, meta.file_year || null,
-               meta.state || null, meta.county || null, String(pid), meta.petition_url, citation])
-              .then(() => { st.facts++; }).catch(() => {});
+          // FACTS — person_facts.person_id is NOT NULL and canonical-only (there is no subject_table
+          // column). Leads therefore cannot carry facts yet; they are written at promotion. The race /
+          // role / status / subject values are preserved on the document + in the queue payload so nothing
+          // is lost in the meantime.
+          if (!isLead) {
+            const facts = [];
+            if (p.race) facts.push(['race_as_recorded', p.race]);
+            if (p.role) facts.push(['role_in_document', p.role]);
+            if (p.status) facts.push(['enslavement_status', p.status]);
+            for (const sj of subjects) facts.push(['petition_subject', sj]);
+            for (const [ft, vt] of facts) {
+              await pool.query(
+                `INSERT INTO person_facts (person_id, fact_type, value_text, date_year, place_state,
+                   place_county, source_table, source_external_system, source_external_id, source_url,
+                   source_citation, confidence, verification_status)
+                 SELECT $1,$2,$3,$4,$5,$6,'source_ingest_queue','dlas',$7,$8,$9,0.8,'unverified'
+                  WHERE NOT EXISTS (SELECT 1 FROM person_facts f
+                     WHERE f.person_id=$1 AND f.fact_type=$2 AND f.value_text=$3)`,
+                [ref.subject_id, ft, vt,
+                 /^\d{4}$/.test(String(meta.file_year)) ? +meta.file_year : null,
+                 meta.state || null, meta.county || null, String(pid), meta.petition_url, citation])
+                .then(() => { st.facts++; })
+                .catch((e) => { st.err++; if (st.err <= 5) console.error(`   ! fact ${ft}: ${e.message.slice(0, 80)}`); });
+            }
           }
         } catch (e) { st.err++; if (st.err <= 5) console.error(`   ! ${p.name}: ${e.message.slice(0, 80)}`); }
       }
