@@ -38,6 +38,13 @@ const GAP_MS = +val('--gap-ms', 1600);
 const TERMS = (val('--terms', 'abcdefghijklmnopqrstuvwxyz')).split(',').length > 1
   ? val('--terms', '').split(',')
   : val('--terms', 'abcdefghijklmnopqrstuvwxyz').split('');
+// STATE SCOPING. The ~5,000 export/result cap means an all-states search returns a TRUNCATED slice: five
+// operator-downloaded all-states files yielded 5,001 / 2,080 / 1,144 / 54 / 255 new ids — collapsing
+// overlap, not coverage. Scoping to one state puts every result set under the cap, so each sweep is
+// COMPLETE for that state. Measured gap that prompted this: Maryland showed 18 petitions naming enslaved
+// people while the Maryland State Archives holds 1,098 petitions in the index — a shortfall of the
+// truncation, not of the archive.
+const STATES = val('--states', '') ? val('--states', '').split(',') : ['aa'];
 const UA = 'reparations-research/1.0 (db7613@bard.edu; academic reparations research; contact welcome)';
 const BASE = 'https://dlas.uncg.edu';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -56,12 +63,13 @@ async function main() {
   const found = new Map();      // petition id -> enslaved-named count reported on the result page
   let stopped = false;
 
+  for (const st of STATES) {
   for (const term of TERMS) {
     if (stopped) break;
     let pageTotal = null;
     for (let page = 1; page <= MAX_PAGES; page++) {
       try {
-        const html = await get(`${BASE}/petitions/?s=${encodeURIComponent(term)}&t=0&l=aa&fr=3&p=${page}`);
+        const html = await get(`${BASE}/petitions/?s=${encodeURIComponent(term)}&t=0&l=${st}&fr=3&p=${page}`);
         const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
         if (pageTotal === null) {
           const m = text.match(/([\d,]+)\s+records? found/);
@@ -73,7 +81,7 @@ async function main() {
         const uniq = [...new Set(ids)];
         if (!uniq.length) break;
         uniq.forEach((id, i) => { if (!found.has(id)) found.set(id, counts[i] || null); });
-        if (page === 1) console.log(`  "${term}": ${pageTotal} petitions with a named enslaved person`);
+        if (page === 1 && pageTotal) console.log(`  ${st}/"${term}": ${pageTotal} petitions with a named enslaved person`);
         if (uniq.length < 25) break;                 // last page
       } catch (e) {
         console.log(`  "${term}" p${page}: ${e.message}`);
@@ -82,6 +90,7 @@ async function main() {
       }
       await sleep(GAP_MS);
     }
+  }
   }
 
   const withNames = [...found.entries()].filter(([, n]) => (n || 0) > 0);
