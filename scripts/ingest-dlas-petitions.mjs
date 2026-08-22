@@ -28,7 +28,7 @@
 //   · NO s3_key. DLAS serves a transcription/abstract, not a scan we may rehost; the permalink IS the
 //     citation. Writing s3_key without bytes would manufacture evidence.
 //
-// RULE 0.5: an EMBED phase is mandatory. This prints and (with --embed) runs it; unembedded data is a silo.
+// RULE 0.5: an EMBED phase is mandatory and RUNS as part of --apply. Unembedded data is a silo.
 //
 // Usage:
 //   node scripts/ingest-dlas-petitions.mjs --limit 5
@@ -222,7 +222,19 @@ async function main() {
 
   console.log(`\n=== ${JSON.stringify(st)} ===`);
   console.log(`person_type as DECLARED BY THE SOURCE: ${JSON.stringify(byType)}`);
-  if (APPLY) console.log(`\nRULE 0.5 — now embed: node scripts/embed-leads.mjs --id-system dlas_petition_person`);
+  // RULE 0.5 IS ENFORCED HERE, NOT ADVISED. This printed the embed command and trusted someone to run it.
+  // Nobody did: after 1,058 petitions and 13,000 people, embedded leads = 0 — in the database and invisible
+  // to RAG, which is a retrieval silo. The memory bank records this same failure from 2026-08-09 and I
+  // rebuilt it anyway. A printed instruction is not a pipeline stage.
+  if (APPLY) {
+    console.log('\nRULE 0.5 — embedding new leads…');
+    const { spawn } = await import('node:child_process');
+    await new Promise((res) => {
+      const c = spawn(process.execPath, ['scripts/embed-leads.mjs', '--id-system', 'dlas_petition_person'],
+        { stdio: 'inherit', env: { ...process.env, EMBED_SOURCE: process.env.EMBED_SOURCE || 'ollama' } });
+      c.on('exit', res); c.on('error', res);
+    });
+  }
   else console.log('\n(dry run — pass --apply)');
   await pool.end();
 }

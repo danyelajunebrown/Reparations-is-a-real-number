@@ -295,7 +295,21 @@ async function main() {
   }
 
   console.log(`\n=== ${JSON.stringify(st)} ===`);
-  if (APPLY) console.log(`RULE 0.5 — now embed: node scripts/embed-leads.mjs --id-system marronnage_named`);
+  // RULE 0.5 IS ENFORCED HERE, NOT ADVISED. This used to print the embed command and trust someone to
+  // run it. Nobody did: after 3,570 marronnage names and 1,058 DLAS petitions, embedded leads = 0 — the
+  // people were in the database and invisible to RAG, which is the definition of a retrieval silo. The
+  // memory bank already records this exact failure from 2026-08-09 ("the producer shipped with NO EMBED
+  // PHASE ... caught by the user, not by the monitor") and I rebuilt it anyway. A printed instruction is
+  // not a pipeline stage.
+  if (APPLY) {
+    console.log('RULE 0.5 — embedding new leads…');
+    const { spawn } = await import('node:child_process');
+    await new Promise((res) => {
+      const c = spawn(process.execPath, ['scripts/embed-leads.mjs', '--id-system', 'marronnage_named'],
+        { stdio: 'inherit', env: { ...process.env, EMBED_SOURCE: process.env.EMBED_SOURCE || 'ollama' } });
+      c.on('exit', res); c.on('error', res);
+    });
+  }
   else console.log('(dry run — pass --apply)');
   await pool.end();
 }
