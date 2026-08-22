@@ -85,12 +85,17 @@ function parsePeople(html) {
 // person_type comes from what the SOURCE SAYS, never from the fact that we found them in a slavery archive.
 // Unstated => 'unknown'. That is the whole discipline: absence of a declared status is not evidence of one.
 function personTypeFrom(p) {
-  const st = (p.status || '').toLowerCase();
-  const en = (p.enslaver || '').toLowerCase();
-  if (/enslav(ed)?\b/.test(st) && !/free/.test(st)) return 'enslaved';
-  if (/free/.test(st)) return 'freedperson';
-  if (/^(y|yes|true|x)$/.test(en.trim()) || /enslaver/.test(en)) return 'enslaver';
-  return 'unknown';
+  const st = (p.status || '').toLowerCase().trim();
+  const en = (p.enslaver || '').toLowerCase().trim();
+  // VOCABULARY CHECKED AGAINST THE LIVE PAGE, not assumed. DLAS writes "slave" in Enslavement Status and
+  // "yes" in Enslaver? — e.g. PAR 10182603: Anna / Jane / Martha / Nancy, black, female, status "slave";
+  // Thomas Loyd, white, petitioner, Enslaver? "yes". My first pattern was /\benslav(ed)?\b/, which does NOT
+  // match "slave" — every enslaved person in the corpus would have been filed as 'unknown' while the code
+  // looked correct. A classifier is a claim about the source's vocabulary and must be read off the source.
+  if (/free/.test(st)) return 'freedperson';                      // "free", "free person of color"
+  if (/\bslave\b|enslav/.test(st)) return 'enslaved';
+  if (/^(y|yes|true|x)$/.test(en) || /enslaver/.test(en)) return 'enslaver';
+  return 'unknown';                                               // unstated is never guessed
 }
 const sexOf = (s) => (/^f/i.test(s) ? 'female' : /^m/i.test(s) ? 'male' : null);
 const birthYearFrom = (age, year) => {

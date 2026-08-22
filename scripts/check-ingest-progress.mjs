@@ -37,7 +37,14 @@ const SOURCES = [
   { name: 'DLAS petitions ingested', total: null,
     sql: `SELECT count(*) FILTER (WHERE status='ingested')::int n FROM source_ingest_queue WHERE source_kind='dlas_petition'`,
     totalSql: `SELECT count(*)::int n FROM source_ingest_queue WHERE source_kind='dlas_petition'`,
-    note: 'queue is on hold at requeue_reprioritise: enslavedCount selects petitions with NO named enslaved' },
+    note: 'requeued on the role facet fr=3; the old enslavedCount key selected petitions with NO named enslaved' },
+  { name: 'DLAS petitions queued (role)', total: null,
+    sql: `SELECT count(*)::int n FROM source_ingest_queue
+           WHERE source_kind='dlas_petition' AND added_by='harvest-dlas-enslaved-role'` },
+  { name: 'DLAS named enslaved (reported)', total: null,
+    sql: `SELECT COALESCE(sum((result->>'named_enslaved_reported')::int),0)::int n FROM source_ingest_queue
+           WHERE source_kind='dlas_petition' AND added_by='harvest-dlas-enslaved-role'`,
+    note: 'source-asserted count from the result pages; NOT people we have ingested' },
 ];
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false },
