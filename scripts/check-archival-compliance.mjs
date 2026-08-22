@@ -29,6 +29,23 @@ const a = await one(`SELECT count(*) FILTER (WHERE s3_key IS NOT NULL)::int s3,
                             count(*) FILTER (WHERE s3_key IS NOT NULL AND wayback_url IS NULL)::int no_wb,
                             count(*) FILTER (WHERE s3_key IS NOT NULL AND sha256 IS NULL)::int no_sha
                        FROM source_artifacts`);
+// rule 8, SECOND HALF — the blind spot this monitor had until 2026-08-22.
+// The check above reads source_artifacts only. But most archived scans never get a source_artifacts row:
+// they are referenced straight from person_documents.s3_key. Measured when the operator asked whether the
+// Suriname scans were on Wayback: 68,319 documents ride on 6,215 DISTINCT folio scans, of which exactly ONE
+// had an artifact row with a hash and a witness. The monitor reported "218 in S3, 3 missing Wayback" and
+// was, technically, telling the truth about the 218 rows it looked at — while 6,214 archived files had no
+// integrity hash and no external witness at all. A monitor that measures the wrong denominator is the same
+// failure as one that measures a stale map: it spends attention and buys false confidence.
+const docs = await one(`SELECT count(DISTINCT d.s3_key)::int scans,
+       count(DISTINCT d.s3_key) FILTER (
+         WHERE NOT EXISTS (SELECT 1 FROM source_artifacts sa WHERE sa.s3_key = d.s3_key))::int unwitnessed
+  FROM person_documents d WHERE d.s3_key IS NOT NULL`);
+checks.push({ rule: 'rule 8 — S3 scans have an artifact row (sha256 + Wayback)',
+  ok: docs.unwitnessed === 0,
+  detail: `${docs.scans} distinct s3 scans referenced by person_documents · ${docs.unwitnessed} with NO source_artifacts row (no sha256, no Wayback witness)`,
+  fix: 'node scripts/backfill-scan-artifacts.mjs --apply' });
+
 checks.push({ rule: 'rule 8 — dual archive', ok: a.no_wb === 0 && a.no_sha === 0,
   detail: `${a.s3} in S3 · ${a.no_wb} missing Wayback · ${a.no_sha} missing sha256`,
   fix: 'node scripts/backfill-wayback-snapshots.mjs --apply' });
