@@ -31,6 +31,26 @@ const SOURCES = [
   { name: 'canonical_profile embeddings', total: null,
     sql: `SELECT count(*)::int n FROM embeddings WHERE content_kind='canonical_profile'`,
     totalSql: `SELECT count(*)::int n FROM canonical_persons WHERE person_type<>'merged'` },
+  { name: 'harm_event embeddings', total: null,
+    sql: `SELECT count(*)::int n FROM embeddings WHERE content_kind='harm_narrative'`,
+    totalSql: `SELECT count(*)::int n FROM harm_events`,
+    note: 'a harm is what a DAA is FOR — this had no embedding facet at all until 2026-08-22' },
+  { name: 'new-source doc text stored', total: null,
+    sql: `SELECT count(*)::int n FROM person_documents
+           WHERE document_type IN ('runaway_advertisement','court_petition')
+             AND ocr_text IS NOT NULL AND length(ocr_text) > 40`,
+    totalSql: `SELECT count(*)::int n FROM person_documents
+                WHERE document_type IN ('runaway_advertisement','court_petition')`,
+    note: 'DLAS abstracts + marronnage ad text; a document with no text cannot be embedded' },
+  { name: 'new-source docs embedded', total: null,
+    sql: `SELECT count(*)::int n FROM embeddings e WHERE e.subject_table='person_documents'
+            AND EXISTS (SELECT 1 FROM person_documents d WHERE d.id::text=e.subject_id
+                          AND d.document_type IN ('runaway_advertisement','court_petition'))`,
+    totalSql: `SELECT count(*)::int n FROM person_documents
+                WHERE document_type IN ('runaway_advertisement','court_petition')
+                  AND ocr_text IS NOT NULL AND length(ocr_text) > 40` },
+  { name: 'marronnage scans (S3+wayback)', total: null,
+    sql: `SELECT count(*)::int n FROM source_artifacts WHERE dataset_label='marronnage_scan'` },
   { name: 'FS image arks archived', total: null,
     sql: `SELECT count(*)::int n FROM person_documents WHERE source_url ~ 'ark:/61903/3:1:' AND s3_key IS NOT NULL`,
     totalSql: `SELECT count(*)::int n FROM person_documents WHERE source_url ~ 'ark:/61903/3:1:'` },

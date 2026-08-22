@@ -461,10 +461,20 @@ class PersonService {
     const gate = await this.recomputeGate(canonicalId);
 
     if (leadRef.subject_table === 'unconfirmed_persons') {
+      // WRITE THE POINTER, NOT JUST THE STATUS. This used to set status='promoted' and record the
+      // canonical id ONLY inside review_notes as prose — "[promoted→canonical#123]" — which is
+      // unqueryable and unjoinable. Result: 72,862 leads marked promoted pointing at nothing, and 9,601
+      // canonicals unreachable from their own lead in either direction. The status was true and the link
+      // was absent, which is the defect that recurs all through this codebase: a completion recorded
+      // without the thing that makes it verifiable. confirmed_individual_id is VARCHAR (see CLAUDE.md),
+      // hence the ::text cast rather than an integer.
       await this.db.query(
-        `UPDATE unconfirmed_persons SET status='promoted', reviewed_at=now(), reviewed_by=$2,
+        `UPDATE unconfirmed_persons SET status='promoted', confirmed_individual_id=$4,
+           reviewed_at=now(), reviewed_by=$2,
            review_notes = COALESCE(review_notes,'') || $3 WHERE lead_id=$1`,
-        [leadRef.subject_id, evidence.createdBy || 'person_service', ` [promoted→canonical#${canonicalId}]`]).catch(() => {});
+        [leadRef.subject_id, evidence.createdBy || 'person_service',
+         ` [promoted→canonical#${canonicalId}]`, String(canonicalId)])
+        .catch((e) => console.error(`[PersonService] promote back-link failed for lead ${leadRef.subject_id}: ${e.message}`));
       // The lead's identity now lives in the canonical — drop its blocking keys so it stops
       // competing as a separate subject in the unified pool (otherwise a future resolve sees
       // BOTH the promoted lead and its canonical → false ambiguity, breaking dedup-on-ingest).
