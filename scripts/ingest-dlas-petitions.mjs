@@ -168,8 +168,8 @@ async function main() {
           await pool.query(
             `INSERT INTO person_documents (${isLead ? 'unconfirmed_person_id' : 'canonical_person_id'},
                name_as_appears, document_type, source_url, source_type, collection_name, page_reference,
-               person_type, evidence_strength, document_date, document_year, created_by)
-             SELECT $1,$2,'court_petition',$3,'secondary',$4,$5,$6,'secondary',$7,$8,'ingest-dlas-petitions'
+               person_type, evidence_strength, document_date, document_year, ocr_text, created_by)
+             SELECT $1,$2,'court_petition',$3,'secondary',$4,$5,$6,'secondary',$7,$8,$9,'ingest-dlas-petitions'
               WHERE NOT EXISTS (SELECT 1 FROM person_documents d
                  WHERE d.${isLead ? 'unconfirmed_person_id' : 'canonical_person_id'}=$1 AND d.source_url=$3)`,
             [ref.subject_id, p.name, meta.petition_url,
@@ -177,7 +177,14 @@ async function main() {
              `PAR ${pid}${meta.filing_court ? ' · ' + meta.filing_court : ''}${meta.file_year ? ' · ' + meta.file_year : ''}`.slice(0, 100),
              ptype,
              meta.file_year && /^\d{4}$/.test(String(meta.file_year)) ? `${meta.file_year}-01-01` : null,
-             /^\d{4}$/.test(String(meta.file_year)) ? +meta.file_year : null])
+             /^\d{4}$/.test(String(meta.file_year)) ? +meta.file_year : null,
+             // STORE THE ABSTRACT. It is the richest thing DLAS gives us — "Col. John Taylor... 16,074
+             // acres... at least 240 slaves... total value about two hundred forty thousand dollars" — and
+             // without it on the document there is nothing to embed, so 13,074 petition documents were
+             // unreachable by RAG. The subjects (controlled vocabulary) ride along so a query for
+             // "assessed value of enslaved people" can find the record that uses that exact term.
+             [meta.abstract || '', subjects.length ? `Subjects: ${subjects.join('; ')}` : '',
+              `Result: ${meta.result || 'unrecorded'}`].filter(Boolean).join('\n\n') || null])
             .then(() => { st.docs++; })
             .catch((e) => { st.err++; if (st.err <= 5) console.error(`   ! document: ${e.message.slice(0, 90)}`); });
 

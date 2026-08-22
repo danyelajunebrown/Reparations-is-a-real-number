@@ -59,6 +59,29 @@ async function embed(text, retries = 2) {
 // Each kind supplies: the rows still needing an embedding, and a sentence for each.
 const KINDS = {
   // The most valuable of the three. A search that found nothing is a fact about the archive.
+  // HARMS. Added 2026-08-22 after an audit found 3,764 harm_events and TEN embeddings — there was no
+  // harms facet at all, so the most reparations-relevant content in the database was the least findable.
+  // A harm is what a DAA is FOR; if RAG cannot answer "who was branded" then the ledger has rows nobody can
+  // reach. Note this table names a PERPETRATOR as well as a victim, so the sentence carries both: in a
+  // runaway advertisement the man describing the brand is the man who ordered it.
+  harms: {
+    table: 'harm_events', idCol: 'id', contentKind: 'harm_narrative',
+    sql: `SELECT h.id, h.harm_type, h.harm_category, h.victim_name, h.perpetrator_name, h.event_date,
+                 h.location, h.narrative, h.source_citation, h.reparations_relevant, h.confidence_score
+            FROM harm_events h
+           WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='harm_events'
+                              AND e.subject_id = h.id::text AND e.content_kind='harm_narrative')`,
+    text: (r) => [
+      `Harm: ${String(r.harm_type || 'unspecified').replace(/_/g, ' ')}${r.harm_category ? ` (${r.harm_category})` : ''}`,
+      r.victim_name ? `Suffered by ${r.victim_name}` : '',
+      r.perpetrator_name ? `Perpetrator named in the record: ${r.perpetrator_name}` : '',
+      r.event_date ? `Date: ${String(r.event_date).slice(0, 10)}` : '',
+      r.location ? `Place: ${r.location}` : '',
+      r.narrative ? `Record: ${String(r.narrative).slice(0, 1400)}` : '',
+      r.source_citation ? `Source: ${r.source_citation}` : '',
+      r.reparations_relevant ? 'Recorded as reparations-relevant.' : '',
+    ].filter(Boolean).join('\n'),
+  },
   findings: {
     table: 'research_findings', idCol: 'finding_id', contentKind: 'research_finding',
     sql: `SELECT f.finding_id AS id, f.question, f.repository, f.index_searched, f.result, f.hit_count,
