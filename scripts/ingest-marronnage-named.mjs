@@ -136,6 +136,11 @@ async function main() {
     `SELECT DISTINCT split_part(external_id, ':', 3) AS n FROM person_external_ids
       WHERE id_system = 'marronnage_named'`)).rows;
   const done = new Set(doneRows.map((r) => r.n).filter(Boolean));
+  // A name searched and found empty is ATTEMPTED. Without this the empty ones loop forever.
+  const emptyRows = (await pool.query(
+    `SELECT DISTINCT replace(index_searched, 'noms=', '') AS n FROM research_findings
+      WHERE searched_by = 'ingest-marronnage-named' AND result = 'none'`)).rows;
+  emptyRows.forEach((r) => { if (r.n) done.add(norm(r.n)); });
   const remaining = names.filter((n) => !done.has(norm(n)));
   console.log(`already ingested: ${done.size} · remaining: ${remaining.length}`);
   const slice = remaining.slice(OFFSET, OFFSET + LIMIT);
@@ -148,7 +153,32 @@ async function main() {
     try {
       const html = await post(q({ noms: name }));
       const ids = [...new Set([...html.matchAll(/document\.php\?id=(\d+)/g)].map((m) => m[1]))];
-      if (!ids.length) { st.names++; continue; }
+      if (!ids.length) {
+        // RECORD THE ABSENCE. A name in the curated index whose search returns no ads was previously just
+        // skipped — nothing written — so the resume logic (which asks the DB which names are done) never
+        // saw it and re-attempted it on EVERY run. 110 names spun like this indefinitely while the bar sat
+        // at 96.4% looking merely slow. §4 of standard-assertion-store is explicit: "Absence is recorded
+        // (research_findings), because a searched-and-not-found is a fact about the archive." Doing that
+        // both satisfies the standard and terminates the loop.
+        st.names++; st.empty = (st.empty || 0) + 1;
+        if (APPLY) {
+          await pool.query(
+            `INSERT INTO research_findings (question, repository, index_searched, result, hit_count,
+               evidence_note, searched_by)
+             SELECT $1,$2,$3,'none',0,$4,'ingest-marronnage-named'
+              WHERE NOT EXISTS (SELECT 1 FROM research_findings f
+                 WHERE f.searched_by='ingest-marronnage-named' AND f.index_searched=$3)`,
+            [`Which surviving advertisements name the enslaved person "${name}"?`,
+             'Le marronnage dans le monde atlantique, 1760-1848 (CNRS/EHESS)',
+             `noms=${name}`,
+             `The curated name index lists "${name}", but a noms search returns no documents in the ` +
+             `1765-1833 window. The curators indexed the name from a record that is not served by this ` +
+             `search, or it is filtered out by the year bounds. Recorded so the name is not re-attempted ` +
+             `forever and so the gap is visible rather than silent.`])
+            .catch((e) => console.error(`   ! absence ${name}: ${e.message.slice(0, 70)}`));
+        }
+        continue;
+      }
       st.names++;
       await sleep(GAP_MS);
 
@@ -182,6 +212,22 @@ async function main() {
         }, { dryRun: false });
         if (out.action === 'created') st.created++;
         else if (out.action === 'linked') st.linked++;
+        // WRITE THE EXTERNAL ID ON *LINK*, NOT ONLY ON CREATE.
+        // PersonService.findOrCreateLead records the external id only when the match is a CANONICAL
+        // (`res.match.subject_table === 'canonical_persons'`). When it links to an existing LEAD it writes
+        // nothing — and this script's resume logic decides a name is "done" by looking for exactly that
+        // external id. So every name that resolved to an existing lead was re-attempted on EVERY run,
+        // forever: 110 names spinning, 73 ads re-fetched per pass, 0 rows created, and a progress bar
+        // frozen at 96.4% that looked like slowness rather than a loop. Same family as the rest of this
+        // week: work that reports success while nothing advances.
+        if (out.ref && out.ref.subject_table === 'unconfirmed_persons') {
+          await pool.query(
+            `INSERT INTO person_external_ids (subject_table, subject_id, id_system, external_id, external_url, confidence)
+             VALUES ('unconfirmed_persons', $1, 'marronnage_named', $2, $3, 0.85)
+             ON CONFLICT (id_system, external_id) DO NOTHING`,
+            [out.ref.subject_id, externalId, permalink])
+            .catch((e) => console.error(`   ! extid ${name}: ${e.message.slice(0, 70)}`));
+        }
         else { st.rejected++; await sleep(GAP_MS); continue; }
         const ref = out.ref; if (!ref) { st.rejected++; await sleep(GAP_MS); continue; }
         const isLead = ref.subject_table === 'unconfirmed_persons';
