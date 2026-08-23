@@ -89,14 +89,23 @@ const q = (o) => new URLSearchParams({ motscles: '', noms: '', location: '-1', n
   minyear: '1765', maxyear: '1833', page: '1', ...o }).toString();
 
 // Harm + origin probes. Bilingual: francophone colonies AND Jamaica/Carolina/Quebec.
+// ACCENTS BREAK \b. JavaScript's \b is defined against [A-Za-z0-9_], so "é" is NOT a word character and
+// `\b[ée]tamp` can never match after a space — the boundary requires a word char on one side. That single
+// character cost us the largest harm class in the corpus: 1,697 of 4,126 stored ads contain "étampé"
+// (41%, matching the source's corpus-wide 9,915 = 44%), and we recorded THIRTY-SEVEN branding events.
+// I twice explained the shortfall as "the sweep hasn't reached Saint-Domingue yet" rather than testing the
+// pattern against the text we already held. Anchor on ASCII-safe stems, allow plurals/feminines, and never
+// put \b immediately before an accented letter.
+// The stored text also carries HTML entities (d&#039;environ), so patterns must not assume clean apostrophes.
 const HARMS = [
-  ['branding',        /\b[ée]tamp[ée]e?\b|\bmarqu[ée]e?\s+(au fer|d'un)|\bbranded\b/i],
-  ['scarring',        /\bcicatrice|\bbalafr|\bscars?\b|\bmarks? of the whip\b/i],
-  ['whipping',        /\bfouett|\bcoups de fouet\b|\bwhipp?(ed|ing)\b/i],
-  ['restraint_irons', /\bfers?\b|\bcha[îi]ne|\bcarcan\b|\bcollier\b|\birons?\b|\bshackle/i],
-  ['imprisonment',    /\bg[eé][ôo]le\b|\bcachot\b|\bprison\b|\bjail\b|\bgaol\b|\bworkhouse\b/i],
-  ['injury',          /\bboiteu|\bestropi|\bmanchot\b|\bborgne\b|\bmutil|\bulc[èe]r|\blame\b|\bcripple/i],
+  ['branding',        /[ée]tamp[ée]?[es]?\b|\bmarqu[ée]e?s?\s+(au\s+fer|d[e'’]un)|\bbranded\b|\bbrand(ed)?\s+(on|with)\b/i],
+  ['scarring',        /cicatrice|balafr|\bscars?\b|\bmarks? of the whip\b|marqu[ée]e?s?\s+de\s+coups/i],
+  ['whipping',        /fouett|coups?\s+de\s+fouet|\bwhipp?(ed|ing)\b|\blash(ed|es)\b/i],
+  ['restraint_irons', /\bfers?\b|cha[îi]ne|carcan|collier\s+de\s+fer|\birons?\b|\bshackle|\bmanacle/i],
+  ['imprisonment',    /g[eé][ôo]le|cachot|\bprison\b|\bjail\b|\bgaol\b|workhouse|d[ée]p[ôo]t\s+des?\s+n[èe]gres/i],
+  ['injury',          /boiteu|estropi|manchot|borgne|mutil|ulc[èe]r|\blame\b|\bcripple|walks?\s+(heavily|lame)|one\s+eye/i],
 ];
+
 const NATION_RE = /\bnation\s+([A-ZÉÈ][\wéèêç-]{2,})|\b(Congo|Ibo|Igbo|Arada|Nago|Bambara|Mandingue|Mandingo|Coromantee|Mina|Foulah|Angola|Mozambique|Caplaou|Bibi|Hausa|Moco|Chamba|S[ée]n[ée]gal)\b/i;
 
 // Parse "Saint-Domingue, Affiches américaines - 1766-01-01".
@@ -322,9 +331,15 @@ async function main() {
                  victim_name, perpetrator_name, narrative, event_date, location, source_citation,
                  confidence_score, reparations_relevant, requires_human_review)
                SELECT $1,'bodily_harm',$2,$3,$4,$5,$6,$7,$8,$9,0.85,TRUE,TRUE
+                -- KEY ON THE ADVERTISEMENT, NOT THE CITATION STRING. This guard used source_citation,
+                -- and rescan-marronnage-harms.mjs formats that string differently — so the two writers
+                -- could not see each other's rows and created 1,988 exact duplicates, which then had to
+                -- be deleted. The stable identity is victim + harm type + THE AD TEXT: the same ad
+                -- re-read is one event; a DIFFERENT ad is a real second event, because repeat flight is
+                -- ~5% of this corpus and collapsing it would erase people who fled more than once.
                 WHERE NOT EXISTS (SELECT 1 FROM harm_events h
                    WHERE h.victim_subject_table=$2 AND h.victim_subject_id=$3 AND h.harm_type=$1
-                     AND h.source_citation=$9)`,
+                     AND left(h.narrative,300)=left($6::text,300))`,
               [kind, ref.subject_table, ref.subject_id, name, own ? own[1] : null,
                body.slice(0, 1200), hdr.date || null, hdr.colony || null, citation]);
             st.harms++;
