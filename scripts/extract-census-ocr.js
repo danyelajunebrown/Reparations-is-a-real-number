@@ -45,6 +45,21 @@ async function releaseBrowser(b) {
     } catch (_) { /* teardown must never mask the real error */ }
 }
 const sharp = require('sharp');
+
+// HANG DEADLINE. On 2026-08-22 this process sat for ELEVEN HOURS on one Alabama location, stopped mid
+// image-loop at [120/132] — not crashed, not progressing. `pgrep` reported it alive, so every cron guard in
+// the fleet politely deferred to it, and the FamilySearch ARK drip (which yields whenever this script is
+// running) never got the browser at all. A hung process is worse than a dead one: a dead one gets
+// restarted, a hung one holds the lock and looks healthy.
+// Exiting on a deadline lets the */15 cron restart cleanly, and the scraped_at guard means a half-finished
+// location is simply retried rather than recorded as done.
+const MAX_RUNTIME_MS = (+process.env.MAX_RUNTIME_MIN || 90) * 60 * 1000;
+const RUNTIME_DEADLINE = Date.now() + MAX_RUNTIME_MS;
+const runtimeExceeded = () => Date.now() > RUNTIME_DEADLINE;
+setTimeout(() => {
+    console.error(`\n⏱️  RUNTIME DEADLINE (${MAX_RUNTIME_MS / 60000} min) reached — exiting so the cron can restart cleanly.`);
+    process.exit(3);
+}, MAX_RUNTIME_MS).unref();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -1240,6 +1255,7 @@ async function processLocation(location, dryRun = false) {
             console.log(`      ✅ Pre-indexed: ${preIndexedResult.owners.length} owners, ${preIndexedResult.enslaved.length} enslaved`);
             parsed = preIndexedResult;
             extractionMethod = 'pre_indexed';
+            if (runtimeExceeded()) { console.log('   ⏱️  deadline reached — stopping this location.'); break; }
             stats.imagesProcessed++;
         } else {
             // Fall back to OCR (lower confidence, may have errors)
@@ -1252,6 +1268,7 @@ async function processLocation(location, dryRun = false) {
                 continue;
             }
 
+            if (runtimeExceeded()) { console.log('   ⏱️  deadline reached — stopping this location.'); break; }
             stats.imagesProcessed++;
 
             // Run OCR

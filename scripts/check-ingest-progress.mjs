@@ -54,6 +54,10 @@ const SOURCES = [
   { name: 'FS image arks archived', total: null,
     sql: `SELECT count(*)::int n FROM person_documents WHERE source_url ~ 'ark:/61903/3:1:' AND s3_key IS NOT NULL`,
     totalSql: `SELECT count(*)::int n FROM person_documents WHERE source_url ~ 'ark:/61903/3:1:'` },
+  { name: 'stalled? last 1860 leaf', total: null,
+    sql: `SELECT (EXTRACT(EPOCH FROM (now() - max(scraped_at)))/60)::int n
+            FROM familysearch_locations WHERE waypoint_id IS NOT NULL`,
+    note: 'MINUTES since the last leaf completed — a pgrep-alive process that has not moved is HUNG, and a hung job holds the browser lock while looking healthy (11h Alabama stall, 2026-08-22)' },
   { name: 'DLAS petitions ingested', total: null,
     sql: `SELECT count(*) FILTER (WHERE status='ingested')::int n FROM source_ingest_queue WHERE source_kind='dlas_petition'`,
     totalSql: `SELECT count(*)::int n FROM source_ingest_queue WHERE source_kind='dlas_petition'`,
