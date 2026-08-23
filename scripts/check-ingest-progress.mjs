@@ -21,10 +21,20 @@ const SOURCES = [
   { name: 'marronnage harm_events', total: null,
     sql: `SELECT count(*)::int n FROM harm_events WHERE source_citation ILIKE '%marronnage%'` },
   { name: '1860 slave-schedule leaves', total: null,
+    // MIRROR THE SCRAPER'S OWN FILTERS. This counted every waypoint_id-NOT-NULL row, but
+    // extract-census-ocr also excludes `district = state` and `county = state` ROLLUP rows and
+    // '%collection%' waypoints. So the bar read "19 leaves left" for days while the scraper correctly
+    // reported "Found 0 locations to process" — 15 of those 19 are rollups it will never process, by
+    // design. A progress metric that does not use the worker's own definition of work invents a backlog,
+    // which is the same error as counting the 977 container nodes as unfinished.
     sql: `SELECT count(*) FILTER (WHERE scraped_at IS NOT NULL)::int n
-            FROM familysearch_locations WHERE waypoint_id IS NOT NULL`,
-    totalSql: `SELECT count(*)::int n FROM familysearch_locations WHERE waypoint_id IS NOT NULL`,
-    note: 'leaves only — the 977 waypoint_id-NULL container rows are NOT work' },
+            FROM familysearch_locations
+           WHERE waypoint_id IS NOT NULL AND waypoint_id NOT LIKE '%collection%'
+             AND district <> state AND county <> state`,
+    totalSql: `SELECT count(*)::int n FROM familysearch_locations
+                WHERE waypoint_id IS NOT NULL AND waypoint_id NOT LIKE '%collection%'
+                  AND district <> state AND county <> state`,
+    note: 'processable leaves only — rollup rows (district=state) and container nodes are NOT work' },
   { name: 'person_fact embeddings', total: null,
     sql: `SELECT count(*)::int n FROM embeddings WHERE content_kind='person_fact'`,
     totalSql: `SELECT count(*)::int n FROM person_facts` },
