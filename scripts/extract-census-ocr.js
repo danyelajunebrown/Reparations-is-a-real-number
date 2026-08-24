@@ -46,20 +46,25 @@ async function releaseBrowser(b) {
 }
 const sharp = require('sharp');
 
-// HANG DEADLINE. On 2026-08-22 this process sat for ELEVEN HOURS on one Alabama location, stopped mid
-// image-loop at [120/132] — not crashed, not progressing. `pgrep` reported it alive, so every cron guard in
-// the fleet politely deferred to it, and the FamilySearch ARK drip (which yields whenever this script is
-// running) never got the browser at all. A hung process is worse than a dead one: a dead one gets
-// restarted, a hung one holds the lock and looks healthy.
-// Exiting on a deadline lets the */15 cron restart cleanly, and the scraped_at guard means a half-finished
-// location is simply retried rather than recorded as done.
-const MAX_RUNTIME_MS = (+process.env.MAX_RUNTIME_MIN || 90) * 60 * 1000;
-const RUNTIME_DEADLINE = Date.now() + MAX_RUNTIME_MS;
-const runtimeExceeded = () => Date.now() > RUNTIME_DEADLINE;
-setTimeout(() => {
-    console.error(`\n⏱️  RUNTIME DEADLINE (${MAX_RUNTIME_MS / 60000} min) reached — exiting so the cron can restart cleanly.`);
-    process.exit(3);
-}, MAX_RUNTIME_MS).unref();
+// STALL DETECTOR, not a runtime cap.
+// v1 of this guard was a flat MAX_RUNTIME deadline, and it created a fresh infinite loop: Tuscaloosa has
+// 132 images and takes ~5 hours, so a 40-minute cap fired mid-location, scraped_at was never written
+// (correctly — the location had not finished), and the next cron run restarted the SAME location from
+// image 1. Seventeen images processed, discarded, repeated. I replaced an eleven-hour hang with an endless
+// rerun and the progress bar looked identical for both.
+// What actually needs catching is a process that has STOPPED MAKING PROGRESS — an 11h wedge — not one that
+// is legitimately slow. So: heartbeat on every image, and exit only if nothing has advanced for
+// STALL_MINUTES. Long locations run to completion; wedged ones die and get restarted.
+const STALL_MS = (+process.env.STALL_MINUTES || 25) * 60 * 1000;
+let lastProgressAt = Date.now();
+const heartbeat = () => { lastProgressAt = Date.now(); };
+const runtimeExceeded = () => false;   // retained for call sites; time alone never stops a working run
+setInterval(() => {
+    if (Date.now() - lastProgressAt > STALL_MS) {
+        console.error(`\n⏱️  NO PROGRESS for ${STALL_MS / 60000} min — the run is wedged. Exiting so the cron restarts it.`);
+        process.exit(3);
+    }
+}, 60000).unref();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -1255,7 +1260,7 @@ async function processLocation(location, dryRun = false) {
             console.log(`      ✅ Pre-indexed: ${preIndexedResult.owners.length} owners, ${preIndexedResult.enslaved.length} enslaved`);
             parsed = preIndexedResult;
             extractionMethod = 'pre_indexed';
-            if (runtimeExceeded()) { console.log('   ⏱️  deadline reached — stopping this location.'); break; }
+            heartbeat();                 // an image finished — the run is alive
             stats.imagesProcessed++;
         } else {
             // Fall back to OCR (lower confidence, may have errors)
@@ -1268,7 +1273,7 @@ async function processLocation(location, dryRun = false) {
                 continue;
             }
 
-            if (runtimeExceeded()) { console.log('   ⏱️  deadline reached — stopping this location.'); break; }
+            heartbeat();                 // an image finished — the run is alive
             stats.imagesProcessed++;
 
             // Run OCR
