@@ -125,6 +125,29 @@ function parseHeader(text) {
   return { colony, newspaper: m[1].trim(), year: +m[2], date: `${m[2]}-${m[3]}-${m[4]}` };
 }
 
+
+// EVERY NAME MUST RECORD A TERMINAL STATE. This ingest looped three separate times on the same root cause:
+// an outcome that writes nothing is, to the resume logic, an outcome that never happened.
+//   1. name with no ads      -> skipped silently  -> retried forever
+//   2. name LINKED to an existing lead -> findOrCreateLead only writes an external id for CANONICAL
+//      matches, so nothing was written -> retried forever
+//   3. name REJECTED by the mint gate ("Ed", "Gu", "C1812_761", "Jean-FranÃ§ois") -> `continue` with no
+//      record -> retried forever. 108 names spinning, 84 ads re-fetched per pass, bar frozen at 96.4%.
+// Success is not the only thing worth writing down. A refusal is a decision about the corpus and belongs in
+// research_findings like any other absence (standard-assertion-store §4).
+async function recordAttempt(pool, name, outcome, note) {
+  await pool.query(
+    `INSERT INTO research_findings (question, repository, index_searched, result, hit_count,
+       evidence_note, searched_by)
+     SELECT $1,$2,$3,$4,0,$5,'ingest-marronnage-named'
+      WHERE NOT EXISTS (SELECT 1 FROM research_findings f
+         WHERE f.searched_by='ingest-marronnage-named' AND f.index_searched=$3)`,
+    [`Which surviving advertisements name the enslaved person "${name}"?`,
+     'Le marronnage dans le monde atlantique, 1760-1848 (CNRS/EHESS)',
+     `noms=${name}`, outcome, note])
+    .catch((e) => console.error(`   ! attempt ${name}: ${e.message.slice(0, 70)}`));
+}
+
 async function main() {
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false },
     statement_timeout: 300000, query_timeout: 300000 });
@@ -237,8 +260,22 @@ async function main() {
             [out.ref.subject_id, externalId, permalink])
             .catch((e) => console.error(`   ! extid ${name}: ${e.message.slice(0, 70)}`));
         }
-        else { st.rejected++; await sleep(GAP_MS); continue; }
-        const ref = out.ref; if (!ref) { st.rejected++; await sleep(GAP_MS); continue; }
+        else {
+          // The mint gate refused this name — record the refusal so it is not re-attempted forever.
+          st.rejected++;
+          await recordAttempt(pool, name, 'none',
+            `The curated index lists "${name}", but PersonService's mint gate refuses it (action=${out.action}). ` +
+            `The marronnage name array contains transcription fragments and artefacts alongside real names — ` +
+            `"Ed", "Gu", "Jo", "C1812_761", "Jean-FranÃ§ois" (mojibake) — and the gate is correct to decline ` +
+            `them. Recorded as attempted-and-refused rather than minted, per Biscoe: decline to mint, never invent.`);
+          await sleep(GAP_MS); continue;
+        }
+        const ref = out.ref;
+        if (!ref) {
+          st.rejected++;
+          await recordAttempt(pool, name, 'none', `No usable person reference returned for "${name}" (action=${out.action}).`);
+          await sleep(GAP_MS); continue;
+        }
         const isLead = ref.subject_table === 'unconfirmed_persons';
         const citation = `${hdr.colony || '?'} · ${hdr.newspaper || '?'} · ${hdr.date || hdr.year || '?'} · ` +
           `Le marronnage dans le monde atlantique (CNRS/EHESS) doc ${id}`;
