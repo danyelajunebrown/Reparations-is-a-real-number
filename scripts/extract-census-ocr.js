@@ -62,7 +62,14 @@ const runtimeExceeded = () => false;   // retained for call sites; time alone ne
 setInterval(() => {
     if (Date.now() - lastProgressAt > STALL_MS) {
         console.error(`\n⏱️  NO PROGRESS for ${STALL_MS / 60000} min — the run is wedged. Exiting so the cron restarts it.`);
-        process.exit(3);
+        // Release the tab BEFORE dying. The stall detector was itself a tab leak: it fired, exited, and
+        // left its page open on a shared browser, every 25 minutes.
+        (async () => {
+            try { if (page && !page.isClosed()) await page.close(); } catch (_) {}
+            try { await releaseBrowser(); } catch (_) {}
+            process.exit(3);
+        })();
+        return;
     }
 }, 60000).unref();
 const fs = require('fs');
@@ -276,8 +283,48 @@ async function initBrowser() {
         });
     }
 
+    // CLOSE STALE AUTOMATION TABS, WHOEVER OPENED THEM.
+    // Operator, twice: "chrome tabs spiraling out again". 141 open tabs made the Mini unusable and blocked
+    // the human FamilySearch sign-in this script depends on. Cause: initBrowser opens a tab, and the ONLY
+    // teardown is at the end of a clean run — but this script is now killed routinely, by its own stall
+    // detector (process.exit), by the */15 cron guard, and by pkill. Every one of those abandons a live tab
+    // on a SHARED browser. Run it every 15 minutes for a few hours and you get 141.
+    // The sweep is deliberately not scoped to "tabs this process opened": the leak is historic and
+    // cross-script, so anything sitting on a FamilySearch/DeepZoom URL at startup is fair game.
+    let keptOne = false;
+    try {
+        for (const t of await browser.pages()) {
+            try {
+                const u = t.url() || '';
+                // MATCH THE URL THE BROWSER LANDS ON, NOT THE ONE WE REQUESTED. The first version of this
+                // sweep required 'search' immediately after the domain — but FamilySearch redirects
+                // /search/catalog -> /en/search/catalog, so every leaked tab looked like
+                // "https://www.familysearch.org/en/search/catalog" and the pattern matched NONE of them.
+                // A kill-restart test showed tabs climbing 1->2->3->4 with the sweep "installed" and doing
+                // nothing. Broad host match now; keep the FIRST familysearch tab so a human window that
+                // happens to be open is not yanked away mid-login.
+                if (/familysearch|deepzoomcloud/i.test(u)) {
+                    if (keptOne) { await t.close(); } else { keptOne = true; }
+                }
+            } catch (_) { /* a tab we cannot close is not worth aborting the run over */ }
+        }
+    } catch (_) { /* older puppeteer: pages() may be unavailable on a connected browser */ }
+
     page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1200 });
+
+    // ONE teardown path, shared by success AND by every abnormal exit. A tab that outlives its process is
+    // how a scraper starves the human who has to log it back in.
+    // Teardown must never HANG — a handler that blocks is a handler that does not run. 5s ceiling.
+    const releaseAll = async () => {
+        const withTimeout = (pr) => Promise.race([pr, new Promise((r) => setTimeout(r, 5000))]);
+        try { if (page && !page.isClosed()) await withTimeout(page.close()); } catch (_) {}
+        try { await withTimeout(releaseBrowser()); } catch (_) {}
+    };
+    process.once('SIGTERM', async () => { await releaseAll(); process.exit(0); });
+    process.once('SIGINT',  async () => { await releaseAll(); process.exit(0); });
+    process.once('uncaughtException', async (e) => { console.error('FATAL:', e && e.message); await releaseAll(); process.exit(1); });
+    process.once('beforeExit', async () => { await releaseAll(); });
 
     // Load cookies if available
     const cookieFile = './fs-cookies.json';
