@@ -149,7 +149,30 @@ async function main() {
     console.error(`   ${e.message}`);
     await pool.end(); process.exit(1);
   }
+  // CLOSE STALE AUTOMATION TABS FIRST, AND NEVER LEAK ONE.
+  // Operator, 2026-08-30: "the program was opening new tabs like wildfire i couldnt even log in quick
+  // enough". That was this script (and its siblings) firing on a */10 cron while FamilySearch was signed
+  // out: each run opened a tab, hit the login wall, and exited without closing it. The tabs accumulated
+  // faster than a human could use the window — so an automation crash-loop actively PREVENTED the human
+  // fix it was waiting for. Politeness to the machine's owner is part of the job.
+  const existing = await browser.pages();
+  for (const pg of existing) {
+    try {
+      const u = pg.url();
+      if (/familysearch\.org\/(ark|service)|sg\d+p\d+\.familysearch/.test(u)) await pg.close();
+    } catch { /* a tab we cannot close is not worth failing over */ }
+  }
+
   const page = await browser.newPage();
+  // One teardown path, used by success AND by every failure — a leaked tab is what caused the flood.
+  const cleanup = async () => {
+    await page.close().catch(() => {});
+    await browser.disconnect().catch(() => {});   // BORROWED — disconnect, never close
+    await pool.end().catch(() => {});
+  };
+  process.once('uncaughtException', async (e) => { console.error('FATAL:', e.message); await cleanup(); process.exit(1); });
+  process.once('SIGTERM', async () => { await cleanup(); process.exit(0); });
+  process.once('SIGINT', async () => { await cleanup(); process.exit(0); });
   const st = { ok: 0, skip: 0, err: 0, bytes: 0 };
 
   for (const q of queue) {
@@ -197,9 +220,7 @@ async function main() {
   }
 
   console.log(`\n=== ${JSON.stringify(st)} · ${Math.round(st.bytes / 1048576)}MB archived ===`);
-  await page.close().catch(() => {});
-  await browser.disconnect();      // BORROWED — never close
-  await pool.end();
+  await cleanup();
 }
 
 main().catch((e) => { console.error('FATAL:', e.message); process.exit(1); });
