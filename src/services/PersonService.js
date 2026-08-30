@@ -71,6 +71,14 @@ const ENSLAVED_NAMED = [
   // enslaved_owner_relationships edge, of which SEVEN exist in the entire database. Benefit of the
   // doubt was structurally available to the enslaver and structurally unavailable to the enslaved.
   'slave_register',
+  // 'runaway_advertisement' added 2026-08-30, same omission as slave_register a week earlier. A marronnage
+  // notice NAMES the enslaved person and is placed BY the enslaver — "Un Negre nouveau, nation Congo,
+  // étampé Ch" — so it is direct, primary, named-enslaved evidence, and the enslaver is testifying against
+  // himself in it. Without this the first 40 promoted self-liberating people were image-backed, embedded,
+  // and invisible: assertable_enslaved = 0 of 40.
+  // The recurring lesson: this list is not a taxonomy, it is a HARD GATE on whether a documented person can
+  // be seen at all, and every new source silently fails it until someone adds the document type.
+  'runaway_advertisement',
   'narrative', 'evacuation_roll', 'enslaved_census', 'enslaved_census_brazil',
   'probate_enslaved_records',
 ];
