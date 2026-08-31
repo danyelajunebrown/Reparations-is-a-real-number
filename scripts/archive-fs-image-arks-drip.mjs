@@ -180,7 +180,26 @@ async function main() {
     if (!ark) { st.skip++; continue; }
     try {
       const img = await captureFullImage(page, ark);
-      if (!img) { st.skip++; console.log(`  ⏭️  ${ark}: no tiles (not an image ark, or not permitted)`); continue; }
+      if (!img) {
+        // DISTINGUISH "no image here" FROM "we are logged out". Both produce zero tiles, and treating them
+        // alike is how this drip logged skip:20 / ok:0 for hours while the FamilySearch session was dead —
+        // twenty auth failures recorded as twenty facts about the archive. Same costume as the census
+        // scraper OCR'ing a sign-in form for eleven hours. Probe the page: if it is the login wall, STOP the
+        // tick. An expired session is a fact about us, not about the document.
+        let loggedOut = false;
+        try {
+          await page.goto(`https://www.familysearch.org/ark:/61903/${ark}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          loggedOut = /ident\.familysearch|\/identity\/login|\/auth\//i.test(page.url());
+        } catch (_) { /* leave loggedOut false; a navigation error is not proof of logout */ }
+        if (loggedOut) {
+          console.error('  ⛔ FAMILYSEARCH SESSION EXPIRED — stopping this tick. Nothing recorded.');
+          console.error('     Sign in to the :9222 debug Chrome (VNC) and the cron will resume on its own.');
+          st.auth_failed = (st.auth_failed || 0) + 1;
+          break;
+        }
+        st.skip++; console.log(`  ⏭️  ${ark}: no tiles (genuinely not an image ark, or not permitted)`);
+        continue;
+      }
 
       const sha = crypto.createHash('sha256').update(img.buf).digest('hex');
       const key = `sources/familysearch/images/${ark.replace(/:/g, '_')}/${sha.slice(0, 16)}.jpg`;

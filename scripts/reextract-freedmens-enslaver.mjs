@@ -105,11 +105,38 @@ for (const r of rows) {
   try {
     await page.goto(r.source_url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await sleep(5000);
-    const imageArk = await page.evaluate(() => {
-      const a = [...document.querySelectorAll('a[href*="ark:/61903/3:1:"]')].map((x) => x.href);
-      const m = document.body.innerHTML.match(/ark:\/61903\/(3:1:[A-Z0-9-]+)/i);
-      return a[0] || (m ? `https://www.familysearch.org/ark:/61903/${m[1]}` : null);
-    });
+    // FAIL LOUD ON THE LOGIN WALL. The first clean run reported "no_image: 3" and I nearly read that as
+    // "these records serve no scan". They redirect to ident.familysearch.org/login — the session had
+    // expired. Counting an auth failure as a DATA observation is precisely how the census scraper spent
+    // eleven hours OCR'ing a sign-in form while every counter looked healthy. An expired session is not a
+    // fact about the archive; it is a fact about us, and it must stop the run rather than accumulate as
+    // false absences across 1,105 depositors.
+    if (/ident\.familysearch|\/identity\/login|\/auth\//i.test(page.url())) {
+      console.error('\n  ⛔ FAMILYSEARCH SESSION EXPIRED — redirected to the login wall.');
+      console.error('     Sign in to the :9222 debug Chrome (VNC), then re-run. Recording NOTHING for this');
+      console.error('     depositor: an auth failure must never be stored as "no image" or "no enslaver".');
+      st.auth_failed = (st.auth_failed || 0) + 1;
+      break;
+    }
+    // page.evaluate() DIES on FamilySearch. CLAUDE.md documents this: FS is an SPA and its redirects
+    // destroy the page execution context, so evaluate throws "Attempted to use detached Frame" — which is
+    // exactly what the first live run produced on all three depositors. The documented remedy is to wrap it
+    // and fall back; here the fallback is better anyway, because page.content() is a plain string that
+    // cannot be detached out from under us.
+    let imageArk = null;
+    try {
+      imageArk = await page.evaluate(() => {
+        const a = [...document.querySelectorAll('a[href*="ark:/61903/3:1:"]')].map((x) => x.href);
+        return a[0] || null;
+      });
+    } catch (_) { /* detached frame — fall through to the HTML */ }
+    if (!imageArk) {
+      try {
+        const html = await page.content();
+        const m = html.match(/ark:\/61903\/(3:1:[A-Z0-9-]+)/i);
+        imageArk = m ? `https://www.familysearch.org/ark:/61903/${m[1]}` : null;
+      } catch (_) { /* nothing readable */ }
+    }
     if (!imageArk) { st.no_image++; continue; }
     const ark = (imageArk.match(/(3:1:[A-Z0-9-]+)/i) || [])[1];
     const base = `https://sg30p0.familysearch.org/service/records/storage/deepzoomcloud/dz/v1/${ark}/image_files/${LEVEL}`;
