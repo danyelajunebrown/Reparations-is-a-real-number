@@ -173,6 +173,27 @@ async function main() {
   process.once('uncaughtException', async (e) => { console.error('FATAL:', e.message); await cleanup(); process.exit(1); });
   process.once('SIGTERM', async () => { await cleanup(); process.exit(0); });
   process.once('SIGINT', async () => { await cleanup(); process.exit(0); });
+  // AUTH CHECK ONCE, AT THE DOOR, AGAINST A KNOWN-GOOD ARK.
+  // The first attempt probed per-record, inside the "no tiles" branch — too fragile: a navigation error
+  // left the flag false and the run carried on recording auth failures as skips (skip:20 / ok:0 while the
+  // session was dead). Checking at startup is both cheaper and stricter: if we cannot see a document we
+  // KNOW is there, we are not logged in, and nothing that follows can be trusted as evidence about the
+  // archive. Fail closed, record nothing, tell the human what to do.
+  const CANARY = '3:1:33S7-9YBS-9W8L';   // verified image ark, used only to test the session
+  try {
+    await page.goto(`https://www.familysearch.org/ark:/61903/${CANARY}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await sleep(4000);
+    if (/ident\.familysearch|\/identity\/login|\/auth\/|signin/i.test(page.url())) {
+      console.error('⛔ FAMILYSEARCH SESSION EXPIRED — the canary ark redirects to the login wall.');
+      console.error('   Sign in to the :9222 debug Chrome (VNC to the Mini), then this cron resumes on its own.');
+      console.error('   Recording NOTHING: an expired session is a fact about us, not about the archive.');
+      await cleanup(); process.exit(4);
+    }
+  } catch (e) {
+    console.error(`⛔ could not verify the FamilySearch session (${e.message.slice(0, 60)}) — refusing to run.`);
+    await cleanup(); process.exit(4);
+  }
+
   const st = { ok: 0, skip: 0, err: 0, bytes: 0 };
 
   for (const q of queue) {
