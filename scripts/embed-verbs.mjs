@@ -71,8 +71,22 @@ const KINDS = {
             FROM harm_events h
            WHERE NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.subject_table='harm_events'
                               AND e.subject_id = h.id::text AND e.content_kind='harm_narrative')`,
+    // DISAMBIGUATE THE HARM, BILINGUALLY. Measured 2026-09-01: "esclave étampé au fer" — the phrase a
+    // researcher of THIS corpus would actually type — returned restraint_irons, not branding, because
+    // "fer" (iron) lexically collides with "fers" (shackles) and nothing in the text separated the two
+    // concepts. Branding and being put in irons are both "iron" and are not remotely the same harm: one is
+    // a permanent mark of ownership burned into a person, the other is restraint. The gloss carries the
+    // source-language terms so a French query reaches French records, which most of this corpus is.
     text: (r) => [
       `Harm: ${String(r.harm_type || 'unspecified').replace(/_/g, ' ')}${r.harm_category ? ` (${r.harm_category})` : ''}`,
+      ({
+        branding: 'Branded: a mark burned into the skin, usually the enslaver\'s own initials — étampé, marqué au fer chaud. A mark of OWNERSHIP, not restraint.',
+        restraint_irons: 'Restrained in iron shackles, chains, or a collar — fers, chaînes, carcan, collier de fer. RESTRAINT, not a burned mark.',
+        scarring: 'Scars and marks left on the body — cicatrices, balafres, marks of the whip.',
+        whipping: 'Whipped or lashed — fouetté, coups de fouet.',
+        imprisonment: 'Held in a jail, gaol, workhouse or cachot — geôle, prison, dépôt.',
+        injury: 'Bodily injury or disability recorded in the description — boiteux, estropié, manchot, borgne.',
+      }[r.harm_type]) || '',
       r.victim_name ? `Suffered by ${r.victim_name}` : '',
       r.perpetrator_name ? `Perpetrator named in the record: ${r.perpetrator_name}` : '',
       r.event_date ? `Date: ${String(r.event_date).slice(0, 10)}` : '',

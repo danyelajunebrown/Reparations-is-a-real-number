@@ -92,17 +92,23 @@ catch (e) { console.error(`no authenticated Chrome on :${PORT} — refusing to l
 for (const t of await browser.pages()) {
   try { if (/familysearch|deepzoomcloud/i.test(t.url() || '')) { if (globalThis.__kept) await t.close(); else globalThis.__kept = true; } } catch {}
 }
-const page = await browser.newPage();
-const cleanup = async () => { try { if (!page.isClosed()) await page.close(); } catch {} try { await browser.disconnect(); } catch {} try { await pool.end(); } catch {} };
+const cleanup = async () => { try { await browser.disconnect(); } catch {} try { await pool.end(); } catch {} };
 process.once('SIGTERM', async () => { await cleanup(); process.exit(0); });
 process.once('SIGINT', async () => { await cleanup(); process.exit(0); });
 
-const tile = async (u) => { try { const r = await page.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 });
+const tile = async (pg, u) => { try { const r = await pg.goto(u, { waitUntil: 'domcontentloaded', timeout: 30000 });
   return r && r.status() === 200 ? await r.buffer() : null; } catch { return null; } };
 
 const st = { read: 0, improved: 0, unchanged: 0, no_block: 0, no_image: 0, err: 0 };
 for (const r of rows) {
+  // A FRESH PAGE PER DEPOSITOR. Sharing one page across records failed 4 of 5: FamilySearch's SPA detaches
+  // frames during the tile navigations, and once detached the page is poisoned for EVERY subsequent
+  // depositor — "Attempted to use detached Frame" with the same frame id each time. The first record
+  // succeeded and the rest inherited its wreckage. A page is cheap; a corrupted run is not. Closed in the
+  // finally block so this cannot become the tab leak that made the Mini unusable twice.
+  let page = null;
   try {
+    page = await browser.newPage();
     await page.goto(r.source_url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await sleep(5000);
     // FAIL LOUD ON THE LOGIN WALL. The first clean run reported "no_image: 3" and I nearly read that as
@@ -140,15 +146,15 @@ for (const r of rows) {
     if (!imageArk) { st.no_image++; continue; }
     const ark = (imageArk.match(/(3:1:[A-Z0-9-]+)/i) || [])[1];
     const base = `https://sg30p0.familysearch.org/service/records/storage/deepzoomcloud/dz/v1/${ark}/image_files/${LEVEL}`;
-    const first = await tile(`${base}/0_0.jpg`);
+    const first = await tile(page, `${base}/0_0.jpg`);
     if (!first) { st.no_image++; continue; }
     let cols = 1, rows_ = 1;
-    for (let c = 1; c < 16; c++) { if (!(await tile(`${base}/${c}_0.jpg`))) break; cols++; }
-    for (let y = 1; y < 16; y++) { if (!(await tile(`${base}/0_${y}.jpg`))) break; rows_++; }
+    for (let c = 1; c < 16; c++) { if (!(await tile(page, `${base}/${c}_0.jpg`))) break; cols++; }
+    for (let y = 1; y < 16; y++) { if (!(await tile(page, `${base}/0_${y}.jpg`))) break; rows_++; }
     const meta = await sharp(first).metadata();
     const parts = [];
     for (let c = 0; c < cols; c++) for (let y = 0; y < rows_; y++) {
-      const b = (c === 0 && y === 0) ? first : await tile(`${base}/${c}_${y}.jpg`);
+      const b = (c === 0 && y === 0) ? first : await tile(page, `${base}/${c}_${y}.jpg`);
       if (b) parts.push({ input: b, left: c * meta.width, top: y * meta.height });
     }
     const img = await sharp({ create: { width: cols * meta.width, height: rows_ * meta.height, channels: 3,
@@ -197,8 +203,12 @@ for (const r of rows) {
         [`fs_image:${ark}`, r.source_url, process.env.S3_BUCKET || null, key, sha, img.length,
          `Freedmen's Bank register page, ${cols}x${rows_} tiles. Holds ${blocks.length} depositor record(s).`]).catch(() => {});
       await pool.query(
-        `INSERT INTO research_findings (question,repository,index_searched,result,hit_count,evidence_note,searched_by,subject_table,subject_id)
-         VALUES ($1,$2,$3,$4,1,$5,'reextract-freedmens-enslaver','unconfirmed_persons',$6)`,
+        // STORE THE READING STRUCTURED, not only inside a sentence. The corroboration step first tried to
+        // regex the master's name back out of evidence_note and got "Dr" (the pattern excluded periods, and
+        // honorifics carry them), then "Dr. Hill Thornton. SUPERSEDES google_vision_ledger_extractio".
+        // Parsing your own prose is a self-inflicted extraction problem. scope_note carries the clean value.
+        `INSERT INTO research_findings (question,repository,index_searched,result,hit_count,evidence_note,searched_by,subject_table,subject_id,scope_note)
+         VALUES ($1,$2,$3,$4,1,$5,'reextract-freedmens-enslaver','unconfirmed_persons',$6,$7)`,
         [`Who did ${r.full_name} name as their former enslaver?`,
          'FamilySearch collection 1417695 — Freedmen\'s Savings Bank signature registers',
          r.source_url, master ? 'hit' : 'none',
@@ -206,9 +216,13 @@ for (const r of rows) {
          `MASTER: ${master || '[not stated]'}${mistress ? ` · MISTRESS: ${mistress}` : ''}. ` +
          `SUPERSEDES google_vision_ledger_extraction "${r.old_master}". Scan archived ${key} (sha256 ${sha.slice(0, 16)}). ` +
          `Testimony of the depositor — tier 0.65-0.70, NOT government-primary; requires human review before any ` +
-         `enslaver is minted.`, r.lead_id]).catch((e) => console.error(`  ! finding: ${e.message.slice(0, 70)}`));
+         `enslaver is minted.`, r.lead_id,
+         JSON.stringify({ master: master || null, mistress: mistress || null, depositor: r.full_name,
+                          block_matched: mine.name, records_on_page: blocks.length })])
+        .catch((e) => console.error(`  ! finding: ${e.message.slice(0, 70)}`));
     }
   } catch (e) { st.err++; if (st.err <= 5) console.error(`  ! ${r.full_name}: ${e.message.slice(0, 90)}`); }
+  finally { try { if (page && !page.isClosed()) await page.close(); } catch (_) {} }
   await sleep(GAP_MS);
 }
 console.log(`\n=== ${JSON.stringify(st)} ===`);
