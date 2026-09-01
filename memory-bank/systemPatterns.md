@@ -1,5 +1,7 @@
 # System Patterns: Reparations Is A Real Number
 
+> **Reconciled 2026-07-31.** Design-rationale sections below (file-type detection, storage, OCR, security, performance, error handling) remain accurate. The blockchain, single-pool, and descendant-persistence sections have been corrected/removed to match current reality (see `activeContext.md`, `standard-canonical-person-and-document-gate.md`).
+
 ## Architectural Patterns
 
 ### Layered Architecture
@@ -8,9 +10,8 @@ The system follows a traditional layered architecture with clear separation of c
 ```
 ┌─────────────────────────────────────────┐
 │  Presentation Layer (Frontend)          │
-│  - HTML/CSS/JavaScript                   │
-│  - Web3.js integration                   │
-│  - MetaMask wallet connection            │
+│  - React + Vite (terminal aesthetic)     │
+│  - Verified-data-only rendering          │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
@@ -30,17 +31,14 @@ The system follows a traditional layered architecture with clear separation of c
                     ↓
 ┌─────────────────────────────────────────┐
 │  Data Access Layer                       │
-│  - Storage adapter (Local/S3/IPFS)       │
+│  - Storage adapter (Local/S3)            │
 │  - Database client (PostgreSQL)          │
-│  - Smart contract interface (Web3)       │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
 │  Infrastructure Layer                    │
-│  - PostgreSQL database                   │
+│  - PostgreSQL database (Neon)            │
 │  - AWS S3 storage                        │
-│  - Ethereum blockchain                   │
-│  - IPFS network                          │
 └─────────────────────────────────────────┘
 ```
 
@@ -48,12 +46,12 @@ The system follows a traditional layered architecture with clear separation of c
 Documents flow through a series of processing stages:
 
 ```
-Upload → Type Detection → Storage → IPFS Hashing → OCR → Extraction → Database → Verification
+Upload → Type Detection → Storage → OCR → Extraction → Database → Verification
 ```
 
 Each stage is independent and can be retried separately if it fails.
 
-**Implementation:** `enhanced-document-processor.js`
+**Implementation:** `src/services/document/EnhancedDocumentProcessor.js`
 
 **Key Features:**
 - **Idempotent:** Can be run multiple times without side effects
@@ -76,8 +74,11 @@ URL Analysis → Description → Column Inference → Confirmation → Extractio
 **Key Features:**
 - **Stateful Sessions:** Each contribution tracked with session_id
 - **Flexible Extraction:** Works with tables (column parsing) and prose (entity extraction)
-- **Suspected Records:** Creates placeholder enslaved records from slave counts
-- **Database Persistence:** `persistToUnconfirmedPersons()` saves to review queue
+- **Identity Persistence:** extracted people flow through `PersonService.findOrCreateLead`
+  (writes a discrete lead), then a gated `PersonService.promoteToCanonical`. Per RULE 0.6 a lead
+  is promoted to `canonical_persons` ONLY when it is deduped (Biscoe), serves an S3 document image,
+  AND is RAG-embedded. Raw `persistToUnconfirmedPersons()` is legacy — the review queue no longer
+  auto-promotes.
 - **Debug Logging:** Full diagnostic trail stored in `extraction_jobs.debug_log`
 
 ### Adapter Pattern (Storage Abstraction)
@@ -96,32 +97,40 @@ class StorageAdapter {
 - Swap storage backends without changing upstream code
 - Fallback from S3 to local storage on failure
 - Consistent interface for all storage operations
-- Easy to add new storage providers (IPFS, Azure Blob, etc.)
+- Easy to add new storage providers (Azure Blob, etc.)
 
-**Implementation:** `storage-adapter.js`
+**Implementation:** `src/services/document/S3StorageAdapter.js`
 
-### Repository Pattern (Database Access)
-Database queries are encapsulated in a centralized module:
+### Repository Pattern (Database Access) — TWO drivers, not one
+Database access is centralized in `src/database/connection.js`, but there is **no single pool**.
+Two Postgres drivers are installed and both are in active use, and they behave differently. Any
+code that touches the DB must know which one it is holding:
 
 ```javascript
-// database.js
-const pool = new Pool({
-  host: config.database.host,
-  database: config.database.database,
-  user: config.database.user,
-  password: config.database.password
-});
+// src/database/connection.js exposes BOTH:
 
-module.exports = { query: (text, params) => pool.query(text, params) };
+// 1) @neondatabase/serverless (HTTP) — serverless/edge-friendly.
+//    TRAP: rowCount ALWAYS returns 0 for UPDATE / DELETE. You cannot tell
+//    whether a write matched any rows from rowCount. You MUST use RETURNING
+//    and count result.rows.length instead.
+const { rows } = await sql`UPDATE canonical_persons SET ... WHERE id = ${id} RETURNING id`;
+const affected = rows.length; // NOT rowCount
+
+// 2) pg.Pool (TCP) — classic connection pool. rowCount works correctly here.
+//    This is the PRODUCTION RUNTIME driver (see server startup).
+const res = await pool.query('UPDATE canonical_persons SET ... WHERE id = $1', [id]);
+const affected = res.rowCount; // correct with pg.Pool
 ```
 
-**Benefits:**
-- Single source of truth for database connection
-- Consistent error handling
-- Connection pooling managed centrally
-- Easy to add query logging, metrics, etc.
+**Rules of thumb:**
+- Production API runtime uses `pg.Pool` (TCP). Scripts vary — check before assuming.
+- With the Neon HTTP driver, treat `rowCount` as meaningless for writes; always `RETURNING id`
+  and count `rows.length`.
+- Consistent error handling and connection pooling are still centralized in `connection.js`;
+  the "single source of truth" is the module, **not** a single pool object.
 
-**Schema Definition:** `database-schemas.js` defines all tables, views, and indexes
+**Schema Definition:** table/view/index definitions live in the `migrations/` directory (numbered
+SQL migrations), not in a single schema file.
 
 ### Strategy Pattern (OCR Processing)
 Multiple OCR providers with automatic fallback:
@@ -136,7 +145,7 @@ Google Vision API (preferred) → Tesseract.js (fallback) → Manual Entry
 3. If Google fails or unavailable: Use Tesseract.js (slower, lower accuracy)
 4. If both fail: Flag document for manual OCR entry
 
-**Implementation:** `enhanced-document-processor.js` line 89-150
+**Implementation:** `src/services/document/EnhancedDocumentProcessor.js`
 
 ## Design Decisions
 
@@ -222,7 +231,6 @@ CREATE TABLE documents (
   document_id VARCHAR(255) PRIMARY KEY,
   owner_name VARCHAR(255) NOT NULL,
   file_path VARCHAR(500),
-  ipfs_hash VARCHAR(100),
   ocr_text TEXT,
   ocr_confidence NUMERIC(5,2),
   ocr_service VARCHAR(50),
@@ -258,42 +266,6 @@ GROUP BY owner_name;
 - ❌ Schema changes require migrations
 - ❌ Vertical scaling limits
 - ❌ More complex setup than NoSQL
-
-### Blockchain: Ethereum vs Alternatives
-**Decision:** Ethereum mainnet with Solidity smart contracts
-
-**Rationale:**
-- **Maturity:** Most established smart contract platform
-- **Immutability:** Transaction history cannot be altered
-- **Transparency:** All payments publicly auditable
-- **Developer Tools:** Truffle, Ganache, Web3.js ecosystem
-- **Security:** OpenZeppelin battle-tested contract libraries
-
-**Smart Contract Pattern:**
-```solidity
-// ReparationsEscrow.sol
-contract ReparationsEscrow is ReentrancyGuard, Ownable, Pausable {
-  struct AncestryRecord {
-    string ipfsHash;
-    address[] descendants;
-    uint256 totalAmount;
-    bool verified;
-  }
-
-  function submitAncestryRecord(string memory ipfsHash) external
-  function addDescendant(uint256 recordId, address descendant) external onlyOwner
-  function depositPayment(uint256 recordId) external payable
-  function distributePayment(uint256 recordId) external nonReentrant whenNotPaused
-}
-```
-
-**Trade-offs:**
-- ✅ Immutable audit trail
-- ✅ Decentralized (no single point of failure)
-- ✅ Trustless execution (code is law)
-- ❌ High gas fees (can be $50-$200 per transaction)
-- ❌ Slow transaction finality (15 seconds to 5 minutes)
-- ❌ Requires users to manage private keys
 
 ### OCR: Cloud API vs Local Processing
 **Decision:** Google Vision API (preferred) with Tesseract.js fallback
@@ -506,32 +478,35 @@ class BackgroundQueueProcessor {
 - Database-backed state for recovery
 - Graceful shutdown support
 
-### Private-to-Public Pipeline Pattern
-For descendant tracking with privacy protection:
+### Private-to-Public Pipeline Pattern (current)
+Identity no longer flows through the old `enslaved_descendants_suspected` /
+`enslaved_descendants_confirmed` / `enslaved_credit_calculations` tables. It flows through the
+`PersonService` lead → gated canonical model, and the credit/ledger work is done by the DAA layer:
 
 ```
 ┌─────────────────────────────────────────┐
-│  1. Private Research                     │
-│  (enslaved_descendants_suspected)        │
-│  - Genealogy tracing                     │
-│  - NOT contacted, NOT public             │
-│  - Confidence scoring                    │
+│  1. Lead (private research)              │
+│  PersonService.findOrCreateLead          │
+│  - Discrete, deduped lead (Biscoe rule)  │
+│  - NOT public, confidence scored         │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│  2. Opt-In Verification                  │
-│  (enslaved_descendants_confirmed)        │
-│  - Person consented to participate       │
-│  - Identity verified                     │
-│  - Claim status tracked                  │
+│  2. Gated promotion to canonical         │
+│  PersonService.promoteToCanonical        │
+│  - RULE 0.6: deduped + serves an S3      │
+│    document image + RAG-embedded         │
+│  - "Every canonical serves an image and  │
+│    is in RAG."                           │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
-│  3. Credit Calculation                   │
-│  (enslaved_credit_calculations)          │
-│  - Labor value computation               │
-│  - Interest accumulation                 │
-│  - Payment tracking                      │
+│  3. DAA ledger (credit / disgorgement)   │
+│  DAAOrchestrator + DisgorgementCalculator│
+│  - Per-person line items, dual ledger    │
+│  - Compensation TO enslavers = evidence  │
+│    of debt, not credit against it        │
+│  - Every number traces to row + citation │
 └─────────────────────────────────────────┘
 ```
 

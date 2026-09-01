@@ -1,3 +1,5 @@
+> **PARTIAL STALE COUNTS (Jul 1 2026).** The '4,910 dual-flagged testators' finding is FIXED (re-measured 0 per finding-land-nonclaim-jul17 §9). Use this doc for the gate RULES, not its counts. Do NOT sequence a gate fix ahead of extraction work on the basis of the stale count.
+
 # FINDING — NY probate exhaustive validity/consistency audit (Jul 1 2026)
 
 _Read-only audit of the live NY probate scrape (FS collection 1920234) run from the MacBook

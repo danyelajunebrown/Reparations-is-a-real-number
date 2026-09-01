@@ -27,6 +27,10 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const require = createRequire(import.meta.url);
 const { execFileSync } = require('node:child_process');
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const DRY = process.argv.includes('--dry');
 const LOCK = '/tmp/probate-drip.lock';
 const NODE = process.execPath;
@@ -118,9 +122,28 @@ function locked() {
 
     await notify(`${action} roll ${target.roll} (${target.antebellum?'antebellum':'post-1865'}, ${target.pages}pp)`);
     log('extracting…');                                          // segmentation (if any) already done during selection
+    const PENDQ = `SELECT count(*)::int n FROM probate_estate_segments_v2 s WHERE s.roll_group_id=$1 AND s.id NOT IN (SELECT segment_id FROM probate_estate_extractions WHERE segment_id IS NOT NULL)`;
+    const pendBefore = (await pool.query(PENDQ, [target.roll])).rows[0].n;
     execFileSync(NODE, [path.resolve(__dirname,'extract-probate-estates.mjs'), '--roll', target.roll], execOpts(target.roll));
 
-    const agg = (await pool.query(`SELECT COUNT(*) estates, SUM(enslaved_count) enslaved, SUM(enslaved_valued_count) valued, SUM(total_appraised_usd) usd FROM probate_estate_extractions WHERE roll_group_id=$1`, [target.roll])).rows[0];
+    // POISON-PILL GUARD: extract-probate-estates self-limits per call, so remaining pending is normally
+    // just un-reached work (fine — the next tick continues it). But if the extractor ran and pending did
+    // NOT decrease on a SMALL tail (<= 8), those segments are un-extractable (e.g. a 1-page inventory whose
+    // OCR yields no estate) and were pinning the antebellum-priority queue forever (Q7P7-7MS: 182/184 done,
+    // 2 stuck, 1,076 wasted ticks). Sentinel them ('extraction_empty') so the roll completes and the queue
+    // advances. Bounded to <= 8 so a large un-reached backlog is never skipped.
+    const pendAfter = (await pool.query(PENDQ, [target.roll])).rows[0].n;
+    if (!DRY && pendAfter > 0 && pendAfter >= pendBefore && pendAfter <= 8) {
+      const s = await pool.query(
+        `INSERT INTO probate_estate_extractions (roll_group_id, segment_id, decedent_name, document_type, enslaved_count, enslaved_valued_count, total_appraised_usd, provider, extractor_version, extracted_at)
+         SELECT s.roll_group_id, s.id, s.decedent_name, 'extraction_empty', 0, 0, 0, 'sentinel', 'poison-pill-skip', now()
+           FROM probate_estate_segments_v2 s
+          WHERE s.roll_group_id=$1 AND s.id NOT IN (SELECT segment_id FROM probate_estate_extractions WHERE segment_id IS NOT NULL)
+         RETURNING id`, [target.roll]);
+      if (s.rows.length) { log(`  ↳ poison-pill guard: sentineled ${s.rows.length} un-extractable segment(s) so the queue can advance`); }
+    }
+
+    const agg = (await pool.query(`SELECT COUNT(*) estates, SUM(enslaved_count) enslaved, SUM(enslaved_valued_count) valued, SUM(total_appraised_usd) usd FROM probate_estate_extractions WHERE roll_group_id=$1 AND provider IS DISTINCT FROM 'sentinel'`, [target.roll])).rows[0];
     const summary = `roll ${target.roll} now: ${agg.estates} estates, ${agg.enslaved||0} enslaved, ${agg.valued||0} valued, $${Math.round(agg.usd||0).toLocaleString()}`;
     log('✓ ' + summary); await notify('✓ ' + summary);
   } catch (e) {

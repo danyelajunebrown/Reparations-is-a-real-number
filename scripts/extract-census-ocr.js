@@ -25,7 +25,53 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { neon } = require('@neondatabase/serverless');
 const axios = require('axios');
+const { transcribeImage } = require('../src/services/vision/vision-router');
+
+// Did we BORROW the shared :9222 browser, or launch our own? This decides teardown, and getting it wrong
+// is expensive: on 2026-08-21 this script finished Delaware, called browser.close() on the SHARED Chrome,
+// and killed the FamilySearch session for everything else on the Mini. Every subsequent state then failed
+// with "no authenticated Chrome on :9222" — the guard worked, but the browser it guarded was gone, taken
+// down by the run before it. close() was harmless while this script launched its own Chrome; the moment it
+// started connecting to a shared one, close() became a way to sabotage the next fifteen states.
+let connectedToExisting = false;
+
+// Release the browser: DISCONNECT when borrowed, close only what we ourselves launched.
+async function releaseBrowser(b) {
+    const target = b || browser;
+    if (!target) return;
+    try {
+        if (connectedToExisting) { await target.disconnect(); }
+        else { await target.close(); }
+    } catch (_) { /* teardown must never mask the real error */ }
+}
 const sharp = require('sharp');
+
+// STALL DETECTOR, not a runtime cap.
+// v1 of this guard was a flat MAX_RUNTIME deadline, and it created a fresh infinite loop: Tuscaloosa has
+// 132 images and takes ~5 hours, so a 40-minute cap fired mid-location, scraped_at was never written
+// (correctly — the location had not finished), and the next cron run restarted the SAME location from
+// image 1. Seventeen images processed, discarded, repeated. I replaced an eleven-hour hang with an endless
+// rerun and the progress bar looked identical for both.
+// What actually needs catching is a process that has STOPPED MAKING PROGRESS — an 11h wedge — not one that
+// is legitimately slow. So: heartbeat on every image, and exit only if nothing has advanced for
+// STALL_MINUTES. Long locations run to completion; wedged ones die and get restarted.
+const STALL_MS = (+process.env.STALL_MINUTES || 25) * 60 * 1000;
+let lastProgressAt = Date.now();
+const heartbeat = () => { lastProgressAt = Date.now(); };
+const runtimeExceeded = () => false;   // retained for call sites; time alone never stops a working run
+setInterval(() => {
+    if (Date.now() - lastProgressAt > STALL_MS) {
+        console.error(`\n⏱️  NO PROGRESS for ${STALL_MS / 60000} min — the run is wedged. Exiting so the cron restarts it.`);
+        // Release the tab BEFORE dying. The stall detector was itself a tab leak: it fired, exited, and
+        // left its page open on a shared browser, every 25 minutes.
+        (async () => {
+            try { if (page && !page.isClosed()) await page.close(); } catch (_) {}
+            try { await releaseBrowser(); } catch (_) {}
+            process.exit(3);
+        })();
+        return;
+    }
+}, 60000).unref();
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -187,7 +233,15 @@ function initDatabase() {
  */
 async function initBrowser() {
     const userDataDir = process.env.CHROME_PROFILE || path.join(process.cwd(), '.chrome-profile');
-    const remotePort = process.env.CHROME_REMOTE_PORT || null;
+    // DEFAULT TO :9222 (CLAUDE.md: "puppeteer.connect() to http://127.0.0.1:9222 only. Never
+    // puppeteer.launch()"). This defaulted to null, so the script launched its OWN Chrome against
+    // .chrome-profile — a browser that has never been signed in to FamilySearch. Every page it fetched
+    // was therefore the login wall, and on 2026-08-21 the OCR faithfully transcribed the sign-in form
+    // eighteen times in a row ("Sign In / Use My Phone / Continue with Google / Username danyelebrown"),
+    // reporting "✅ OCR extracted 301 characters" and 0 people each time. The FS session was live the
+    // whole while — in the OTHER Chrome. Two browsers, one signed in, and the script picked the wrong one.
+    // Set CHROME_REMOTE_PORT explicitly to override.
+    const remotePort = process.env.CHROME_REMOTE_PORT || '9222';
 
     console.log('🚀 Launching Chrome...');
 
@@ -200,22 +254,18 @@ async function initBrowser() {
                 defaultViewport: null
             });
             console.log('   ✅ Connected to existing Chrome');
+            connectedToExisting = true;   // we BORROWED this browser — never close it, only disconnect
         } catch (e) {
-            console.log(`   ⚠️ Could not connect to port ${remotePort}: ${e.message}`);
-            console.log('   Falling back to launching new Chrome...');
-            browser = await puppeteer.launch({
-                headless: !INTERACTIVE,
-                executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                userDataDir: userDataDir,
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--window-size=1920,1200',
-                    '--disable-infobars'
-                ],
-                ignoreDefaultArgs: ['--enable-automation'],
-                defaultViewport: null
-            });
+            // DO NOT fall back to launching a fresh Chrome. That fallback is what produced eighteen
+            // OCR'd copies of the FamilySearch login form: a new profile is never signed in, so the run
+            // "succeeds" while extracting nothing. Failing loudly here costs one run; falling back
+            // silently costs the pages, because they get marked scraped and never revisited.
+            console.error(`   ❌ Could not connect to Chrome on port ${remotePort}: ${e.message}`);
+            console.error('   Refusing to launch an unauthenticated browser — it would OCR the login wall.');
+            console.error('   Start it with: open -na "Google Chrome" --args --remote-debugging-port=9222 \\');
+            console.error('                    --user-data-dir=/tmp/familysearch-ancestor-climber');
+            console.error('   (then sign in to FamilySearch in THAT window), or set CHROME_REMOTE_PORT.');
+            throw new Error(`no authenticated Chrome on :${remotePort}`);
         }
     } else {
         browser = await puppeteer.launch({
@@ -233,8 +283,48 @@ async function initBrowser() {
         });
     }
 
+    // CLOSE STALE AUTOMATION TABS, WHOEVER OPENED THEM.
+    // Operator, twice: "chrome tabs spiraling out again". 141 open tabs made the Mini unusable and blocked
+    // the human FamilySearch sign-in this script depends on. Cause: initBrowser opens a tab, and the ONLY
+    // teardown is at the end of a clean run — but this script is now killed routinely, by its own stall
+    // detector (process.exit), by the */15 cron guard, and by pkill. Every one of those abandons a live tab
+    // on a SHARED browser. Run it every 15 minutes for a few hours and you get 141.
+    // The sweep is deliberately not scoped to "tabs this process opened": the leak is historic and
+    // cross-script, so anything sitting on a FamilySearch/DeepZoom URL at startup is fair game.
+    let keptOne = false;
+    try {
+        for (const t of await browser.pages()) {
+            try {
+                const u = t.url() || '';
+                // MATCH THE URL THE BROWSER LANDS ON, NOT THE ONE WE REQUESTED. The first version of this
+                // sweep required 'search' immediately after the domain — but FamilySearch redirects
+                // /search/catalog -> /en/search/catalog, so every leaked tab looked like
+                // "https://www.familysearch.org/en/search/catalog" and the pattern matched NONE of them.
+                // A kill-restart test showed tabs climbing 1->2->3->4 with the sweep "installed" and doing
+                // nothing. Broad host match now; keep the FIRST familysearch tab so a human window that
+                // happens to be open is not yanked away mid-login.
+                if (/familysearch|deepzoomcloud/i.test(u)) {
+                    if (keptOne) { await t.close(); } else { keptOne = true; }
+                }
+            } catch (_) { /* a tab we cannot close is not worth aborting the run over */ }
+        }
+    } catch (_) { /* older puppeteer: pages() may be unavailable on a connected browser */ }
+
     page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1200 });
+
+    // ONE teardown path, shared by success AND by every abnormal exit. A tab that outlives its process is
+    // how a scraper starves the human who has to log it back in.
+    // Teardown must never HANG — a handler that blocks is a handler that does not run. 5s ceiling.
+    const releaseAll = async () => {
+        const withTimeout = (pr) => Promise.race([pr, new Promise((r) => setTimeout(r, 5000))]);
+        try { if (page && !page.isClosed()) await withTimeout(page.close()); } catch (_) {}
+        try { await withTimeout(releaseBrowser()); } catch (_) {}
+    };
+    process.once('SIGTERM', async () => { await releaseAll(); process.exit(0); });
+    process.once('SIGINT',  async () => { await releaseAll(); process.exit(0); });
+    process.once('uncaughtException', async (e) => { console.error('FATAL:', e && e.message); await releaseAll(); process.exit(1); });
+    process.once('beforeExit', async () => { await releaseAll(); });
 
     // Load cookies if available
     const cookieFile = './fs-cookies.json';
@@ -275,7 +365,7 @@ async function ensurePageValid() {
             // Browser itself is dead — full relaunch
             console.log('⚠️ Browser connection lost, relaunching Chrome...');
             try {
-                await browser.close().catch(() => {});
+                await releaseBrowser();
             } catch (_) {}
             await new Promise(r => setTimeout(r, 3000));
             page = await initBrowser();
@@ -540,33 +630,43 @@ async function archiveToS3(imageBuffer, sourceUrl, metadata) {
 /**
  * Perform OCR on image using Google Vision API
  */
+// MIGRATED 2026-08-21 from the Google Vision REST API to src/services/vision/vision-router.
+//
+// WHY, and why this mattered so much more than it looks:
+//   The Vision key has been SUSPENDED since issue #126. This function kept calling it anyway, got HTTP
+//   403 on every image, CAUGHT THE ERROR, and returned ''. The caller read '' as "OCR returned little
+//   text - may be title page" and moved on — then the location was marked scraped_at. So a dead API key
+//   became a title page became a completed scrape, and the rows were silently lost.
+//   Observed live: Florida/Champlin and Florida/Gausden marked done with ZERO persons extracted.
+//
+//   It also explains why the 1860 tail has looked unfinishable for months. Locations WITH pre-indexed
+//   FamilySearch data never call this function and completed fine (Louisiana: 27,701 enslaved people).
+//   The stragglers are exactly the locations with NO pre-indexed data — every one of them lands here,
+//   and every one of them has been failing since the key was suspended.
+//
+//   vision-router was built FOR this job (issue #142: "1860 cursive OCR needs a model that is BOTH
+//   accurate AND uncapped") and already routes Qwen2.5-VL-72B → Gemini → gpt-4o, falling through on
+//   429/5xx. It lists "Google Vision → key SUSPENDED" in its own header. This script simply never got
+//   migrated to the thing written to replace it.
+//
+// A HARD FAILURE NOW THROWS instead of returning ''. An empty page and a broken pipeline must never
+// again be indistinguishable to the caller.
 async function performOCR(imageBuffer) {
-    if (!GOOGLE_VISION_API_KEY) {
-        console.log('   ⚠️ No GOOGLE_VISION_API_KEY - skipping OCR');
-        return '';
-    }
+    const resizedBuffer = await sharp(imageBuffer)
+        .resize(2500, null, { fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
 
     try {
-        // Resize for optimal OCR
-        const resizedBuffer = await sharp(imageBuffer)
-            .resize(2500, null, { fit: 'inside', withoutEnlargement: true })
-            .png()
-            .toBuffer();
-
-        const response = await axios.post(
-            `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
-            {
-                requests: [{
-                    image: { content: resizedBuffer.toString('base64') },
-                    features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
-                }]
-            },
-            { timeout: 120000 }
-        );
-
-        return response.data.responses[0]?.fullTextAnnotation?.text || '';
+        return await transcribeImage(resizedBuffer, { mimeType: 'image/png' }) || '';
     } catch (error) {
-        console.log(`   ⚠️ OCR error: ${error.message}`);
+        // Distinguish "this page is blank" (return '') from "the pipeline is broken" (throw).
+        // Auth/quota/exhausted-providers are pipeline failures: they are not evidence about the page.
+        const msg = error?.message || String(error);
+        if (/40[13]|quota|exhaust|unauthor|api key|credential|all providers/i.test(msg)) {
+            throw new Error(`OCR PIPELINE FAILURE (not a blank page): ${msg}`);
+        }
+        console.log(`   ⚠️ OCR error (page-level, continuing): ${msg}`);
         return '';
     }
 }
@@ -993,6 +1093,19 @@ async function extractPreIndexedData(imageUrl, metadata = {}) {
 /**
  * Store extracted person in database
  */
+// A slave schedule COUNTS enslaved people; it does not name them. The extractor synthesises
+// "Unknown (Female, age 4)" per tally mark, which is precisely the placeholder row audit rule 5 forbids
+// ("No 'Unnamed enslaved person(s)' placeholder rows. Real or absent."). 1,455,019 such rows were
+// quarantined on 2026-08-19 -- and 1,621 MORE appeared within 24 hours, because the backlog was cleaned
+// and the source was not. Quarantining at CREATION stops the bleeding without discarding the observation:
+// an enumerator really did record a 4-year-old girl held by a named person in a named county, and that
+// belongs as a count on the holder, the way probate carries enslaved_count.
+// NOTE: matches only the synthesised "Unknown (Male|Female, ...)" shape. A bare "Unknown" is left alone --
+// that may be a real person whose name was illegible, and a false quarantine hides a human.
+function isTallyPlaceholder(name) {
+    return typeof name === 'string' && /^(unknown|unnamed)\s*\((male|female|m|f)\b[^)]*\)$/i.test(name.trim());
+}
+
 async function storePerson(personData, dryRun = false) {
     if (!sql || dryRun) {
         console.log(`      → Would store: ${personData.name} (${personData.type})`);
@@ -1041,7 +1154,7 @@ async function storePerson(personData, dryRun = false) {
             INSERT INTO unconfirmed_persons (
                 full_name, person_type, source_url, context_text,
                 confidence_score, extraction_method, gender,
-                locations, relationships
+                locations, relationships, status, data_quality_flags
             ) VALUES (
                 ${personData.name},
                 ${personData.type},
@@ -1051,7 +1164,12 @@ async function storePerson(personData, dryRun = false) {
                 ${personData.extractionMethod || 'census_ocr_extraction'},
                 ${personData.sex || null},
                 ${locations},
-                ${JSON.stringify(relationships)}
+                ${JSON.stringify(relationships)},
+                ${isTallyPlaceholder(personData.name) ? 'placeholder_aggregate' : null},
+                ${isTallyPlaceholder(personData.name)
+                    ? JSON.stringify({ placeholder_aggregate: true, not_a_person: true,
+                        reason: 'Slave schedules COUNT enslaved people by age/sex/colour and do not name them. This row is one tally mark, not a person (audit rule 5). Quarantined AT CREATION so it never enters the person population; the observation is preserved as a count on the holder.' })
+                    : null}
             )
             RETURNING lead_id
         `;
@@ -1107,6 +1225,9 @@ async function storeRelationship(ownerName, enslavedName, sourceUrl, dryRun = fa
  */
 async function processLocation(location, dryRun = false) {
     console.log(`\n📍 Processing: ${location.state} > ${location.county} > ${location.district || 'N/A'}`);
+    // Baseline so we can tell, at the end, whether THIS location actually produced people. See the
+    // scraped_at guard below: a location that yields nothing must not be marked complete.
+    const personsAtStart = stats.personsExtracted;
 
     if (!location.waypoint_url || !location.waypoint_id) {
         console.log('   ⚠️ No waypoint URL - skipping');
@@ -1186,6 +1307,7 @@ async function processLocation(location, dryRun = false) {
             console.log(`      ✅ Pre-indexed: ${preIndexedResult.owners.length} owners, ${preIndexedResult.enslaved.length} enslaved`);
             parsed = preIndexedResult;
             extractionMethod = 'pre_indexed';
+            heartbeat();                 // an image finished — the run is alive
             stats.imagesProcessed++;
         } else {
             // Fall back to OCR (lower confidence, may have errors)
@@ -1198,6 +1320,7 @@ async function processLocation(location, dryRun = false) {
                 continue;
             }
 
+            heartbeat();                 // an image finished — the run is alive
             stats.imagesProcessed++;
 
             // Run OCR
@@ -1210,6 +1333,12 @@ async function processLocation(location, dryRun = false) {
             }
 
             console.log(`      ✅ OCR extracted ${ocrText.length} characters`);
+            // Show what we actually got. A character COUNT is not evidence that we read a census page:
+            // during the 2026-08-21 migration every image returned exactly 301 chars and 0 people, which a
+            // count alone made look like success. Print the head so a human can see whether this is a
+            // schedule or the viewer's UI chrome (issue #124: FS serves tiled <img>, so a viewport
+            // screenshot can capture furniture instead of the document).
+            console.log(`      📝 OCR head: ${JSON.stringify(ocrText.slice(0, 140))}`);
 
             // Archive to S3 for permanent preservation (non-blocking)
             archiveToS3(screenshot, image.url, {
@@ -1250,8 +1379,17 @@ async function processLocation(location, dryRun = false) {
         await new Promise(r => setTimeout(r, 2000));
     }
 
-    // Mark location as scraped
-    if (sql && !dryRun) {
+    // Mark location as scraped — ONLY if it actually yielded something.
+    //
+    // This used to run unconditionally, so a location whose every image failed was recorded as complete
+    // and never revisited. Combined with the swallowed Vision 403 above, that is how Florida/Champlin and
+    // Florida/Gausden were marked done with zero people extracted. A scrape that produced nothing is not
+    // a finished scrape; it is an unanswered question, and it must stay on the work list.
+    //
+    // `scraped_at` is left NULL rather than backfilled for the same reason we did not backfill the 977
+    // container rows: never write a completion you did not earn.
+    const yielded = (stats.personsExtracted || 0) > personsAtStart;
+    if (sql && !dryRun && yielded) {
         try {
             await sql`
                 UPDATE familysearch_locations
@@ -1262,6 +1400,8 @@ async function processLocation(location, dryRun = false) {
         } catch (e) {
             // Ignore update errors
         }
+    } else if (!yielded) {
+        console.log(`   ⏭️  ${location.county}: 0 people extracted from ${images.length} image(s) — LEAVING UNSCRAPED for retry`);
     }
 
     stats.locationsProcessed++;
@@ -1475,7 +1615,7 @@ async function main() {
 
     if (locations.length === 0) {
         console.log('\n✅ No unscraped locations found. Exiting.');
-        await browser.close();
+        await releaseBrowser();
         return;
     }
 
@@ -1517,7 +1657,7 @@ async function main() {
             // recovery kicks in before too many locations are skipped.
             if (consecutiveErrors >= 3) {
                 console.log(`   ⚠️ ${consecutiveErrors} consecutive failures — hard browser relaunch to recover session...`);
-                try { await browser.close().catch(() => {}); } catch (_) {}
+                try { await releaseBrowser(); } catch (_) {}
                 await new Promise(r => setTimeout(r, 5000));
                 page = await initBrowser();
                 await ensureLoggedIn();
@@ -1543,7 +1683,7 @@ async function main() {
     printStats();
 
     // Cleanup
-    await browser.close();
+    await releaseBrowser();
 }
 
 function printStats() {

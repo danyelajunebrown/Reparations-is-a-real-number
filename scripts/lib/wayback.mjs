@@ -40,22 +40,35 @@ export async function saveToWayback(url, { timeoutMs = 60000 } = {}) {
       redirect: 'manual',
       signal: AbortSignal.timeout(timeoutMs),
     });
-    // SPN returns the snapshot path in Content-Location, or a redirect Location.
-    const loc = res.headers.get('content-location') || res.headers.get('location');
-    if (loc) {
-      return loc.startsWith('http') ? loc : `https://web.archive.org${loc}`;
+    // THROTTLING IS NOT ABSENCE. Save Page Now rate-limits anonymous callers to roughly one capture per
+    // minute and answers with HTTP 500 (not 429) plus `x-location: save-sync` when you exceed it. This
+    // function used to swallow that and return null, so a throttled call and "this page cannot be
+    // archived" were indistinguishable — which is how 4,560 archived scans ended up with no Wayback URL
+    // while every log said the run succeeded. Same family as the caught 403 that let an OCR pass
+    // transcribe a login form. Throttling now THROWS so callers can back off instead of burning the
+    // backlog against a closed door.
+    if (res.status === 429 || (res.status >= 500 && res.headers.get('x-location') === 'save-sync')) {
+      const e = new Error(`wayback throttled (http ${res.status}, x-rl=${res.headers.get('x-rl')})`);
+      e.throttled = true;
+      throw e;
     }
-    // Some responses embed the snapshot in the body; try a /web/<ts>/ extraction.
+    const loc = res.headers.get('content-location') || res.headers.get('location');
+    if (loc) return loc.startsWith('http') ? loc : `https://web.archive.org${loc}`;
     const body = await res.text().catch(() => '');
     const m = body.match(/\/web\/\d{14}\/[^\s"']+/);
     return m ? `https://web.archive.org${m[0]}` : null;
-  } catch { return null; }
+  } catch (e) {
+    if (e && e.throttled) throw e;      // propagate throttling; swallow only genuine failures
+    return null;
+  }
 }
 
 /** Best-effort: return a fresh capture, else the closest existing snapshot, else
  *  null. Never throws. */
 export async function ensureSnapshot(url, opts = {}) {
-  const fresh = await saveToWayback(url, opts);
-  if (fresh) return fresh;
-  return await getClosestSnapshot(url, opts);
+  // Prefer an EXISTING snapshot before asking for a new capture: the CDX lookup is cheap and unthrottled,
+  // while SPN is ~1/minute. Checking first means a backlog of already-archived URLs costs nothing.
+  const existing = await getClosestSnapshot(url, opts).catch(() => null);
+  if (existing) return existing;
+  return await saveToWayback(url, opts);   // may THROW {throttled:true} — callers should back off
 }

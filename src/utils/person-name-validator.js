@@ -36,12 +36,60 @@ const NON_NAME_TOKENS = new Set([
   // non-person fragments from the Dec-2025 Wikipedia-scrape junk batch
   'wikipedia', 'united', 'states', 'president', 'vice', 'general',
   // probate-ledger abbreviations mistaken for single given names
-  'est', 'capt', 'no', 'amt', 'acct',
+  'est', 'no', 'amt', 'acct',
+  // GROUP nouns and cardinals. A will routinely disposes to a CLASS ("Mrs Sandiford's four daughters"),
+  // which names no individual — under audit rule 5 that is absent, not a person. Added Aug-2026 when
+  // relaxing the honorific rule admitted exactly this string.
+  'daughters', 'sons', 'brothers', 'sisters', 'nephews', 'nieces', 'grandchildren', 'descendants',
+  'family', 'families', 'legatees', 'devisees', 'representatives', 'survivors',
+  'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'several', 'other', 'others',
+]);
+
+// Period abbreviations that ARE the given name, not decoration. Ubiquitous in 18th–19th-century probate
+// hands. Most carry a vowel and pass unaided; `Wm` (William) and `Hy` (Henry) do not, and were being
+// rejected as OCR noise — "Wm. F. King", "Wm Barber", "Wm C. Millard" are real decedents in this corpus.
+// Unlike IGNORABLE_TOKENS these COUNT as name words; they simply bypass the vowel test.
+const ABBREVIATED_GIVEN_NAMES = new Set([
+  'wm', 'willm', 'hy', 'thos', 'jno', 'chas', 'geo', 'jas', 'robt', 'richd',
+  'edwd', 'saml', 'danl', 'benj', 'jos', 'alexr', 'nathl', 'fredk',
+]);
+
+// Honorifics and generational suffixes. These are NOT name words — they identify no one on their own —
+// but their presence must not reject the name they decorate. Aug-2026 fix: every one of these is
+// vowel-less or short, so the old rules threw out "Mrs. Eunice Miller Ashmore" and "Thomas Bacon Sr."
+// as if they were OCR noise. Treated as IGNORABLE: they neither reject the string nor count toward the
+// "≥1 real name word" requirement, so a bare "Capt" still fails while "Capt. John Smith" passes.
+const IGNORABLE_TOKENS = new Set([
+  'mr', 'mrs', 'ms', 'miss', 'dr', 'rev', 'revd', 'hon', 'sir', 'dame', 'lady',
+  'capt', 'col', 'maj', 'lt', 'sgt', 'gov', 'judge', 'prof',
+  'jr', 'sr', 'ii', 'iii', 'iv', 'v', 'vi',
 ]);
 
 /**
  * @param {string} name
  * @returns {boolean} true only if `name` plausibly names a single human being.
+ *
+ * AUG-2026 CORRECTION (finding-name-validator-false-rejects-aug09.md). This gate was rejecting REAL
+ * names at scale — 87 probate decedents in one measured cohort, e.g. `A. S. Bacon`, `D. I. Dawson`,
+ * `Hannah Byrd`, `Thomas Bacon Sr.`, `Mrs. Eunice Miller Ashmore`. Four independent defects, all of
+ * which made a *conservative-looking* rule silently destroy evidence:
+ *
+ *   1. INITIALS WERE READ AS FUNCTION WORDS. The NON_NAME_TOKENS lookup ran BEFORE the "middle initial
+ *      is allowed" branch, so the initial `A.` normalized to `a` — the article — and `I.` to the
+ *      pronoun `i`. Any name carrying an A. or I. initial was refused. The order is now reversed:
+ *      a single letter is an initial, and initials are never function words.
+ *   2. `y` WAS NOT A VOWEL. `Byrd`, `Smyth`, `Flynn`, `Lynch`, `Wynn`, `Pryor` all failed the
+ *      "multi-letter name words need a vowel" test. An entire class of English/Welsh surnames.
+ *   3. GENERATIONAL SUFFIXES were vowel-less, so `Sr.` / `Jr.` rejected the whole name — and those
+ *      suffixes appear precisely on the patriarchs an inheritance chain runs through.
+ *   4. HONORIFICS were vowel-less for the same reason (`Mrs`, `Dr`, `Rev`), and honorifics are the main
+ *      way 19th-century probate records name WOMEN. The rule was therefore biased in its effect.
+ *
+ * This is the same failure class as the `fsIdClean()` bug that discarded 8 real climb seeds: a validator
+ * written from an idea of what names look like rather than from the corpus, refusing real data. Under
+ * audit rule 5 a false reject is not the safe direction — it is silent data loss, and it is invisible
+ * because the rejected row never exists to be audited. Ground truth lives in
+ * tests/fixtures/person-names.json; extend THAT, not this comment.
  */
 function isValidPersonName(name) {
   if (!name) return false;
@@ -50,17 +98,61 @@ function isValidPersonName(name) {
   if (/[\n\t\r]/.test(clean)) return false;          // OCR line-break artifact
   if (!/[A-Za-z]/.test(clean)) return false;
   const tokens = clean.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0 || tokens.length > 5) return false; // a name is not a phrase
+  if (tokens.length === 0) return false;
   let realTokens = 0;
+  let nameBearing = 0;                               // titles/suffixes/initials don't count toward length
   for (const t of tokens) {
     const lc = t.toLowerCase().replace(/[^a-z]/g, '');
     if (!lc) continue;
+    // (1) an initial is an initial — check length BEFORE the function-word lookup, or "A." reads as "a".
+    if (lc.length === 1) continue;
+    // (3)(4) honorifics and generational suffixes decorate a name without being one
+    if (IGNORABLE_TOKENS.has(lc)) continue;
     if (NON_NAME_TOKENS.has(lc)) return false;
-    if (lc.length === 1) continue;                   // middle initial — allowed
-    if (!/[aeiou]/.test(lc)) return false;            // multi-letter name words need a vowel
+    nameBearing++;
+    // a period abbreviation IS the given name ("Wm." = William) — it need not carry a vowel
+    if (!ABBREVIATED_GIVEN_NAMES.has(lc) && !/[aeiouy]/.test(lc)) return false;  // (2) 'y' IS a vowel: Byrd, Smyth, Flynn
     if (/^[A-Z]/.test(t)) realTokens++;
   }
-  return realTokens >= 1;                            // ≥1 capitalised name word
+  if (nameBearing > 5) return false;                  // a name is not a phrase — but count NAME words only
+  return realTokens >= 1;                             // ≥1 capitalised name word
 }
 
-module.exports = { isValidPersonName, NON_NAME_TOKENS };
+// Place-words and status/role/boilerplate words that recur as FAKE decedents/enslavers in the probate
+// corpus. Unlike NON_NAME_TOKENS (fragment detection), these are whole "names" that pass isValidPersonName
+// (they have a vowel and a capital) but are not people: the county they were filed in ("Albany"), the
+// province ("New York"), or their legal role ("Deceased", "Sole", "Widow"). The Jul-2026 NY-probate audit
+// found "Albany"×5, "New York"×3, "Sole"×4, "Deceased"×5 minted as ASSERTABLE enslavers. Promoted here from
+// scripts/build-probate-estate-index.mjs so the mint gate (PersonService.findOrCreateLead) can decline them.
+const SUSPECT_WORDS = new Set([
+  // place-words (NY corpus + general jurisdiction terms)
+  'schenectady', 'albany', 'newyork', 'york', 'county', 'state', 'city', 'town', 'manor',
+  'colony', 'province', 'court', 'surrogate', 'register', 'dutchess', 'ulster', 'kings',
+  'queens', 'richmond', 'westchester', 'rensselaer', 'fishkill', 'poughkeepsie', 'rhinebeck',
+  'england', 'america', 'district', 'ward', 'precinct', 'township', 'parish', 'borough',
+  // status / role / legal-boilerplate words that recur as fake decedents
+  'deceased', 'sole', 'late', 'widow', 'widower', 'estate', 'administrator', 'administratrix',
+  'executor', 'executrix', 'guardian', 'heir', 'heirs', 'infant', 'minor', 'unknown', 'ditto',
+  'same', 'aforesaid', 'decedent', 'testator', 'esquire',
+]);
+
+/**
+ * True when `name` is a place-word / status-word / digit-bearing string that passes isValidPersonName but
+ * is NOT a person (a jurisdiction or a legal role, not a human). Role-agnostic and deliberately NARROW: it
+ * does NOT reject single given names ("Jack", "Bardecu") — legitimate enslaved single-names must still mint.
+ * Biscoe rule: a suspect name is DECLINED at mint, never deleted.
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isNameSuspect(name) {
+  if (!name) return true;
+  const clean = String(name).trim();
+  if (/\d/.test(clean)) return true;                                   // residual digits (dates / liber-folio refs)
+  const toks = clean.toLowerCase().split(/[\s,]+/).map((t) => t.replace(/[^a-z]/g, '')).filter(Boolean);
+  if (!toks.length) return true;
+  if (toks.every((t) => SUSPECT_WORDS.has(t))) return true;            // all place/status words ("Albany", "Sole", "Albany County")
+  if (toks.length === 2 && SUSPECT_WORDS.has(toks.join(''))) return true; // "New York"
+  return false;
+}
+
+module.exports = { isValidPersonName, isNameSuspect, NON_NAME_TOKENS, SUSPECT_WORDS, IGNORABLE_TOKENS };

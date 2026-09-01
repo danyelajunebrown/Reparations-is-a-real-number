@@ -1,3 +1,5 @@
+> **SUPERSEDED (Jun 17 2026).** Superseded by `assessment-dutchess-calibration-case-study-jul19.md` (calibrates per-link p via Roth & Tolbert multicalibration).
+
 # Obligation Calibration + Reconciliation Build — Report
 
 Date: 2026-06-17

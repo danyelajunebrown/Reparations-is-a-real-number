@@ -1,3 +1,5 @@
+> **STALE SNAPSHOT (Apr 24 2026).** Predates PersonService consolidation, the DAA probate/kinship gates, and blockchain removal. Current architecture: `activeContext.md` + `techContext.md` (reconciled 2026-07-31).
+
 # Architecture: three-machine role division
 
 **Date:** Apr 24, 2026 — 10 days to premiere (May 4)

@@ -12,6 +12,10 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 // Same two free sources as embed-documents.mjs (both 768-dim). Default ollama nomic-embed-text
 // (self-hosted, no daily cap, ~100/min on the Mini) — must match the doc corpus + RagService space.
 const SOURCE = process.env.EMBED_SOURCE || 'ollama';
@@ -83,7 +87,7 @@ const profileText = (p) => [p.canonical_name, p.person_type, p.primary_state, p.
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'canonical_persons', u.sid, 'person_profile', $2, u.v::vector, u.h
            FROM unnest($1::text[], $3::text[], $4::text[]) AS u(sid, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, MODEL, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, MODEL, vecs, hashes]);
       done += results.length;
     }
     batches++;

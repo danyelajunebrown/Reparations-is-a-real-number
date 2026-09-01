@@ -1,0 +1,237 @@
+{
+  "_comment": [
+    "Ground truth for src/utils/person-name-validator.js — the mint gate every person passes through.",
+    "Names in `must_pass` are REAL, taken from the live corpus (probate decedents, heirs, canonical persons).",
+    "Names in `must_reject` are the junk classes the gate exists to stop: OCR phrase fragments, ledger",
+    "boilerplate, jurisdictions, and legal roles minted as people.",
+    "",
+    "Both directions are load-bearing. A false ACCEPT mints a non-person (the May-2026 audit deleted 3,271).",
+    "A false REJECT silently destroys evidence and is INVISIBLE, because the rejected row never exists to be",
+    "audited — that is how 87 real probate decedents were lost before Aug 2026. Add real corpus examples here",
+    "when a class is found; never hardcode expectations into the validator or a scraper."
+  ],
+  "must_pass": [
+    {
+      "name": "A. S. Bacon",
+      "why": "initials A. and S. — 'A.' must not read as the article 'a'"
+    },
+    {
+      "name": "D. I. Dawson",
+      "why": "initial I. must not read as the pronoun 'i'"
+    },
+    {
+      "name": "H. A. Bacon",
+      "why": "two initials, one of them A."
+    },
+    {
+      "name": "Newton A. Booth",
+      "why": "middle initial A."
+    },
+    {
+      "name": "Hannah Byrd",
+      "why": "surname whose only vowel is y"
+    },
+    {
+      "name": "John Smyth",
+      "why": "y-only vowel, English variant spelling"
+    },
+    {
+      "name": "Michael Flynn",
+      "why": "y-only vowel"
+    },
+    {
+      "name": "Patrick Lynch",
+      "why": "y-only vowel"
+    },
+    {
+      "name": "Thomas Bacon Sr.",
+      "why": "generational suffix must not reject the name"
+    },
+    {
+      "name": "Charles Huntington Lyman Jr.",
+      "why": "suffix plus y-only surname"
+    },
+    {
+      "name": "Hugh Hopewell V",
+      "why": "roman-numeral generational suffix (live fixture person 193376)"
+    },
+    {
+      "name": "Mrs. Eunice Miller Ashmore",
+      "why": "honorific — the main way probate records name women"
+    },
+    {
+      "name": "Mrs. Hattie C. Darsey",
+      "why": "honorific plus middle initial"
+    },
+    {
+      "name": "Capt. John Smith",
+      "why": "honorific that is also a ledger abbreviation"
+    },
+    {
+      "name": "Rev. James Hopewell",
+      "why": "vowel-less honorific"
+    },
+    {
+      "name": "James Hopewell",
+      "why": "plain two-token name (live fixture person 1070)"
+    },
+    {
+      "name": "Angelica Chesley Hopewell",
+      "why": "three-token name (live fixture person 140299)"
+    },
+    {
+      "name": "Jack",
+      "why": "single given name — legitimate for enslaved persons, must still mint"
+    },
+    {
+      "name": "Bardecu",
+      "why": "single non-European given name"
+    },
+    {
+      "name": "Jane Amaranthia",
+      "why": "uncommon given name, heir named in a 1810 will"
+    },
+    {
+      "name": "Wm. F. King",
+      "why": "Wm = William, vowel-less period abbreviation ubiquitous in probate hands"
+    },
+    {
+      "name": "Wm Barber",
+      "why": "same, unpunctuated"
+    },
+    {
+      "name": "Thos. Jefferson Bacon",
+      "why": "Thos = Thomas"
+    },
+    {
+      "name": "Jacobus Van Dyck",
+      "why": "Dutch particle surname, y-only vowel in Dyck"
+    },
+    {
+      "name": "Ephraim Paine Jr",
+      "why": "unpunctuated generational suffix"
+    }
+  ],
+  "must_reject": [
+    {
+      "name": "to my beloved",
+      "why": "will-transcript phrase fragment"
+    },
+    {
+      "name": "them by will",
+      "why": "will-transcript phrase fragment"
+    },
+    {
+      "name": "the premisses",
+      "why": "deed boilerplate"
+    },
+    {
+      "name": "From Wikipedia",
+      "why": "scrape artifact (Dec-2025 junk batch)"
+    },
+    {
+      "name": "United States",
+      "why": "not a person"
+    },
+    {
+      "name": "unborn child",
+      "why": "names no identifiable individual"
+    },
+    {
+      "name": "my son",
+      "why": "relation phrase, not a name"
+    },
+    {
+      "name": "Est",
+      "why": "ledger abbreviation"
+    },
+    {
+      "name": "Amt",
+      "why": "ledger abbreviation"
+    },
+    {
+      "name": "Capt",
+      "why": "bare honorific identifies no one"
+    },
+    {
+      "name": "Mrs.",
+      "why": "bare honorific identifies no one"
+    },
+    {
+      "name": "Sr.",
+      "why": "bare suffix identifies no one"
+    },
+    {
+      "name": "A. S.",
+      "why": "initials alone are not a discrete identity"
+    },
+    {
+      "name": "",
+      "why": "empty"
+    },
+    {
+      "name": "Jo",
+      "why": "under the 3-character floor"
+    },
+    {
+      "name": "Mrs Sandiford's four daughters",
+      "why": "names a CLASS of heirs, not an individual (audit rule 5: real or absent)"
+    },
+    {
+      "name": "his three sons",
+      "why": "group noun plus cardinal"
+    },
+    {
+      "name": "the family",
+      "why": "group noun"
+    }
+  ],
+  "must_be_suspect": [
+    {
+      "name": "Albany",
+      "why": "county it was filed in, minted 5x as an assertable enslaver (Jul-2026 NY audit)"
+    },
+    {
+      "name": "New York",
+      "why": "province"
+    },
+    {
+      "name": "Deceased",
+      "why": "legal status"
+    },
+    {
+      "name": "Sole",
+      "why": "legal role"
+    },
+    {
+      "name": "Widow",
+      "why": "legal role"
+    },
+    {
+      "name": "Albany County",
+      "why": "all tokens are place words"
+    },
+    {
+      "name": "John 1842",
+      "why": "residual digits — a date or liber-folio reference"
+    }
+  ],
+  "must_not_be_suspect": [
+    {
+      "name": "Jack",
+      "why": "single given name is NOT suspect — enslaved single-names must mint"
+    },
+    {
+      "name": "James Hopewell",
+      "why": "ordinary name"
+    },
+    {
+      "name": "Mrs. Eunice Miller Ashmore",
+      "why": "honorific does not make a name suspect"
+    },
+    {
+      "name": "John Smith Esquire",
+      "why": "only SOME tokens are role words"
+    }
+  ]
+}

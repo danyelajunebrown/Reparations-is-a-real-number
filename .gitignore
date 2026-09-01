@@ -70,7 +70,16 @@ contracts/cache/
 storage/temp-ocr/
 
 # Claude Code local settings (contains user-specific allowlist + secrets)
-.claude/
+# NOTE: ignore the CONTENTS, not the directory — git cannot re-include a file
+# whose parent directory is excluded, so `.claude/` + `!.claude/x` silently fails.
+.claude/*
+# ...EXCEPT the participant-PII guard. It must be version-controlled: it is a
+# data-protection control, so it has to survive a fresh clone and apply to
+# anyone working this repo, not just whoever configured it locally.
+!.claude/settings.json
+!.claude/hooks/
+# settings.local.json stays ignored — it holds the credentialed allowlist.
+.claude/settings.local.json
 
 # Local audit / scratch / ephemeral files
 tmp/

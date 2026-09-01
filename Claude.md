@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 > Loaded at the start of every session. Keep under 220 lines. Prune ruthlessly when adding.
-> Last reviewed: 2026-06-30.
+> Last reviewed: 2026-07-31.
 
 ## RULE 0 — Read the memory bank BEFORE doing anything (non-negotiable)
 
@@ -27,6 +27,18 @@ per standard rule 8), AND (3) **is embedded in RAG** (`embeddings`). "Every cano
 is in RAG." This tightens the older gate model (secondary-only *gated* canonicals) for all NEW promotions;
 existing image-less canonicals are a backfill DEBT. Order for image-rich sources: attach-scan drip →
 promote (image-backed only) → embed. Detail in `standard-canonical-person-and-document-gate.md`.
+RULE 0.6 clause 3 (embed) is now **enforced by `project-health-monitor.mjs`** — a recent promotion left
+unembedded is a CRITICAL (it's how the Bard census pull slipped). Don't skip the embed step.
+
+## RULE 0.7 — Recurring agency must be FREE (user directive, 2026-08-07)
+
+Automated monitoring / self-healing / issue-filing runs as **deterministic scripts + local ollama + the
+GitHub REST API** on Mini crons + PM2 watchdogs — **NEVER a paid Claude-Code agent** for recurring work.
+The suite: `project-health-monitor.mjs` (RULE 0.6/gate/retrievability/disk/orphaning → ntfy + non-zero exit),
+`auto-issue-monitor.mjs` (silent-failure/breakage/siloing → auto-files GitHub issues, deduped),
+`promote-probate-extractions.mjs` + nightly `embed-documents` (de-silo + embed), `probate-drip` (guarded).
+Alerts go to `OPS_NOTIFY_WEBHOOK`. The Mini runs a **stale checkout** (scripts are scp'd) and is a **single
+point of failure** — known structural debt. Detail in `standard-project-monitoring-and-free-agents.md`.
 
 ## What this project actually is
 
@@ -140,12 +152,12 @@ Render and GitHub Pages share a single egress IP — rate limits need `skip:` fo
 |Henry / Mary Ann Weaver (DC)      |196747 / 609494     |DC compensation petition flow                 |
 |Nancy Brown (descendant)          |climb test target   |`G21N-4JF` for `generate-comprehensive-daa.js`|
 
-## Active workstreams (June 2026)
+## Current focus — lives in the memory bank, NOT here
 
-1. **Probate data-quality rebuild** — Liberty County GA (1 of ~130). Branch `audit/probate-classifier-and-source-documents`, 8 commits unpushed.
-1. **Identity resolution completion** — tiered fingerprint, scoped not built.
-1. **Land transfer extraction** — `land_transfer_events` has 1 row. Wills bequeath land; not extracted. Blocker for the wealth-tracing pivot.
-1. **MSA Archive + UCL LBS promotion** — both at “unconfirmed only” gap in DATA_SOURCE_INTEGRATION_CONTRACT.
+The active workstream, its branch, and open decisions live in **`memory-bank/activeContext.md`** (top entry) —
+read it first (RULE 0). **Do not maintain an evolving workstream list or live counts in this file.** CLAUDE.md
+holds durable rules + pointers; transient state (what session is active, row counts, commit status, "N of ~130")
+belongs in `activeContext.md` / `progress.md` and goes stale the moment it's written here.
 
 ## Aspirational (do not pre-build)
 
@@ -160,7 +172,7 @@ When these become active, see `memory-bank/wealth-tracing-framework.md` for the 
 - **Read first.** Check `memory-bank/activeContext.md` for what session is currently active. Check `memory-bank/progress.md` for what’s been done.
 - **Do not propose alternative formulas, methodologies, or “improvements” to the financial calculation layer** without reading Issues #2–#25 and Craemer 2015 first. Three formulas producing 37x divergence is what we already cleaned up.
 - **Do not write new scrapers that talk directly to FamilySearch DOM** without going through the same connection lifecycle that `scripts/scrapers/familysearch-ancestor-climber.js` uses. When a `FamilySearchClient` module exists (Tier B), use it.
-- **Do not introduce new dependencies** without confirming. We have two PG drivers, two browser-automation libs, two Web3 libs, and two smart-contract toolkits already — that’s enough.
+- **Do not introduce new dependencies** without confirming. We already have two PG drivers and two browser-automation libs — that’s enough. (The web3/smart-contract toolkits were removed in the Jul-2026 dep audit; the Base payment layer is dormant.)
 - **When in doubt about a column name, query the live DB.** Don’t guess from old migrations.
 - **For any DAA-touching code, assume an auditor will read it.** Comments explaining *why* a number is what it is are not optional.
 

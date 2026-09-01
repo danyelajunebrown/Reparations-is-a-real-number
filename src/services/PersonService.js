@@ -13,6 +13,8 @@
  */
 'use strict';
 
+const { isValidPersonName, isNameSuspect } = require('../utils/person-name-validator');
+
 const SUBJECT_TABLES = {
   canonical_persons:        { idCol: 'id',      nameCol: 'canonical_name', kind: 'canonical' },
   unconfirmed_persons:      { idCol: 'lead_id', nameCol: 'name',           kind: 'lead' },
@@ -58,6 +60,25 @@ const OWNER_CONTENT = [
 ];
 const ENSLAVED_NAMED = [
   'freedmens_bank', 'certificate_of_freedom', 'slave_narrative', 'freedman_narrative',
+  // 'slave_register' added 2026-08-21. A colonial slave REGISTER names the enslaved person directly --
+  // it is the enslaved-side analogue of 'census_slave_schedule' on the owner list, and it was simply
+  // missing. Its absence was about to un-assert 68,319 named people from the Suriname HDSC registers
+  // (Jeannette, Constantia, Rosette...), every one of them carrying a PRIMARY, s3-archived folio scan.
+  // The gate was not judging their evidence; it was judging a document_type nobody had listed.
+  // NOTE THE ASYMMETRY THIS EXPOSED: the OWNER predicate offers four corroboration routes (owner edge,
+  // probate enslaved_count, evidences_enslaved_holding -- the last added so an enslaver whose estate
+  // names NO ONE can still be asserted), while the ENSLAVED predicate offered one: an
+  // enslaved_owner_relationships edge, of which SEVEN exist in the entire database. Benefit of the
+  // doubt was structurally available to the enslaver and structurally unavailable to the enslaved.
+  'slave_register',
+  // 'runaway_advertisement' added 2026-08-30, same omission as slave_register a week earlier. A marronnage
+  // notice NAMES the enslaved person and is placed BY the enslaver — "Un Negre nouveau, nation Congo,
+  // étampé Ch" — so it is direct, primary, named-enslaved evidence, and the enslaver is testifying against
+  // himself in it. Without this the first 40 promoted self-liberating people were image-backed, embedded,
+  // and invisible: assertable_enslaved = 0 of 40.
+  // The recurring lesson: this list is not a taxonomy, it is a HARD GATE on whether a documented person can
+  // be seen at all, and every new source silently fails it until someone adds the document type.
+  'runaway_advertisement',
   'narrative', 'evacuation_roll', 'enslaved_census', 'enslaved_census_brazil',
   'probate_enslaved_records',
 ];
@@ -215,6 +236,19 @@ class PersonService {
         [query.name || '', query.birthYear || null, query.location || null, query.personType || null, query.externalId, query.idSystem]);
       const t1 = r.rows.find(x => x.match_tier === 1);
       if (t1) { out.match = { subject_table: 'canonical_persons', subject_id: t1.canonical_person_id, kind: 'canonical', name: t1.canonical_name, tier: 1, confidence: Number(t1.match_confidence), signals: ['external_id'] }; return out; }
+
+      // Tier 1b — external id on a LEAD (M117 polymorphic person_external_ids). find_person_match
+      // resolves CANONICAL ext-ids only; without this a re-ingest of the same (idSystem, externalId)
+      // duplicates the lead instead of linking (the Amherst/Trask dupe class). Canonical is checked
+      // first (above), so a promoted lead resolves to its canonical, not the stale lead row.
+      const le = await this.db.query(
+        `SELECT subject_id FROM person_external_ids
+          WHERE id_system = $1 AND external_id = $2 AND subject_table = 'unconfirmed_persons'
+          ORDER BY subject_id LIMIT 1`, [query.idSystem, query.externalId]);
+      if (le.rows[0]) {
+        out.match = { subject_table: 'unconfirmed_persons', subject_id: Number(le.rows[0].subject_id), kind: 'lead', tier: 1, confidence: 0.95, signals: ['external_id'] };
+        return out;
+      }
     }
 
     // Gather candidate subjects from the unified blocking pool + find_person_match name tiers.
@@ -302,6 +336,15 @@ class PersonService {
       return { ref: res.match, action: 'linked', candidates: res.candidates };
     }
     if (!record.name) return { ref: null, action: 'rejected_no_name', candidates: res.candidates };
+    // MINT GATE (Jul-2026 NY-probate audit): the door is the one place every ingest passes through, so it is
+    // where junk is stopped. A name that is a parsed fragment (isValidPersonName) or a place-word / legal-role
+    // ("Albany", "New York", "Sole", "Deceased" — isNameSuspect) must NOT become a person. Biscoe rule: decline
+    // to mint, never delete. Callers already handle a null ref / rejected_* action (counted as rejected).
+    // opts.skipNameGate lets a caller that has already validated (or intentionally seeds a non-name subject)
+    // bypass — but the default is to gate.
+    if (!opts.skipNameGate && (!isValidPersonName(record.name) || isNameSuspect(record.name))) {
+      return { ref: null, action: 'rejected_suspect_name', candidates: res.candidates };
+    }
     if (dry) return { ref: { subject_table: 'unconfirmed_persons', subject_id: null }, action: 'would_create', candidates: res.candidates };
 
     const ins = await this.db.query(
@@ -378,10 +421,14 @@ class PersonService {
 
     const personType = evidence.personType || subj.person_type || null;
     const res = await this.resolve({ name: subj.name, birthYear: subj.birth_year, location: subj.state, sex: subj.sex, externalId: evidence.externalId, idSystem: evidence.idSystem, personType });
-    if (res.ambiguous) return { ref: null, action: 'needs_review', candidates: res.candidates };
+    // opts.forceCreate: HAND-CONFIRMED promotion to a FRESH canonical, bypassing both the ambiguity stop and
+    // any namesake canonical link — for when the operator has verified this lead is a distinct person from the
+    // same-name candidates (Biscoe: never auto, only on explicit operator decision). e.g. the Dutchess Bard
+    // census pull, where "William Bard" collides with other-state William Bards that must NOT be merged.
+    if (res.ambiguous && !opts.forceCreate) return { ref: null, action: 'needs_review', candidates: res.candidates };
 
     let canonicalId, action;
-    if (res.match && res.match.subject_table === 'canonical_persons') {
+    if (!opts.forceCreate && res.match && res.match.subject_table === 'canonical_persons') {
       canonicalId = res.match.subject_id; action = 'linked';
       if (dry) return { ref: { subject_table: 'canonical_persons', subject_id: canonicalId }, action, candidates: res.candidates };
     } else {
@@ -422,10 +469,20 @@ class PersonService {
     const gate = await this.recomputeGate(canonicalId);
 
     if (leadRef.subject_table === 'unconfirmed_persons') {
+      // WRITE THE POINTER, NOT JUST THE STATUS. This used to set status='promoted' and record the
+      // canonical id ONLY inside review_notes as prose — "[promoted→canonical#123]" — which is
+      // unqueryable and unjoinable. Result: 72,862 leads marked promoted pointing at nothing, and 9,601
+      // canonicals unreachable from their own lead in either direction. The status was true and the link
+      // was absent, which is the defect that recurs all through this codebase: a completion recorded
+      // without the thing that makes it verifiable. confirmed_individual_id is VARCHAR (see CLAUDE.md),
+      // hence the ::text cast rather than an integer.
       await this.db.query(
-        `UPDATE unconfirmed_persons SET status='promoted', reviewed_at=now(), reviewed_by=$2,
+        `UPDATE unconfirmed_persons SET status='promoted', confirmed_individual_id=$4,
+           reviewed_at=now(), reviewed_by=$2,
            review_notes = COALESCE(review_notes,'') || $3 WHERE lead_id=$1`,
-        [leadRef.subject_id, evidence.createdBy || 'person_service', ` [promoted→canonical#${canonicalId}]`]).catch(() => {});
+        [leadRef.subject_id, evidence.createdBy || 'person_service',
+         ` [promoted→canonical#${canonicalId}]`, String(canonicalId)])
+        .catch((e) => console.error(`[PersonService] promote back-link failed for lead ${leadRef.subject_id}: ${e.message}`));
       // The lead's identity now lives in the canonical — drop its blocking keys so it stops
       // competing as a separate subject in the unified pool (otherwise a future resolve sees
       // BOTH the promoted lead and its canonical → false ambiguity, breaking dedup-on-ingest).

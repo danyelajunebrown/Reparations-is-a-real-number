@@ -1,7 +1,509 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-19 (DUTCHESS pivot: audit → land non-claim guardrail → 4 Dutchess sources ingested
-→ RAG outage fixed → calibration-study assessment + Stage-1 pipeline; NEXT = full-Dutchess ingest)_
+_Last updated: 2026-08-21 (FABRICATION PURGE → EVIDENCE-BACKLOG SPLIT → SILENT-FAILURE SWEEP. Prior top
+entries: 2026-08-08 DESCENT-FIRST DIRECTIVE — the climb demoted from spine to corroborator, lines built DOWN
+from documented people; 2026-08-07 modern-endpoints + free automation + DAA identity gate; 2026-08-03
+intake/PII; 2026-07-31 evidence-quality.)_
+
+---
+
+## 2026-08-19→21 · FABRICATION PURGE, THE BACKLOG SPLIT, AND FOUR SILENT FAILURES
+→ [[finding-fabrication-classes-aug19-20]] · [[standard-assertion-store-and-inference-decisions]] ·
+[[finding-marronnage-corpus-aug20]] · [[standard-targeted-harvesting]] · [[standard-project-monitoring-and-free-agents]]
+
+**READ THIS FIRST, IT IS THE THEME:** every serious defect in these three days was a **failure that looked
+like a completion**. Not a crash — a green light over an empty room. Enumerated, because the shape recurs:
+
+| what it claimed | what was true |
+|---|---|
+| 1,456,640 person rows from slave schedules | one row per TALLY MARK — invented people |
+| 7,053 probate decedents typed `enslaver` | provenance mistaken for evidence |
+| 1860 scrape "0 locations to process" for months | 977 CONTAINER nodes (waypoint_id NULL) counted as work; only 60 real leaves left |
+| 1860 OCR "extracted 301 characters" ×18 | it was transcribing the FamilySearch **login form** |
+| `sample-dlas-petitions` → 0 petitions, saved as a finding | `s` is a REQUIRED param; a malformed query and an empty archive both return HTTP 200 |
+| `audit-source-inference` → "NOT EMBEDDABLE YET" ×5 tables | all five 99–100% embedded; the monitor held a stale hardcoded map |
+| 9,601 canonicals promoted, RULE 0.5 "fine" | `promoteToCanonical` writes neither `confirmed_individual_id` back nor the external id across — orphaned from BOTH directions |
+
+**Rule earned:** *a status written without its link is not a status.* And: **assert the query worked before
+recording what it found** — `.catch(()=>{})`, a caught 403, and an empty result set are indistinguishable
+from an answer unless something insists otherwise.
+
+### THE MEASUREMENT THAT SHOULD DRIVE THE NEXT SESSION → `audit-evidence-backlog-split.mjs`
+The "unevidenced" backlog is **60.2% our own bookkeeping, not archive absence**:
+
+|  | total | evidenced | doc known, no S3 | no doc anywhere | evidenced but GATE NOT LIFTED |
+|---|---|---|---|---|---|
+| freedperson | 82,565 | 0 | **78,212 (94.7%)** | 4,353 (5.3%) | 0 |
+| enslaver | 413,513 | 41,066 | **293,078 (70.9%)** | 79,305 (19.2%) | 6,520 |
+| enslaved | 233,602 | 72,957 | 1 | **160,644 (68.8%)** | 0 |
+| unknown | 23,211 | 10,783 | 2 | 12,426 | **10,776 (46.4%)** |
+
+**OUR debt 388,653 · REAL archive gap 256,728.** The freedperson "0% evidenced" headline is almost entirely
+*unarchived*: 78,212 carry a `familysearch_record` row **with a source ARK**, `s3_key` simply NULL. Only
+`enslaved` is a genuine archive gap — and that is precisely what the new sources are for. **Only bucket D
+belongs in a sentence beginning "we do not have records for…".**
+
+### DONE
+* **Fabrication purged:** 1,455,019 + 1,621 tally-mark rows quarantined `placeholder_aggregate`;
+  `extract-census-ocr.js` now quarantines at creation so the source stops fabricating. 7,053 unevidenced
+  probate `enslaver` → `unknown` (279 evidence-backed kept).
+* **RULE 0.5 closed:** `canonical_profile` **766,245 / 766,245 = 100%** via a new `canonicals` facet that
+  embeds profiles DIRECTLY instead of depending on a lead traversal that often does not exist (also the real
+  fix for #151). Verbs all 99–100%: voyages 64,853 · ownership 32,625 · inheritance 11,792 · insurance 675 ·
+  wealth 128. `person_fact` in progress (~294K/497,851, on cron).
+* **Search visibility:** 748,351 → 760,913 searchable — `descendant` was blanket-excluded, hiding 12,562
+  historical ancestors. Replaced with a living-status gate (110y); 0 PII leaked.
+* **4,540 named enslaved promoted** off slave schedules (deterministic `sched:<doc_id>:<name>` ids). NB the
+  promoter's id+image join is DISJOINT for the enslaved (248,958 ids/no image · 105,230 image/no id · **0
+  both**) — relaxing that gate would have minted ~100k fabricated people. It was a guardrail, not a bug.
+* **1860 UNBLOCKED after months.** Three stacked defects: Vision key suspended (#126) → 403 caught and
+  returned `''` → read as "may be title page" → `scraped_at` written UNCONDITIONALLY. Underneath all of it,
+  the script called `puppeteer.launch()` on its own never-signed-in profile while the authenticated session
+  sat in `:9222`. Now: connects to `:9222` by DEFAULT and **refuses** to launch unauthenticated; OCR via
+  `vision-router` (Qwen-VL→Gemini, built for this in #142) with auth/quota THROWING; `scraped_at` only on
+  actual yield; OCR head printed. **Also: `browser.close()` on a BORROWED browser killed the shared FS
+  session for the whole Mini — now `releaseBrowser()` disconnects when borrowed.**
+* **Six free agents cronned** (RULE 0.7): facts/canonical embeds (pgrep-guarded), `populate-blocking-keys` +
+  `resolve-canonical-dedup --apply` (writes to `dedup_candidate_pairs`, a REVIEW queue — Biscoe gold
+  passes: b1799-vs-b1844 excluded, Ann Biscoe/Ann Briscoe separated at name JW 0.98), by-source audit,
+  archival compliance, 1860 tail. 22 entries. **7,833 dedup pairs queued.**
+* **`check-archival-compliance.mjs`** — rules 8 / audit-5 / 0.5 / 0.6 now self-report with non-zero exit.
+  Found the 23-artifact Wayback leak (20 of them Jefferson Farm Book, i.e. standing, not new).
+
+### SOURCES MEASURED, NO PEOPLE WRITTEN (O-of-O §5 respected)
+* **Marronnage** — 22,485 self-liberation ads 1765–1833, 7 colonies (Saint-Domingue 17,308). Exact counts
+  from the source's own index: **`étampé`/BRANDED 9,915 (44%)**, `nation`/African ethnonym 2,975,
+  `récompense` 4,367, `geôle` 721, `cicatrice` 778. Curated `noms` index verified usable (12/12, francophone
+  AND anglophone) → deterministic named-person ingest, not regex-over-free-text. 67% carry scans under
+  `/documents/` (robots disallows only `/images/`). **My stratified sample said branded=1%; equalising cells
+  under-weighted Saint-Domingue 77%→22%. RULE: when the source exposes exact counts, COUNT.**
+* **DLAS** — the CSV export `/petitions/tocsv/` returns the index in ~16 requests, not 17,487 page fetches.
+  15,684 petitions · 29,934 enslaved · 129,351 enslavers. `enslavedCount` is the targeting key: **2,922
+  petitions (19%) queued in `source_ingest_queue`** carrying 29,786 named enslaved (SC 718/13,429 leads).
+  Coverage caveat recorded: keyword-`slave` reaches ~90% and biases AWAY from FPOC (385 vs ~8,000) — full
+  coverage needs a UNION over terms deduped on `petitonIdentifier`.
+
+### STILL OPEN / NEXT
+1. **Re-run the gate** on ~17,296 already-evidenced-but-ungated people (`recompute-assertion-gates.mjs`) —
+   cheapest possible win; they are provable *today* and simply are not being asserted.
+2. **Archive the 371,290 known-but-unarchived ARKs** (rule 8 at scale). All FamilySearch, so it runs through
+   the authenticated `:9222` Chrome at FS-safe pace — a long crawl, not a quick backfill. Queue AFTER 1860.
+3. **Harvest for the 256,728 genuine gaps** — but see the 08-08 entry: the real blocker is the
+   **1870→1950 forward corridor**, which neither DLAS nor Marronnage crosses. Do not let new-source
+   enthusiasm substitute for the acquisition that unblocks both classes.
+4. 1860 tail: 60 true leaves → then **1850**. Named-person ingest design for DLAS + Marronnage.
+5. Fix `promoteToCanonical` to write `confirmed_individual_id` AND copy the external id (root cause of the
+   9,601 orphans and of 68,320 leads with `status='promoted'` + null pointer).
+6. `retrieval-health-audit` cannot call `s3:GetBucketLocation` (IAM); falls back to a redirect probe.
+
+**PROCESS NOTE, recorded because it cost the day:** this session ran without reading `activeContext.md`
+first — a direct RULE 0 violation. Consequences: `freedperson = 82,565` was re-"discovered" though recorded
+08-08; "the RULE 0.7 monitors have not been running" was re-diagnosed though recorded 08-09; and the harvest
+plan was re-derived from scratch *worse* than the existing one, because the memory bank already names the
+1870→1950 corridor as THE blocker. **The memory bank is not a place to write to. It is the place to read
+from, before deciding anything.**
+
+---
+
+## DESCENT-FIRST LINEAGE — build DOWN from documented people, not UP from living ones (2026-08-08)
+→ [[plan-descent-first-lineage]] · [[assessment-climb-architecture-gap-jun30]] · [[standard-genealogical-edge-evidence]]
+
+**User directive:** *"we have been approaching this ancestor climb impossibly. we have real people in
+database and we should be drip building all lines down not up in all cases using as many sources as possible
+and insisting on standards."* Accepted as the governing architecture. Full plan in
+[[plan-descent-first-lineage]]; the short version:
+
+**The measurement that settles it (live 2026-08-08):** 420,566 enslaver + 229,062 enslaved + 82,565
+freedperson canonicals, 48,119 of the enslavers image-backed (RULE 0.6-grade anchors), 716,065
+`person_documents`, 11,792 `inheritance_edges`, 48,985 `chattel_transfer_events` — and
+**`canonical_family_edges` = 4,924 rows of which 4 carry a `source_document_id` (0.08%).** Three-quarters of
+a million documented people and four documented kinship edges. The genealogical budget has been going
+upward into the FS collaborative tree and starving the only thing a DAA needs.
+
+**Why up cannot be repaired:** frontier doubles per generation while evidence density collapses (86% of one
+climb's 2,675 ancestors born pre-1700, 96% of lines SPECULATIVE); the terminal step throws a NAME into a
+haystack of 420,566 (all 33 matches on the 2026-08-07 re-climb were `name_only_match` — the Biscoe-forbidden
+operation at scale); FS tree edges are tier-3 inert by our own standard; and it is throughput-bound on one
+logged-in Chrome. **Descent inverts the epistemics — you never match a name into the corpus, you START at a
+person a source document already identified.**
+
+**Why down is also the thesis:** a will names the children AND assigns the estate — one descent step yields
+the tier-1 kinship edge *and* the `inheritance_edges` row. Continuity-of-holding is a forward-time claim.
+The 3 modern endpoints already built (Bard/Amherst/Georgetown) are hand-run descents; this generalizes them
+to the corpus. It is also the only direction that crosses the 1870 wall for the enslaved line — from above,
+where the person is named.
+
+**Standards it must not bend:** descendants land as LEADS via `PersonService.findOrCreateLead` (never a
+direct canonical INSERT — the climb's original sin was a second uncontrolled door); no edge is written
+without its `source_document_id` + M127 information_type/informant_role/gap-years; spouse-or-sibling-or-
+second-source = CONFIRMED, single-record = CANDIDATE (human review), name-only = REJECTED not stored;
+source-class disagreement is a signal → `linkage_verdicts` (M126); nulls → `research_findings` (M128);
+living people searched NEVER minted (PII lane only); free/deterministic drip cron per RULE 0.7; embed per
+RULE 0.5.
+
+**BUILD ORDER — step 2 needs no scraping and no acquisition.** (1) Migration **133** `descent_anchors` +
+`descent_frontier`, seeded from the 48,119 image-backed enslavers. (2) **`descend-from-probate.mjs`** —
+generation-1 heirs out of `probate_estate_extractions` (5,937) / `will_extractions` (20) into documented
+edges + inheritance edges, **from data already on disk**; fastest path from 4 documented edges to thousands,
+and it validates the loop before anything is acquired. (3) `descent-drip.mjs` + guarded Mini cron.
+(4) monitor wiring. (5) **THE BLOCKER: a 1870→1950 census/vital forward corridor** — no such table exists,
+so every line stalls ~1880; one acquisition unblocks BOTH classes. (6) Freedmen's Bank (enslaved-side
+generation zero; field 21 names the former enslaver — 415K leads staged). (7) Re-point the DAA: a
+participant JOINS an already-built documented descent line; the climb + intake support agent walk up only
+far enough to meet it. Both halves meeting in the middle, each carrying documents, is the assertable
+lineage the identity gate keeps refusing.
+
+**DEAD, do not extend:** `slave_owner_descendants_suspected`/`_confirmed` (M013, **9 rows**, keys the legacy
+`individuals` table, stores descendant email/phone in the main DB), `DescendantMapper.js` + `WikiTreeScraper.js`
+(WikiTree is a collaborative tree = tier 3 = same inert class as the FS tree; keep as corroborator only).
+
+**FULL RUN + RAG CORRECTION (2026-08-09)** → [[finding-retrievability-metric-and-doc-tails-aug09]]
+Full corpus run: **634 estates → 1,308 documented kinship edges** (877 parent_of / 242 spouse / 189
+sibling_of), 274 anchors, 877 pending frontier steps, 440 parked bequests, 392 null findings.
+**`canonical_family_edges` documented: 4 → 1,312.** Invariants clean (0 undocumented, 0 self-verified).
+**The producer shipped with NO EMBED PHASE — a RULE 0.5 violation, caught by the user, not by the monitor.**
+Fixed by running `embed-leads.mjs --id-system probate_heir` (1,308/1,308), by printing the step on every
+applying run, and by enforcing it (`descent_leads_embedded` CRITICAL). **The `retrievability` 0% CRITICAL
+was a BROKEN METRIC, not an outage** — exact-document recall is unanswerable on 108K near-identical probate
+pages (verified with the ANN index bypassed: still misses top-10, 4/4). Replaced with entity-relevance →
+**75%, green**. Real silo found underneath: **21,176 long docs embedded HEAD-ONLY** (`doc_tail_unindexed`);
+remedy is `embed-doc-chunks.mjs`, free, and belongs in the Mini nightly sweep.
+**MINT GATE FIXED (2026-08-09)** → [[finding-name-validator-false-rejects-aug09]]
+640 estates had no decedent on the spine because **`isValidPersonName` was silently rejecting REAL people**.
+Five defects, each looking like prudence: (1) initials read as function words — the `NON_NAME_TOKENS` lookup
+ran BEFORE the middle-initial branch, so `A.`→article `a` and `I.`→pronoun `i`, killing `A. S. Bacon`,
+`D. I. Dawson`; (2) **`y` was not a vowel** — `Byrd`, `Smyth`, `Flynn`, `Lynch`, `Van Dyck`; (3) vowel-less
+generational suffixes `Sr.`/`Jr.` rejected the whole name — and those sit on the patriarchs an inheritance
+chain runs through; (4) vowel-less honorifics `Mrs`/`Dr`/`Rev` did the same — **and honorifics are the
+principal way probate records name WOMEN, so the rule's effect was biased**; (5) `Wm`/`Hy`, the standard
+period abbreviations, rejected as noise. Same class as `fsIdClean()` discarding 8 real climb seeds: a
+validator written from an IDEA of the data rather than from the corpus.
+**A false reject is the expensive direction** — junk is visible and deletable; a rejected row never exists,
+so nothing surfaces it. Rule going forward: *a validator is a claim about the corpus and must be tested
+against it, in both directions.*
+Fixed + tightened (relaxing honorifics admitted `Mrs Sandiford's four daughters`, a CLASS of heirs → group
+nouns/cardinals now rejected). **Measured: 353 decedent names newly accepted, 0 regressions; 636/647
+unpromoted heir-bearing decedents now pass.** Guarded by `tests/fixtures/person-names.json` (54 real-corpus
+cases, 4 directions) + `tests/unit/test-person-name-validator.js`, 54/54 — but **the repo has no `npm test`
+runner** (placeholder `exit 1`), so it is not yet enforced anywhere. Deliberate residual rejects documented
+(month-surnames like `John March`; will-preamble bleed `God Amen George Owens` — an EXTRACTOR defect, not a
+validator one).
+**CHAIN RUN 2026-08-09 (promote → descend → embed), post-validator-fix. FINAL:**
+- **Step 1** `promote-probate-extractions --apply`: 3,282 extractions → **3,216 decedents minted**,
+  22,744 documents linked, 136 named enslaved + 136 owner edges, **only 66 rejected**. Pre-fix that batch
+  would have lost hundreds — every `Wm.`, `Mrs.`, `Sr.`, and y-vowel surname.
+- **Step 2** `descend-from-probate --apply`: 1,348 estates, 5,692 heirs → **2,798 documented kinship edges**
+  (1,882 parent_of / 562 spouse / 354 sibling_of), 595 anchors, 1,882 pending frontier steps, 956 parked
+  bequests, 1,145 null findings. OCR: 2,299 strong / 562 weak / 29 absent.
+- **Step 3** embed: heirs 2,798/2,798. **AND `--id-system probate_estate` embedded 7,683 with ZERO skips —
+  meaning the ~4,467 decedent leads promoted BEFORE today had NEVER been embedded either.** A pre-existing
+  RULE 0.5 silo, closed incidentally; `promote-probate-extractions.mjs` has no embed phase and should get
+  one (or be paired in the Mini cron), or it re-silos on every run.
+
+**NET FOR THE SESSION: `canonical_family_edges` 4,924 → 7,722 total; DOCUMENTED 4 → 2,802.** Invariants
+clean (0 undocumented, 0 self-verified, 100% embedded). The project went from four documented kinship edges
+to 2,802 without a single scrape, a single acquisition, or one FamilySearch session — entirely out of
+probate already on disk.
+
+**RESUMPTION 2026-08-09 (three parked threads restarted)** → [[finding-chunk-sweep-timeout-and-amelia-image-backing-aug09]]
+(1) **Chunk sweep was dead, not slow** — killed by its own hardcoded 30s embed timeout: ollama QUEUES embeds
+(idle 0.2s, at `--conc 6` 39.6s, CPU 10%), so the ceiling guaranteed failures. Added `--timeout`/`--retries`;
+restarted at `--conc 3`, **0 err, ~70 docs/min**. Worse bug underneath: a doc that embedded 7 of 8 passages
+**left the `--unchunked` pool forever** with the 8th silently missing — partials are now rolled back and
+re-swept (4 already-gapped docs repaired). (2) **Amelia: 23 scans → S3 + 23/23 Wayback + person_documents,
+pages hand-read from the images, and 10/10 `harm_events` now carry `source_document_id`** — citations became
+evidence. Done from the MacBook; AWS creds are local, the Mini was never needed. Gaps kept honest: the scans
+have NO `ocr_text` (RAG-silo; fix = store the hand transcription, not a fake OCR pass), and they contain
+cases the ingest never captured (Georgianna/Thrift, Frank Patterson, Pop Goode & Milly, Benj Lewis).
+(3) **Mini SSH is broken and is NOT the FS captcha** — key is accepted then denied; Mini-side `StrictModes`
+perms or Remote Login user list, needs VNC. **The RULE 0.7 monitors have not been running.**
+(4) Obligation ledger verified live: M136/M137 applied, `report-obligation-reached-class.mjs` runs and
+prints Georgetown/Amherst as documented-origination vs. the banks that cannot open an account at all;
+`extraction_regimes`/`obligation_accounts` are still **0 rows** — the ledger has schema, not yet entries.
+
+**STILL OPEN:** the `descent-drip.mjs` tick (largely inert until a forward corridor exists) · the 1870→1950
+census/vital corridor (blocks BOTH classes; Ancestry Library Edition posture questions in
+[[plan-descent-first-lineage]] §4c) · Freedmen's Bank · `embed-doc-chunks.mjs` over the 21,180 head-only
+docs · no `npm test` runner · the 090 migration checksum drift.
+
+**OPEN DECISION for the user:** which class the drip serves first — enslaver-side (buildable today from
+probate, feeds the debt ledger) or enslaved-side (blocked until Freedmen's Bank + census corridor land,
+feeds the claimant side). Recommendation: build the ENGINE on the enslaver-probate side because its evidence
+is already on disk, and run the Freedmen's Bank + census-corridor acquisition in parallel so the enslaved
+side starts the moment its documents exist.
+
+---
+
+## MODERN-ENDPOINT PROGRAM + FREE AUTOMATION SUITE (2026-08-07) — branch `feat/evidence-quality-parcel-spine`
+→ [[plan-modern-endpoints-program]] · [[plan-nesri-roster-completion]] · [[standard-canonical-person-and-document-gate]] · [[finding-land-nonclaim-and-dutchess-audit-jul17]]
+
+**MODERN ENDPOINTS — 3 built, TWO types proven.** Continuity-of-holding to a modern institution now has two
+templates: **LAND** (`land_transfer_events`/`properties`) and **CAPITAL** (`corporate_entities` +
+`corporate_slavery_disclosures` + `inheritance_edges`). Reckoning-institutions ranked in the program plan
+(Georgetown → Harvard → UVA → Princeton → Brown); Amherst is the reusable capital template.
+- **Bard College (LAND) — COMPLETE.** Census pull closed it: **Samuel Bard → canonical #907115** (1800 census,
+  7 enslaved, Dutchess/Clinton) and **William Bard → canonical #907116** (1810, 4), both image-backed
+  (S3+Wayback) + RAG-embedded (RULE 0.6 fully met) + assertable_slaveowner. **Kinship edge #8114 VERIFIED
+  (tier 2)** — census corroborates the genealogy. Land = the **Massena 15-link chain** (1688→2024, deed-backed,
+  all `implicates_enslaver=FALSE` per land-non-claim) → Bard College holds it. GAPS: **no wills/probate, no DAA,
+  assets = census COUNTS only** (no land/estate-valuation linked to them as persons, no named enslaved). NEXT =
+  ingest **Samuel Bard's will (1821) + William's (1858)** for the inheritance edge + full assets.
+- **Amherst College (CAPITAL).** Israel Trask (250+ enslaved, MS/LA cotton) funded it: **$800 documented**
+  ($500 receipt + $300 will bequest) + the 1862 $50k donor list; college histories ERASED him (1862→1951).
+  corporate_entity + disclosure; Nicka Sewell-Smith's **Trask 250** (9,208 descendants) CITED not scraped;
+  living descendants logged for opt-in, NOT minted.
+- **Georgetown University (CAPITAL, applied).** 1838 sale of **272** enslaved for **$115,000** funded the
+  college; Mulledy/McSherry sellers, Isaac/Cornelius Hawkins + Frank Campbell named; DTRF descendant side.
+
+**CENSUS-PULL OPERATIONAL LESSONS (reusable):** FS restricts the in-Chrome "Download" for census images → the
+operator downloads via **Safari** (image-PDF) → `pull-bard-census.mjs --samuel-file/--william-file` archives
+from the file. Read the open ARK viewer URLs straight from the **Chrome debug protocol** (`curl :9222/json`).
+`PersonService.promoteToCanonical` gained **opts.forceCreate** (operator-confirmed fresh canonical past
+same-name namesakes — "William Bard" collides with other-state William Bards that must NOT merge). The 1810
+image is FS-FILED under "Allegany" but shows **Clinton township** (= Dutchess) + 4 enslaved (matching NESRI) —
+an FS **film-group mislabel**, operator-confirmed. `let page` must be declared OUTSIDE the try (finally scope).
+
+**NY PROBATE + de-silo:** mint gate — `isNameSuspect` promoted into `person-name-validator.js`, wired into
+`findOrCreateLead` (declines place-words/legal-roles: "Albany"/"Deceased"/"Sole"). County-from-residence at
+mint (`link-ny-probate-testators.mjs`) + **backfill of 2,475 existing** NY canonicals (34 real counties;
+"Albany" mislabel → Dutchess/Ulster/Kings). **`promote-probate-extractions.mjs`** de-silos the LLM-extraction
+output (`probate_estate_extractions`) → enslaver leads + linked docs + named enslaved (the old linker read the
+wrong table). `probate-drip.mjs` **poison-pill guard** (un-extractable segments no longer pin the antebellum
+queue — 1,076 wasted ticks on roll Q7P7-7MS).
+
+**MIGRATIONS 127/128/129 + DAA (#147):** 127 `canonical_family_edges.information_type` (primary/secondary/
+undetermined + informant_role + gap-years); 128 `research_findings` (null-result log, 'truncated' load-bearing);
+129 Massena parcel spine. DAA subset gate (documented ancestors carry it; undocumented = `pendingDocumentation`)
++ `lineageUnproven` — both now RENDERED in the DOCX ("DOCUMENTATION STATUS & LIMITATIONS"). Fixed: gate-less
+`generate-daa-pdf.js` hard-deprecated; invented dates (`yearsEnslaved:20/startYear:1850`) removed from the money
+math; `generate-comprehensive-daa` runs end-to-end (DAA-000021+).
+
+**KEY FIXES (dedup/embed class):** `PersonService.resolve` now matches **LEADS by external id** (Tier-1b) — the
+Amherst/Trask dupe class (re-ingest duplicated leads); `forceCreate` for hand-confirmed fresh promotion. Migration
+126 (chunk_index) had **broken the 4 embed scripts' `ON CONFLICT`** — fixed (add chunk_index). RULE 0.6 clause 3
+(embed) was **skipped on the Bard promotion** — caught reactively, now ENFORCED by the monitor.
+
+**FREE AUTOMATION SUITE (user directive: recurring agency must be FREE — NO Claude API).** Removed a paid
+headless-Claude-Code setup. Now all deterministic + local-ollama + `gh`-REST:
+- **Mini crons:** `probate-drip` (3h, guarded) · `project-health-monitor` (4h) · `promote-probate-extractions`
+  (6h) · `embed-documents` sweep (nightly) · `auto-issue-monitor` (8h).
+- **PM2 watchdogs:** `probate-watchdog-ny` (scraper) + `probate-session-heal-ny` (FS session).
+- **`project-health-monitor.mjs`** — RULE 0.6 embed-compliance (recent promotions unembedded = CRITICAL, would
+  have caught the Bard miss), gate over-assertion, embed backlog, orphaned image-leads, drip liveness, disk
+  space, retrievability (live-retrieve). → `monitor_health_runs` ledger + ntfy (`OPS_NOTIFY_WEBHOOK`) + non-zero
+  exit.
+- **`auto-issue-monitor.mjs`** — FREE detector+filer: silent-failure log-scan (cron logs for FATAL/ERROR/does-
+  not-exist), migration drift, siloing (growing) → auto-files deduped GitHub issues via REST+PAT (no `gh`
+  install), falls back to `monitor_issues` + ntfy when no token.
+
+**STANDING DEBTS (surfaced by the monitor — not yet fixed):** retrievability **20%** on recent docs; **5 marquee
+enslavers** (Calhoun/Franklin/Carroll/Madison/Duncan) assert-without-image; **~103K** image-backed docs
+unembedded; **~107K** image-leads unpromoted. **STRUCTURAL:** the Mini runs a **stale checkout** (scripts are
+scp'd one-by-one — needs a branch sync); the Mini is a **single point of failure** (Tailscale drop = no
+recovery, no Pi-side watchdog); Claude auth removed (free-only). **NEEDS FROM USER:** a free GitHub PAT in the
+Mini `.env` (activates auto-issue-filing); optionally sync the Mini to the branch + a Pi→Mini watchdog.
+
+---
+
+## IDENTITY GATE — the DAA's second proposition was never gated (2026-08-07)
+→ commits `ffdee08a9` (climber id fix) · `3fc284020` (identity gate)
+
+**A bug was masking a hole.** The climber's `saveMatch` never listed `slaveholder_id` in either INSERT, so
+every match it wrote had it NULL → `getDocumentedSlaveholders` resolved nothing → the probate gate threw
+"no slaveholders resolved". Fixing that unmasked the real problem: **the gate validates only "did this
+person hold slaves", never "is this person the participant's ancestor."** Two independent propositions;
+one gate.
+
+**Measured, same seed re-climbed (`G21Y-X4B`):** before 687 anc / 32 matches / **0 resolved**; after
+727 anc / 33 matches / **33 resolved**, 31 serve a document, 9 serve an image. But **all 33 are
+`name_only_match`** — and 20 documented ones would have entered the DEBT MATH. A DAA names a real person
+as a slaveholder; asserting that on a name collision against ~420k enslavers is what the Biscoe rule and
+audit rule 5 forbid. Identity gate added: identity-unproven ancestors move to `pending` (suspected,
+excluded from debt) rather than being dropped — subset generation preserved. **Effect: 20 assertable → 0.**
+
+**CONFIDENCE LAUNDERING (subtle, fixed).** `getDocumentedSlaveholders` re-resolves with its OWN vocabulary.
+Now that a `slaveholder_id` exists, a `name_only_match` takes the `existing_id` branch and is stamped
+**0.90 — higher than the 0.85** it would get from re-matching on name, on identical evidence. The original
+climb `match_type` is now carried as `climb_match_type` so the gate judges real provenance. Identity is
+proven ONLY by: external identifier, date+place agreement, curated dataset, or a human verdict
+(`ancestor_climb_matches.verified`). Escape hatch `DAA_ALLOW_NAME_ONLY_IDENTITY=1` (backfill/testing only).
+
+**Also this round:** record-walk now DERIVES `f.recordCountry` from birthplace (was hardcoded US, which
+searched US collections for Italian-born grandparents and guaranteed a null). But recall got WORSE
+(12→0 on the Italian blocks) — **unresolved**: either FS's Italian collections lack them, or `Italy` is not
+a valid facet token. A control-name facet probe is written (`logs/facet-chain.sh`) but FAILED to run:
+the operator closed the :9222 Chrome window, and the relaunched instance is **signed out**. Needs VNC login.
+**MacBook disk:** the 40 GB `CoreSimulator` cannot be `rm -rf`'d — those are MOUNTED read-only APFS volumes;
+real bytes are in SIP-protected `/System/Library/AssetsV2/…SimulatorRuntime`, and `simctl` ships with
+Xcode.app which is not installed. Reclaim elsewhere.
+
+---
+
+## INTAKE REALITY CHECK + PII LOCKDOWN (2026-08-03) — branch `feat/evidence-quality-parcel-spine`
+→ [[plan-intake-form-revamp]] · [[plan-intake-and-climb-redesign]]
+
+**THE PII DIRECTIVE (user, mid-session — treat as standing).** A participant intake CSV was dropped in the
+repo and read straight into model context: 7 real people's names, DOB, birthplaces, income, net worth, an
+email, plus 24 relatives' names and FS IDs. User: *"people's data needs to be protected from the claude
+model."* Correct, and `permissions.deny` alone does not do it — Bash (`cat`, `node -e`, `psql`) reaches the
+same bytes. **Three layers now live, verified blocking:**
+1. PII moved OUT of the repo → `~/Documents/reparations-pii/` (mode 700). `worksheets/intake-csv/` deleted.
+2. `.claude/settings.json` — `permissions.deny` on the PII paths.
+3. **`.claude/hooks/block-pii-access.mjs`** — `PreToolUse` guard on Bash|Read|Grep|Glob. Blocks PII paths
+   AND SQL naming PII columns / `SELECT *` on participant tables. Exempts `scripts/pii/`. Fails OPEN on
+   internal error (never brick a session), CLOSED on any positive match. **Proven live** — `cat` of the CSV
+   returned blocked.
+**The rule:** deterministic code touches PII, the model reads only emissions (UUIDs, counts, error codes).
+This is audit rule 1 ("model orchestrates, code computes") applied to PII. New lane = `scripts/pii/`:
+`load-intake-csv.mjs`, `inspect-redacted.mjs` (structure without values), `launch-climbs.mjs`.
+**Migration 130** — `participants_safe` view (UUID, state, birth DECADE, income/net-worth BANDS, pipeline
+counts; no names/DOB/address/email/FS IDs) + `participant_family.lineage_hint` / `source_block_index`.
+**NOT undone:** the exposure already went to the model API, and `~/.claude/projects/…` transcripts (86 MB)
+still hold earlier participant queries. Transcript scrub NOT run (resume-safety unverified).
+**COMPLIANCE GAP:** the consent text says data is used *"only to count automated ancestor climbs"* — it
+does not disclose LLM processing. Must be fixed in the form rewrite.
+
+**THREE PRODUCTION BUGS FIXED (all found by working blind through the redacted inspector):**
+- **`fsIdClean()` (`src/api/routes/intake.js`) rejected REAL FamilySearch IDs.** It required a digit AND a
+  letter with no 3-in-a-row repeats. But FS IDs may be all letters and may repeat: `LTVZ-WSF`, `LTVZ-VSP`,
+  `PXGL-LLW` are genuine and were 400'd as "placeholder". Discarded **8 climb seeds** across 6 CSV rows and
+  misfiled Piper as a QA row. Replaced with a character-VARIETY test (`<3 distinct chars` = placeholder).
+- **`DAAOrchestrator:1885` selected `net_worth`; the column is `estimated_net_worth`** (M036). Verified live:
+  *column "net_worth" does not exist*. Query threw → catch swallowed → `dbRow` null → returned bare defaults,
+  so the **entire M037 wealth fingerprint never reached the calculators**. Fixed with an aliased select.
+- **`ensureLoggedIn` did NOT fail closed.** The render check passes on a sign-in page (`hasH1` is true for
+  "Sign In"), so a logged-out climb printed "✓ Logged in", visited 1 ancestor, and wrote
+  `status='completed'` — **indistinguishable from a genuine negative finding**. Since null results are
+  first-class evidence here, that corrupts the evidence base for a real participant. Now throws on an auth
+  host or on a page lacking person content. Observed on seed `G21Y-X4B` (session `9a60969b`, invalidated to
+  `status='aborted_not_logged_in'`).
+
+**5 NEW PARTICIPANTS INGESTED** (`intake_source='google_form_csv'`). QA row auto-skipped; Piper deduped
+against her existing `google_form` row via self_fs_id (cross-source check). **Relationships written
+NEUTRALLY** (`parent_1`…`grandparent_4`) — the form says only "Parent 1/2" and "Grandparent 1-4", no sex, no
+lineage, yet the webhook hardcoded father/mother/pat_grandfather. Checked against this export that mislabels
+a MAJORITY: **4 of 6 submissions put a woman in the 'father' slot** and 4 of 6 in 'pat_grandfather'. The
+participant's own "whom is their child" answer is stored verbatim in `lineage_hint`; real relationships get
+resolved from records. No fabricated data (audit rule 5).
+
+**WHAT THE 5 SUBMISSIONS PROVE ABOUT THE FORM** (the empirical core of both plan docs):
+- **ALL FIVE** are `self_living_unclimbable`. Measured: `LTVZ-D9S` (living participant) → **1 ancestor,
+  0 matches**, twice. `LTVZ-D8M` (deceased) → **906 / 138**. `LX39-1MY` (deceased) → **5,260 / 548**.
+  The DAA anchors on `participants.self_fs_id` (`daa.js:51` → `ensureClimbComplete:849`) — i.e. on precisely
+  the ID that returns nothing. **The required unit must become "oldest DECEASED ancestor per line."**
+- **NONE has an email.** No way to deliver a DAA to any of them.
+- **4 of 5 are non-US-origin lineages** (Mexican, Puerto Rican, Italian, Punjabi). Under today's
+  name+county match against US enslavers these mostly dead-end. The international-chain revision is not
+  hypothetical.
+- Data quality as predicted by the user's "people don't have this on hand": one participant's 4 grandparent
+  birth years are `N/A`/`June 6`; one grandparent is `unknown/unknown/n/a`; one grandparent FS ID is a
+  copy-paste of the parent's; **every** respondent ticked "I verified all links are correct", including the
+  two who then reported gaps.
+- Highest-value field remains the free text: *"allegedly we get our last name because our ancestors made
+  yarn on the plantation"* — an occupational-surname → plantation lead, same shape as Adrian's McCain lore
+  (43 held enslavers). Plus a name-change lead. It is question 61 of 62 and optional.
+
+**COLUMN-MAP CORRECTION (I had this wrong first pass).** The webhook's `FORM_COLUMNS` 0-67 **does** match
+the live sheet. Google Forms appends LATER-ADDED questions at the END of the sheet, not inline — hence
+"whom is their child" at 69/70 and a re-created living-question at 68. The six 5-column person blocks are
+NOT shifted. Real defects: **col 46 is permanently blank** (its live answer moved to 68, so
+`pat_grandfather.is_living` is always null), 69/70 are duplicates of each other and unread, and the sheet
+carries ghost columns (the "Column 5" placeholder; email/address at 9-13 deleted from the form). → build a
+NEW form + NEW response sheet rather than editing.
+
+**CLIMBS RUNNING (Mini).** 4 seeds queued sequentially via `scripts/pii/launch-climbs.mjs` for the two
+US-prospect participants. Mini is BACK ONLINE (Chrome :9222 live, probate PM2 jobs stopped). Two ops traps
+hit: `ssh host cmd` does not source the login profile → bare PATH → `node` exits 127 (now exported
+explicitly in the generated runner); and node resolves modules from the SCRIPT's dir, not cwd, so probe
+scripts must live inside the repo. **FS session state must be PROBED, never inferred from tab titles** —
+stale ARK tabs rendered fine while the session was dead.
+
+**NEXT:** rebuild the form per [[plan-intake-form-revamp]] §2 (new sheet + new `FORM_COLUMNS`); generalize
+`public-record-bridge.mjs` into the DB-driven record-walk agent (**4 of 4,924 `canonical_family_edges` carry
+a source document** — 0.08%); fan the DAA over multiple anchors (`ensureClimbComplete` consumes ONE session
+from ONE seed, so 3 of 4 anchors are collected and unused). MacBook disk is at **98% (4.9 GB free)** —
+~115 GB sits outside the home dir, likely APFS snapshots; user decision pending.
+
+---
+
+## EVIDENCE-QUALITY ROUND + STRATEGIC REFRAME (2026-07-31) — branch `feat/evidence-quality-parcel-spine`
+→ [[standard-canonical-person-and-document-gate]] · [[finding-land-nonclaim-and-dutchess-audit-jul17]] · [[finding-bb1-deed-parcel-spine]] · [[assessment-dutchess-calibration-case-study-jul19]]
+
+**DAA now RUNS (#147).** `_enforceProbateGate` was ALL-OR-NOTHING — it blocked the whole DAA if ANY matched
+slaveholder lacked documentary evidence, so no DAA ever generated (climbs routinely match undocumented
+ancestors). Per user directive, changed to **SUBSET generation**: the DAA carries the DOCUMENTED slaveholders
+and holds undocumented matches as `pendingDocumentation` ("suspected — pending primary-source documentation",
+never asserted, never in the debt). Gate returns `{documentedIds, pending, documentedDesc}`; throws only when
+ZERO documented (no debt to assert) or under STRICT mode (`DAA_STRICT_PROBATE_GATE=1`). Fail-closed preserved:
+name-only climb matches (null id) only exist when zero documented → still throws. **Verified: Adrian Brown
+(P4RF-PFQ) generated DAA-000021** on 2 documented Hopewell ancestors (was `DAAProbateGateError`). Aligned with
+the per-proposition canonical gate (all-or-nothing was stricter than the standard). TWO refinements still open:
+(a) the kinship PATH gate is orthogonal + unbuilt (0/4,922 edges carry a kinship doc) — subset generation
+increases DAAs riding UNPROVEN lineages; render "lineage unproven at gen N" alongside pending-doc (audit-only,
+not a blocker); (b) stale comment block DAAOrchestrator:228-247 contradicts the new directive.
+
+**STRATEGIC REFRAME (memory-bank read, corrects earlier plans):**
+- **Dutchess is a CALIBRATION study, not a volume-ingest** (Roth & Tolbert 2025 multicalibration; calibrates
+  per-link `p`). It is **blocked on the MODERN endpoint** (a Dutchess-descended participant / forward tracing) —
+  NOT on more counties. Climb runs modern→enslaver, **0 Dutchess coverage**. "Do NOT scale nationally until
+  Stage 1 returns `p`." So Ulster/Albany/Kings breadth is PREMATURE; the modern endpoint is the leverage.
+- **Do NOT build a 4th extractor.** `georgia-probate-scraper.js` is already `--county`-parameterized;
+  `probate-llm-extractor.js` + `probate-drip.mjs --prefix` + `extract-probate-estates.mjs` are generic.
+  Real gap = fold colonial-will anchors into the SHARED `probate-entity-extractor.js`. **EXTRACTION, not
+  ACQUISITION, is the bottleneck** — do not scrape more counties first. "Albany County" is the province-wide
+  will-book (same %dutchess% contamination); derive county from the OCR residence phrase (fix
+  `link-ny-probate-testators.mjs:54`). Before any batch: fix reextract→recomputeGate sync (else gate never
+  lifts) + gate `isNameSuspect` at mint (else "Albany"/"Deceased" mint as enslavers).
+- **NESRI = cross-index, NOT genealogy** (genealogy fields empirically 0-fill). Prefer a CUNY-GC data request
+  over scraping. **Retrievability rubric** composes with the existing `retrieval-health-audit.mjs`/M106 ledger.
+  **RAG is orphaned** (imported by ~zero live code; reads still ILIKE) — the untracked `src/api/routes/rag.js`
+  is the in-progress wiring; embedding ≠ retrievable.
+
+**BARD COLLEGE = candidate Dutchess MODERN ENDPOINT (grounded).** DB query: **Samuel Bard** and **William Bard**
+are in the data as `enslaver`, Dutchess County NY, sourced from **NESRI** (leads 3579208/3579211, codes
+`NY_BardSamu_01`/`NY_BardWill_01` — not yet canonical, no image). Continuity chain: Samuel Bard (Hyde Park
+physician) → Bard family estate → grandson John Bard founds St. Stephen's/Bard College (1860) on the family
+land → Bard College = modern institutional successor. Land instrument = the **Massena chain** (migration 129,
+below) which is literally the Bard campus parcel. NEXT: attach a Samuel-Bard image → promote; harvest the
+Bard→enslaved roster; log the deed/roster searches (incl. nulls) in `research_findings`.
+
+**DUTCHESS LLM EXTRACTION (finished on the Mini).** qwen2.5 over the 479 unlinked `%dutchess%` residue:
+**81 new true-Dutchess testators linked** → the true-Dutchess cohort (814 docs) went 41.4% → **50.9% linked**
+(clears the rubric's 50% bar). 381/479 (80%) had NO extractable testator = structural fragment/index ceiling
+(don't chase the tail). Local LLM doubled the 25.5% regex testator ceiling. 11 other-county contamination
+confirmed (Albany 3, Suffolk 2, Queens, Westchester). Migration 126 (chunk_index) + `embed-doc-chunks.mjs`
+gave passage-level RAG (whole-doc 0.445 → chunk 0.634).
+
+**MIGRATIONS 127/128/129 (this round, applied + committed):**
+- **127** — `canonical_family_edges.information_type` (primary/secondary/undetermined) + `informant_role` +
+  `event_to_record_gap_years`. Genealogical proof-standard typing (a tier-1 doc can carry SECONDARY info);
+  gap>~5yr = mechanical downgrade. Substrate for the DAA kinship gate.
+- **128** — `research_findings`: first-class log of research ACTIONS incl. NULL results. `'truncated'` is
+  load-bearing (a capped sweep is not a 'none'). Polymorphic subject (M103).
+- **129** — **Massena parcel spine** (first real chain-of-title instrument, #112): Bard campus land,
+  Barrytown/Red Hook, Dutchess. 12 named links 1688→2024 seeded from finding §4 (packet has 22; S3-archival
+  + reconciliation pending). ALL links `implicates_enslaver=FALSE` (land-non-claim). Beekman+Livingston links
+  = Dutchess enslaver families. Wealth series $50k(1853)→$20k→$1.15M→$14M(2024); modern link → Bard College.
+
+**ISSUE BUNDLE for this round** (theme = chain-of-custody & evidence-quality for wealth tracing): CORE #112,
+#72, #147, #113, #70+#101, #78, #75; ADJACENT #130, #123. DEFERRED (separate rounds): international ingest
+(#119-145, EPIC #135), benchmark/anchor layer (#79-91,#116,#121), identity-spine (#96,#98,#105,#92).
+
+**EARLIER THIS SESSION (pre-compaction arc):** living-person bridge (Piper Hill — FS hides living TREE
+profiles, use consented data → deceased great-grandparent seeds); kinship-edge M103 harvest; intake-validator
+hardening (placeholder-FS + garbage-name + impossible-gap BLOCKING); oral-history→directed-leads (McCain →
+43 held enslavers); retrievability rubric (`rag-retrievability-audit.mjs`, 4 stages logged→embedded→readable
+→RETRIEVED); Mini migration (heavy lifting back on the Mini). **Note: `land_transfer_events` is 116 rows now,
+NOT 1 (CLAUDE.md was stale).** Migration numbering COLLIDES (113/121/122/126 each have two files — PK is the
+filename, both apply); several 122-126 are applied-but-untracked in `schema_migrations`; 123 (CONCURRENTLY)
+never applied.
+
+**MEMORY-BANK RECONCILIATION (this session):** `techContext.md` heavy-rewritten (dead individuals/
+unconfirmed_persons schema + blockchain gutted; PersonService/two-driver/RULE 0.5-0.6/three-machine/RAG-orphaned
+added; S3 us-east-2 + 393,975 goal + scraper constants salvaged). `systemPatterns.md` fixed (blockchain removed,
+Repository-Pattern two-driver rowCount trap, descendant→DAA model; design-rationale preserved). 8 stale
+snapshots bannered (architecture-apr24, end-to-end-readiness-apr23, report-jun17, plan-lead-identity-resolution,
+plan-may20, finding-ny-probate-audit-jul01 stale-counts, both RAG plans reality-checked).
 
 ---
 
@@ -1783,3 +2285,80 @@ schema_migrations: uses 'filename' column (NOT migration_id / migration_name)
 - **CONSTRAINT**: Do NOT overwrite `person_documents.ocr_text` for id=19 (FamilySearch transcription is higher quality)
 - **person_documents.will_extraction_id** column MISSING — `backfill-inheritance-edges-from-will-extractions.js` will fail
 - **WillPipeline.js** does NOT exist — `POST /api/wills/ingest` is a stub
+
+---
+
+## SESSION CLOSE 2026-08-11 — eight issues filed for what was touched and not resolved
+→ [[finding-duplication-interoperability-retrievability-aug10]] · [[standard-targeted-harvesting]] ·
+[[finding-chunk-sweep-timeout-and-amelia-image-backing-aug09]]
+
+**Landed:** Farm Book extracted (445 leads / 169 edges / 445 embedded) + Stage 5 reconciler (157 mentions
+resolved, 281 name-ambiguous REFUSED) · Amelia 23 scans archived S3+Wayback, **10/10 harm_events
+image-backed**, 14 kin edges graded per informant · Shepherd chain graded per link (Pannon documented;
+Fisher recorded as searched-and-not-found) · 22 letter↔1860-schedule corroboration pairs seeded at priority
+10 · **research_findings 1,173/1,173 embedded — "what did we already fail to find" is now answerable** ·
+7,053 canonicals reclassified enslaver→unknown (typed by a DEFAULT VALUE) · Mini SSH restored (it was a
+passphrase-protected local key, never the server) · chunk sweep fixed + supervised.
+
+**OPEN — filed, do not re-derive:**
+| # | |
+|---|---|
+| #149 | 249 estates naming enslaved people not on the spine — **Moses S. Jones, 85 people, 1855** |
+| #150 | Obligation ledger: schema, zero entries; `extraction_mechanism` 0/19 |
+| #151 | Embed the verbs: 49k transfers; 46% of canonicals have no embedding path |
+| #152 | Interoperability: transfers can't reference leads; ~8k docs under the wrong state |
+| #153 | Amelia: ~10 harms never ingested; scans have no OCR text |
+| #154 | Duplicate pipelines; Hemings pages (p.139) still unparsed |
+| #155 | Ops fragility: ~222 scripts still lack pool error handlers |
+| #156 | Targeted harvesting: **Virginia probate is the next harvest** |
+
+**Two corrections worth carrying:** (1) I claimed Albany NY "structurally cannot yield" from the 1827
+abolition date — it is the **second-richest county in the corpus** (98 estates, 247 people named); the waste
+was Cayuga + Allegany, 1,903 estates for 11 people. (2) I named a schema gap as the blocker for the Shepherd
+chain when the real blocker is that **Virginia probate has never been scraped**. Both were arguments made
+without looking, and the operator caught both.
+
+---
+
+## 2026-08-19/20 — FABRICATION SWEEP, THE ASSERTION-STORE ANSWER, AND DLAS RECONNAISSANCE
+→ [[standard-assertion-store-and-inference-decisions]] · [[standard-targeted-harvesting]] ·
+[[finding-duplication-interoperability-retrievability-aug10]]
+
+**FOUR FABRICATION CLASSES FOUND AND FIXED.** Every one was an IMPLICIT INFERENCE no human approved:
+| implicit rule | cost | fix |
+|---|---|---|
+| a probate decedent is an enslaver | 7,053 canonicals | reclassified -> unknown, 279 evidence-backed kept |
+| a tally mark is a person | **1,456,640** rows | quarantined `placeholder_aggregate` **+ source patched** |
+| family-tree provenance ⇒ maybe alive | 12,562 ancestors hidden | search gated on LIVING STATUS, not provenance |
+| a rejected decedent NAME voids the estate | 66 enslaved people invisible | mint gate decoupled; 65 recovered |
+Real named enslaved leads after the sweep: **692,197** (was 2,147,162, most of it fiction).
+
+**THE STORAGE ANSWER (operator: "is a table even the best storage at scale?").** No — and `person_facts`
+(497,851 rows) already IS the answer: open `fact_type` vocabulary, dates+places, related person, full source
+chain, confidence, and **`contested` + `contested_reason`**. DLAS's 127 terms become fact_type VALUES, not
+86 tables. My "68% have no home" was WRONG — `manumission`/`escape`/`free_status`/`occupation` were already
+in use. Fifth asserted-absence-without-checking of the session. **Three layers: ledger tables for what must
+be SUMMED · person_facts for what must be CLAIMED · embeddings for what must be FOUND.**
+
+**FREEDOM IS REVOCABLE** (operator): people were kidnapped, re-enslaved, jailed, bound out. `contested` is
+how a `free_status` fact gets revoked with a reason. Used **0 times** so far.
+
+**RETRIEVABILITY.** Verbs embedded: kin edges 7,905 · transfers 48,987 · findings 1,173 · ownership 29,524+
+· inheritance · insurance · estates · voyages (Mini) · **person_facts 497,851 (running)**. Proven working:
+"who was sold from one enslaver to another in Louisiana in 1789" and "have we already searched for James
+Fisher in Powhatan" both return correct top hits.
+
+**YIELD COMPARISON that settles targeting:** NY probate 88,870 pages -> **290** enslaved named (**306
+pages/person**) · Liberty Co GA 14,452 pages -> **1,373** (**11 pages/person**) · DLAS 17,487 petitions ->
+**~80,000 enslaved**. Collections assembled FOR this question beat general record sets by ~30x-500x.
+
+**DLAS RECONNAISSANCE (steps 1-2 of the O-of-O done).** 127-term controlled vocabulary captured to
+`bibliography_sources`. robots.txt permits crawling. **NEXT = STEP 3: sample ~200 petitions across
+states/courts/decades and measure which fields actually populate BEFORE writing a person row.**
+
+**OTHER LIVE ITEMS:** 1860 tail (65 locations, FS session re-authed, runner fixed — the old one reported
+"ALL STATES DONE" with work remaining because its grep checked the whole log) · Knighten petition #21382436
+(Fairfield SC 1824: executor Moses Knighton the younger sold 3 estate slaves "in a secret and fraudulent
+manner", court partially granted, hiring values + sale prices in depositions 1812-1826) · two coastwise
+manifests archived (#740386 Gold Hunter of BOSTON, #740387 Fashion of NEW YORK — northern vessels; the form
+separates SHIPPER from OWNER/CONSIGNEE, which chattel_transfer_events collapses) · issues #149-#158.

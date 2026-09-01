@@ -2447,3 +2447,88 @@ then flip `DAA_KINSHIP_GATE=enforce`. Plan: `plan-fs-source-harvest-for-kinship-
 ---
 
 *This document tracks development progress and is updated regularly as features are completed.*
+
+---
+
+## Session 2026-08-03/06 — participant-PII lockdown, 5 intake submissions, 3 silent-failure bugs
+
+Branch `feat/evidence-quality-parcel-spine`. Commits `89e676c3c` (PII architecture), `eaf56427f`
+(three fixes), `eb6e82cda` (memory-bank docs). Full detail in [activeContext.md] top entry plus
+[[plan-intake-form-revamp]] and [[plan-intake-and-climb-redesign]].
+
+**PII LOCKDOWN (standing user directive).** An intake CSV was read into model context — 7 participants'
+names, DOB, birthplaces, income, net worth, an email, plus 24 relatives. Three layers now enforce the
+split "deterministic code touches PII, the model reads only emissions": PII relocated outside the repo
+(`~/Documents/reparations-pii`, mode 700); `permissions.deny`; and `.claude/hooks/block-pii-access.mjs`,
+a PreToolUse guard that also catches PII-column SQL. `permissions.deny` alone is insufficient — Bash
+`cat` bypasses it, and `settings.local.json` carries a blanket `Bash(cat:*)`. New lane `scripts/pii/`
+(load / inspect-redacted / launch-climbs / record-walk / scrub-transcripts / restore-transcripts).
+**Migration 130**: `participants_safe` (de-identified view) + `participant_family.lineage_hint` /
+`.source_block_index`. 7 local transcripts scrubbed (14,145 replacements, all files re-verified as valid
+JSONL); the active session must be scrubbed after it ends. `.gitignore` now ignores `.claude/*` contents
+rather than the directory so the guard is version-controlled (git cannot re-include a file whose parent
+directory is excluded).
+
+**5 PARTICIPANTS INGESTED** (`google_form_csv`), QA row auto-skipped, Piper deduped cross-source on FS ID.
+Relationships written NEUTRALLY (`parent_1`…`grandparent_4`) because the form states neither sex nor
+lineage — the old positional labels put a woman in the 'father' slot in 4 of 6 submissions.
+
+**THREE SILENT-FAILURE BUGS FIXED.** (1) `fsIdClean()` rejected real FS IDs (they may be all letters and
+may repeat a char 3x) — the live webhook 400s valid submissions; cost 8 climb seeds. (2)
+`DAAOrchestrator` selected the nonexistent column `net_worth`, so the whole M037 wealth fingerprint
+silently never reached the calculators. (3) `ensureLoggedIn` did not fail closed, so a logged-out climb
+wrote `status='completed'` with 1 ancestor — indistinguishable from a genuine negative finding.
+
+**CLIMB RESULTS — the methodology's ceiling, measured.** Deceased seeds work (687, 1000+, 72 ancestors);
+living seeds return 1. But of 36 matches on the first participant, **35 are `name_only_match` and 36 have
+`slaveholder_id` NULL** — no canonical person, no state/county, zero attached documents. Per the Biscoe
+rule and RULE 0.6 that is **0 assertable connections**; the DAA gate would throw. MatchVerifier called
+13/36 `enslaved_ancestor` (the matched person was ENSLAVED, not an enslaver) and 11/36
+`common_name_suspect` — expected noise from bare-name matching against 229,062 enslaved + 419,689
+enslavers. Logged as `research_findings` 18/19 (negative findings are evidence). This is the concrete
+case for the climb revision: name+county matching produces leads, not evidence.
+
+**RECORD-WALK v1** (`scripts/pii/record-walk.mjs`) generalises `public-record-bridge.mjs` off its
+hardcoded family and adds the piece that made it work: the bridge scores candidates on a known SPOUSE
+(+3) and known CHILD (+3), and both are **derivable** from family structure — a grandparent's known
+child IS the participant's parent, their spouse IS the paired grandparent, paired via `lineage_hint`.
+So a form that only asks for parents and grandparents already contains the disambiguators. First run:
+mechanism validated (spouse+child derived), 23 records, 0 confirmed — cause is the hardcoded
+`f.recordCountry=United States` against Italian-born grandparents. Logged as a null finding, not a
+conclusion.
+
+**STILL OPEN:** kinship edges remain **4 documented of 4,924** (0.08%) — the record-walk is the only
+thing that manufactures tier-1 kinship documents. No participant has an email, so no DAA can be
+delivered. The consent text does not disclose LLM processing. MacBook disk needs
+`sudo rm -rf /Library/Developer/CoreSimulator` (~40 GB, root-owned; Xcode.app is not even installed).
+
+---
+
+## Session 2026-08-07 (cont.) — the DAA's IDENTITY proposition was never gated
+
+Commits `ffdee08a9` (climber persists slaveholder_id), `3fc284020` (identity gate), `fc26e4e98` (docs).
+Durable lesson in memory `project_daa_two_propositions`.
+
+**A bug was masking a hole.** The climber's `saveMatch` never listed `slaveholder_id` in either INSERT, so
+every match it wrote resolved to NULL and the probate gate threw "no slaveholders resolved". Fixing that
+unmasked the real defect: **the gate validates only "did this person hold slaves", never "is this person
+the participant's ancestor".** Two independent propositions; one gate. A DAA names a real person as a
+slaveholder — proposition 2 failing libels someone AND tells a descendant a false story about their family.
+
+**Measured, same seed re-climbed (`G21Y-X4B`):** before 687 anc / 32 matches / **0 resolved**; after
+727 anc / 33 matches / **33 resolved** (31 serve a document, 9 an image). All 33 `name_only_match`;
+**20 documented ones would have entered the debt math.** Identity gate routes them to `pending`
+(suspected, excluded from debt) rather than dropping them — subset generation preserved.
+**Effect: 20 assertable → 0.** Daniel's DAA now correctly refuses rather than naming 20 people on a
+name collision against ~420k candidate enslavers.
+
+**CONFIDENCE LAUNDERING found + fixed.** `getDocumentedSlaveholders` re-resolves with its own vocabulary;
+once a `slaveholder_id` exists a `name_only_match` takes the `existing_id` branch and is stamped **0.90 —
+higher than the 0.85** it would earn by re-matching on name, on identical evidence. Original provenance is
+now carried as `climb_match_type`. Rule: a confidence that rises without new evidence is a bug.
+
+**Also:** record-walk now derives `f.recordCountry` from birthplace (was hardcoded US — searched US
+collections for Italian-born grandparents). Recall got WORSE (12→0); **unresolved** whether FS's Italian
+collections lack them or `Italy` is an invalid facet token. Control probe written, blocked on a signed-out
+:9222 Chrome. **Disk:** `CoreSimulator`'s 40 GB cannot be `rm -rf`'d (mounted read-only APFS volumes;
+SIP-protected assets; `simctl` ships with Xcode.app, not installed). ~11 GB reclaimed elsewhere.

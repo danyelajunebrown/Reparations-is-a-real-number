@@ -181,7 +181,7 @@ class DAAOrchestrator {
 
         // Step 2: Get all documented slaveholders
         console.log('Step 2: Retrieving documented slaveholders...');
-        const slaveholders = await this.getDocumentedSlaveholders(climbSession.id);
+        let slaveholders = await this.getDocumentedSlaveholders(climbSession.id);
         console.log(`   ✓ Found ${slaveholders.length} documented slaveholder(s)`);
 
         if (slaveholders.length === 0) {
@@ -225,27 +225,42 @@ class DAAOrchestrator {
         }
         console.log();
 
-        // ── HARD GATE: refuse to generate a DAA without probate records ─────
+        // ── SUBSET GATE: name only the documented slaveholders ─────────────
         //
-        // Policy decision 2026-04-20 (see
-        // memory/project_debt_distribution_architecture.md):
+        // Policy decision 2026-04-20, revised 2026-07-31 to SUBSET generation
+        // (see memory/project_debt_distribution_architecture.md):
         //
-        //   No DAA is generated unless the enslaver lineage has documented
-        //   probate / deed / administration records in `land_transfer_events`
-        //   (migration 038) that support per-descendant inheritance-share
-        //   computation. The alternative — generating a DAA with a "share
-        //   pending" methodology note — was explicitly rejected by the user
-        //   as releasing an incomplete legal instrument.
+        //   The DAA math and naming carry ONLY the enslaver ancestors that
+        //   have documented probate / deed / administration evidence (Tier A
+        //   land_transfer_events per migration 038, or Tier B/C document /
+        //   slave-schedule presence) supporting per-descendant inheritance-
+        //   share computation. Matched ancestors WITHOUT such evidence are not
+        //   dropped and not asserted — they are held as `pendingDocumentation`
+        //   and rendered "suspected — pending primary-source documentation",
+        //   counted in no debt total.
         //
-        //   A DAA that assigns 100% of ancestral debt to a single descendant
-        //   is mathematically wrong; one that assigns share = "TBD" is
-        //   ethically indefensible. So we block generation until the
-        //   primary sources required for real share math are in the DB.
+        //   This supersedes the earlier all-or-nothing block. The distinction
+        //   the earlier policy drew still holds — a DAA that assigns share =
+        //   "TBD" for an ancestor whose estate math cannot be computed is
+        //   indefensible — but the fix is to EXCLUDE that ancestor from the
+        //   instrument (pending), not to block the whole DAA when at least one
+        //   ancestor IS fully documented. A DAA naming zero documented
+        //   slaveholders still cannot be generated (no debt to assert); STRICT
+        //   mode (DAA_STRICT_PROBATE_GATE=1) restores the old block.
         //
         // When a user's probate records arrive (user's 5 DC ancestors,
         // Apr 18, 2026 request), they get ingested into land_transfer_events
-        // and this gate releases automatically.
-        await this._enforceProbateGate(slaveholders);
+        // and the pending ancestor promotes into the documented subset.
+        const probateGate = await this._enforceProbateGate(slaveholders);
+        // Subset generation: the DAA math + naming carry ONLY the documented
+        // slaveholders; undocumented matches are held as pendingDocumentation
+        // (rendered "suspected — pending primary-source documentation", never
+        // asserted as holding, never counted in the debt).
+        const pendingDocumentation = probateGate.pending;
+        slaveholders = slaveholders.filter(s => probateGate.documentedIds.has(s.slaveholder_id));
+        if (pendingDocumentation.length > 0) {
+            console.log(`   → DAA will name ${slaveholders.length} documented ancestor(s); ${pendingDocumentation.length} held as pending documentation.`);
+        }
 
         // ── CHAIN-OF-CUSTODY GATE: every EDGE on the lineage must be proven ──
         //
@@ -265,7 +280,16 @@ class DAAOrchestrator {
         // built yet, so a hard block would fail every current DAA including the
         // Hopewell fixture. Set DAA_KINSHIP_GATE=enforce to fail closed once the
         // harvest lands and edges carry kinship documents.
-        await this._enforceKinshipGate(slaveholders, climbSession.id);
+        //
+        // SURFACING (audit-mode twin of pendingDocumentation): the gate returns
+        // `lineageUnproven` — one {slaveholder, generation} per named ancestor
+        // whose participant→slaveholder path has an unproven parent→child edge.
+        // Carried on the generate() result so the renderer can annotate that
+        // ancestor "lineage unproven at generation N" (standard §7). This does
+        // NOT block — the kinship gate stays non-enforcing by default; we are
+        // SURFACING the weak link, not gating on it.
+        const kinshipGate = await this._enforceKinshipGate(slaveholders, climbSession.id);
+        const lineageUnproven = (kinshipGate && kinshipGate.lineageUnproven) || [];
 
         // Step 3: Aggregate enslaved persons for each slaveholder
         console.log('Step 3: Aggregating enslaved persons with primary sources...');
@@ -349,7 +373,8 @@ class DAAOrchestrator {
             daaRecord,
             slaveholderData,
             debtCalculation,
-            acknowledgerInfo
+            acknowledgerInfo,
+            { pendingDocumentation, lineageUnproven }
         );
         console.log(`   ✓ Document saved: ${docxPath}`);
         console.log();
@@ -380,7 +405,19 @@ class DAAOrchestrator {
             docxPath,
             slaveholderData,
             debtCalculation,
-            climbSession
+            climbSession,
+            // Undocumented matched ancestors — surfaced to the caller/renderer as
+            // "suspected, pending primary-source documentation" (not asserted,
+            // not in the debt). Empty [] when every matched ancestor is documented.
+            pendingDocumentation,
+            // Named ancestors whose participant→slaveholder chain of custody has
+            // an unproven parent→child edge — surfaced as "lineage unproven at
+            // generation N" (the EDGE-side twin of pendingDocumentation, per
+            // standard-genealogical-edge-evidence.md §7). Audit-only: these are
+            // still named/in the debt (the kinship gate does not block by
+            // default); the flag tells the renderer to caveat the descent claim.
+            // Empty [] when every named ancestor's lineage is fully documented.
+            lineageUnproven
         };
     }
 
@@ -519,8 +556,11 @@ class DAAOrchestrator {
             FROM origins o
         `, [enslaverIds, PROBATE_DOC_TYPES, SCHEDULE_DOC_TYPES, SPOUSE_FAMILY_REL_TYPES]);
 
-        const passed = [];
-        const missing = [];
+        // documentedIds → carry into the DAA debt math; pending → rendered as
+        // "suspected, pending primary-source documentation" (asserts no holding).
+        const documentedIds = new Set();
+        const passed = [];       // display strings for the documented set
+        const pending = [];      // [{name, id}] for the pending-documentation banner
         for (const r of q.rows) {
             const hasAny = r.tier_a || r.tier_b || r.tier_c || r.tier_b_schedule;
             if (hasAny) {
@@ -530,22 +570,117 @@ class DAAOrchestrator {
                     r.tier_c && 'C-schedule',
                     r.tier_b_schedule && 'B-schedule-doc',
                 ].filter(Boolean).join(',');
+                documentedIds.add(r.enslaver_id);
                 passed.push(`${r.canonical_name} [${tiers}]`);
             } else {
-                missing.push(`  • ${r.canonical_name} (id=${r.enslaver_id}): no evidence in any tier`);
+                pending.push({ name: r.canonical_name, id: r.enslaver_id });
+            }
+        }
+
+        // ── IDENTITY GATE (2026-08-07) ───────────────────────────────────────
+        // The check above validates ONE proposition: "this canonical person held
+        // people in slavery." It never asks the other: "this canonical person is
+        // THE PARTICIPANT'S ANCESTOR." Those are independent, and until now only
+        // the first was gated.
+        //
+        // Why it surfaced now: the climber was dropping slaveholder_id on every
+        // match, so getDocumentedSlaveholders resolved nothing and this gate threw
+        // "no slaveholders resolved" — the identity hole was masked by a bug.
+        // Fixing the bug unmasked it. Measured on one re-climb: 33 matches, all
+        // match_type='name_only_match', of which 22 would have entered the debt
+        // math and 6 are image-backed. A DAA is a signed instrument naming a real
+        // person as a slaveholder; asserting that on a bare name collision against
+        // 419,689 candidate enslavers is precisely the fabrication the Biscoe rule
+        // ("NEVER auto-merge name-only") and audit rule 5 forbid.
+        //
+        // This is the same discipline the slaveowning proposition already gets,
+        // applied to the identity proposition: a name match licenses RESEARCH, not
+        // assertion. Identity-unproven ancestors are not dropped — they move to
+        // `pending`, where the DAA renders them as suspected and excludes them from
+        // the debt. That preserves the subset-generation directive (2026-07-31):
+        // the instrument still generates, it just refuses to assert what it cannot
+        // prove.
+        //
+        // Set DAA_ALLOW_NAME_ONLY_IDENTITY=1 to restore the prior behaviour
+        // (name-only identity treated as sufficient) — for backfill//testing only.
+        const IDENTITY_PROVEN_TYPES = new Set([
+            'external_id_match',        // matched on a shared external identifier
+            'exact_fs_match',           // matched on FamilySearch ID
+            'fs_external_id',
+            'name_date_location_match', // name + date + place all agree
+            'name_location_match',
+            'exact_name_location_match',
+            'slavevoyages_enslaver',    // matched into a curated voyage dataset
+        ]);
+        const ALLOW_NAME_ONLY = process.env.DAA_ALLOW_NAME_ONLY_IDENTITY === '1';
+
+        // slaveholder_id → strongest identity evidence seen for that person
+        const identityById = new Map();
+        for (const s of slaveholders) {
+            if (s.slaveholder_id == null) continue;
+            const prev = identityById.get(s.slaveholder_id);
+            const proven = s.climb_verified === true
+                || IDENTITY_PROVEN_TYPES.has(s.climb_match_type)
+                || IDENTITY_PROVEN_TYPES.has(s.match_type);
+            if (!prev || (proven && !prev.proven)) {
+                identityById.set(s.slaveholder_id, { proven, type: s.climb_match_type || s.match_type || 'unknown' });
+            }
+        }
+
+        const identityUnproven = [];
+        if (!ALLOW_NAME_ONLY) {
+            for (const id of [...documentedIds]) {
+                const ident = identityById.get(id);
+                if (ident && !ident.proven) {
+                    documentedIds.delete(id);
+                    const name = (q.rows.find(r => r.enslaver_id === id) || {}).canonical_name || `id=${id}`;
+                    identityUnproven.push({ name, id, type: ident.type });
+                    pending.push({ name, id, reason: `identity unproven (${ident.type})` });
+                }
             }
         }
 
         console.log(`   → Probate gate evidence check:`);
         for (const p of passed) console.log(`      ✓ ${p}`);
-        if (missing.length > 0) {
-            console.log(`   → ${missing.length} ancestor(s) with NO documentary evidence:`);
-            for (const m of missing) console.log('   ' + m);
+        if (identityUnproven.length) {
+            console.log(`   → Identity gate: ${identityUnproven.length} documented ancestor(s) held back — ` +
+                        `slaveholding is evidenced but the link to this participant is a bare name match:`);
+            for (const u of identityUnproven) console.log(`      ⊘ ${u.name} (id=${u.id}, ${u.type})`);
+        }
+
+        // POLICY (user directive 2026-07-31, subset + pending flag): generate the
+        // DAA for the DOCUMENTED slaveholders and render the undocumented ones as
+        // "suspected — pending documentation" — a usable instrument that asserts
+        // nothing undocumented. STRICT mode (DAA_STRICT_PROBATE_GATE=1) restores
+        // the old all-or-nothing block (must document EVERY matched ancestor).
+        // Either way, a DAA that names ZERO documented slaveholders cannot be
+        // generated (there is no debt to assert). Policy reference:
+        // memory/project_debt_distribution_architecture.md.
+        const STRICT = process.env.DAA_STRICT_PROBATE_GATE === '1';
+        const missingLines = pending.map(p => `  • ${p.name} (id=${p.id}): no evidence in any tier`);
+
+        if (documentedIds.size === 0) {
+            for (const m of missingLines) console.log('   ' + m);
+            // Distinguish the two ways this set empties, or the error misdiagnoses
+            // the problem: "go find probate records" is useless advice when the
+            // records exist and it is the IDENTITY link that is unproven.
+            if (identityUnproven.length > 0) {
+                throw new DAAProbateGateError(
+                    `DAA generation blocked: ${identityUnproven.length} ancestor(s) have documentary ` +
+                    'evidence of slaveholding, but NONE is linked to this participant by anything ' +
+                    'stronger than a name match:\n' +
+                    identityUnproven.map(u => `  • ${u.name} (id=${u.id}): ${u.type}`).join('\n') +
+                    '\n\nA name collision against ~420k candidate enslavers is not identity. Resolve ' +
+                    'the link with an external identifier, a date+place agreement, or a human verdict ' +
+                    '(ancestor_climb_matches.verified), then re-run. Do NOT relax this to ship a DAA — ' +
+                    'the instrument names a real person as a slaveholder.'
+                );
+            }
             throw new DAAProbateGateError(
-                'DAA generation blocked: the following slaveholder ancestors ' +
-                'have no documentary evidence in any tier (land_transfer_events, ' +
+                'DAA generation blocked: NONE of the matched slaveholder ancestors ' +
+                'have documentary evidence in any tier (land_transfer_events, ' +
                 'probate-type person_documents, or family_relationships slave-' +
-                'schedule presence):\n' + missing.join('\n') +
+                'schedule presence):\n' + missingLines.join('\n') +
                 '\n\nRequest primary-source records (probate / deed / 1850 or ' +
                 '1860 slave schedule page / DC compensated emancipation petition) ' +
                 'for these ancestors and ingest via the wealth-tracing pipeline, ' +
@@ -554,7 +689,23 @@ class DAAOrchestrator {
             );
         }
 
-        console.log(`   ✓ Probate gate passed: ${passed.length} slaveholders have documentary evidence`);
+        if (STRICT && pending.length > 0) {
+            for (const m of missingLines) console.log('   ' + m);
+            throw new DAAProbateGateError(
+                'DAA generation blocked (STRICT mode): the following slaveholder ' +
+                'ancestors have no documentary evidence in any tier:\n' +
+                missingLines.join('\n') +
+                '\n\nUnset DAA_STRICT_PROBATE_GATE to generate a subset DAA for the ' +
+                `${documentedIds.size} documented ancestor(s), or ingest primary sources for the missing ones.`
+            );
+        }
+
+        if (pending.length > 0) {
+            console.log(`   ⚑ ${pending.length} matched ancestor(s) UNDOCUMENTED — carried as "suspected, pending documentation" (excluded from debt math):`);
+            for (const m of missingLines) console.log('   ' + m);
+        }
+        console.log(`   ✓ Probate gate passed: ${documentedIds.size} slaveholder(s) with documentary evidence carry the DAA`);
+        return { documentedIds, pending, documentedDesc: passed };
     }
 
     /**
@@ -583,7 +734,7 @@ class DAAOrchestrator {
             ? opts.enforce
             : (process.env.DAA_KINSHIP_GATE || '').toLowerCase() === 'enforce';
 
-        if (!slaveholders || slaveholders.length === 0) return; // probate gate handles empties
+        if (!slaveholders || slaveholders.length === 0) return { lineageUnproven: [] }; // probate gate handles empties
 
         // Pull the FS-ID lineage paths recorded by the climb for this session,
         // so we can walk the edges even for slaveholders that entered via the
@@ -691,12 +842,20 @@ class DAAOrchestrator {
         }
 
         // Evaluate: every edge on a slaveholder's path must be assertable.
+        // `lineageUnproven` is the structured surfacing payload (returned to the
+        // generate flow): one {slaveholder, generation} per named ancestor whose
+        // path has a gap, so the renderer can print "lineage unproven at
+        // generation N". `blocked` is the human-readable log twin.
         const proven = [];
         const blocked = [];
+        const lineageUnproven = [];
         for (const s of perSlaveholder) {
             if (!s.pathKnown) {
                 blocked.push(`  • ${s.name} (Gen ${s.gen != null ? s.gen : '?'}): ` +
                     `lineage path has no FS IDs recorded — chain of custody cannot be verified`);
+                // Whole path unverifiable — surface at the slaveholder's own
+                // generation (or null when even that is unknown).
+                lineageUnproven.push({ slaveholder: s.name, generation: s.gen != null ? s.gen : null });
                 continue;
             }
             let firstGap = null;
@@ -710,6 +869,7 @@ class DAAOrchestrator {
                 blocked.push(`  • ${s.name}: lineage unproven at generation ${firstGap.gen} — ` +
                     `"${child}" → "${parent}" has no S3-stored kinship document ` +
                     `(census co-residence, marriage/death/birth naming parents, or will naming heir)`);
+                lineageUnproven.push({ slaveholder: s.name, generation: firstGap.gen });
             } else {
                 proven.push(`${s.name} [${s.edges.length} edge(s) documented]`);
             }
@@ -742,6 +902,11 @@ class DAAOrchestrator {
             console.log(`   ⚠ Kinship gate AUDIT ONLY — ${blocked.length} unproven lineage(s) would block ` +
                 `under DAA_KINSHIP_GATE=enforce (harvest not yet built; see standard §5/§9).`);
         }
+
+        // Surfaced to the generate flow (audit-mode; never blocks by default):
+        // each entry annotates a NAMED ancestor "lineage unproven at generation
+        // N". The EDGE-side twin of the probate gate's `pending` list.
+        return { lineageUnproven };
     }
 
     /**
@@ -836,6 +1001,7 @@ class DAAOrchestrator {
                 acm.lineage_path,
                 acm.match_type,
                 acm.match_confidence,
+                acm.verified as climb_verified,
                 acm.slaveholder_id as existing_match_id
             FROM ancestor_climb_matches acm
             WHERE acm.session_id = $1
@@ -1002,6 +1168,16 @@ class DAAOrchestrator {
                     lineage_path: ancestor.lineage_path,
                     match_type: matchType,
                     match_confidence: matchConf,
+                    // Preserve the ORIGINAL climb match_type. `matchType` above is
+                    // this method's own re-resolution vocabulary, and it silently
+                    // UPGRADES weak identity: a climb row whose match_type is
+                    // 'name_only_match' now supplies a slaveholder_id, so the
+                    // `existing_id` branch stamps it 0.90 — higher than the 0.85 it
+                    // would have got from re-matching on name. The underlying
+                    // evidence is still a bare name. The identity gate needs the
+                    // original, so carry it rather than let it be overwritten.
+                    climb_match_type: ancestor.match_type || null,
+                    climb_verified: ancestor.climb_verified === true,
                     climb_match_confidence: ancestor.match_confidence,
                     primary_state: matched.primary_state,
                     primary_county: matched.primary_county,
@@ -1520,26 +1696,44 @@ class DAAOrchestrator {
 
         const { enslavedCountFor } = require('./enslaved-count');
         for (const data of slaveholderData) {
-            const enslavedForCalculation = data.enslavedPersons.map(person => ({
-                name: person.enslaved_name,
-                yearsEnslaved: person.years_enslaved,
-                startYear: person.start_year || 1800,
-                relationship: person.relationship_type
-            }));
+            // Only persons with DOCUMENTED dates feed the per-person Craemer dollar math.
+            // We filter on years_enslaved AND start_year both non-null — the SAME rule
+            // DAAGenerator.calculateComprehensiveDebt applies (see line ~234). Note that
+            // aggregateEnslavedData sets years_enslaved to a non-null value ONLY when a real
+            // birth year plus a freedom/death year exist (and start_year := that birth year),
+            // so this filter never lets an invented startYear reach the money math.
+            const enslavedForCalculation = data.enslavedPersons
+                .filter(person => person.years_enslaved != null && person.start_year != null)
+                .map(person => ({
+                    name: person.enslaved_name,
+                    yearsEnslaved: person.years_enslaved,
+                    startYear: person.start_year,
+                    relationship: person.relationship_type
+                }));
 
-            // #142: reconcile the NAMED persons with the DOCUMENTED count (person_documents.enslaved_count
-            // from slave-schedule walks / probate) — the SAME reconciler contribute.js uses, so the DAA and
-            // the person view can no longer diverge. A walked slaveholder (e.g. Joshua Ward — 1,100 enslaved
-            // documented on schedules, few NAMED) must contribute the documented count, not ~0. Pad the
-            // shortfall with unnamed, schedule-documented enslaved at a default duration (audit: each traces
-            // to a stored doc; MAX-reconciled so overlapping sources never double-count).
+            // #142 (audit-rule-#1 fix): reconcile the NAMED persons with the DOCUMENTED COUNT
+            // (person_documents.enslaved_count from slave-schedule walks / probate) via the SAME
+            // reconciler contribute.js uses, so the DAA head-count and the person view can't diverge.
+            // A walked slaveholder (e.g. Joshua Ward — 1,100 enslaved documented, few NAMED with
+            // dates) must still contribute the documented COUNT, not ~0.
+            //
+            // BUT a documented count carries NO per-person durations or start years. We therefore do
+            // NOT invent years/start-years for the unnamed remainder, and we do NOT run them through
+            // the Craemer dollar math. The prior code padded each unnamed person with
+            // yearsEnslaved:20/startYear:1850 and fed them to calculatePreview, which produced a real
+            // dollar figure from fabricated dates — a number tracing to no row, no citation, no
+            // documented duration. That violates audit rule #1 ("No number on a DAA may trace to
+            // fabricated data"). Instead the documented total is represented as a head-count only
+            // (each unit traces to a stored, MAX-reconciled doc so overlapping sources never
+            // double-count); the DOLLAR total reflects exclusively persons with documented dates.
             const canonId = data.slaveholder.slaveholder_id || data.slaveholder.canonical_id || data.slaveholder.id;
+            let documentedCount = enslavedForCalculation.length;
             try {
-                const ec = await enslavedCountFor(this.db, canonId, { namedCount: enslavedForCalculation.length });
-                for (let i = enslavedForCalculation.length; i < ec.count; i++) {
-                    enslavedForCalculation.push({ name: null, yearsEnslaved: 20, startYear: 1850, relationship: 'documented_unnamed' });
-                }
-            } catch (e) { /* non-fatal — keep the named count */ }
+                // Pass the full NAMED count (not the dated subset) so MAX reconciliation is against
+                // the true named roster, matching the person-view reconciler.
+                const ec = await enslavedCountFor(this.db, canonId, { namedCount: data.enslavedPersons.length });
+                documentedCount = Math.max(documentedCount, ec.count);
+            } catch (e) { /* non-fatal — fall back to the dated/named count */ }
 
             const preview = this.daaGenerator.calculatePreview(
                 enslavedForCalculation,
@@ -1548,13 +1742,15 @@ class DAAOrchestrator {
 
             slaveholderCalculations.push({
                 slaveholder: data.slaveholder,
-                debt: preview.totalDebt,
-                enslavedCount: enslavedForCalculation.length,
+                debt: preview.totalDebt,                    // dated persons only — no fabricated figure
+                enslavedCount: documentedCount,             // documented head-count (traces to rows)
+                valuedFromDates: enslavedForCalculation.length,
+                documentedButUndatedCount: documentedCount - enslavedForCalculation.length,
                 calculations: preview.calculations
             });
 
             totalDebt += preview.totalDebt;
-            totalEnslavedCount += enslavedForCalculation.length;
+            totalEnslavedCount += documentedCount;
         }
 
         // ── Tiered Payment (replaces flat 2%) ────────────────────────
@@ -1781,7 +1977,15 @@ class DAAOrchestrator {
             const result = await this.db.query(`
                 SELECT
                     annual_income,
-                    net_worth,
+                    -- The column is estimated_net_worth (M036). Selecting a
+                    -- non-existent "net_worth" threw for EVERY participant, the
+                    -- catch below swallowed it, dbRow stayed null, and this
+                    -- function returned bare defaults — so the entire M037
+                    -- wealth fingerprint (trust corpus, land, corporate ties,
+                    -- wealth_flag_*) never reached the calculators. Verified
+                    -- against the live DB 2026-08-03: 'column "net_worth" does
+                    -- not exist'.
+                    estimated_net_worth AS net_worth,
                     corporate_connections,
                     corporate_connection_type,
                     trust_beneficiary,

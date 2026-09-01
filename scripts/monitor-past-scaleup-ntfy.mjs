@@ -19,6 +19,14 @@ const INTERVAL = (ii > -1 ? +process.argv[ii + 1] : 900) * 1000;
 if (!WEBHOOK) { console.error('OPS_NOTIFY_WEBHOOK not set — nothing to notify. Set it and relaunch.'); process.exit(1); }
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const RESUME = 'node scripts/promote-slavevoyages-past-to-leads.mjs --apply --concurrency 16';
 
 async function ntfy(message, { severity = 'info', title = 'PAST scale-up' } = {}) {
