@@ -21,9 +21,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
+import { api } from '../../api/client.js';
 
-const BACKEND = import.meta.env.VITE_API_URL || '';
-const BACKEND_ROOT = BACKEND ? BACKEND.replace(/\/api$/, '') : '';
+// Backend root — used only for the non-SPA "Will Review" link (served by Render).
+// The wills upload/disambiguation calls go through the api client (above).
+const BACKEND_ROOT = (import.meta.env.VITE_API_URL || '').replace(/\/api$/, '');
 
 // ── Document type definitions ──────────────────────────────────────────────────
 const DOC_TYPES = [
@@ -56,39 +58,12 @@ const DOC_TYPES = [
   },
 ];
 
-async function ingestDocument(formData) {
-  const res = await fetch(`${BACKEND}/api/wills/ingest`, {
-    method: 'POST',
-    body: formData,
-  });
-  const data = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || `Upload failed (${res.status})`);
-  }
-  return data;
-}
-
-async function fetchCandidates(name) {
-  const res = await fetch(
-    `${BACKEND}/api/wills/candidates?name=${encodeURIComponent(name)}`,
-    { headers: { Accept: 'application/json' } }
-  );
-  const data = await res.json().catch(() => ({ success: false, candidates: [] }));
-  return data.candidates || [];
-}
-
-async function linkDocument(personDocId, canonicalPersonId, extractionId) {
-  const res = await fetch(`${BACKEND}/api/wills/link`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ personDocId, canonicalPersonId, extractionId }),
-  });
-  const data = await res.json().catch(() => ({ success: false }));
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || `Link failed (${res.status})`);
-  }
-  return data;
-}
+// The wills upload/disambiguation flow now goes through the central API client
+// (base URL + admin-token handling in one place) instead of ad-hoc fetch calls.
+const ingestDocument = (formData) => api.ingestWill(formData);
+const fetchCandidates = (name) => api.getWillCandidates(name);
+const linkDocument = (personDocId, canonicalPersonId, extractionId) =>
+  api.linkWill({ personDocId, canonicalPersonId, extractionId });
 
 // ── Disambiguation panel (wills only) ─────────────────────────────────────────
 function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked }) {
@@ -126,11 +101,11 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
     gap: 4,
     padding: '0.65rem 0.85rem',
     marginBottom: '0.4rem',
-    border: `1px solid ${isSelected ? 'rgba(0,200,100,0.5)' : 'rgba(255,255,255,0.1)'}`,
+    border: `1px solid ${isSelected ? 'var(--seal)' : 'var(--border)'}`,
     borderRadius: 4,
-    background: isSelected ? 'rgba(0,200,100,0.07)' : 'rgba(255,255,255,0.02)',
+    background: isSelected ? 'rgba(46,106,62,0.10)' : 'var(--paper-raised)',
     cursor: 'pointer',
-    fontFamily: 'monospace',
+    fontFamily: 'var(--font-body)',
     fontSize: '0.83rem',
     transition: 'border-color 0.1s, background 0.1s',
   });
@@ -139,29 +114,29 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
     <div style={{
       marginTop: '1.25rem',
       padding: '1rem',
-      background: 'rgba(245,166,35,0.06)',
-      border: '1px solid rgba(245,166,35,0.3)',
+      background: 'rgba(122,93,16,0.08)',
+      border: '1px solid var(--flag)',
       borderRadius: 4,
-      fontFamily: 'monospace',
+      fontFamily: 'var(--font-body)',
     }}>
-      <div style={{ color: '#f5a623', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+      <div style={{ color: 'var(--flag)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
         ⚠ Multiple persons named &ldquo;{testatorName}&rdquo; exist in the database.
         Select the correct one to file this document now — or skip and a researcher will link it later.
       </div>
 
       {candidates === null && (
-        <div style={{ color: '#888', fontSize: '0.8rem' }}>Loading candidates…</div>
+        <div style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>Loading candidates…</div>
       )}
 
       {candidates !== null && candidates.length === 0 && (
-        <div style={{ color: '#888', fontSize: '0.8rem' }}>
+        <div style={{ color: 'var(--ink-soft)', fontSize: '0.8rem' }}>
           No candidates found. Document stored — will be linked when the person is added.
         </div>
       )}
 
       {candidates !== null && candidates.length > 0 && (
         <>
-          <div style={{ fontSize: '0.78rem', color: '#888', marginBottom: '0.5rem' }}>
+          <div style={{ fontSize: '0.78rem', color: 'var(--ink-soft)', marginBottom: '0.5rem' }}>
             Click a record to select it, then click Link:
           </div>
           {candidates.map(c => {
@@ -180,17 +155,17 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
                 tabIndex={0}
                 onKeyDown={e => e.key === 'Enter' && setSelected(isSelected ? null : c)}
               >
-                <div style={{ fontWeight: 600, color: isSelected ? '#4caf50' : '#e0e0e0' }}>
+                <div style={{ fontWeight: 600, color: isSelected ? 'var(--seal)' : 'var(--ink)' }}>
                   {isSelected ? '✓ ' : ''}{c.canonical_name}
                 </div>
-                <div style={{ color: '#888', fontSize: '0.75rem' }}>
+                <div style={{ color: 'var(--ink-soft)', fontSize: '0.75rem' }}>
                   {c.person_type}
                   {yearParts.length > 0 ? ' · ' + yearParts.join(' · ') : ''}
                   {locationParts.length > 0 ? ' · ' + locationParts.join(', ') : ''}
                   {' · '}id={c.id}
                 </div>
                 {c.notes && (
-                  <div style={{ color: '#666', fontSize: '0.72rem', marginTop: 2 }}>
+                  <div style={{ color: 'var(--ink-soft)', fontSize: '0.72rem', marginTop: 2 }}>
                     {c.notes.slice(0, 120)}{c.notes.length > 120 ? '…' : ''}
                   </div>
                 )}
@@ -199,7 +174,7 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
           })}
 
           {linkError && (
-            <div style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+            <div style={{ color: 'var(--err)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
               ✗ {linkError}
             </div>
           )}
@@ -213,7 +188,7 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
             >
               {linking ? 'Linking…' : selected ? `Link to ${selected.canonical_name}` : 'Select a person above'}
             </button>
-            <span style={{ color: '#555', fontSize: '0.78rem' }}>
+            <span style={{ color: 'var(--ink-faint)', fontSize: '0.78rem' }}>
               or leave it — a researcher will link it later
             </span>
           </div>
@@ -227,11 +202,11 @@ function DisambiguationPanel({ testatorName, personDocId, extractionId, onLinked
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label style={{ display: 'block', fontFamily: 'monospace', fontSize: '0.8rem', color: '#888', marginBottom: 4 }}>
+      <label style={{ display: 'block', fontFamily: 'var(--font-body)', fontSize: '0.8rem', color: 'var(--ink-soft)', marginBottom: 4 }}>
         {label}
       </label>
       {hint && (
-        <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#555', marginBottom: 6 }}>
+        <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--ink-faint)', marginBottom: 6 }}>
           {hint}
         </div>
       )}
@@ -345,22 +320,22 @@ export default function SubmitWillPage() {
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(0,200,100,0.08)',
-              border: '1px solid rgba(0,200,100,0.25)',
+              background: 'rgba(46,106,62,0.10)',
+              border: '1px solid var(--seal)',
               borderRadius: 4,
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-body)',
               fontSize: '0.85rem',
             }}>
-              <div style={{ color: '#4caf50', marginBottom: '0.35rem' }}>
+              <div style={{ color: 'var(--seal)', marginBottom: '0.35rem' }}>
                 ✓ Profile created for{' '}
                 <Link
                   to={`/?id=${matched.id}&table=canonical_persons`}
-                  style={{ color: '#80cbc4', textDecoration: 'underline' }}
+                  style={{ color: 'var(--accent)', textDecoration: 'underline' }}
                 >
                   {matched.canonical_name}
                 </Link>
               </div>
-              <div style={{ color: '#888', fontSize: '0.78rem' }}>
+              <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem' }}>
                 The will and testator profile are now in the database, pending source
                 verification by a researcher. You can search for this person by name.
               </div>
@@ -369,20 +344,20 @@ export default function SubmitWillPage() {
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(0,200,100,0.08)',
-              border: '1px solid rgba(0,200,100,0.25)',
+              background: 'rgba(46,106,62,0.10)',
+              border: '1px solid var(--seal)',
               borderRadius: 4,
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-body)',
               fontSize: '0.85rem',
             }}>
-              <span style={{ color: '#4caf50' }}>✓ Linked to existing profile: </span>
+              <span style={{ color: 'var(--seal)' }}>✓ Linked to existing profile: </span>
               <Link
                 to={`/?id=${matched.id}&table=canonical_persons`}
-                style={{ color: '#80cbc4', textDecoration: 'underline' }}
+                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
                 {matched.canonical_name}
               </Link>
-              <span style={{ color: '#888' }}> — document now visible on their profile</span>
+              <span style={{ color: 'var(--ink-soft)' }}> — document now visible on their profile</span>
             </div>
           ) : !isRegister && ambiguous ? (
             <DisambiguationPanel
@@ -395,12 +370,12 @@ export default function SubmitWillPage() {
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: 'var(--paper-sunk)',
+              border: '1px solid var(--border)',
               borderRadius: 4,
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-body)',
               fontSize: '0.85rem',
-              color: '#888',
+              color: 'var(--ink-soft)',
             }}>
               ℹ Document stored and queued for review. A researcher will create or link the
               testator profile for &ldquo;{testatorName}&rdquo;.
@@ -412,16 +387,16 @@ export default function SubmitWillPage() {
             <div style={{
               marginTop: '1.25rem',
               padding: '0.75rem 1rem',
-              background: 'rgba(128,203,196,0.07)',
-              border: '1px solid rgba(128,203,196,0.25)',
+              background: 'rgba(20,86,122,0.08)',
+              border: '1px solid var(--accent)',
               borderRadius: 4,
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-body)',
               fontSize: '0.85rem',
             }}>
-              <div style={{ color: '#80cbc4', marginBottom: '0.4rem' }}>
+              <div style={{ color: 'var(--accent)', marginBottom: '0.4rem' }}>
                 ✓ Case register stored in S3 — evidence tier: Tier C (secondary compilation)
               </div>
-              <div style={{ color: '#666', fontSize: '0.78rem' }}>
+              <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem' }}>
                 Originals are handwritten court records at NARA RG 21. This PDF is a
                 Heritage Books printed compilation. OCR + case extraction must be run
                 separately via the scripts listed below. Tier upgrades to Tier B only
@@ -431,35 +406,35 @@ export default function SubmitWillPage() {
           )}
 
           {/* ── Technical details + next steps ── */}
-          <div className="contribute-result" style={{ marginTop: '1.5rem', fontFamily: 'monospace', fontSize: '0.85rem' }}>
+          <div className="contribute-result" style={{ marginTop: '1.5rem', fontFamily: 'var(--font-body)', fontSize: '0.85rem' }}>
             {result.s3Key && (
               <div style={{ marginBottom: '0.5rem' }}>
-                <span style={{ color: '#888' }}>S3 key: </span>
-                <code style={{ color: '#e0e0e0' }}>{result.s3Key}</code>
+                <span style={{ color: 'var(--ink-soft)' }}>S3 key: </span>
+                <code style={{ color: 'var(--ink)' }}>{result.s3Key}</code>
               </div>
             )}
             {result.personDocId && (
               <div style={{ marginBottom: '0.5rem' }}>
-                <span style={{ color: '#888' }}>person_documents.id: </span>
-                <code style={{ color: '#e0e0e0' }}>{result.personDocId}</code>
+                <span style={{ color: 'var(--ink-soft)' }}>person_documents.id: </span>
+                <code style={{ color: 'var(--ink)' }}>{result.personDocId}</code>
               </div>
             )}
             {result.extractionId && (
               <div style={{ marginBottom: '0.5rem' }}>
-                <span style={{ color: '#888' }}>will_extractions.id: </span>
-                <code style={{ color: '#e0e0e0' }}>{result.extractionId}</code>
+                <span style={{ color: 'var(--ink-soft)' }}>will_extractions.id: </span>
+                <code style={{ color: 'var(--ink)' }}>{result.extractionId}</code>
               </div>
             )}
             {result.warning && (
-              <div style={{ color: '#f5a623', marginTop: '0.75rem' }}>⚠ {result.warning}</div>
+              <div style={{ color: 'var(--flag)', marginTop: '0.75rem' }}>⚠ {result.warning}</div>
             )}
             {/* Show pipeline next-steps only for non-will types (case registers, deeds, etc.)
                 where a researcher needs to know which scripts to run.
                 For wills, the pipeline is fully automated — no contributor action needed. */}
             {isRegister && Array.isArray(result.nextSteps) && result.nextSteps.length > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <div style={{ color: '#888', fontSize: '0.78rem', marginBottom: '0.4rem' }}>PIPELINE STEPS (admin):</div>
-                <ul style={{ paddingLeft: '1.2rem', color: '#aaa', lineHeight: 2, margin: 0 }}>
+                <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem', marginBottom: '0.4rem' }}>PIPELINE STEPS (admin):</div>
+                <ul style={{ paddingLeft: '1.2rem', color: 'var(--ink-soft)', lineHeight: 2, margin: 0 }}>
                   {result.nextSteps.map((s, i) => <li key={i}><code style={{ fontSize: '0.78rem' }}>{s}</code></li>)}
                 </ul>
               </div>
@@ -487,10 +462,10 @@ export default function SubmitWillPage() {
   return (
     <ErrorBoundary>
       <div className="page">
-        <h2 style={{ fontFamily: 'monospace', marginBottom: '0.5rem' }}>
+        <h2 style={{ fontFamily: 'var(--font-body)', marginBottom: '0.5rem' }}>
           Submit Archival Document
         </h2>
-        <p style={{ color: '#888', fontFamily: 'monospace', fontSize: '0.85rem', marginBottom: '2rem', maxWidth: 540 }}>
+        <p style={{ color: 'var(--ink-soft)', fontFamily: 'var(--font-body)', fontSize: '0.85rem', marginBottom: '2rem', maxWidth: 540 }}>
           Upload a will, probate record, case register, deed, or estate inventory from an archive.
           PDF, JPEG, or PNG stored in S3 and queued for OCR extraction — no account required.
         </p>
@@ -514,9 +489,9 @@ export default function SubmitWillPage() {
                     gap: '0.6rem',
                     cursor: 'pointer',
                     padding: '0.5rem 0.7rem',
-                    border: `1px solid ${docType === t.value ? 'rgba(128,203,196,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    border: `1px solid ${docType === t.value ? 'var(--accent)' : 'var(--border)'}`,
                     borderRadius: 4,
-                    background: docType === t.value ? 'rgba(128,203,196,0.06)' : 'transparent',
+                    background: docType === t.value ? 'rgba(20,86,122,0.08)' : 'transparent',
                     transition: 'border-color 0.1s, background 0.1s',
                   }}
                 >
@@ -529,10 +504,10 @@ export default function SubmitWillPage() {
                     style={{ marginTop: 2, flexShrink: 0 }}
                   />
                   <div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: docType === t.value ? '#80cbc4' : '#e0e0e0' }}>
+                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: docType === t.value ? 'var(--accent)' : 'var(--ink)' }}>
                       {t.label}
                     </div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#555', marginTop: 2 }}>
+                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--ink-faint)', marginTop: 2 }}>
                       {t.description}
                     </div>
                   </div>
@@ -555,8 +530,8 @@ export default function SubmitWillPage() {
                   style={{
                     display: 'flex', alignItems: 'flex-start', gap: '0.6rem', cursor: 'pointer',
                     padding: '0.5rem 0.7rem', borderRadius: 4,
-                    border: `1px solid ${evidenceStrength === opt.value ? 'rgba(128,203,196,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                    background: evidenceStrength === opt.value ? 'rgba(128,203,196,0.06)' : 'transparent',
+                    border: `1px solid ${evidenceStrength === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                    background: evidenceStrength === opt.value ? 'rgba(20,86,122,0.08)' : 'transparent',
                   }}
                 >
                   <input
@@ -568,10 +543,10 @@ export default function SubmitWillPage() {
                     style={{ marginTop: 2, flexShrink: 0 }}
                   />
                   <div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: evidenceStrength === opt.value ? '#80cbc4' : '#e0e0e0' }}>
+                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: evidenceStrength === opt.value ? 'var(--accent)' : 'var(--ink)' }}>
                       {opt.label}
                     </div>
-                    <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#555', marginTop: 2 }}>
+                    <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.72rem', color: 'var(--ink-faint)', marginTop: 2 }}>
                       {opt.desc}
                     </div>
                   </div>
@@ -587,10 +562,10 @@ export default function SubmitWillPage() {
               accept=".pdf,application/pdf,.jpg,.jpeg,image/jpeg,.png,image/png"
               required
               onChange={e => setFile(e.target.files[0] || null)}
-              style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: '#e0e0e0', width: '100%' }}
+              style={{ fontFamily: 'var(--font-body)', fontSize: '0.85rem', color: 'var(--ink)', width: '100%' }}
             />
             {file && (
-              <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#888', marginTop: 4 }}>
+              <div style={{ fontFamily: 'var(--font-body)', fontSize: '0.75rem', color: 'var(--ink-soft)', marginTop: 4 }}>
                 {file.name} — {(file.size / 1024 / 1024).toFixed(1)} MB
               </div>
             )}
@@ -680,12 +655,12 @@ export default function SubmitWillPage() {
               </Field>
               <div style={{
                 padding: '0.6rem 0.85rem',
-                background: 'rgba(245,166,35,0.06)',
-                border: '1px solid rgba(245,166,35,0.2)',
+                background: 'rgba(122,93,16,0.08)',
+                border: '1px solid var(--flag)',
                 borderRadius: 4,
-                fontFamily: 'monospace',
+                fontFamily: 'var(--font-body)',
                 fontSize: '0.75rem',
-                color: '#888',
+                color: 'var(--ink-soft)',
               }}>
                 ⚠ Case registers are secondary compilations. Evidence derived from this
                 document will be assigned Tier C (secondary) in the enslaver evidence

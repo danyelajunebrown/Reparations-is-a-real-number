@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, filterVerified } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
-import { formatClass } from '../api/format.js';
+import { PersonCard, DocumentCard } from '../components/ui/index.jsx';
 import { SearchBar } from '../components/Search/SearchBar.jsx';
 import { LedgerSection } from '../components/Layout/LedgerSection.jsx';
 import IntakeButton from '../components/Intake/IntakeButton.jsx';
@@ -195,7 +195,7 @@ export default function HomePage() {
             )}
             <div className="stack">
               {persons.map((p, i) => (
-                <PersonResult key={`${p.id}-${i}`} person={p} />
+                <PersonCard key={`${p.id}-${i}`} person={p} />
               ))}
             </div>
           </section>
@@ -219,17 +219,7 @@ export default function HomePage() {
             )}
             <div className="stack">
               {documents.map(d => (
-                <Link
-                  key={d.document_id || d.id}
-                  to={`/documents/${d.document_id || d.id}`}
-                  className="box"
-                  style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-                >
-                  <div>{d.title || d.filename || d.owner_name}</div>
-                  <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-                    {d.doc_type} &middot; {d.owner_name || 'unknown owner'}
-                  </div>
-                </Link>
+                <DocumentCard key={d.document_id || d.id} doc={d} />
               ))}
             </div>
           </section>
@@ -258,32 +248,4 @@ function SectionCard({ to, label, desc }) {
       <div className="dim" style={{ fontSize: 12, lineHeight: 1.6 }}>{desc}</div>
     </Link>
   );
-}
-
-function PersonResult({ person }) {
-  const id = person.id;
-  const source = person.table_source || person.tableSource || 'canonical_persons';
-  const cls = person.verification_status || person.classification;
-  return (
-    <Link
-      to={`/person/${source}/${id}`}
-      className="box"
-      style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-    >
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <div style={{ fontWeight: 500 }}>{person.name || person.full_name}</div>
-        {cls && <span className={`badge ${cls}`}>{formatClass(cls)}</span>}
-      </div>
-      <div className="dim" style={{ fontSize: 12, marginTop: 4 }}>
-        {person.type || person.person_type}
-        {person.birth_year ? ` \u00b7 b.${person.birth_year}` : ''}
-        {person.location ? ` \u00b7 ${person.location}` : ''}
-        {person.source_url ? ` \u00b7 ${safeHostname(person.source_url)}` : ''}
-      </div>
-    </Link>
-  );
-}
-
-function safeHostname(url) {
-  try { return new URL(url, 'https://x').hostname; } catch { return ''; }
 }

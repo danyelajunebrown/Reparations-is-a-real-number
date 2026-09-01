@@ -1,6 +1,433 @@
 # Active Context — Reparations Platform
 
-_Last updated: 2026-07-06 (schedule backfills + modal enrichment + OCR-capacity findings #142 — PR #133 deployed)_
+_Last updated: 2026-07-19 (DUTCHESS pivot: audit → land non-claim guardrail → 4 Dutchess sources ingested
+→ RAG outage fixed → calibration-study assessment + Stage-1 pipeline; NEXT = full-Dutchess ingest)_
+
+---
+
+## DUTCHESS AUDIT → LAND GUARDRAIL → SOURCES → RAG FIX → CALIBRATION (2026-07-17→19) → [[finding-land-nonclaim-and-dutchess-audit-jul17]] · [[assessment-dutchess-calibration-case-study-jul19]] · [[plan-dutchess-calibration-stage1]] · [[plan-dutchess-full-ingest]]
+Very long session, branch `frontend/light-redesign`. Goal: end-to-end DAAs for Dutchess Co. enslavers +
+enslaved, cognizant of wealth over time, making NO claim to Native land. ~20 commits. Highlights:
+
+- **AUDIT + DEPS:** removed 11 unused packages (web3/truffle/ipfs-http-client/xlsx/… all zero-import) →
+  npm audit 191→49, 0 prod criticals, unblocked `--force`. DAA CLI was dead (`corporateConnections is
+  not iterable`, DAAOrchestrator:1581/:1762) — FIXED (default `[]` not `false`). `Calculator.js` is
+  LEGACY (nothing on the DAA path imports it; the flagged free params 120/15000/0.04/0.035 affect no
+  DAA — dead code; consider deleting it + the dead index.js facade).
+- **LAND NON-CLAIM GUARDRAIL (core directive):** the system was ALREADY monetizing Native land into a
+  descendant obligation (`DisgorgementCalculator` summed `land_transfer_events.consideration_usd` →
+  ledger → descendant). Fixed: migration 125 `indigenous_land_provenance` (Link 0; seeded Dutchess/
+  Massena → Stockbridge-Munsee), `forEnslaver` now splits `native_land_restitution_usd` (owed to the
+  Native nation, separate) OUT of `descendant_claimable_usd`; DAAOrchestrator writes the descendant
+  ledger from `descendant_claimable_usd`. 8-assertion test passes. Framework §2.5 amended. **Land VALUES
+  wealth, never creates a descendant land claim.**
+- **DUTCHESS SOURCES INGESTED (was 0 canonical/3 leads this morning):** 1714 census (14 enslavers,
+  counts) + 1755 Census of Slaves (Dutchess+Westchester: 195 enslavers, 246 named enslaved, 246 edges)
+  + colonial wills (26 IMAGE-BACKED enslaved, 18 edges) — all via PersonService dedup (Biscoe-safe, 0
+  auto-merge) + owner→enslaved edges + district docs EMBEDDED (RAG). Secondary tier 0.85. 1790 Brownell
+  edition NOT ingested (omits the slaves column). Massena chain-of-title packet is the wealth-over-time
+  reference instrument (22 links 1688→2024, Beekman/Livingston/Ten Broeck = our census families).
+- **RAG WAS SILENTLY BROKEN PLATFORM-WIDE — FIXED:** `RagService.retrieve` returned 0 for EVERY query
+  (219k embeddings present) — unset `hnsw.ef_search` returns 0 rows on Neon + full HNSW index post-
+  filter loss. Fix: SET ef_search + partial `doc_ocr` HNSW index (migration 124, dropped the full one;
+  person_profile has no reader). Verified full-corpus retrieval. **EMBED + RAG run LOCALLY on the
+  MacBook** — `nomic-embed-text` on ollama :11434 (the corpus model); the Mini-offline embed-debt
+  excuse is GONE (`EMBED_SOURCE=ollama`).
+- **CALIBRATION STUDY (Roth & Tolbert):** assessment says ground-truth n ≈ 0 (climb runs modern→
+  enslaver, 0 Dutchess, ~2 human verdicts DB-wide). Maternal-link edge is SPARSE in both civil regs
+  (mother optional) AND church baptisms (child often unnamed) — empirically probed. RE-SCOPED f to the
+  ENSLAVER-anchored edge. Built: migration 126 `linkage_verdicts` (the verdict table the audit packet
+  never wrote back to); cross-source verdict builder; NESRI cross-ref → **16 confirmed enslaver-identity
+  verdicts** (Hoffman 43, Van Benthouse 14, Keip 9, …). Enslaver-identity ground truth is now real; the
+  MODERN endpoint (Dutchess participant / forward tracing) is the remaining gap.
+- **NESRI capability proven:** `scripts/scrapers/nesri-scraper.js` + `nesri-crossref-dutchess-enslavers.js`
+  — the NY/Northeast Slavery Records Index (CUNY, Caspio; 2,569 Dutchess records, 38-field schema incl.
+  Enslaver/Enslaved names, County, Year, Source) is scrapable per-search reliably; the 108-page full
+  pull degrades on the SHARED FS Chrome (protocol timeouts) — needs a DEDICATED Chrome.
+- **NEXT (user directive 2026-07-19): INGEST ALL OF DUTCHESS COUNTY.** See [[plan-dutchess-full-ingest]].
+
+---
+
+## LIVING-PERSON BRIDGE + kinship-harvest fixes + intake/oral-history + climb ON THE MACBOOK (2026-07-14→16)
+Long session, branch frontend/light-redesign. **INFRA REALITY: the Mac Mini is OFFLINE for ~2 weeks**
+(Tailscale "last seen 1d ago"; Pi offline 49d). So ALL FamilySearch/climb work now runs on the MACBOOK:
+Chrome for Testing (puppeteer's bundled full Chrome, `~/.cache/puppeteer/chrome/mac_arm-143…`) launched via
+`open -na … --remote-debugging-port=9222 --user-data-dir=/tmp/piper-climb-chrome` (NEVER puppeteer.launch —
+same rule), user logs into FS manually in that window, scripts `puppeteer.connect()` :9222. Isolated profile +
+shared Neon only → Mini pipeline untouched, resumes clean when it returns. This is a TEMPORARY exception to
+"MacBook = no scraping".
+
+**KINSHIP HARVEST (step 5) — WAS SILENTLY NO-OP'ING; FIXED (2 bugs).** `standard-genealogical-edge-evidence`
+was "END-TO-END BUILT" but the harvest never actually wrote document-backed edges. Live diagnosis on the
+MacBook: (1) `harvestPersonSources` used UNVERIFIED Sources-tab selectors (`[data-testid*=source]`/`a[href*=
+/ark:/61903/]`) → matched 0 rows → silent. Fixed against live DOM: sources are `.cssSourceTitle` in
+`.cssSourceGrid` rows + `source-button_view-<id>` testids (commit 128ca08ff). (2) waited 1500ms → fired BEFORE
+the SPA rendered the cards → 0 captured; fixed to `waitForSelector('.cssSourceTitle')`. Now fires + classifies
+(1950 census → tier-1 child_of). **BUT edges still didn't persist:** `writeKinshipEdge.resolveFs` is
+CANONICAL-ONLY (line 50) and the climb produces LEADS → every edge returns `unresolved`. `canonical_family_edges`
+IS lead-aware (M103 cols a_subject_table/a_subject_id…, person_a_id/b NULLABLE, trigger trg_cfe_sync_subject).
+Fix = `scripts/climb/bridge-persist.mjs` writes a GATED (verified=false) lead-aware child_of edge via the M103
+cols directly — honoring the climb-gate (leads, not canonicals). PROVEN: edge #8113 Kathleen Piper→Jack Piper Sr,
+tier-1, doc-backed, gated. **REMAINING: unify — extend writeKinshipEdge to be lead-aware so the CLIMB (not just
+the bridge) persists edges.**
+
+**LIVING-PERSON WORKAROUND (user directive) — PROVEN + refined.** FS hides living people's TREE profiles
+("[Unknown Name]") but INDEXED RECORDS are public. `scripts/climb/public-record-bridge.mjs`: given the
+consented precise intake data (name/birth/place + known spouse/children), search public FS records,
+disambiguate via known relatives, extract PARENTS = deceased/public great-grandparent seeds; the record doubles
+as the kinship doc. **CONFIRMED tier** (spouse/child corroboration) vs **CANDIDATE tier** (parents+birth-year,
+human review — never auto-asserted). Birth year parsed from "Birth YYYY" specifically (event-year matching
+dropped childhood records). **Piper results:** Kathleen Piper→**Jack Piper Sr** CONFIRMED; Norma Branch→**Alton
+E + Sadie J Branch** strong candidate (Branch maiden name + "Alton"→grandson Thomas ALTON Hill); Lloyd Hill
+noisy; Jerry Smith deceased→father **Clemmie Adcock Smith 1910-1993** on file. **⚠ FS ANTI-BOT DISCIPLINE
+(learned hard):** a tight test-loop of searches tripped FS's CAPTCHA AND my rapid re-navigations WIPED the
+operator's in-progress captcha/login. MANDATORY: 20-34s between searches + STOP-on-CAPTCHA/logout (don't
+hammer) + never open/close tabs fast while the operator is logging in. Commit 8351b319b.
+**DELIVERABLE:** `worksheets/piper-lineage-verification.html` (gitignored, local — PII) — plain-language report
+for Piper to confirm/correct the great-grandparents (participant sign-off, not operator).
+
+**INTAKE HARDENING (a) — commit ac6021f2b.** Adrian's TEST submission (placeholder QA) exposed: `XXXX-XXX`
+FS IDs passed the no-vowel regex (X is a consonant) → explicit placeholder rejection; test-value names
+("…Test Run","City, State") slipped exact-match → phrase detection; impossible generations (GP born after
+participant) were a non-blocking WARNING → `crossValidate` now returns {warnings,errors}, gap<=0 BLOCKS
+(climbs queue only when errors.length===0).
+
+**ORAL-HISTORY → DIRECTED LEADS (b) — M122 `intake_research_leads` + `parse-intake-oral-history.mjs`, commit
+6ec187a76.** The intake free-text field was discarded; now parsed into slaveholder-family / enslaved-ancestor /
+adoption / name-change claims. Slaveholder-family = a DIRECTED HYPOTHESIS cross-referenced against enslavers we
+already hold. **Adrian's McCain lore** ("paternal grandmother's ancestors owned by John McCain's ancestors") →
+**43 McCain enslavers we hold, dominant geography Union County NC** (data corrected my Carroll-County-MS
+assumption) → targeted climb+match on the paternal-grandmother line. Confidence 0.5 (hypothesis); verify→match
+or negative finding. 3 leads persisted to Adrian (P4RF-PFQ). Note: Adrian's intake also flagged adoption
+(maternal cousins) + name change (=Abigail Brown).
+
+**ALSO:** Piper registered (participant 7ce6dd12); NY-probate self-heal watchdog built (`probate-session-
+watchdog.js`, PM2 probate-session-heal-ny) BUT the Mini's now offline so probate is paused until it returns;
+GitHub caught up — all work pushed to branch `frontend/light-redesign` (origin/main is 229 AHEAD via a parallel
+session — do NOT force main; open a PR if releasing). Earlier this session: the roster file-first reckoning
+([[standard-file-first-document-archival]]) + rollback.
+**NEXT:** Piper — await her confirmation of the report → persist confirmed great-grandparent edges → climb up
+from Jack Piper Sr / the Branches / Clemmie Smith toward enslaver matches. Unify writeKinshipEdge lead-awareness.
+Adrian — run the McCain-directed paternal climb. Ingest H_18xx IPUMS census as BENCHMARKS after the VA-slave-
+count corruption fix (NOT the spine — no names). Mini returns ~end July → resume probate + heavy scraping.
+
+---
+
+## SESSION WRAP — frontend overhaul COMPLETE + gate-lift + guardrails (2026-07-08→11) → [[plan-frontend-light-redesign]] · [[plan-gate-lift-campaign]] · [[plan-rag-prod-wiring]]
+The multi-day frontend-overhaul brief (Part 1) is substantially DONE + DEPLOYED (gh-pages-react) + runtime-
+verified, plus two adjacent wins the work surfaced. Detail in the linked plan docs + the dated entries below.
+- **Frontend a→e (deployed):** (a) bright light "archive/ledger" WCAG-AA design system; (d) shared `ui`
+  primitives + one data layer (+ Field/Section consolidation across 5 comps, StatsRibbon retired); (b)
+  schema-driven field layer (`api/fieldRegistry.js` + `RecordDetail`, PersonProfile identity grid); (c)
+  cross-browser OpenSeadragon zoomable viewer (`drawer:'canvas'` — the WebGL-texture regression fix) +
+  primary-sources-up; (e) RAG "Ask" surface + Search/Profile CTAs (deep-linkable `/ask?q=`). Then the
+  INTEGRATION-DEBT pass: the signature primitives (LedgerFigure/SealBadge/EvidenceBlock) — built-but-unused
+  — now wired; `.table-scroll` applied; VersionGate/ErrorBoundary stray colors converted; SubmitWillPage
+  relit → the WHOLE public UI is light.
+- **Runtime guardrails (NEW):** `scripts/smoke-test-frontend.mjs` (headless route smoke test @390px — catches
+  JS/console/WebGL/doc-viewer errors; **11/11 clean**) + `scripts/verify-deploy.mjs` chained into
+  `deploy:gh-pages` (wait-for-propagation → smoke-test the live bundle). It caught its own path-with-space
+  quoting bug on first run (fixed). Runtime audit is now standing, not just build-verify.
+- **RAG OPS still pending (frontend item 1):** Ask works in-UI but returns `degraded` in prod until Render
+  `OLLAMA_URL` → Mini nomic/ollama via Tailscale Funnel ([[plan-rag-prod-wiring]]; a gemini query-embed is
+  NOT a valid shortcut — corpus is nomic space). (e+) records-level embed backfill deferred.
+- **Gate-lift (adjacent win):** fixed the `reextract-hand-uploaded-wills.mjs` pipeline (person_type
+  'free_person'→'unknown'; auto `enslaved_count`→`recomputeGate` sync). **5 flagship enslavers now SURFACE
+  (verified prod):** Hugh Hopewell V, Joshua John Ward (~1,100), Robert E. Lee, Wade Hampton, Thomas
+  Jefferson. TWO TRACKS: schedule-served = cheap bulk `recomputeGate`; will-served = reextract drip (7,967 of
+  10,890 gated-with-scan). #90 (scoped benchmark) is gated on the documented numerator growing (this
+  campaign) + a settled national denominator (#116). [[plan-gate-lift-campaign]].
+- **Liberty probate: NOT being rescraped** (user asked; DB-verified: 14,450 written, latest 2026-05-21, 0 in
+  24h). Only recent Liberty touch = my re-EXTRACTION (not scrape) of one namesake admin-bond doc.
+- **Remaining open (non-loose-ends, not neglect):** RAG live (ops), broaden RecordDetail platform-wide,
+  thorough per-view responsive pass, embed-persons backfill. ⚠ Concurrency race with a parallel backend
+  session recurred (absorbed my (c) commit) — coordinate commit timing.
+
+---
+
+## VA Untold #140 + high-profile enslaver front-end audit (2026-07-07, branch audit/probate-classifier)
+**Virginia Untold Free Negro Registers #140 (commit da736a77d):** LVA CKAN CSV → 40,925 freed-person leads
+(bulk path, per-row keys — Barcode is a COLLECTION code, only 88 distinct, NOT a person key), rule-8
+dual-archived, embedding. Rich: 5,904 mother, **8,338 "Who emancipated" (manumitter=former enslaver,
+dual-ledger)**, 100% carry a File Name → LVA page. **IMAGES NOT ATTACHED (0 — verified):** CSV has no image
+URL; LVA serves via ExLibris/Preservica + FromThePage. FromThePage exposes IIIF (`fromthepage.com/iiif/
+<id>/manifest`) but only **6 of ~39 registers** indexed there → scan-attach = a harvest (barcode locality/
+years→work→canvas by File-Name page→image→S3), partial today. VA Untold is at leads+embed; NOT yet
+image-backed canonicals. **Issue #145 filed** = all remaining tiers (PR-1872 #138, FOTM #139, Réunion,
+French Antilles, Curaçao, Danish #141, OCR corpora) + VA Untold image follow-ons, each with the 6-step
+standing procedure.
+**HIGH-PROFILE ENSLAVER FRONT-END AUDIT:** Gate behavior CONFIRMED on the live API — `assertable_slaveowner=Y`
+→ modal loads full (docs + enslavedPersons); **`assertable=n` → GATED/empty EVEN WITH an image** (Monroe has
+an image but the gate isn't lifted → shows nothing). So "shore up" = lift the gate (qualifying doc + set
+assertable). **FALSE-POSITIVE name-match risk:** ILIKE grabs wrong same-named people (matched "George
+Washington YOUNG" #196627 not the President; 1860-schedule "Andrew Jackson"/"James Polk" post-date their
+deaths → not them). Adds MUST go through the curated `roster_partner_ingest` pipeline with verified identity
+(birth/death year + a real doc), not name-match promotion. **The curated roster (roster_partner_ingest, 19
+records) already does ~14 majors WELL** (assert=Y+img): Washington #828136, Jefferson, Lee, J.J. Ward (14
+docs), Forrest, Wade Hampton, A. Hamilton (4 docs), Aiken, Ladson, Cameron, Cobb, Treat + the Monticello
+Hemings (enslaved, assert=n pending own docs). **TOP 10 to ADD/SHORE-UP (highest profile, missing or gated/
+misclassified):** 1) Stephen Duncan #79380 — LARGEST US holder ~2,200, gated/0-docs; 2) Nathaniel Heyward —
+MISSING (~2,000 rice); 3) Pierce Butler — MISSING (1859 "Weeping Time"); 4) Jefferson Davis #576209 —
+MISCLASSIFIED as freedperson, fix→enslaver+doc; 5) John C. Calhoun #207607 — gated; 6) James Madison #427834
+— weak/not-in-roster (ingest-madison-lead in progress); 7) James Monroe #614729 — has image, gate not lifted
+(easy); 8) Isaac Franklin #141263 — largest trader, gated; 9) Charles Carroll #141466 — gated; 10) Andrew
+Jackson — the assert=Y record is a same-named 1860 person, needs a verified President record. Mechanism =
+roster_partner_ingest + will/probate scan → assertable.
+
+---
+
+## FRONTEND LIGHT REDESIGN — started (2026-07-07, branch frontend/light-redesign) → [[plan-frontend-light-redesign]]
+Executing the "Part 1" frontend-overhaul brief (bright/daylight light UI, prioritized-but-detailed,
+primary-sources-up, consolidated, RAG surfaced). Branch off audit/probate-classifier (frontend SOURCE lives
+in-tree; deploys manually to gh-pages-react). Full plan + deeper grounding in the plan doc.
+- **(a) DONE, committed, build-green:** rewrote `frontend/src/styles/global.css` token layer → a bright
+  WCAG-AA "archive/ledger" light system (paper #F4F3EE, near-black ink, serif-display/sans-body/mono-ledger
+  voices, ink-blue accent #14567A, evidence palette seal/debt/flag, the "ledger spine" signature). Legacy
+  token names kept as aliases so every component flips with no markup change; 7-class taxonomy retuned to
+  AA-on-paper; :focus-visible + reduced-motion added. Fixed PersonProfile's 2 hardcoded solarized/amber
+  inline colors → semantic tokens. AA pairs (vs paper): ink 15.7 · ink-soft 6.2 · accent 7.2 · seal 5.8 ·
+  debt 8.4 · err 5.9 · borders 3.1. NOT deployed (manual: `cd frontend && npm run deploy:gh-pages`).
+- **Frontend facts (supersede stale techContext "Vanilla HTML/CSS/JS"):** Vite 6 + React 18 + RR6 + d3 +
+  ethers; ONE global.css; ONE central api client (`api/client.js` + isVerified/filterVerified gate);
+  DocumentViewer exists (582 lines) but NO true zoom/pan (→ OpenSeadragon for c); NO RAG/chat UI (net-new for
+  e); dead StatsRibbon; duplicated PersonResult/Field helpers; only ONE media query (phone-first is a real gap).
+- **RAG contract read:** `/api/rag/query {question,k}` → `{answer, citations:[{document_id,source_url,
+  document_type}], retrieved, grounded, degraded}` (degrades gracefully). `/api/chat` is a keyword router
+  over LEADS + a hardcoded reparations formula → the AskPanel should be driven off `/api/rag/query` (cited,
+  honest empty), NOT raw /api/chat. Citations' document_id → `documents` table → existing DocumentViewer.
+- **(d) follow-up + (b) + (c) DONE + DEPLOYED (2026-07-07).** (d) follow-up: shared `ui/Field` made a
+  superset, folded the duplicated local Field/Section out of PersonProfile/DocumentViewer/CorporateEntity/
+  LegalTopic (BlockchainPanel's hex-address variant kept on purpose). (b): `api/fieldRegistry.js` +
+  `<RecordDetail>` — PersonProfile Identity grid is schema-driven (priority + progressive disclosure).
+  (c): `ZoomableImage` (OpenSeadragon 6, lazy chunk) wired into the doc viewers, cross-browser pinch/pan,
+  primary source surfaced HIGH on the profile. **DEPLOYED to gh-pages-react** (`npm run deploy:gh-pages` →
+  "Published"). Existing cached clients need ONE hard-refresh (then VersionGate auto-detects). TODO: verify
+  runtime zoom on-device across Chrome/Chromium/Android/Edge/Safari.
+- **(e) Ask surface DEPLOYED + (e+) eval harness DONE (2026-07-07).** (e): `/ask` grounded Q&A on
+  /api/rag/query, cited (citation→/documents/:id→viewer), honest empty/degraded; DEPLOYED. Live answers
+  need the RAG backend wired to prod (OLLAMA_URL / Tailscale Funnel — Render isn't on the tailnet; the
+  Ask tab shows "unavailable" honestly until then). (e+): eval harness committed —
+  `build-rag-eval-fixture.mjs` (resolves+freezes gold IDs from live DB, ambiguity flagged not guessed) +
+  `eval-records-rag.mjs` (hard gates + calibration baselines, degrades honestly) +
+  `tests/fixtures/rag-eval/gold.json`. Mini person-embedding backfill (`embed-persons.mjs`) DEFERRED.
+  **DATA-QUALITY FINDINGS (act on):** roster marquee enslavers SERVE scans but assertable_slaveowner=FALSE
+  (Joshua John Ward #828471 = 14 scans/assertable=false; Thomas Jefferson #828182; Robert E. Lee #828469)
+  — scans attached, gate never lifted; and an Arkansas "George Washington" #452284 carries assertable=TRUE
+  (the #118 wrong-human is still live; the President isn't cleanly served/assertable). **INDEPENDENTLY
+  CORROBORATED** by the parallel "high-profile enslaver front-end audit" (commit 144e0e9cb): `assertable=n`
+  → gated/empty EVEN WITH an image (their exemplar: James Monroe #614729 has an image, gate not lifted).
+  That audit's TOP-10 shore-up list (lift gate = qualifying doc + set assertable): Stephen Duncan #79380
+  (largest US holder ~2,200), Nathaniel Heyward (misclassified freedperson), Calhoun #207607, Madison
+  #427834, Monroe #614729 (easy — has image), Isaac Franklin #141263, Charles Carroll #141466… =
+  the concrete backlog the eval's served-gold cohort will grade once RAG is wired. Frontend redesign
+  a→e complete + deployed; see [[plan-frontend-light-redesign]].
+- **HOPEWELL WILL AUDIT (2026-07-07, user asked "what happened to Hugh Hopewell V?"):** verified live.
+  Hugh Hopewell V = **#193376 "Hugh Hopewell, Esq." d.1797** (enslaver). His will scan IS served
+  (doc#570111, will, direct_primary, **s3=true**) — but he's **GATED** (`assertable_slaveowner=false`)
+  because the will doc has `enslaved_count=null` + `evidences_enslaved_holding=false` + **0
+  enslaved_owner edges** → the role-aware gate (#95) can't confirm "slaveholder," so his public profile
+  shows the gated stub. Root cause = the will was archived but its enslaved CONTENT was never extracted
+  (fix: `reextract-hand-uploaded-wills.mjs` → populate count/names → recomputeGate lifts). SAME pattern:
+  **James Hopewell #1070** (primary DAA fixture!) also served=1 but assertable=false. **"Many Hopewell
+  wills" = YES but 4 of 6 are ORPHANED** (person_documents document_type=will mentioning Hopewell:
+  6 total, **4 canonical_person_id=NULL** → S3 scans linked to no person, invisible on every profile);
+  only #1070 + #617719 linked. Plus dedup debt: multiple Hugh Hopewells (#193376/#617726/#609495-merged/
+  #193864/#194338/#193558) + 3 merged "Anne Maria Hopewell" tombstones.
+  **CORRECTION (verified by reading OCR):** my "4 orphaned Hopewell wills" was a FALSE POSITIVE — those
+  are NY-probate wills (John Brinkerhoff Dutchess Co, Theodore Staats Cayuga Co) mentioning the *town* of
+  Hopewell, NY; ILIKE '%hopewell%' matched a PLACE, not the family. Real Hopewell-family wills are the
+  linked ones. (I fell into the exact namesake/place trap the project fights — logged as a lesson.)
+  **HUGH V FIXED end-to-end (2026-07-07):** ran `reextract-hand-uploaded-wills.mjs --id 570111 --apply` →
+  OCR'd the will (gemini-ocr, 3pp, S3 redirect-probe since GetBucketLocation IAM is missing) → extracted
+  2 enslaved (Jacob, Harry) + 7 heirs into will_extractions. The entity-backfill FAILED on
+  `chk_canonical_person_type` (reextract:228 writes personType='free_person', NOT in the M110 allowlist —
+  version-skew bug). Per user (targeted-SQL, don't touch shared pipeline): set doc#570111
+  enslaved_count=2 + evidences_enslaved_holding=true (grounded in the will), then PersonService.recomputeGate(193376)
+  DERIVED assertable_slaveowner=true. Verified on PROD: gated=false, will collection serves,
+  reparations compute, hasPrimarySource=true. Hugh V surfaces.
+  **SCALE of the same fix (live counts): 10,890 enslaver canonicals serve a scan but assertable=false**
+  (will 7,367 / other 3,347 / estate_inventory 775 / …); **7,967 are will/probate-served (reextract target)**;
+  **39,681 served will/probate DOCS have no extracted enslaved content**; only 34,626 enslavers assertable now.
+  **TWO PIPELINE ROOT CAUSES to fix before any batch campaign:** (1) reextract:228 personType 'free_person'
+  → an M110-valid value (or ALTER the CHECK); (2) reextract must sync will_extractions enslaved →
+  person_documents.enslaved_count/evidences_enslaved_holding + call recomputeGate (it currently does
+  neither, so the gate never lifts). Then run the 7,967 as a coordinated drip (Mini), not ad-hoc. NOT done here.
+- **FRONTEND AUDIT POSTURE + 2 live errors resolved (2026-07-07, user pushed on regressions).**
+  Honest gap: the overhaul was build-verified + targeted-prod-verified, but NOT browser/runtime-audited —
+  and both reported errors were runtime-only (invisible to `vite build`):
+  1. **WebGL "Error creating texture" (REAL regression, FIXED, commit 22d50268d):** OSD 6 defaults to the
+     WebGL drawer; WebGL can't texture a cross-origin S3 image without CORS → scan wouldn't render. Fix =
+     `drawer:'canvas'` in ZoomableImage (2D drawImage handles tainted images; crossOriginPolicy stays false).
+  2. **Deep-link "403" on /person/... (COSMETIC, not ours):** GH Pages returns HTTP 404 for a hard-loaded
+     SPA path, the deployed 404.html SPA-redirect fires, page recovers. WebKit renders the 404 as a
+     "permission" message. Standard GH-Pages-SPA behavior; in-app clicks never hit it.
+  **Audit run this session:** build green · code regression grep clean (no broken imports / removed-component
+  refs / stray hardcoded colors beyond the intentional dark lightbox) · cross-view PROD API smoke test =
+  all 9 main-view endpoints 200 with valid shapes. **DURABLE FIX RECOMMENDED (not built):** a headless
+  puppeteer/Playwright route smoke test (load each route + open the doc viewer + assert no console errors) —
+  runnable on the Mini/CI; the WebGL bug is exactly what it would have caught. MacBook can't run a browser.
+  **DURABLE FIX BUILT + VERIFIED (commit 242f80506):** `scripts/smoke-test-frontend.mjs` — headless
+  puppeteer route smoke test (390px phone viewport) failing on JS exceptions / non-benign console errors /
+  the WebGL texture regression / a doc viewer with no <canvas>. Launches headless (CI/Apple-Silicon) or
+  CHROME_URL-connect on the Intel Mini; BASE_URL overridable. RAN against live: **11/11 routes clean**, and
+  the doc-viewer check rendered a <canvas> → runtime-CONFIRMS the drawer:'canvas' WebGL fix draws Ward's
+  scan. Run it after every frontend deploy. (Turns out headless launch DID work from this MacBook for our
+  own public site — the earlier 'can't run a browser' caveat was over-cautious for a non-scraping smoke test.)
+- **⚠ CONCURRENCY RACE (the documented shared-index bug recurred):** a parallel backend session ran a broad
+  git add/commit and ABSORBED my staged (c) frontend files into ITS commit `a7bfdad34` ("feat(archive)…").
+  The (c) CODE is intact in HEAD (verified: reorder present, ZoomableImage tracked, build green) — only the
+  commit label is wrong. Did NOT rewrite history (parallel session active). Frontend source branch =
+  `frontend/light-redesign`, which now also carries parallel backend commits (harmless to the frontend build).
+- **Grounding note:** read the full governing memory bank before proceeding further (user directive). The
+  design-system commit is validated by it (preserves gate-stub, VersionGate, dignity framing). Remaining
+  objectives (d consolidate → b schema-driven fields → c primary-sources-up+OpenSeadragon → e AskPanel →
+  e+ canonical embed backfill + eval harness) sequenced in the plan doc, with the added UI constraints
+  (reparations-as-vector never-net, status-as-facts, kinship-edge gate, dignity/placeholder rules, RAG
+  read-only boundary). Baselines (WCAG pairs recorded above; RAG eval baselines TBD when the harness runs).
+
+---
+
+## PROMOTION RECKONING — the systemic orphaning bug + RULE 0.6 (2026-07-07, branch audit/probate-classifier)
+User pressed on whether ingested persons actually PROMOTE + SURFACE. Grounded audit found the load-bearing
+disease. Commits d4c8e0ead / 8f36f5363 / promote-curated / link-ny-probate.
+**THE DIAGNOSIS (verify-db-not-logs):** promotion was **systemically not happening — 9 leads promoted EVER**;
+3.12M leads vs 680K canonicals (82% of persons un-promoted). The ingest + attach-doc halves were built; the
+PROMOTE half never was → nothing new surfaces (leads are search-hidden by design). NOT a serving bug — the
+doc-load (documentCollections/ownerDocuments) + doc-serve (/access presigned S3, verified HTTP 200 JPEG) work.
+The two things that looked broken were my own test errors (wrong response field; host-prefixed a full presigned URL).
+**SYSTEM ORPHANING AUDIT:** person_documents 658K → 450K→canonical, 159K→lead, **83K ORPHANED**; **only 45,521
+canonicals (7%) serve an image → 635,006 (93%) IMAGE-LESS** (RULE 0.6 debt); **158,766 image-backed leads
+promotable now**.
+**RULE 0.6 CODIFIED (CLAUDE.md + [[standard-canonical-person-and-document-gate]]):** a canonical MUST (1)
+be deduped/discrete, (2) SERVE an image (person_documents.s3_key, dual-archived rule 8), (3) be RAG-embedded.
+Supersedes secondary-only gated canonicals for NEW promotions; the 635K image-less = backfill DEBT. Order for
+image-rich sources: attach-scan drip → promote image-backed+deduped → embed.
+**THE FIX — `promote-curated-source.mjs`** (curated = source already internally deduped, e.g. IISG Id_person).
+The naive `PersonService.promoteToCanonical` failed on curated enslaved leads: (a) 70% needs_review (mononym+
+birthdecade ambiguity vs the 424K other enslaved — the Biscoe guard is for MERGE, wrongly blocked CREATE);
+(b) ext-id ON-CONFLICT left the canonical orphaned from its source id. Fix: CREATE per source-record (defer
+cross-source MERGE to a Biscoe review pass) + MIGRATE identity set-based (ext-id + blocking keys + document
+lead→canonical) + gate. **PROVEN end-to-end:** a promoted Suriname person is canonical + assertable + gated:False
++ its register scan loads in the modal + SERVES (200 JPEG 244KB). The full lead→canonical→surface→serve pipeline
+works for the first time.
+**#3 DONE — `link-ny-probate-testators.mjs`:** 3,726 real-named NY testators → assertable decedent canonicals
+with their will scans linked (orphan docs → surfacing). Remaining ~74K unlinked NY docs = junk/Image-NNN.
+**#1 Suriname promote — CHAINED after the scan drip** (drip ~82%, 46,802 scans; full promote fires on drain →
+~95K assertable canonicals serving register scans). **#2 158K image-backed:** promotable-with-id_system are
+almost all Suriname (49K→95K, = #1); the other ~110K (older freedmen's/census/probate docs, NO id_system) need
+a GENERALIZED promote (select any lead w/ an s3_key doc, mint ext-id from source) — small follow-on.
+**#4 635K IMAGE-LESS — recoverable, it's a RELINK disease not un-gettable:** by origin — 248K promote-slaveholders
+(1860 slave-schedule scans, 140K scans in S3 but attached to the ENSLAVED on-page "Unknown" rows, NOT the named
+owner; **owner↔scan link was LOST at promotion** — no ext-id, eor empty → needs name+state matching, Biscoe-soft);
+78K freedpersons (Freedman's Bank scans); 43K SlaveVoyages (voyage images, partial); **185K Hall/Louisiana =
+the hard tail (notarial scrape needed)**. Lesson: the ingest pipelines LOST or never-made the person↔document
+link; #4 = sequenced relink passes.
+**NEXT (order):** generalized promote for the 110K no-id-system image-backed → 248K slaveholder→schedule-scan
+relink (matching-precision first) → Hall notarial scrape. Also: NY probate SCRAPER resumed (stale-jar reauth,
+pid running); enslaved_org embed drip + Suriname scan drip running.
+
+---
+
+## #142 builds EXECUTED — vision router + reconciled count + distributed linker (2026-07-07, PR #144)
+Preceded by a full architecture re-read for MAX INTEGRATION (user directive). Plan + integration map:
+`memory-bank/plan-vision-router-and-count-aggregation.md`. Every build plugged into an existing seam and
+REMOVED a duplicate / finished a deferred seam — no new silos.
+
+- **BUILD 1 — vision-OCR router (DEPLOYED).** `src/services/vision/vision-router.js` exports
+  `transcribeImage(buf,{mimeType,prompt})→string` (the seam OCRService already used), mirroring the TEXT
+  router `probate-llm-extractor.js`. Cascade: **`qwen/qwen2.5-vl-72b-instruct` (OpenRouter — cursive-EXACT
+  + UNCAPPED) → gemini-2.5-flash (OpenAI-compat endpoint) → gpt-4o**, 429/5xx fallthrough, `VISION_PROVIDERS`
+  reorders. Healed 3 silos: `gemini-ocr.js`→thin delegate (OCRService/probate/will-reextractor upgrade
+  transparently); `OCRProcessor.js`→router-first (was dead-Google-Vision→Tesseract-only); OCRService
+  envelope stops mislabeling. **Prod needs `OPENROUTER_API_KEY` in Render for Qwen** (else degrades to Gemini).
+- **BUILD 2 — `enslavedCountFor` (DEPLOYED).** `src/services/reparations/enslaved-count.js` — ONE reconciled
+  per-slaveholder count = **MAX** of {`SUM(person_documents.enslaved_count)` walk/OCR, named edges, the 1.4M
+  owner-referenced index leads} (MAX not SUM — overlapping sources never double-count; a documented FLOOR).
+  Wired into BOTH `contribute.js` (was the only `enslaved_count` reader) AND `DAAOrchestrator.calculateTotalDebt`
+  (was NAMED-rows-only + a DEAD `dbSlaveholder.enslaved_count` ref) — **divergence killed**. Verified: Ward
+  0-named→**1,100**; Cobb 8→**49** (index found more of his run). Owner match normalizes Jr/Sr/honorifics,
+  state-scoped for namesakes.
+- **BUILD 3 — distributed edge linker (BUILT + STAGED, not run).** `scripts/link-distributed-enslaved-edges.mjs`
+  persists the 1.4M owner-referenced leads as `enslaved_owner_relationships` edges (owner_canonical→enslaved
+  lead) — **finishes the owner-lead→canonical seam `build-enslaved-owner-edges.mjs` left DEFERRED**; feeds #2's
+  fast `named`. Bounded to served roster enslavers. BLOCKED on perf: a JSONB seq-scan per holder → **migration
+  123** (trigram GIN on `unconfirmed_persons(relationships->>'owner')`, person_type='enslaved') **must be applied
+  CONCURRENTLY OFF-PEAK** (scrapers write that table live) before the batch runs at scale.
+
+**RAG boundary (user asked, now settled + matches your new RULE 0.6):** RAG ← FEEDS ← vision router (#1 OCR →
+`person_documents.ocr_text` → embeddings); RAG ⊥ the COUNT (#2 stays pure SQL per **Rule 1** — deterministic
+computes, never a model); RAG → may aid DISCOVERY → walk (#3). #3's captured pages should trigger a re-embed
+(RULE 0.6 = canonicals must serve an image + be RAG-embedded).
+
+**COMPLETENESS layer still open (documented follow-on):** live FS owner-name search
+(`searchFamilySearchRecords` → ARKs beyond the ~79.5% index → vision-router OCR) closes the Ward-71-vs-1,100
+index gap for distributed holders — BLOCKED on the recurring FS-session expiry (viability probe hit the login
+wall). See [[reference_familysearch_session_reauth]].
+
+---
+
+## MULTI-SOURCE INGEST AT SCALE + bulk-path unlock + RULE 0.5/0.6 (2026-07-05→07, branch audit/probate-classifier)
+A very large session (parallel to the roster campaign). Arc: LBS validated → the performance unlock →
+Enslaved.org (424K) → Suriname (95K) + gate-lifting scans → standards codified. Commits b26dc2be…4f27d63.
+
+**THE SCALING UNLOCK — set-based bulk-lead ingest (commit 94bcfe3aa).** User flagged the LBS promote was
+~4h for 21K over Neon ("super slow… even for leads without documents"). Root cause = `PersonService.
+findOrCreateLead` fires ~6-10 network round-trips/person → ~1.5 leads/sec (731K = ~5 days). Fix: **M121
+`derive_blocking_keys()`** (SQL port of `_queryKeys`, byte-identical, verified) + **`scripts/lib/
+bulk-lead-ingest.mjs`** — ONE data-modifying CTE per batch creates leads + person_external_ids +
+blocking_keys set-based (ext-id unique index = the dedup; no app-side cache). A/B: byte-identical keys,
+idempotent, **1,592 leads/sec (~1000×)**. Keeps findOrCreateLead for the interactive path. Every large
+gated-lead ingest rides this now. Plan: [[plan-bulk-ingest-and-enslaved-org]].
+
+**LBS #137 VALIDATED (commits 6cbe7090f…).** Fixed the dedup bug (findOrCreateLead's swallowed ext-id
+write → 2.9× dup leads; ingest now owns dedup via ext-id cache + explicit write). `validate-ucl-lbs-
+ingest.mjs` (the "not successful until this passes" harness) GREEN: dedup 1:1 (6,154), colony 100%/£
+99.9% fill, 0 re-parse drift, £ as-transcribed, no fabrication, 7,085 awardees, **Σ£10.15M** dual-ledger
+(Jamaica 2,696 claims/220K enslaved/£4.24M). Caught+fixed 2 parser bugs (£-as-year, 0-enslaved). Embedded.
+
+**#136 Enslaved.org LOD — 424,185 leads in ~7 min (commit f21899bec).** `ingest-enslaved-org.mjs`:
+two-pass Wikibase-JSON (731,500 persons P1→Q410; status P33-only Q109/Q112 — NOT P17/P39); provenance via
+statement-ref→P6→Source(name/project/license); **SKIP federated slices we hold — 307,314 SlaveVoyages+Hall
+excluded** (was 1 via wrong P13); bulk path; id_system=enslaved_org_qid. New datasets gained: Fogel
+Economics of American Negro Slavery (~123K priced transfers), Brazil (~50K), Virginia Untold (~25K),
+extended LBS/T71. **#143 (dedup DEFERRED):** enslaved.org has NO strong corroborator (P21=0%, no birth
+years → nmsx name+sex only) → blanket cross-source dedup = low-precision review flood; needs birth-year
+derivation first. **Leads vs canonicals:** leads LINK/resolve (reversible), canonicals MERGE (destructive,
+Biscoe); RAG (`find-semantic-dup-candidates.mjs`) adds semantic RECALL but not precision. Embed drip on Mini.
+
+**#137 Suriname Slave Registers — 95,505 leads + gate-lifting scan pipeline (commits 8c50dbcc0…4f27d63).**
+IISG Dataverse hdl:10622/CSPBHO CC BY-SA CSV (55MB, 192K entry-rows→95,538 persons by Id_person). RICH:
+63% birth year, 54% mother, **99.97% owner** (dual-ledger + owner-sequence=transfer chain), 32% emancipation
+surname. `ingest-suriname-slaveregisters.mjs`, bulk path, **rule-8 dual-archive** (S3 CSV + Wayback). Strong
+corroborators → 60,309 nmsxb birth-year keys → REAL cross-source dedup (unlike enslaved.org). **SCAN-ATTACH
+(RULE 0.6):** `harvest-nas-scan-index.mjs` (OAI-PMH set=nas 524K→13,697-folio (inv|folio)→IIIF index, **100%
+coverage** of the 13,683 IISG folios) + `attach-suriname-scans.mjs --index` (per-folio: IIIF service.archief.nl
+→ S3 + Wayback → `person_documents.unconfirmed_person_id`, LEAD-capable). **DRIP RUNNING** (MacBook nohup,
+resumable, high-recall, ~few hrs) attaching register scans to the 95K leads. Curaçao (OAI-PMH set=ghn, 46,821)
+= next Dutch piece.
+
+**STANDARDS CODIFIED:**
+- **RULE 0.5** (CLAUDE.md + [[standard-external-source-ingest]]): use RAG on every DB/search/modal step;
+  every ingest MUST add an EMBED phase (`embed-leads.mjs` generalizes it) or data is a retrieval silo.
+- **RULE 0.6** (CLAUDE.md + [[standard-canonical-person-and-document-gate]]): a canonical MUST serve an
+  image (person_documents.s3_key, dual-archived) AND be RAG-embedded. Supersedes secondary-only gated
+  canonicals for NEW promotions; existing image-less canonicals = backfill DEBT. Order for image-rich
+  sources: attach-scan drip → promote image-backed+deduped → embed. LOD-only (enslaved.org) can't clear it.
+- **Rule 8** ([[standard-external-source-ingest]]): dual-archive S3 + Wayback (was the M100 standard the
+  LBS ingest silently regressed from; codified + LBS backfilled).
+
+**RESEARCH (all in [[data-sourcing-shopping-list]]/[[reference-benchmark-sources-register]]):** intl
+slavery-source catalog (6-agent pass) tiered by re-hostable-images/gate-class/id_system → epic **#135** +
+builds **#136-141** (Enslaved.org✓/Dutch⧗/PR-1872/FOTM/Virginia-Untold/Danish-permission). Per-power
+colonial-trade-value PRIMARIES (Necker/Bryan Edwards/Humboldt/Inikori/Rönnbäck archive.org PD) + the
+**MacGregor 5-volume map** (Vol V = British WI; user gave Vol IV = Cuba✓+Brazil). JFS #132 (no-repost) +
+British Guiana vc.id.au #134. All feed `slave_economy_benchmarks` as cited aggregates (extraction pass NEXT).
+
+**RUNNING BACKGROUND:** enslaved_org embed drip (Mini, ~days); Suriname scan-attach drip (MacBook, ~hrs).
+**NEXT:** Suriname promote(image-backed+deduped)→embed once scans land; nas index makes every image-source
+faster; Curaçao; per-power benchmark extraction; birth-year derivation to unlock enslaved.org dedup (#143).
+**PERF CAVEAT retired:** the promote-slowness that motivated the bulk path is solved for leads; the
+canonical-promote path (PersonService.promoteToCanonical) is still per-record — bulk it before mass promotion.
 
 ---
 

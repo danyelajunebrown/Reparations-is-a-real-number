@@ -52,10 +52,25 @@ class DisgorgementCalculator {
             return this._empty('no_enslaver_id');
         }
 
-        // Enslaver's place (for the rate-resolver reference class).
+        // Enslaver's place (for the rate-resolver reference class + Indigenous-provenance lookup).
         const placeRow = await this.db.query(
-            `SELECT primary_state FROM canonical_persons WHERE id = $1`, [enslaverPersonId]);
+            `SELECT primary_state, primary_county FROM canonical_persons WHERE id = $1`, [enslaverPersonId]);
         const placeState = placeRow.rows[0]?.primary_state || null;
+        const placeCounty = placeRow.rows[0]?.primary_county || null;
+
+        // Link 0 — Indigenous land provenance (migration 125). If the enslaver's land traces to a
+        // Native cession, land VALUE is used only as wealth-over-time CONTEXT and is routed to a
+        // SEPARATE Native-restitution class — NEVER into the enslaved-descendant's claim. User
+        // directive 2026-07-17: DAAs "make NO claim to the land of the Native peoples." A parcel-level
+        // link (properties.property_id) would be preferred; county/state is the coarse fallback.
+        const indigRow = await this.db.query(
+            `SELECT native_nation, successor_nation, origin_instrument, cession_recital, descendant_claimable
+               FROM indigenous_land_provenance
+              WHERE descendant_claimable = FALSE
+                AND ( (county ILIKE $1 AND state ILIKE $2) OR (region_type='state' AND state ILIKE $2) )
+              ORDER BY (county IS NOT NULL) DESC LIMIT 1`,
+            [placeCounty, placeState]);
+        const indigenous = indigRow.rows[0] || null;
 
         // land_transfer_events + flagrant_heirloom_assets — fetch valued rows with
         // their year and COMPOUND each to present via the rate-resolver (wrongdoer's
@@ -133,8 +148,45 @@ class DisgorgementCalculator {
         // Confidence reflects how much of the component is documentary vs absent.
         const confidence = evidence === 'traced' ? 0.85 : 0.2;
 
+        // ── LAND NON-CLAIM GUARDRAIL (user directive 2026-07-17) ─────────────────────────────────
+        // Land is a VALUATION INSTRUMENT (it measures enslaver wealth over time), NEVER an asset the
+        // enslaved-descendant claims. Where the land traces to a Native cession (indigenous_land_
+        // provenance), its compounded value is routed to native_land_restitution_usd — owed to the
+        // Native nation, restituted SEPARATELY — and is EXCLUDED from descendant_claimable_usd. This
+        // is the hard code guardrail that stops the system from monetizing Native land into a
+        // descendant's reparations obligation. Any DAA descendant-claim MUST read descendant_claimable_usd.
+        const landIsNativeRestitution = !!indigenous;   // land encumbered by an unresolved Native claim
+        const nativeLandRestitutionUsd = landIsNativeRestitution ? Math.round(landSum * 100) / 100 : 0;
+        // Descendant-claimable disgorgement = heirloom enrichment only when land is Native-restitution.
+        // (Heirloom = trusts/stock/art/silver — enslaver enrichment, not Native land.) When there is
+        // NO Indigenous provenance on file, land is not yet routed away — but it is FLAGGED for review,
+        // never silently claimed (fail toward non-claim: absence of a provenance record is not license).
+        const descendantClaimableUsd = landIsNativeRestitution
+            ? Math.round(heirloomSum * 100) / 100
+            : Math.round(total * 100) / 100;
+        if (landSum > 0 && !landIsNativeRestitution) flags.push('land_value_present_without_indigenous_provenance_REVIEW');
+        if (landIsNativeRestitution && landSum > 0) flags.push('land_value_routed_to_native_restitution');
+
+        const landClaim = {
+            class: landIsNativeRestitution ? 'native_land_restitution' : 'unclassified_land_review',
+            claimable_by_descendant: false,                 // land is NEVER descendant-claimable
+            owed_to: landIsNativeRestitution ? (indigenous.successor_nation || 'native_nation') : 'unresolved',
+            disposition: 'restituted_separately',
+            native_nation: indigenous ? indigenous.native_nation : null,
+            origin_instrument: indigenous ? indigenous.origin_instrument : null,
+            cession_recital: indigenous ? indigenous.cession_recital : null,
+            note: 'Land value is wealth-over-time CONTEXT, not a descendant claim. A DAA must sum '
+                + 'descendant_claimable_usd, never total_usd.',
+        };
+
         return {
-            total_usd: Math.round(total * 100) / 100,              // FLOOR (price_index)
+            // total_usd is the WEALTH-CONTEXT total (land + heirloom). It is NOT descendant-claimable
+            // when it contains Native land value — use descendant_claimable_usd for any obligation.
+            total_usd: Math.round(total * 100) / 100,              // FLOOR (price_index) — wealth context
+            descendant_claimable_usd: descendantClaimableUsd,      // the ONLY figure a descendant DAA may claim
+            native_land_restitution_usd: nativeLandRestitutionUsd, // owed to the Native nation, settled separately
+            contains_native_land_value: landIsNativeRestitution && landSum > 0,
+            land_claim: landClaim,
             total_ceiling_usd: Math.round(totalCeiling * 100) / 100, // aggressive (enterprise_roi)
             total_nominal_usd: Math.round((land.nominal + heirloom.nominal) * 100) / 100,
             compounding_band: { floor_family: 'price_index', ceiling_family: 'enterprise_roi' },
@@ -147,7 +199,9 @@ class DisgorgementCalculator {
                 + 'heirloom assets implicating this enslaver. Compounded to present via the '
                 + 'rate-resolver across the anchor lattice — FLOOR at price_index (real-value '
                 + 'preservation), CEILING at enterprise_roi (wrongdoer gain). total_usd is the '
-                + 'floor; raw aggressive compounding over ~175yr explodes and is the ceiling only.',
+                + 'floor WEALTH-CONTEXT figure; land value is routed to native_land_restitution_usd '
+                + '(owed to the Native nation, settled SEPARATELY) and EXCLUDED from '
+                + 'descendant_claimable_usd — DAAs make no claim to Native land (directive 2026-07-17).',
         };
     }
 

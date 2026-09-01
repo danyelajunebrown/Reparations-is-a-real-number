@@ -1759,7 +1759,11 @@ class DAAOrchestrator {
         const defaults = {
             annualIncome:           acknowledgerInfo.annualIncome           ?? null,
             netWorth:               acknowledgerInfo.netWorth               ?? null,
-            corporateConnections:   acknowledgerInfo.corporateConnections   ?? false,
+            // corporate_connections is a text[] column (M037) and calculateTotalDebt iterates
+            // it (`for (const key of corporateConnections)`). Default MUST be an array, not the
+            // `false` copy-pasted from the boolean fields below — `?? false` made every CLI DAA
+            // throw "corporateConnections is not iterable". Mirrors wealthFlagReasons `?? []`.
+            corporateConnections:   acknowledgerInfo.corporateConnections   ?? [],
             corporateConnectionType:acknowledgerInfo.corporateConnectionType?? null,
             trustBeneficiary:       acknowledgerInfo.trustBeneficiary       ?? false,
             trustCorpus:            acknowledgerInfo.trustCorpus            ?? null,
@@ -1786,7 +1790,7 @@ class DAAOrchestrator {
                     wealth_flag_elevated,
                     wealth_flag_reasons
                 FROM participants
-                WHERE participant_id = $1
+                WHERE id = $1
                 LIMIT 1
             `, [participantId]);
 
@@ -1806,7 +1810,7 @@ class DAAOrchestrator {
         return {
             annualIncome:           acknowledgerInfo.annualIncome           ?? dbRow.annual_income           ?? null,
             netWorth:               acknowledgerInfo.netWorth               ?? dbRow.net_worth               ?? null,
-            corporateConnections:   acknowledgerInfo.corporateConnections   ?? dbRow.corporate_connections   ?? false,
+            corporateConnections:   acknowledgerInfo.corporateConnections   ?? dbRow.corporate_connections   ?? [],
             corporateConnectionType:acknowledgerInfo.corporateConnectionType?? dbRow.corporate_connection_type?? null,
             trustBeneficiary:       acknowledgerInfo.trustBeneficiary       ?? dbRow.trust_beneficiary       ?? false,
             trustCorpus:            acknowledgerInfo.trustCorpus            ?? dbRow.trust_corpus            ?? null,
@@ -1898,7 +1902,10 @@ class DAAOrchestrator {
                 const result = this.reconciler.combine({
                     craemer:      craemerLineage != null ? { usd: craemerLineage, confidence: 0.7 } : null,
                     wealthGap:    estDescendants > 0 ? { usd: wealthGapLineage, confidence: 0.5 } : null,
-                    disgorgement: { usd: disg.total_usd, confidence: disg.confidence, evidence: disg.evidence },
+                    // LAND NON-CLAIM: feed the reconciler the DESCENDANT-CLAIMABLE disgorgement, which
+                    // excludes Native land value (routed to disg.native_land_restitution_usd, owed to the
+                    // Native nation, settled separately). Never disg.total_usd here. (directive 2026-07-17)
+                    disgorgement: { usd: disg.descendant_claimable_usd, confidence: disg.confidence, evidence: disg.evidence },
                     lineItem:     lineItemLineage != null ? { usd: lineItemLineage, confidence: 0.6 } : null,
                 });
 
@@ -1955,7 +1962,7 @@ class DAAOrchestrator {
                     result.reconciled_obligation_usd,
                     craemerLineage,
                     wealthGapLineage,
-                    disg.total_usd,
+                    disg.descendant_claimable_usd,   // land value EXCLUDED — never claimed by descendant (Native-restitution, separate)
                     lineItemLineage,
                     result.reconciled_obligation_usd,
                     result.confidence,

@@ -1,0 +1,702 @@
+{
+  "_meta": {
+    "built_by": "scripts/build-rag-eval-fixture.mjs",
+    "note": "IDs resolved live against canonical_persons and FROZEN. Do not hand-edit IDs. Re-run the builder to refresh. status=AMBIGUOUS_review / NOT_SERVED / MISSING flag items a human should confirm.",
+    "endpoints": {
+      "base": "https://reparations-platform.onrender.com",
+      "rag": "/api/rag/query",
+      "chat": "/api/chat"
+    }
+  },
+  "cohorts": {
+    "served_gold": [
+      {
+        "name": "Thomas Jefferson",
+        "query": "Which enslaved people did Thomas Jefferson's will and codicil free?",
+        "canonical_id": 828182,
+        "status": "resolved",
+        "resolved_name": "Thomas Jefferson",
+        "state": "Virginia",
+        "served_docs": 5,
+        "assertable": false
+      },
+      {
+        "name": "Alexander Hamilton",
+        "query": "What do Alexander Hamilton's cash books record about enslaved people?",
+        "canonical_id": 828192,
+        "status": "resolved",
+        "resolved_name": "Alexander Hamilton",
+        "state": "New York",
+        "served_docs": 4,
+        "assertable": true
+      },
+      {
+        "name": "Joshua John Ward",
+        "query": "How many enslaved people are on Joshua Ward's 1860 slave schedule?",
+        "canonical_id": 828471,
+        "status": "resolved",
+        "resolved_name": "Joshua John Ward",
+        "state": "South Carolina",
+        "served_docs": 14,
+        "assertable": false
+      },
+      {
+        "name": "Robert E. Lee",
+        "query": "What documents record Robert E. Lee as a slaveholder?",
+        "canonical_id": 828469,
+        "status": "resolved",
+        "resolved_name": "Robert E. Lee",
+        "state": "Virginia",
+        "served_docs": 1,
+        "assertable": false
+      },
+      {
+        "name": "Wade Hampton",
+        "query": "Wade Hampton 1860 slave schedule South Carolina",
+        "canonical_id": 828474,
+        "status": "resolved",
+        "resolved_name": "Wade Hampton",
+        "state": "South Carolina",
+        "served_docs": 1,
+        "assertable": false
+      },
+      {
+        "name": "Howell Cobb",
+        "query": "Howell Cobb 1860 slave schedule Georgia",
+        "canonical_id": 360238,
+        "status": "AMBIGUOUS_review",
+        "candidates": [
+          {
+            "id": 360238,
+            "name": "Howell Cobb",
+            "state": "Georgia",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 828470,
+            "name": "Howell Cobb",
+            "state": "Georgia",
+            "served_docs": 1,
+            "assertable": false
+          }
+        ]
+      },
+      {
+        "name": "Ladson",
+        "query": "Ladson 1860 slave schedule Georgia",
+        "canonical_id": 609840,
+        "status": "AMBIGUOUS_review",
+        "candidates": [
+          {
+            "id": 609840,
+            "name": "Margaret Ladson",
+            "state": "GA",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 610787,
+            "name": "Mary Ann Ladson",
+            "state": "GA",
+            "served_docs": 1,
+            "assertable": false
+          },
+          {
+            "id": 610795,
+            "name": "Mary Ann Ladson",
+            "state": "GA",
+            "served_docs": 1,
+            "assertable": false
+          },
+          {
+            "id": 610901,
+            "name": "Mary Ann Ladson",
+            "state": "GA",
+            "served_docs": 1,
+            "assertable": false
+          },
+          {
+            "id": 828475,
+            "name": "James H. Ladson",
+            "state": "South Carolina",
+            "served_docs": 1,
+            "assertable": false
+          }
+        ]
+      },
+      {
+        "name": "Cameron",
+        "query": "Cameron 1860 slave schedule (Stagville/Orange Co)",
+        "canonical_id": 614135,
+        "status": "AMBIGUOUS_review",
+        "candidates": [
+          {
+            "id": 614135,
+            "name": "Lula Cameron",
+            "state": "Georgia",
+            "served_docs": 4,
+            "assertable": false
+          },
+          {
+            "id": 319893,
+            "name": "Andrew J Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 323695,
+            "name": "Duncan Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 325902,
+            "name": "Finley Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 331439,
+            "name": "James Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 338377,
+            "name": "Mack A Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 340237,
+            "name": "Nancie Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          },
+          {
+            "id": 343893,
+            "name": "Samuel D Cameron",
+            "state": "Alabama",
+            "served_docs": 1,
+            "assertable": true
+          }
+        ]
+      }
+    ],
+    "dc_cluster": [
+      {
+        "label": "James Hopewell",
+        "canonical_id": 1070,
+        "resolved_name": "James Hopewell",
+        "person_type": "enslaver",
+        "state": "Maryland",
+        "status": "verified",
+        "query": "Tell me about James Hopewell and the document that records them."
+      },
+      {
+        "label": "Henry Weaver",
+        "canonical_id": 196747,
+        "resolved_name": "Henry Weaver",
+        "person_type": "enslaver",
+        "state": "Georgetown D.C.",
+        "status": "verified",
+        "query": "Tell me about Henry Weaver and the document that records them."
+      },
+      {
+        "label": "Frisby Freeland Chew I",
+        "canonical_id": 193163,
+        "resolved_name": "Frisby Freeland Chew I",
+        "person_type": "enslaver",
+        "state": null,
+        "status": "verified",
+        "query": "Tell me about Frisby Freeland Chew I and the document that records them."
+      },
+      {
+        "label": "Angelica Chew",
+        "canonical_id": 141014,
+        "resolved_name": "Angelica Chew (born Maria Angelica Biscoe)",
+        "person_type": "enslaver",
+        "state": "District",
+        "status": "verified",
+        "query": "Tell me about Angelica Chew and the document that records them."
+      }
+    ],
+    "stratified_sample": [
+      {
+        "canonical_id": 140413,
+        "person_type": "descendant",
+        "primary_state": "Alabama",
+        "query": "Ann, Alabama, descendant"
+      },
+      {
+        "canonical_id": 140385,
+        "person_type": "descendant",
+        "primary_state": "Alabama",
+        "query": "Sheppard Key, Alabama, descendant"
+      },
+      {
+        "canonical_id": 194807,
+        "person_type": "descendant",
+        "primary_state": "Connecticut",
+        "query": "Mary Marvin, Connecticut, descendant"
+      },
+      {
+        "canonical_id": 193513,
+        "person_type": "descendant",
+        "primary_state": "Connecticut",
+        "query": "Sarah Leffingwell, Connecticut, descendant"
+      },
+      {
+        "canonical_id": 193395,
+        "person_type": "descendant",
+        "primary_state": "Delaware",
+        "query": "Elizabeth Iddings, Delaware, descendant"
+      },
+      {
+        "canonical_id": 825168,
+        "person_type": "descendant",
+        "primary_state": "Delaware",
+        "query": "Eleanor Poulsden, Delaware, descendant"
+      },
+      {
+        "canonical_id": 141068,
+        "person_type": "descendant",
+        "primary_state": "Indiana",
+        "query": "Mary Roberts Furness, Indiana, descendant"
+      },
+      {
+        "canonical_id": 825440,
+        "person_type": "descendant",
+        "primary_state": "Kentucky",
+        "query": "William Wahunsonacock Emperor Powhatan Wolf Clan, Kentucky, descendant"
+      },
+      {
+        "canonical_id": 140411,
+        "person_type": "descendant",
+        "primary_state": "Louisiana",
+        "query": "Charlotte Dit Lolote L’Arche, Louisiana, descendant"
+      },
+      {
+        "canonical_id": 140370,
+        "person_type": "descendant",
+        "primary_state": "Louisiana",
+        "query": "Jennie Watson, Louisiana, descendant"
+      },
+      {
+        "canonical_id": 140798,
+        "person_type": "descendant",
+        "primary_state": "Maine",
+        "query": "Joan Hodge, Maine, descendant"
+      },
+      {
+        "canonical_id": 140689,
+        "person_type": "descendant",
+        "primary_state": "Maine",
+        "query": "Ephraim Roberts, Maine, descendant"
+      },
+      {
+        "canonical_id": 194944,
+        "person_type": "descendant",
+        "primary_state": "Maryland",
+        "query": "Sarah Gale, Maryland, descendant"
+      },
+      {
+        "canonical_id": 195002,
+        "person_type": "descendant",
+        "primary_state": "Maryland",
+        "query": "Edward sisson, Maryland, descendant"
+      },
+      {
+        "canonical_id": 194813,
+        "person_type": "descendant",
+        "primary_state": "Massachusetts",
+        "query": "Welthian Loring, Massachusetts, descendant"
+      },
+      {
+        "canonical_id": 140788,
+        "person_type": "descendant",
+        "primary_state": "Massachusetts",
+        "query": "Sarah Wilkinson, Massachusetts, descendant"
+      },
+      {
+        "canonical_id": 140384,
+        "person_type": "descendant",
+        "primary_state": "Mississippi",
+        "query": "Leyes Vance, Mississippi, descendant"
+      },
+      {
+        "canonical_id": 140303,
+        "person_type": "descendant",
+        "primary_state": "Mississippi",
+        "query": "Frisby Freeland Chew I, Mississippi, descendant"
+      },
+      {
+        "canonical_id": 825702,
+        "person_type": "descendant",
+        "primary_state": "New Jersey",
+        "query": "Captain Jan Hartman Wessels, New Jersey, descendant"
+      },
+      {
+        "canonical_id": 193478,
+        "person_type": "descendant",
+        "primary_state": "New Jersey",
+        "query": "Sarah Ong, New Jersey, descendant"
+      },
+      {
+        "canonical_id": 193481,
+        "person_type": "descendant",
+        "primary_state": "New York",
+        "query": "Capt. Richard Brown, New York, descendant"
+      },
+      {
+        "canonical_id": 195039,
+        "person_type": "descendant",
+        "primary_state": "New York",
+        "query": "Maragarita Polhemius, New York, descendant"
+      },
+      {
+        "canonical_id": 193715,
+        "person_type": "descendant",
+        "primary_state": "North Carolina",
+        "query": "William Smith, North Carolina, descendant"
+      },
+      {
+        "canonical_id": 140305,
+        "person_type": "descendant",
+        "primary_state": "Ohio",
+        "query": "Charles Huntington Lyman, Ohio, descendant"
+      },
+      {
+        "canonical_id": 140306,
+        "person_type": "descendant",
+        "primary_state": "Ohio",
+        "query": "Charles Huntington Lyman Jr, Ohio, descendant"
+      },
+      {
+        "canonical_id": 140398,
+        "person_type": "descendant",
+        "primary_state": "Pennsylvania",
+        "query": "Simon Snyder Redifer, Pennsylvania, descendant"
+      },
+      {
+        "canonical_id": 195910,
+        "person_type": "descendant",
+        "primary_state": "Pennsylvania",
+        "query": "Margaret Bevan, Pennsylvania, descendant"
+      },
+      {
+        "canonical_id": 194060,
+        "person_type": "descendant",
+        "primary_state": "Rhode Island",
+        "query": "Esther Roth, Rhode Island, descendant"
+      },
+      {
+        "canonical_id": 194103,
+        "person_type": "descendant",
+        "primary_state": "Rhode Island",
+        "query": "Sir George Parker Jr, Rhode Island, descendant"
+      },
+      {
+        "canonical_id": 193300,
+        "person_type": "descendant",
+        "primary_state": "South Carolina",
+        "query": "Thomas Joshua Knighton Sr, South Carolina, descendant"
+      },
+      {
+        "canonical_id": 193631,
+        "person_type": "descendant",
+        "primary_state": "South Carolina",
+        "query": "Joane Helliar, South Carolina, descendant"
+      },
+      {
+        "canonical_id": 140410,
+        "person_type": "descendant",
+        "primary_state": "Tennessee",
+        "query": "Jacob Knighton, Tennessee, descendant"
+      },
+      {
+        "canonical_id": 141091,
+        "person_type": "descendant",
+        "primary_state": "Tennessee",
+        "query": "Elsie Johnson, Tennessee, descendant"
+      },
+      {
+        "canonical_id": 140369,
+        "person_type": "descendant",
+        "primary_state": "Texas",
+        "query": "Jacob Knighton Jr, Texas, descendant"
+      },
+      {
+        "canonical_id": 140368,
+        "person_type": "descendant",
+        "primary_state": "Texas",
+        "query": "Leanna Key, Texas, descendant"
+      },
+      {
+        "canonical_id": 193425,
+        "person_type": "descendant",
+        "primary_state": "Virginia",
+        "query": "Eunice Elizabeth Beasley, Virginia, descendant"
+      },
+      {
+        "canonical_id": 193423,
+        "person_type": "descendant",
+        "primary_state": "Virginia",
+        "query": "Elizabeth Coggins, Virginia, descendant"
+      },
+      {
+        "canonical_id": 825396,
+        "person_type": "descendant",
+        "primary_state": null,
+        "query": "Edmond Freeman Sr, descendant"
+      },
+      {
+        "canonical_id": 194734,
+        "person_type": "descendant",
+        "primary_state": null,
+        "query": "Ludwig Ulstett, descendant"
+      },
+      {
+        "canonical_id": 331147,
+        "person_type": "enslaved",
+        "primary_state": "Alabama",
+        "query": "Jacob Lee, Alabama, enslaved"
+      },
+      {
+        "canonical_id": 139391,
+        "person_type": "enslaved",
+        "primary_state": "Bathurst (Leopold)",
+        "query": "May, Bathurst (Leopold), enslaved"
+      },
+      {
+        "canonical_id": 139389,
+        "person_type": "enslaved",
+        "primary_state": "Bathurst (Leopold)",
+        "query": "Quaco, Bathurst (Leopold), enslaved"
+      },
+      {
+        "canonical_id": 34295,
+        "person_type": "enslaved",
+        "primary_state": "Berbice",
+        "query": "Arsardar, Berbice, enslaved"
+      },
+      {
+        "canonical_id": 28025,
+        "person_type": "enslaved",
+        "primary_state": "Berbice",
+        "query": "Farcuyumee, Berbice, enslaved"
+      },
+      {
+        "canonical_id": 3492,
+        "person_type": "enslaved",
+        "primary_state": "Demerara",
+        "query": "Arjarlah, Demerara, enslaved"
+      },
+      {
+        "canonical_id": 4497,
+        "person_type": "enslaved",
+        "primary_state": "Demerara",
+        "query": "Onee, Demerara, enslaved"
+      },
+      {
+        "canonical_id": 196214,
+        "person_type": "enslaved",
+        "primary_state": "Dist of Columbia",
+        "query": "Celia King, Dist of Columbia, enslaved"
+      },
+      {
+        "canonical_id": 196032,
+        "person_type": "enslaved",
+        "primary_state": "Dist of Columbia",
+        "query": "Ann Kee, Dist of Columbia, enslaved"
+      },
+      {
+        "canonical_id": 196183,
+        "person_type": "enslaved",
+        "primary_state": "District of Col",
+        "query": "Caroline Lewis, District of Col, enslaved"
+      },
+      {
+        "canonical_id": 197160,
+        "person_type": "enslaved",
+        "primary_state": "District of Col",
+        "query": "Lyla Cambell, District of Col, enslaved"
+      },
+      {
+        "canonical_id": 609359,
+        "person_type": "enslaved",
+        "primary_state": "District of Columbia",
+        "query": "Ginnie, District of Columbia, enslaved"
+      },
+      {
+        "canonical_id": 608313,
+        "person_type": "enslaved",
+        "primary_state": "District of Columbia",
+        "query": "Mille Campbell, District of Columbia, enslaved"
+      },
+      {
+        "canonical_id": 5329,
+        "person_type": "enslaved",
+        "primary_state": "Freetown",
+        "query": "Hasee, Freetown, enslaved"
+      },
+      {
+        "canonical_id": 1970,
+        "person_type": "enslaved",
+        "primary_state": "Freetown",
+        "query": "Bancolay, Freetown, enslaved"
+      },
+      {
+        "canonical_id": 6627,
+        "person_type": "enslaved",
+        "primary_state": "Kent",
+        "query": "Cosiukang, Kent, enslaved"
+      },
+      {
+        "canonical_id": 6628,
+        "person_type": "enslaved",
+        "primary_state": "Kent",
+        "query": "Igwo, Kent, enslaved"
+      },
+      {
+        "canonical_id": 32719,
+        "person_type": "enslaved",
+        "primary_state": "Kent School",
+        "query": "Bamcame, Kent School, enslaved"
+      },
+      {
+        "canonical_id": 36321,
+        "person_type": "enslaved",
+        "primary_state": "Kent School",
+        "query": "Cudeo, Kent School, enslaved"
+      },
+      {
+        "canonical_id": 222138,
+        "person_type": "enslaved",
+        "primary_state": "Kentucky",
+        "query": "Ellen Cox, Kentucky, enslaved"
+      },
+      {
+        "canonical_id": 243709,
+        "person_type": "enslaved",
+        "primary_state": "Kentucky",
+        "query": "Stephen Smith, Kentucky, enslaved"
+      }
+    ],
+    "disambiguation": [
+      {
+        "note": "Two real \"George Washington\" enslavers (President vs AR/Choctaw-Nation schedule, #118). FINDING: an Arkansas \"George Washington\" carries assertable_slaveowner=true (the wrong human); the President is not cleanly served/assertable here. The chat must never return the AR namesake as \"the\" George Washington who freed William Lee.",
+        "candidates": [
+          {
+            "id": 452284,
+            "name": "George Washington",
+            "state": "Arkansas",
+            "assertable": true,
+            "served_docs": 2
+          }
+        ]
+      },
+      {
+        "note": "Ann Biscoe matriarch (141015) vs the b.1844 namesake (140344) — MUST stay distinct.",
+        "a": {
+          "label": "Ann Maria Biscoe (matriarch)",
+          "canonical_id": 141015,
+          "resolved_name": "Ann Maria Biscoe",
+          "person_type": "enslaver",
+          "state": "DC",
+          "status": "verified"
+        },
+        "b": {
+          "label": "Annie Maria Hopewell (b.1844 namesake)",
+          "canonical_id": 140344,
+          "resolved_name": "Annie Maria Hopewell",
+          "person_type": "descendant",
+          "state": null,
+          "status": "verified"
+        }
+      }
+    ],
+    "honest_abstention": [
+      {
+        "name": "John C. Calhoun",
+        "query": "Was John C. Calhoun a slaveholder according to a document in this archive?",
+        "must_abstain": true
+      },
+      {
+        "name": "Andrew Jackson",
+        "query": "Was Andrew Jackson a slaveholder according to a document in this archive?",
+        "must_abstain": true
+      },
+      {
+        "name": "James K. Polk",
+        "query": "Was James K. Polk a slaveholder according to a document in this archive?",
+        "must_abstain": true
+      },
+      {
+        "name": "Zachary Taylor",
+        "query": "Was Zachary Taylor a slaveholder according to a document in this archive?",
+        "must_abstain": true
+      }
+    ],
+    "dedup": {
+      "_note": "Extend with folded clusters (648) + true-distinct pairs. Seeded from the Biscoe resolution.",
+      "merges": [
+        {
+          "note": "Biscoe matriarch dupes folded into 141015",
+          "canonical_id": 141015
+        }
+      ],
+      "non_merges": [
+        {
+          "a": 141015,
+          "b": 140344,
+          "note": "matriarch vs b.1844 namesake — must NOT be proposed as a dup"
+        }
+      ]
+    },
+    "link_or_mint": {
+      "_note": "Extend with labeled should-link (exists) and should-mint (genuinely new) records.",
+      "should_link": [
+        {
+          "canonical_id": 1070,
+          "name": "James Hopewell"
+        },
+        {
+          "canonical_id": 196747,
+          "name": "Henry Weaver"
+        }
+      ],
+      "should_mint": []
+    },
+    "grounded_qa": [
+      {
+        "question": "Whose will freed William Lee?",
+        "expect_person": "George Washington",
+        "expect_contains": [
+          "William Lee",
+          "will"
+        ],
+        "must_not_return": [
+          452284
+        ],
+        "link_to_served_gold": null
+      },
+      {
+        "question": "How many enslaved people are on Joshua Ward's 1860 slave schedule?",
+        "expect_person": "Joshua John Ward",
+        "expect_contains": [
+          "1,100",
+          "1100"
+        ],
+        "link_to_served_gold": "Joshua John Ward"
+      }
+    ]
+  }
+}

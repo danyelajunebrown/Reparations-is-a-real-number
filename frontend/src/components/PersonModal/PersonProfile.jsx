@@ -4,12 +4,13 @@ import { api, isVerified } from '../../api/client.js';
 import { useApi } from '../../hooks/useApi.js';
 import { ReparationsBreakdown } from '../Reparations/ReparationsBreakdown.jsx';
 import { DocOverlay, DocCollectionOverlay } from '../DocumentViewer/DocumentViewer.jsx';
+import { RecordDetail, Field, Section, SealBadge, EvidenceBlock } from '../ui/index.jsx';
+import { PERSON_FIELDS } from '../../api/fieldRegistry.js';
 import {
   formatClass,
   CLASS_LABELS,
   CLASS_DESCRIPTIONS,
   formatYear,
-  formatYearWithEstimation,
 } from '../../api/format.js';
 
 /**
@@ -96,16 +97,125 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
     ...enslavedPersons.slice(0, 10).map(ep => ({ name: ep.full_name, category: 'enslaved' })),
   ].filter(n => n.name && n.name.length > 1);
 
-  // Birth/death year formatted with estimation badge support
-  const birthYearFormatted = formatYearWithEstimation(
-    p.birth_year, p.birth_year_source, p.birth_year_confidence, p.birth_year_formula
-  );
-  const deathYearFormatted = formatYearWithEstimation(
-    p.death_year, p.death_year_source, p.death_year_confidence, p.death_year_formula
-  );
-  const freedomYearFormatted = formatYearWithEstimation(
-    p.freedom_year, p.freedom_year_source, null, null
-  );
+  // Spouse is a bespoke field (comes from the family graph, links to the person)
+  // that the registry can't express — passed to RecordDetail as an `extra`.
+  const spouseNode = spouseFromFamily
+    ? (spouseFromFamily.id
+        ? <Link to={`/person/${spouseFromFamily.table_source || 'canonical_persons'}/${spouseFromFamily.id}`}>{spouseFromFamily.full_name || spouseFromFamily.name}</Link>
+        : (spouseFromFamily.full_name || spouseFromFamily.name))
+    : (p.spouse_name || null);
+
+  // ── Source documents ────────────────────────────────────────────────────────
+  // Group into PRIMARY (an original scan/record image) vs SECONDARY (indexed,
+  // transcribed, republished, or database-derived). Hoisted out of the render so
+  // the primary scan can sit HIGH on the page (objective c: primary sources up),
+  // above the derived commentary, while the full list stays below.
+  const isCollPrimary = (col) => (col.pages || []).some((pg) => pg?.evidence_strength === 'direct_primary');
+  const isDocPrimary  = (d) => d?.evidence_strength === 'direct_primary';
+  const primaryColls   = documentCollections.filter(isCollPrimary);
+  const secondaryColls = documentCollections.filter((c) => !isCollPrimary(c));
+  const primaryDocs    = documents.filter(isDocPrimary);
+  const secondaryDocs  = documents.filter((d) => !isDocPrimary(d));
+  const hasPrimaryDocs = primaryColls.length > 0 || primaryDocs.length > 0;
+  const hasSecondaryDocs = secondaryColls.length > 0 || secondaryDocs.length > 0;
+
+  const renderCollCard = (col, idx) => {
+    const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
+    if (!hasPages) {
+      return (
+        <div key={col.collection_key || idx} className="box" style={{ opacity: 0.6 }}>
+          <div>{col.collection_name || 'Primary source document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {col.doc_type}{col.page_count > 1 ? ` · ${col.page_count} pages` : ''}
+            {col.source_type_label && ` · ${col.source_type_label}`}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <button
+        key={col.collection_key || idx}
+        type="button"
+        onClick={() => setViewCollection(col)}
+        className="box"
+        style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+      >
+        <div>{col.collection_name || 'Primary source document'}</div>
+        <div className="dim" style={{ fontSize: 12 }}>
+          {col.doc_type}
+          {col.page_count > 1 ? ` · ${col.page_count} pages` : ' · 1 page'}
+          {col.source_type_label && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>{col.source_type_label}</span>}
+          <span style={{ marginLeft: 8, color: 'var(--accent)' }}>↗ view</span>
+        </div>
+      </button>
+    );
+  };
+  const renderDocCard = (doc, idx) => {
+    const docId = doc.id || doc.document_id;
+    const hasS3 = !!(doc.s3_key || doc.s3_url);
+    const canUseViewer = !!(docId && hasS3);
+    const externalUrl = doc.source_url;
+    const isPdRow = hasS3 && docId != null &&
+      (typeof docId === 'number' || /^\d+$/.test(String(docId)));
+
+    if (canUseViewer) {
+      const handleClick = isPdRow
+        ? () => setViewCollection({
+            collection_name: doc.title || doc.filename || 'Source document',
+            source_type_label: doc.doc_type || '',
+            doc_type: doc.doc_type || 'will',
+            pages: [{
+              id: docId,
+              filename: doc.filename,
+              title: doc.title || doc.filename,
+              ocr_text: doc.ocr_text || null,
+              source_url: null,
+            }],
+          })
+        : () => setViewDocId(docId);
+      return (
+        <button
+          key={`doc-${docId}-${idx}`}
+          type="button"
+          onClick={handleClick}
+          className="box"
+          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
+        >
+          <div>{doc.title || doc.filename || 'Untitled document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+            <span style={{ marginLeft: 8, color: 'var(--accent)' }}>↗ view</span>
+          </div>
+        </button>
+      );
+    }
+    if (externalUrl) {
+      let host = externalUrl;
+      try { host = new URL(externalUrl).hostname; } catch (_) {}
+      return (
+        <a
+          key={`ext-${idx}`}
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="box"
+          style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+        >
+          <div>{doc.title || doc.filename || 'Source document'}</div>
+          <div className="dim" style={{ fontSize: 12 }}>
+            {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
+            {' · '}<span style={{ color: 'var(--accent)' }}>{host} ↗</span>
+          </div>
+        </a>
+      );
+    }
+    return (
+      <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
+        <div>{doc.title || doc.filename || 'Document reference'}</div>
+        <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
+      </div>
+    );
+  };
 
   return (
     <div className="stack-xl">
@@ -124,6 +234,15 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                 <span className="source-badge">{coverage.source_label}</span>
               </div>
             )}
+            {/* Ground the person-modal flow in RAG (RULE 0.5): ask a question about
+                this person, answered from the source documents with citations. */}
+            {(p.full_name || p.name) && (
+              <div style={{ marginTop: 8 }}>
+                <Link to={`/ask?q=${encodeURIComponent(p.full_name || p.name)}`} style={{ fontSize: 'var(--fs-sm)' }}>
+                  Ask the archive about {p.full_name || p.name} ↗
+                </Link>
+              </div>
+            )}
           </div>
           {p.verification_status && (
             <div style={{ textAlign: 'right' }}>
@@ -139,30 +258,38 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
       </header>
 
       <Section title="Identity">
-        <div className="grid-3">
-          <Field label="Birth year" value={<YearDisplay formatted={birthYearFormatted} />} />
-          <Field label="Death year" value={<YearDisplay formatted={deathYearFormatted} />} />
-          <Field label="Gender" value={p.gender} />
-          <Field label="Location" value={p.location} />
-          {p.primary_plantation && (
-            <Field label="Plantation" value={p.primary_plantation} />
-          )}
-          {p.freedom_year && (
-            <Field label="Freedom year" value={<YearDisplay formatted={freedomYearFormatted} />} />
-          )}
-          <Field label="Occupation" value={p.occupation} />
-          <Field label="Spouse" value={
-            spouseFromFamily
-              ? (spouseFromFamily.id
-                  ? <Link to={`/person/${spouseFromFamily.table_source || 'canonical_persons'}/${spouseFromFamily.id}`}>{spouseFromFamily.full_name || spouseFromFamily.name}</Link>
-                  : (spouseFromFamily.full_name || spouseFromFamily.name))
-              : p.spouse_name
-          } />
-          <Field label="Racial designation" value={p.racial_designation} />
-          <Field label="Source table" value={tableSource} />
-          <Field label="Status" value={p.status} />
-        </div>
+        {/* Schema-driven: fields come from PERSON_FIELDS (api/fieldRegistry.js),
+            rendered by priority with progressive disclosure. Adding a new column
+            to the profile is a one-line registry entry — no change here. */}
+        <RecordDetail
+          record={p}
+          fields={PERSON_FIELDS}
+          columns={3}
+          visibleCount={9}
+          extras={[
+            { label: 'Spouse', priority: 66, present: !!spouseNode, node: spouseNode },
+            { label: 'Source table', priority: 20, present: !!tableSource, node: tableSource },
+          ]}
+        />
       </Section>
+
+      {/* Primary source high on the page: the original scan this profile rests on,
+          above the derived/secondary commentary (objective c). Tap to open the
+          zoomable viewer. The full document list (incl. secondary) stays below. */}
+      {hasPrimaryDocs && (
+        <Section title="Primary source">
+          <EvidenceBlock>
+            <div style={{ marginBottom: 6 }}><SealBadge>Original record</SealBadge></div>
+            <div className="dim" style={{ fontSize: 11, marginBottom: 8 }}>
+              The original record image this profile rests on. Tap to open the scan in a zoomable viewer.
+            </div>
+            <div className="stack">
+              {primaryColls.map(renderCollCard)}
+              {primaryDocs.map(renderDocCard)}
+            </div>
+          </EvidenceBlock>
+        </Section>
+      )}
 
       {Array.isArray(p.facts) && p.facts.length > 0 && (() => {
         const plantations = p.facts.filter((f) => f.fact_type === 'plantation');
@@ -179,7 +306,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
                     <div key={i} className="box" style={{ padding: 8 }}>
                       <div style={{ fontWeight: 600 }}>{f.value_text}</div>
                       <div className="dim" style={{ fontSize: 11, marginTop: 3 }}>
-                        <span style={{ color: needsPrimary(f) ? '#b58900' : '#2aa198' }}>
+                        <span style={{ color: needsPrimary(f) ? 'var(--flag)' : 'var(--seal)' }}>
                           {needsPrimary(f) ? '○ needs primary' : '● primary-corroborated'}
                         </span>
                       </div>
@@ -476,8 +603,8 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
            research-priority signal. */}
       {coverage.hasDocuments && coverage.hasPrimarySource === false && (
         <div className="box" style={{
-          margin: '12px 0', padding: 12, borderLeft: '3px solid #d97706',
-          background: 'rgba(217, 119, 6, 0.08)', fontSize: 13,
+          margin: '12px 0', padding: 12, borderLeft: '3px solid var(--flag)',
+          background: 'rgba(122, 93, 16, 0.08)', fontSize: 13,
         }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Primary documentation still needed</div>
           <div className="dim" style={{ fontSize: 11 }}>
@@ -496,145 +623,20 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
            an original. A collection counts as primary if any of its pages is
            direct_primary.
       ──────────────────────────────────────────────────────────────────── */}
-      {(() => {
-        if (documentCollections.length === 0 && documents.length === 0) return null;
-
-        const isCollPrimary = (col) => (col.pages || []).some((p) => p?.evidence_strength === 'direct_primary');
-        const isDocPrimary  = (d) => d?.evidence_strength === 'direct_primary';
-        const primaryColls   = documentCollections.filter(isCollPrimary);
-        const secondaryColls = documentCollections.filter((c) => !isCollPrimary(c));
-        const primaryDocs    = documents.filter(isDocPrimary);
-        const secondaryDocs  = documents.filter((d) => !isDocPrimary(d));
-
-        const renderCollCard = (col, idx) => {
-              const hasPages = col.pages && col.pages.some(pg => pg.id || pg.source_url);
-              if (!hasPages) {
-                // No viewable URL in any page — show metadata-only card
-                return (
-                  <div key={col.collection_key || idx} className="box" style={{ opacity: 0.6 }}>
-                    <div>{col.collection_name || 'Primary source document'}</div>
-                    <div className="dim" style={{ fontSize: 12 }}>
-                      {col.doc_type}{col.page_count > 1 ? ` · ${col.page_count} pages` : ''}
-                      {col.source_type_label && ` · ${col.source_type_label}`}
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <button
-                  key={col.collection_key || idx}
-                  type="button"
-                  onClick={() => setViewCollection(col)}
-                  className="box"
-                  style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
-                >
-                  <div>{col.collection_name || 'Primary source document'}</div>
-                  <div className="dim" style={{ fontSize: 12 }}>
-                    {col.doc_type}
-                    {col.page_count > 1 ? ` · ${col.page_count} pages` : ' · 1 page'}
-                    {col.source_type_label && <span style={{ display: 'block', marginTop: 2, fontSize: 11 }}>{col.source_type_label}</span>}
-                    <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
-                  </div>
-                </button>
-              );
-        };
-        const renderDocCard = (doc, idx) => {
-          const docId = doc.id || doc.document_id;
-          const hasS3 = !!(doc.s3_key || doc.s3_url);
-          const canUseViewer = !!(docId && hasS3);
-          const externalUrl = doc.source_url;
-          // Detect whether this doc comes from person_documents (integer id)
-          // vs the documents table (UUID string). person_documents rows must be
-          // opened via DocCollectionOverlay → getPersonDocAccess so the backend
-          // generates a presigned S3 URL from s3_key. Using DocOverlay for these
-          // returns 404 (that endpoint queries the separate documents table).
-          const isPdRow = hasS3 && docId != null &&
-            (typeof docId === 'number' || /^\d+$/.test(String(docId)));
-
-          if (canUseViewer) {
-            const handleClick = isPdRow
-              ? () => setViewCollection({
-                  collection_name: doc.title || doc.filename || 'Source document',
-                  source_type_label: doc.doc_type || '',
-                  doc_type: doc.doc_type || 'will',
-                  pages: [{
-                    id: docId,
-                    filename: doc.filename,
-                    title: doc.title || doc.filename,
-                    ocr_text: doc.ocr_text || null,
-                    source_url: null,
-                  }],
-                })
-              : () => setViewDocId(docId);
-            return (
-              <button
-                key={`doc-${docId}-${idx}`}
-                type="button"
-                onClick={handleClick}
-                className="box"
-                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', background: 'none', border: '1px solid var(--border)' }}
-              >
-                <div>{doc.title || doc.filename || 'Untitled document'}</div>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                  <span style={{ marginLeft: 8, color: 'var(--accent, #4a9eff)' }}>↗ view</span>
-                </div>
-              </button>
-            );
-          }
-          if (externalUrl) {
-            let hostname = externalUrl;
-            try { hostname = new URL(externalUrl).hostname; } catch (_) {}
-            return (
-              <a
-                key={`ext-${idx}`}
-                href={externalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="box"
-                style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
-              >
-                <div>{doc.title || doc.filename || 'Source document'}</div>
-                <div className="dim" style={{ fontSize: 12 }}>
-                  {doc.doc_type}{doc.page_reference && ` · ${doc.page_reference}`}
-                  {' · '}<span style={{ color: 'var(--accent, #4a9eff)' }}>{hostname} ↗</span>
-                </div>
-              </a>
-            );
-          }
-          return (
-            <div key={`meta-${idx}`} className="box" style={{ opacity: 0.6 }}>
-              <div>{doc.title || doc.filename || 'Document reference'}</div>
-              <div className="dim" style={{ fontSize: 12 }}>{doc.doc_type} · no file available</div>
-            </div>
-          );
-        };
-
-        return (
-          <>
-            {(primaryColls.length > 0 || primaryDocs.length > 0) && (
-              <Section title="Primary source documents">
-                <div className="stack">
-                  {primaryColls.map(renderCollCard)}
-                  {primaryDocs.map(renderDocCard)}
-                </div>
-              </Section>
-            )}
-            {(secondaryColls.length > 0 || secondaryDocs.length > 0) && (
-              <Section title="Secondary source documents">
-                <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
-                  Indexed, transcribed, republished or database-derived citations.
-                  These document that a record exists; they are not the original.
-                </div>
-                <div className="stack">
-                  {secondaryColls.map(renderCollCard)}
-                  {secondaryDocs.map(renderDocCard)}
-                </div>
-              </Section>
-            )}
-          </>
-        );
-      })()}
+      {/* Secondary source documents stay LOW — indexed/transcribed/republished
+          citations that a record exists, not the original scan (which is up top). */}
+      {hasSecondaryDocs && (
+        <Section title="Secondary source documents">
+          <div className="dim" style={{ fontSize: 11, marginBottom: 6 }}>
+            Indexed, transcribed, republished or database-derived citations.
+            These document that a record exists; they are not the original.
+          </div>
+          <div className="stack">
+            {secondaryColls.map(renderCollCard)}
+            {secondaryDocs.map(renderDocCard)}
+          </div>
+        </Section>
+      )}
 
       {viewDocId && (
         <DocOverlay docId={viewDocId} onClose={() => setViewDocId(null)} />
@@ -695,41 +697,7 @@ export function PersonProfile({ personId, tableSource, adminOverride = false }) 
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+// Field and Section now come from components/ui (shared primitives).
 
-function Section({ title, children }) {
-  return (
-    <section>
-      <h2 className="upper" style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 8 }}>{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, value }) {
-  return (
-    <div className="box">
-      <div className="box-label">{label}</div>
-      <div>{value || <span className="dimmer">—</span>}</div>
-    </div>
-  );
-}
-
-/**
- * YearDisplay — renders a plain year string OR an estimation badge.
- * The `formatted` prop is the return value of formatYearWithEstimation().
- * If it's a plain string, render it directly.
- * If it's an object { yearStr, isEstimate, tooltip }, render a dashed
- * underline with "(est.)" label and native title tooltip.
- */
-function YearDisplay({ formatted }) {
-  if (!formatted || formatted === '—') return <span className="dimmer">—</span>;
-  if (typeof formatted === 'string') return <span>{formatted}</span>;
-
-  const { yearStr, tooltip } = formatted;
-  return (
-    <span className="estimate-badge">
-      <span className="estimate-badge-year" title={tooltip}>{yearStr}</span>
-      <span className="estimate-badge-label" title={tooltip}>(est.)</span>
-    </span>
-  );
-}
+// YearDisplay moved into the schema-driven renderer (components/ui RecordDetail):
+// year fields with format 'yearEstimate' now render the estimation badge there.

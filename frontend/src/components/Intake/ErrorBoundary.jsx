@@ -40,7 +40,7 @@ class ErrorBoundary extends React.Component {
           <div style={{ 
             fontFamily: 'monospace', 
             fontSize: '0.85rem', 
-            color: '#e0e0e0', 
+            color: 'var(--ink)', 
             marginTop: '1.5rem',
             padding: '1rem',
             backgroundColor: 'rgba(255, 0, 0, 0.1)',
@@ -51,7 +51,7 @@ class ErrorBoundary extends React.Component {
               <div>
                 <p><strong>Network Error</strong></p>
                 <p>Unable to connect to the server. Please check your internet connection and try again.</p>
-                <p style={{ color: '#888', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                <p style={{ color: 'var(--ink-soft)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                   Error: {this.state.error.message}
                 </p>
               </div>
@@ -59,7 +59,7 @@ class ErrorBoundary extends React.Component {
               <div>
                 <p><strong>Application Error</strong></p>
                 <p>An unexpected error occurred while processing your document.</p>
-                <p style={{ color: '#888', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                <p style={{ color: 'var(--ink-soft)', fontSize: '0.75rem', marginTop: '0.5rem' }}>
                   {this.state.error?.message || 'Unknown error'}
                 </p>
               </div>
@@ -83,9 +83,9 @@ class ErrorBoundary extends React.Component {
               marginTop: '2rem', 
               fontFamily: 'monospace', 
               fontSize: '0.75rem', 
-              color: '#888' 
+              color: 'var(--ink-soft)' 
             }}>
-              <summary style={{ cursor: 'pointer', color: '#e0e0e0' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--ink)' }}>
                 Error Details (Development Mode)
               </summary>
               <pre style={{ 
@@ -93,7 +93,7 @@ class ErrorBoundary extends React.Component {
                 wordBreak: 'break-all',
                 marginTop: '0.5rem',
                 padding: '0.5rem',
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                backgroundColor: 'var(--paper-sunk)',
                 borderRadius: '4px',
                 overflow: 'auto'
               }}>

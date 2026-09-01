@@ -11,6 +11,7 @@ const BACKEND_ROOT = import.meta.env.VITE_API_URL
 // Lazy load heavy panels so the initial bundle stays small.
 const HomePage = lazy(() => import('./pages/HomePage.jsx'));
 const SearchPage = lazy(() => import('./pages/SearchPage.jsx'));
+const AskPage = lazy(() => import('./pages/AskPage.jsx'));
 const PersonPage = lazy(() => import('./pages/PersonPage.jsx'));
 const LineagePage = lazy(() => import('./pages/LineagePage.jsx'));
 const DocumentsPage = lazy(() => import('./pages/DocumentsPage.jsx'));
@@ -43,6 +44,7 @@ export default function App() {
         <nav className="app-nav">
           <NavLink to="/" end>Home</NavLink>
           <NavLink to="/search">Search</NavLink>
+          <NavLink to="/ask">Ask</NavLink>
           <NavLink to="/depositors">Depositors</NavLink>
           <NavLink to="/lineage">Lineages</NavLink>
           <NavLink to="/documents">Documents</NavLink>
@@ -66,6 +68,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/ask" element={<AskPage />} />
             <Route path="/depositors" element={<DepositorsPage />} />
             <Route path="/person/:source/:id" element={<PersonPage />} />
             <Route path="/lineage" element={<LineagePage />} />

@@ -1,0 +1,163 @@
+# PLAN — Dutchess calibration, Stage 1 (enslaver-anchored f) — Jul 19 2026
+
+_Design step after the viability probe ([[assessment-dutchess-calibration-case-study-jul19]]). User
+decision (2026-07-19): **re-scope f to the enslaver-anchored edge** (the maternal micro-link is too
+sparse in the surviving records — §6.4). This plan concretizes Tasks 3–5 of the calibration prompt
+around the edge the records DO support. NOTHING here is applied — schema is PROPOSED (DDL below),
+pending the user's go. Related: Roth & Tolbert 2025 (multicalibration + Reconcile)._
+
+## Why re-scoped (one line)
+The child→mother edge is sparse in BOTH civil registrations and church baptisms (§6.4); the
+enslaved↔ENSLAVER edge is DENSE (1714/1755 census + wills + NESRI roster + owner-named registrations +
+owner-named baptisms all converge on the same families). Calibrate on the dense edge.
+
+## 1. The model `f` (re-defined)
+**`f(X, E | e) = P( person X descends from a documented enslaved person held by enslaver E | evidence e )`**
+— a per-CHAIN-to-enslaver posterior in [0,1], NOT a dollar figure, NOT the child→mother micro-link.
+- The unit of calibration is the **(modern person X, enslaver E) attribution**, decomposed as the
+  product of per-link posteriors along the traced chain, terminating at "enslaved by E" rather than at
+  a named mother. This is exactly the quantity `ancestor_climb_matches.match_confidence` already tries
+  to be (modern person → slaveholder), so the climb's output is the natural `f` — but currently
+  asserted, never calibrated (that is the whole point).
+- Binding quantity remains whole-chain `p^n`; we calibrate **per-link p**, because 1800→2026 is 7–9
+  links and at p=0.90 an 8-link chain is 43% correct (prompt's math). Stage 1's job = a first honest p.
+
+## 2. Ground truth `F(e)` + storage (PROPOSED schema — migration 126, NOT applied)
+The audit packet prints verdicts on paper and never writes them back (assessment §1); there is no
+verdict table. Propose:
+```sql
+-- migration 126 (PROPOSED — do not apply without sign-off)
+CREATE TABLE IF NOT EXISTS linkage_verdicts (
+  id                 SERIAL PRIMARY KEY,
+  -- the asserted edge under test (polymorphic; a climb match, an owner-edge, or a person-pair)
+  subject_kind       TEXT NOT NULL,          -- 'climb_match' | 'owner_edge' | 'parent_link' | 'attribution'
+  subject_ref        TEXT NOT NULL,          -- e.g. ancestor_climb_matches.id, or 'lead:123->lead:456'
+  modern_person_ref  TEXT,                   -- the living/modern endpoint (fs id / lead)
+  enslaver_ref       TEXT,                   -- the enslaver endpoint (canonical/lead)
+  enslaved_ref       TEXT,                   -- the documented enslaved person (lead), when known
+  -- the verdict
+  verdict            TEXT NOT NULL,          -- 'confirmed' | 'refuted' | 'uncertain'
+  basis              TEXT NOT NULL,          -- 'document' | 'participant' | 'researcher'
+  evidence_doc_id    INTEGER,                -- person_documents.id backing a documentary verdict
+  evidence_note      TEXT,
+  -- calibration bookkeeping
+  model_confidence   NUMERIC,                -- f(X,E) at verdict time (to bin predicted-vs-actual)
+  model_version      TEXT,
+  reference_class    TEXT,                   -- town|decade|holding_size bucket (§4)
+  verified_by        TEXT,
+  created_at         TIMESTAMPTZ DEFAULT NOW()
+);
+```
+`F(e)` sources, in order of density: (a) **documentary** — an owner-named baptism + owner-named
+registration + will/census agreeing on the same enslaved person under the same enslaver (the dense
+enslaver-edge corroboration); (b) **participant** — the climb-audit packet, verdicts finally written
+HERE not just printed; (c) **researcher**. Every verdict stores `model_confidence` so predicted-vs-actual
+bins are computable (that IS the calibration measurement).
+
+## 3. Second model `f₂` for Reconcile
+Reconcile needs two models that can genuinely DISAGREE. Evaluated (assessment §3):
+- **REJECT** two climber thresholds — same engine, correlated errors.
+- **USE** independent tree sources: **FamilySearch-climb `f`** vs **WikiTree-derived `f₂`**
+  (`scripts/wikitree-descendant-scraper.js` already builds enslaver→descendant trees, independent of
+  FS). For the enslaver-anchored `f` both must be run to the SAME endpoint (enslaved-person-of-E);
+  WikiTree runs enslaver→descendant forward, the FS climb runs modern→enslaver backward — they MEET at
+  the enslaver E. Agreement on "X attributable to E" from two independent tree corpora is the
+  Reconcile signal. Cheapest viable f₂.
+
+## 4. Reference classes + the ε/2 mass floor (HONEST numbers)
+Candidate strata: **town × decade × holding-size** (holdings were 1–5 people — a real discriminator in
+Dutchess). Population we actually hold (measured, Jul 19):
+- Dutchess owner→enslaved edges: **84** (37 enslavers, 62 named enslaved, 1755) + 14 enslavers (1714,
+  counts) + ~26 named enslaved from the wills → **~85–90 documented enslaved "descent seeds."**
+- Forward-traced to living descendants, the calibration sample is (X, E) pairs seeded by these ~85.
+**Reality check:** the prompt's sample requirement is ~34,000 at E≤0.1; the ε/2 = 2.5% mass floor at
+ε=0.05 means no certifiable class below ~2.5% of the sample. At n ~ 10²–10³ (county scale), **certified
+multicalibration is OUT OF REACH**, and town×decade×holding-size strata will mostly fail the mass
+floor. What Dutchess CAN deliver: an honest **per-link p** and squared-error E on a NEAR-COMPLETE
+documented population — which is the Stage-1 prerequisite the prompt says gates everything downstream.
+Do not oversell it as "calibrated"; it is "population-level p/E on one county."
+
+## 5. Staged plan (real numbers; Stage 1 = first honest p — the gate)
+**Stage 0 (done):** enslaver-side Dutchess corpus in DB — 1714/1755 census (84 edges, 62+ named
+enslaved), ~1,225 imaged wills, NESRI roster + census denominators (1790: 1,864 enslaved). RAG live.
+
+**Stage 1 — FIRST READ ON p. Effort ~1–2 wk. n(links) ≈ 40–90.**
+1. ~~Apply migration 126.~~ **DONE (Jul 19, badee2ffd)** — `linkage_verdicts` live.
+2. **DONE + EMPIRICAL FINDING (Jul 19, `scripts/build-dutchess-linkage-verdicts.mjs`):** cross-source
+   verdict pass over our 3 held sources (1714 census, 1755 census, colonial wills). **Result: the
+   documentary ground truth is BROAD but SHALLOW.** Of **48 distinct Dutchess enslaver families**, only
+   **~1–2 are multiply-corroborated** (Vosburgh in 1714+1755; Kip/Keip missed by spelling-normalization
+   — so ~2); the rest are SINGLE-SOURCE. Enslaved-person-level cross-source truth ≈ **0** (census 62
+   names × wills 16 names → 2 collisions "Jack"/"Tom", which are Biscoe-DISTINCT people, not verdicts).
+   1 confirmed verdict written to `linkage_verdicts` — the pipeline is proven end-to-end, but the
+   `confirmed` set is **far too small to estimate per-link p.** The FS-climb step (3) is moot until
+   there is denser ground truth AND a modern seed (assessment §1: climb runs modern→enslaver, 0
+   Dutchess coverage, enslavers are leads not canonical).
+   **WHY sparse:** our 3 sources cover largely DIFFERENT families across DIFFERENT times (1714 vs 1755
+   vs colonial wills), so the same attribution rarely appears twice; and colonial enslaved first-names
+   collide, so enslaved-level matching is unreliable by construction (Biscoe).
+   **DENSIFICATION PATH (the real Stage-1 unblock):** ingest **NESRI's Dutchess enslaver roster**
+   (~hundreds of census-derived enslavers, 1790–1820 — overlaps our 1755 families heavily → many
+   cross-CENSUS-year enslaver-identity confirmations) + **fully ingest the colonial wills** (26 named
+   enslaved + testators, currently only in a worksheet) + manumissions. THEN re-run the cross-source
+   pass → a real `confirmed` set large enough for calibration. The scraper for NESRI exists
+   (`nesri-scraper.js`, scrapers approved); the wills ingest is a modest build.
+3. Run the climb `f` for Dutchess-seeded lineages — BLOCKED (no modern seed; enslavers are leads).
+   Deferred behind densification + either a Dutchess-descended participant or forward tracing.
+4. **Deliverable: first empirical per-link p.** NOT reachable yet — the multiply-corroborated ground
+   truth (~2) is too small. Reachable after densification (step 2 path). If p < ~0.99, STOP + fix the
+   linker/thresholds (OwnerPromotion 0.80; assessment §4) before scaling.
+
+**STAGE-1 HONEST STATUS (Jul 19):** pipeline BUILT + PROVEN (`linkage_verdicts` + verdict-builder), but
+the documentary ground truth in hand is too sparse (~2 confirmed) to read p. The gate is now a DATA
+step — densify via NESRI-roster + full-wills ingest — not a modeling step. This is the honest "coverage
+isn't there YET, here's exactly what closes it."
+
+**DENSIFICATION DONE (Jul 19) — ground truth 2 → 16 confirmed:**
+- **Full colonial-wills ingest** (`ingest-dutchess-colonial-wills.mjs`, applied): 9 enslaver + 26
+  IMAGE-BACKED enslaved leads + 18 owner→enslaved edges + 12 will docs now evidencing (Philip
+  false-positive flagged not asserted).
+- **NESRI cross-reference** (`nesri-crossref-dutchess-enslavers.js`, applied): targeted per-family
+  NESRI searches → **15 of ~24 checked Dutchess enslaver families CONFIRMED** in NESRI's independent
+  census-derived roster (Hoffman 43, Van Benthouse 14, Keip 9, Heermanse/Van Benthuysen 6,
+  Knickerbacker 4, …). Written as cross-source `confirmed` verdicts.
+- **linkage_verdicts now holds 16 confirmed** enslaver-identity verdicts (was 1). A FLOOR: 4 families
+  errored transiently (Teller/Kniffen/Kip/Siemon — re-runnable on a dedicated Chrome) and ~15 remain
+  unchecked. The enslaved-PERSON edge stays sparse (colonial first-names) — the calibration backbone is
+  the enslaver-identity attribution, as designed.
+
+**REMAINING TO CLOSE STAGE 1 (n for p):** (a) finish the NESRI cross-ref tail (dedicated Chrome) →
+~30+ confirmed families; (b) still need the MODERN endpoint — a Dutchess-descended participant OR
+forward tracing — before per-link p on the full modern→enslaver chain is measurable. The DOCUMENTARY
+enslaver-identity ground truth is now real; the modern-link ground truth is the next gap.
+
+**Stage 2 — second model + E. Effort ~2–4 wk. n ≈ 100–300.** Run WikiTree `f₂` over the same seeds;
+record both f and f₂ per link; compute E + the Reconcile disagreement region.
+
+**Stage 3 — county extension IF p ≥ ~0.99.** All 12 towns; population 10²–10³. Honest county-level
+p/E; NOT certified multicalibration (below the floors).
+
+## 6. What sample size cannot fix (carried from assessment §4 — still binding)
+- `1.0/numLivingDescendants` share dilution (`WealthGapCalculator.js:136`, `DAAOrchestrator.js:1982`)
+  — recall bias, ~ (1/r)^g inflation; enslaver-anchoring does NOT fix it (still needs complete
+  descendant sets).
+- `MIN_VISITED=3` self-selection (`generate-climb-accuracy-audit.mjs:33`) — Dutchess's documentary,
+  population-based frame MITIGATES this (a real argument for the county approach).
+- Free parameters in `Calculator.js` (0.035 / 120 / 15000 / 0.04) — confirm live-vs-legacy first;
+  they move dollars, not `f`. Keep `f` probabilistic and separate from the dollar calc.
+
+## Open items before building (unchanged + new)
+1. ~~Confirm `Calculator.js` is live vs legacy.~~ **RESOLVED (Jul 19): LEGACY, not on any live path.**
+   `DAAOrchestrator` does NOT import `Calculator.js`; the CLI DAA uses `DAAOrchestrator`; only
+   `index.js` (ReparationsSystem facade) requires `Calculator.js` and NOTHING imports `index.js` (no
+   api route / server / CLI). So the flagged free params (dailyWageBase 120, humanDignityValue 15000,
+   compoundInterestRate 0.04, inflationRate 0.035) affect NO DAA the system produces — dead code. The
+   LIVE free parameters to scrutinize instead: Craemer $0.80/day + 3% (DAAGenerator), TieredPayment
+   PLACEHOLDER thresholds (THRESHOLDS_FINALIZED=false), RateResolver anchors (DisgorgementCalculator),
+   WealthGapCalculator constants. (Consider deleting Calculator.js + the dead index.js facade — a
+   separate cleanup.)
+2. Migration 126 `linkage_verdicts` — sign-off to apply.
+3. Dutchess FS climb has 0 coverage — Stage-1 step 3 needs the FS climb pointed at Dutchess seeds
+   (FS-logged-in :9222 Chrome; scrapers approved).
+4. The maternal micro-link stays a sparse, separately-scored layer (from DRC baptism image extraction),
+   NEVER the calibration backbone.

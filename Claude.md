@@ -11,6 +11,23 @@ source of truth.** Do NOT decide from immediate context or from model/training k
 decision in the memory bank, and write project knowledge back to `memory-bank/` (not `~/.claude`). This
 file is only a pointer; the memory bank governs.
 
+## RULE 0.5 — Use RAG on every DB / search / modal step (user directive, 2026-07-05)
+
+Any step touching the **database, search, or person-profile modals**: ground it through the RAG
+retrieval layer first (`scripts/rag-query.cjs` / `/api/rag/query` / `RagService`; nomic-embed-text on the
+Mini ollama). Corollary: **every new ingest MUST add an EMBED phase** (into `embeddings`, like
+`embed-persons.mjs`/`embed-documents.mjs`) — unembedded data is invisible to RAG/search/modals and is a
+retrieval silo. Detail in `activeContext.md`.
+
+## RULE 0.6 — Canonical promotion bar (user directive, 2026-07-06)
+
+A lead is promoted to `canonical_persons` ONLY when it (1) is deduped/discrete (Biscoe), (2) **serves a
+document image** — a proposition-specific scan in S3 (`person_documents.s3_key`, dual-archived S3+Wayback
+per standard rule 8), AND (3) **is embedded in RAG** (`embeddings`). "Every canonical serves an image and
+is in RAG." This tightens the older gate model (secondary-only *gated* canonicals) for all NEW promotions;
+existing image-less canonicals are a backfill DEBT. Order for image-rich sources: attach-scan drip →
+promote (image-backed only) → embed. Detail in `standard-canonical-person-and-document-gate.md`.
+
 ## What this project actually is
 
 An aggregated database of digitized slavery records, indexed to **enslaved persons**, **enslavers**, and **opted-in descendants of both classes**. The output that justifies the work is the **Debt Acknowledgment Agreement (DAA)** — a generated, signed legal instrument that names every documented slaveholder ancestor of a descendant and every documented enslaved person owned, with primary-source citations (FamilySearch ARKs, MSA certificates, civilwardc petitions, etc.), and that grounds annual government petitions under an Article V framework. DAAs are settled via the `ReparationsEscrow` contract on Base mainnet.
