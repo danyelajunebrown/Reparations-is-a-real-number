@@ -70,41 +70,47 @@ if (!missing.length || !APPLY) {
   try { await page.close(); } catch {} await browser.disconnect(); await pool.end(); process.exit(0);
 }
 
+// READ THE WAYPOINTS OUT OF THE DOM — no clicking at all.
+// The county entries are bare <li> with no href, and neither a synthetic .click() nor a real mouse click
+// changes the URL (the app routes internally). But the link IS in the page: React keeps it on the fiber
+// node attached to each <li>, as props.children.props.to —
+//     {"children":{"props":{"to":"/search/image/index?owc=8BZB-T38%3A1610312301%2C1610316501...",
+//      "linkName":"Select Level","children":"Sussex"}}}
+// So Sussex is 8BZB-T38:1610312301,1610316501, and every county on the page carries its own. This replaces
+// 100 clicks (and a captcha-gated click-through that never worked) with ONE read.
+const found = await page.evaluate(() => {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const out = [];
+  for (const li of document.querySelectorAll('li')) {
+    const key = Object.keys(li).find((k) => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));
+    if (!key) continue;
+    let node = li[key];
+    const props = node && (node.memoizedProps || node.pendingProps || node);
+    const child = props && props.children;
+    const to = child && child.props && child.props.to;
+    const label = child && child.props && child.props.children;
+    if (typeof to === 'string' && typeof label === 'string') out.push({ name: norm(label), to });
+  }
+  return out;
+});
+console.log(`  waypoints readable from the DOM: ${found.length}`);
+
 let got = 0, failed = 0;
-for (const name of missing) {
-  // A FRESH PAGE PER COUNTY. Reusing one page and navigating back to the browse view each iteration threw
-  // "Attempted to use detached Frame" on all 48 — FamilySearch's SPA detaches the frame on re-navigation,
-  // and once detached the page is poisoned for every county after it. Exactly the failure that killed 4 of
-  // 5 depositors in the Freedmen's extractor. Closed in `finally` so this cannot become the tab leak that
-  // made the Mini unusable twice.
-  let pg = null;
+for (const f of found) {
+  if (!missing.includes(f.name)) continue;
+  const owc = decodeURIComponent((f.to.match(/owc=([^&]+)/) || [])[1] || '');
+  const id = (owc.match(/^([A-Z0-9-]+:[\d,]+)/) || [])[1];
+  if (!id) { failed++; console.log(`  ✗ ${f.name}: no waypoint in props`); continue; }
   try {
-    pg = await browser.newPage();
-    await pg.setViewport({ width: 1500, height: 1100 });
-    await pg.goto(BROWSE, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await sleep(6000);
-    const clicked = await pg.evaluate((n) => {
-      const el = [...document.querySelectorAll('a,button,[role=link],[role=button],li,td')]
-        .find((e) => (e.innerText || '').trim() === n);
-      if (!el) return false; el.click(); return true;
-    }, name);
-    if (!clicked) { failed++; console.log(`  ✗ ${name}: not clickable`); continue; }
-    await sleep(5000);
-    const u = pg.url();
-    const wp = decodeURIComponent((u.match(/owc=([^&]+)/) || [])[1] || '');
-    const id = (wp.match(/^([A-Z0-9-]+:[\d,]+)/) || [])[1];
-    if (!id) { failed++; console.log(`  ✗ ${name}: no waypoint in url`); continue; }
     await pool.query(
       `INSERT INTO familysearch_locations (collection_id, state, county, district, waypoint_id, waypoint_url, collection_type)
        SELECT $1::text,$2::text,$3::text,$3::text,$4::text,$5::text,'slave_schedule_1860'
         WHERE NOT EXISTS (SELECT 1 FROM familysearch_locations f
            WHERE f.collection_id=$1::text AND f.state=$2::text AND f.county=$3::text)`,
-      [CC, STATE, name, id, `https://www.familysearch.org/service/cds/recapi/waypoints/${id}?cc=${CC}`]);
+      [CC, STATE, f.name, id, `https://www.familysearch.org/service/cds/recapi/waypoints/${id}?cc=${CC}`]);
     got++;
-    console.log(`  ✅ ${name} → ${id}`);
-  } catch (e) { failed++; console.log(`  ✗ ${name}: ${e.message.slice(0, 60)}`); }
-  finally { try { if (pg && !pg.isClosed()) await pg.close(); } catch (_) {} }
-  await sleep(GAP_MS);
+    console.log(`  ✅ ${f.name} → ${id}`);
+  } catch (e) { failed++; console.log(`  ✗ ${f.name}: ${e.message.slice(0, 60)}`); }
 }
 
 console.log(`\n=== recovered ${got} counties · ${failed} failed ===`);

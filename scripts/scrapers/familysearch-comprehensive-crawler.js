@@ -665,14 +665,29 @@ async function main() {
     }
 
     // Process collections in priority order (slave schedules first)
-    const sortedCollections = [...SLAVE_COLLECTIONS].sort((a, b) => a.priority - b.priority);
+    // --collection <id> runs ONE collection. Without it the crawler walks every entry in priority order,
+    // which means re-walking the finished 1860 corpus before it ever reaches 1850.
+    const only = (() => { const i = process.argv.indexOf('--collection'); return i > -1 ? process.argv[i + 1] : null; })();
+    const sortedCollections = [...SLAVE_COLLECTIONS]
+        .filter((c) => !only || c.id === only)
+        .sort((a, b) => a.priority - b.priority);
+    if (only && !sortedCollections.length) { console.error(`no collection ${only} in SLAVE_COLLECTIONS`); process.exit(1); }
+    console.log(`Collections to crawl: ${sortedCollections.map((c) => c.id + ' ' + c.name).join(' | ')}`);
 
     for (const collection of sortedCollections) {
         await crawlCollection(collection);
     }
 
-    // Cleanup
-    if (browser) await browser.close();
+    // NEVER close a BORROWED browser. When CHROME_REMOTE_PORT is used this is the shared :9222 session that
+    // the ARK drip, the census OCR and the Freedmen's extractor all depend on — closing it logged the whole
+    // Mini out of FamilySearch once already and left every downstream job archiving login walls.
+    if (browser) {
+        if (typeof browser.disconnect === 'function' && process.env.CHROME_REMOTE_PORT !== 'launch') {
+            await browser.disconnect().catch(() => {});
+        } else {
+            await browser.close().catch(() => {});
+        }
+    }
     // Neon serverless uses HTTP - no connection to close
     console.log('\n🏁 Crawling complete!');
 }
