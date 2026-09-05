@@ -7,6 +7,56 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-04 · THE 1860 COUNTY GAP WAS NOT CLOSED — 61 of 100, and the fix confirmed itself again
+
+Operator asked whether the 1860 counties were finished. Commit `955eff7` says *"county gap CLOSED — 100
+missing counties recovered"*; its own body lists `Virginia 44 · Georgia 10 · Missouri 6 · Kentucky 1` = **61**,
+then concludes "0 still missing". Live diff against `memory-bank/reference-data/`:
+
+| state | listed | held | still missing |
+|---|---|---|---|
+| Virginia | 147 | 144 | **4** — Pittsylvania, Pocahontas, Powhatan, Preston |
+| Georgia | 132 | 110 | **22** — Randolph → Wilkinson |
+| Missouri | 113 | 106 | **8** — Stoddard → Wright |
+| Kentucky | 108 | 101 | **7** — Trimble → Woodford |
+
+**41 still absent, every one at the alphabetical tail.** Confirmed genuinely missing, not renamed: each
+appears in `familysearch_locations` ONLY under `collection_id=1420440` (1850) and never under `3161105` —
+the 1850 enumeration reached Wilkes/Trimble/Woodford/Pittsylvania; 1860 never did. Names normalised
+(case, punctuation, County/city/parish suffix) before diffing, so `Richmond County` vs `Richmond` cannot
+invent a gap.
+
+**WHY IT REPORTED SUCCESS — the same defect, one layer out.** `enumerate-fs-counties-by-click.mjs` computed
+`missing` from a page `innerText` scrape and then `if (!missing.length) exit(0)`. The denominator was the
+PAGE. The `reference-data/*.txt` files had been committed three days earlier *to be* the external
+denominator and the enumerator never opened them. Compounded by a **virtualized list** — one read sees only
+what is rendered, which is exactly why Georgia yielded 10 of its 32.
+
+**FIXED (this session, code only — see BLOCKED):**
+* Enumerator now diffs against `reference-data/<state>.txt`, scrolls until the readable set stops growing,
+  normalises names, resolves **state waypoints off the collection ROOT page** by the same fiber read (no
+  more hand-fed `--wp`, which is how "Virginia has 54 counties" was once believed), and **exits non-zero**
+  when a listed county did not render. A short render can no longer read as a closed gap.
+* `check-ingest-progress.mjs` gained **`1860 counties vs external list` — 459/500**, the only row in that
+  file whose denominator we did not generate. A ratio over `familysearch_locations` cannot see a row that
+  was never inserted; that is how it once printed `5,496/5,497 ✅ COMPLETE`.
+* Same file: the `1860 slave-schedule leaves` row had **no collection filter**, so 1850's unscraped leaves
+  landed in the 1860 denominator on 09-04 and the bar fell 98.7% → 83.9% — a second corpus misread as a
+  regression in the first. Pinned to `3161105`; true reading **5,503 / 5,558 (99%)**.
+
+**RECOVERED ≠ HARVESTED.** Of the 61 counties recovered, only St Francois and St Louis carry a `scraped_at`.
+**Sussex — the county that started this — is still `scraped_at` NULL.** 70 leaves pending in 1860.
+
+**BLOCKED: the Mini is offline** (tailscale: last seen 20h ago; Pi 105d). Both runs need the authenticated
+`:9222` Chrome, so neither has executed. When it returns:
+```
+node scripts/enumerate-fs-counties-by-click.mjs --state all --apply     # the last 41
+node scripts/check-ingest-progress.mjs                                  # must read 500/500
+# then the census OCR cron for the 70 + newly-enumerated leaves
+```
+
+---
+
 ## 2026-08-19→21 · FABRICATION PURGE, THE BACKLOG SPLIT, AND FOUR SILENT FAILURES
 → [[finding-fabrication-classes-aug19-20]] · [[standard-assertion-store-and-inference-decisions]] ·
 [[finding-marronnage-corpus-aug20]] · [[standard-targeted-harvesting]] · [[standard-project-monitoring-and-free-agents]]
