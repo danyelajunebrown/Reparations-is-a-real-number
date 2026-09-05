@@ -19,14 +19,32 @@ Mini ollama). Corollary: **every new ingest MUST add an EMBED phase** (into `emb
 `embed-persons.mjs`/`embed-documents.mjs`) — unembedded data is invisible to RAG/search/modals and is a
 retrieval silo. Detail in `activeContext.md`.
 
-## RULE 0.6 — Canonical promotion bar (user directive, 2026-07-06)
+## RULE 0.6 — Canonical promotion bar (user directive, 2026-07-06; amended 2026-09-01)
 
-A lead is promoted to `canonical_persons` ONLY when it (1) is deduped/discrete (Biscoe), (2) **serves a
-document image** — a proposition-specific scan in S3 (`person_documents.s3_key`, dual-archived S3+Wayback
-per standard rule 8), AND (3) **is embedded in RAG** (`embeddings`). "Every canonical serves an image and
-is in RAG." This tightens the older gate model (secondary-only *gated* canonicals) for all NEW promotions;
-existing image-less canonicals are a backfill DEBT. Order for image-rich sources: attach-scan drip →
-promote (image-backed only) → embed. Detail in `standard-canonical-person-and-document-gate.md`.
+**RULE 0.6 GATES WHAT WE MAY ASSERT. IT DOES NOT GATE WHETHER A PERSON IS RECORDED AS HAVING EXISTED.**
+The two are different acts and the 2026-09-01 amendment separates them, because conflating them erases
+people by process. *(User directive: "a second hand source like this should mint canonicals bc this could
+be the only record of a slave's existence. i understand why it would be gated from a DAA.")*
+
+**(A) EXISTENCE — minting a canonical.** A person NAMED in a cited, archived source is minted, even when the
+source is secondary and even when we may not host its image. Requirements: deduped/discrete (Biscoe), a real
+citation, and embedded in RAG (`embeddings`) so they are findable. Minted-not-assertable persons carry
+`assertable_* = FALSE`.
+*Why:* the Bailey plantation account book (LoC, Sussex Co. VA) is the only known record of **Beck, Jack,
+Bob and Jem**. Refusing to mint them because a hire ledger is secondary would leave the database holding the
+PRICE of Jem's year and not Jem. A person who appears in one surviving document still existed, and the
+database's job is to say so.
+
+**(B) ASSERTION — claiming against an obligor.** Everything a DAA rests on still requires the full bar:
+deduped/discrete (Biscoe), **serves a proposition-specific document image** in S3
+(`person_documents.s3_key`, dual-archived per standard rule 8 — or, where the source cannot be witnessed
+externally, S3 + sha256 with the gap recorded), AND embedded in RAG. "Every ASSERTED canonical serves an
+image and is in RAG." The assertion gate is `assertable_slaveowner` / `assertable_enslaved`, recomputed by
+`recompute-assertion-gates.mjs`.
+
+Existing image-less canonicals remain a backfill DEBT **for assertion**, not a reason to have withheld
+existence. Order for image-rich sources: attach-scan drip → promote → embed → gate.
+Detail in `standard-canonical-person-and-document-gate.md`.
 RULE 0.6 clause 3 (embed) is now **enforced by `project-health-monitor.mjs`** — a recent promotion left
 unembedded is a CRITICAL (it's how the Bard census pull slipped). Don't skip the embed step.
 
