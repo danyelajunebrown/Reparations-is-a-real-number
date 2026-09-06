@@ -7,6 +7,60 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-06 · THE MINI DIED AND NOTHING SAID SO FOR 39 HOURS → the dead-man's switch
+→ [[standard-project-monitoring-and-free-agents]] · issue #155
+
+**TIME OF DEATH: between 03:31:27 and 04:00:00 EDT, 2026-09-04.** Pinned by the re-OCR cron, which
+fires every 30 min: the 03:30 tick completed in full (4 rows, 03:30:24→03:31:27); the 04:00 tick never
+fired. The 4-hourly health monitor last ran 23:00 EDT 09-03 and missed 03:00. Two independent crons on
+different schedules stop at the same boundary.
+
+**IT IS THE HOST, NOT THE SOFTWARE.** Ruled out, each with evidence:
+| hypothesis | why not |
+|---|---|
+| disk full (the usual killer here) | `disk_free` steady at **60%** across every final health run |
+| a crashed script | two crons on different cadences stopped together; a crash leaves the others ticking |
+| Tailscale logged out | it is also absent from the LAN and from mDNS, not just the tailnet |
+| FS session expiry | would not stop the host, and re-OCR does not touch FamilySearch |
+The `ocr_empty` rows on the final ticks are the **Gemini free-tier daily quota**, documented expected
+behaviour with a circuit-breaker — visible as the embed rate depleting across the day
+(+2608 → 1884 → 1189 → 745 → 175 → 229 → 1). Not the cause.
+Swept all 254 addresses on 192.168.1.0/24: the Mini is not there under any IP (only Screen-Sharing host
+is `Billys-iMac` .151). `~/.ssh/config` still points `mac-mini` at the dark `192.168.1.160`.
+**Not remotely recoverable** — WoL needs its MAC, which now exists only in the router's DHCP table
+(admin-gated), and macOS keeps no ARP history. If it were merely asleep *with* Wake-for-network, a
+Bonjour sleep proxy would answer mDNS. Nothing answers.
+
+**THE ROOT CAUSE IS NOT THAT IT STOPPED — IT IS THAT NOBODY WAS TOLD, AND NOBODY WOULD EVER HAVE BEEN.**
+`project-health-monitor` and `auto-issue-monitor` both run ON the Mini, so the one condition they can
+never report is that host's death. **Same defect family as the 1860 coverage metric that measured
+itself:** a check that only runs when things are fine cannot tell you things are not fine. This gap was
+already named in [[standard-project-monitoring-and-free-agents]] with its fix ("a Pi-side watchdog that
+pings the Mini would close this") — and the Pi has been offline ~106 days, so it was never built.
+
+**BUILT: `scripts/heartbeat-watchdog.mjs`** — reads `monitor_health_runs.ran_at` /
+`document_ocr_runs.ran_at` out of Neon and alarms on ABSENCE. Thresholds are derived from each cron's
+real cadence × a grace multiplier, never a magic constant. Fails LOUD on an unreachable DB (an outage is
+an alarm, not a pass — the `catch { count as miss }` lesson). Writes **no heartbeat of its own**: a
+watchdog that records its own liveness has recreated the problem one layer up.
+**THE ONE RULE: it must run somewhere the Mini is NOT.** On the Mini it is worthless.
+* **launchd agent installed on the MacBook** (`scripts/launchd/`, every 30 min, desktop notification +
+  exit 1). Live now; correctly reports both primaries dead.
+* **`.github/workflows/heartbeat-watchdog.yml`** — survives the laptop too; a failing scheduled run
+  emails the owner, so no ntfy topic is needed. **Inert until a `DATABASE_URL` Actions secret is added.**
+  Deliberately `schedule` + `workflow_dispatch` only, `permissions: contents: read` — no
+  `pull_request*` trigger, which is what could leak a secret to fork code on a public repo.
+
+**Detection latency: 39 h → ~2 h.** Also surfaced: **probate scrape has processed no page since
+2026-08-07** (~30 days) — carried as informational, non-gating, so the silence stays visible.
+
+**STILL NEEDS A HUMAN, ONCE:** power the Mini, then `sudo pmset -a sleep 0 disablesleep 1` and enable
+"Start up automatically after a power failure" — the two most likely repeats. `OPS_NOTIFY_WEBHOOK` and
+`GITHUB_TOKEN` live only in the Mini's `.env`; until it is back, alerting is desktop-notification +
+non-zero exit (+ email if the Actions secret lands).
+
+---
+
 ## 2026-09-04 · THE 1860 COUNTY GAP WAS NOT CLOSED — 61 of 100, and the fix confirmed itself again
 
 Operator asked whether the 1860 counties were finished. Commit `955eff7` says *"county gap CLOSED — 100

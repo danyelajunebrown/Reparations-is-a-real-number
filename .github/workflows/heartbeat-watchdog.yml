@@ -1,0 +1,42 @@
+# Dead-man's switch for the Mac Mini — runs on GitHub's infrastructure, so it survives BOTH the
+# Mini and the laptop. A failing scheduled run emails the repo owner by default: that is the alert
+# channel, and it needs no ntfy topic.
+#
+# NOT ENABLED UNTIL YOU ADD THE SECRET. Settings → Secrets and variables → Actions → New secret,
+# name DATABASE_URL. Until then this workflow fails fast with a clear message rather than pretending.
+#
+# SECURITY NOTE, because this repo is PUBLIC and has been bitten once before by a committed DB
+# credential: Actions secrets are masked in logs and are NOT exposed to pull requests from forks.
+# This workflow deliberately has no `pull_request` or `pull_request_target` trigger — those are the
+# ones that can leak a secret to untrusted code. It is schedule + manual only, and read-only.
+# If you would rather not put DATABASE_URL on GitHub at all, that is a legitimate call: the launchd
+# agent on the MacBook covers the Mini's death, just not the laptop's.
+name: heartbeat-watchdog
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 min (GitHub may skew this under load; it is a floor, not a clock)
+  workflow_dispatch:
+
+permissions:
+  contents: read             # least privilege — it only reads a DB, never writes the repo
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --omit=dev --ignore-scripts || npm install --omit=dev --ignore-scripts
+      - name: Check the Mini is still writing
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set — the watchdog cannot run."
+            echo "Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          node scripts/heartbeat-watchdog.mjs
