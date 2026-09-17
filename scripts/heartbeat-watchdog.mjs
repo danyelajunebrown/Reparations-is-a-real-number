@@ -22,8 +22,50 @@
 //   node scripts/heartbeat-watchdog.mjs            # check, print, exit non-zero if stale
 //   node scripts/heartbeat-watchdog.mjs --json     # machine-readable
 //   node scripts/heartbeat-watchdog.mjs --all      # include informational heartbeats
-import 'dotenv/config';
-import pg from 'pg';
+//
+// EXIT CODES — deliberately distinct, because conflating them is what went wrong:
+//   0  every primary heartbeat is alive
+//   1  a heartbeat is STALE — the real alarm, the Mini is very likely down
+//   2  the WATCHDOG is broken (missing dep, no DATABASE_URL, DB unreachable) — a meta-alarm.
+//      Never let this look like a 1: a silent 1 is how 39 hours passed unnoticed.
+// NO `dotenv` IMPORT, DELIBERATELY. On 2026-09-16 a disk cleanup removed node_modules and this
+// script died on `Cannot find package 'dotenv'` — exiting 1, which every exit-code reader takes as
+// "heartbeat stale", while producing NO alert at all. A crashed watchdog and a real alarm were
+// indistinguishable, and the crash was the silent one. So: parse .env with node:fs (zero deps), and
+// treat a broken watchdog as its own LOUDER alarm (exit 2) rather than letting it masquerade.
+import fs from 'node:fs';
+import path from 'node:path';
+
+for (const f of ['.env', '.env.local']) {
+  try {
+    for (const line of fs.readFileSync(path.join(process.cwd(), f), 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+    }
+  } catch { /* absent is fine; a missing DATABASE_URL is caught below and alarms loudly */ }
+}
+
+// Anything that stops this script from doing its job is a META-ALARM: notify, then exit 2.
+function selfFailure(what, detail) {
+  const msg = `WATCHDOG ITSELF IS BROKEN: ${what} — ${detail}`;
+  console.error(`\n  ⛔ ${msg}\n`);
+  if (process.platform === 'darwin') {
+    try {
+      const { execFileSync } = require('node:child_process');
+      execFileSync('osascript', ['-e',
+        `display notification ${JSON.stringify(msg.slice(0, 200))} with title "Reparations: WATCHDOG BROKEN"`]);
+    } catch { /* last resort is stderr + exit 2 */ }
+  }
+  process.exit(2);
+}
+process.on('uncaughtException',  (e) => selfFailure('uncaught exception', e.message));
+process.on('unhandledRejection', (e) => selfFailure('unhandled rejection', String(e && e.message || e)));
+
+let pg;
+try { pg = (await import('pg')).default; }
+catch (e) { selfFailure('cannot load the pg driver', 'run `npm install` in the repo root'); }
+
+if (!process.env.DATABASE_URL) selfFailure('DATABASE_URL is not set', 'no .env found in the working directory');
 
 const AS_JSON = process.argv.includes('--json');
 const SHOW_ALL = process.argv.includes('--all');
