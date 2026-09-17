@@ -7,6 +7,55 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-17 (later) · THE 1860 IMAGE ARCHIVE IS BROWSER SCREENSHOTS, NOT DOCUMENT SCANS — issue #124 at scale
+
+Found while validating the completeness audit: it returned "footer unreadable" on every page. The footer
+was not unreadable. **There was no footer, because the images are not census pages.**
+
+| | pixels | what it actually is |
+|---|---|---|
+| `owners/` (21 docs, marquee pull via the Download button) | **3348 x 4522** | a real full-res scan |
+| `archives/` (144,535 docs, the bulk scraper) | **1920 x 1200** | a **browser viewport screenshot** |
+
+Every archived image is a 1920x1200 screenshot of the FamilySearch *viewer* — nav tabs, breadcrumb,
+"Image 2 of 218", zoom controls, the Image Index panel, the logged-in username. The census page sits
+inside it as a thumbnail of roughly 600x780. **That is 32x fewer pixels on the document than a real scan**
+(15,139,656 vs 468,000).
+
+Of 11,335 distinct objects under `archives/slave-schedules/1860/`:
+* **~8.8% (992) are the FamilySearch SIGN-IN PAGE** — verified by eye. Archived as
+  `document_type='census_slave_schedule'`. Filenames are content hashes and REPEAT across counties
+  (`56e88e74882e2752.png` appears under both `jacksonville-ranges-8-and-9/` and `4th-ward-city-of-mobile/`),
+  so a handful of login captures are replicated across the corpus. This is the documented login-wall
+  failure, persisted as evidence.
+* **~90% show the viewer** with the document as that 600x780 thumbnail.
+* Note 144,535 documents point at only 11,335 objects — ~12.7 rows per image.
+
+### WHAT THIS EXPLAINS
+* **The "~55% name-recall ceiling."** It was never an archival limit. We were OCR-ing a thumbnail.
+* Every cursive misread on record ("Col. Joshua J Ward" -> "C.P. Jordan & Ward", the Aiken owner drift).
+* Why models struggled all session. The one page that read *well* (Forrest) is from `owners/` — a real
+  Download-button scan.
+
+### WHAT IT DOES **NOT** INVALIDATE
+**The people are largely fine.** 96.8% of census content came from FamilySearch's own **pre-indexed
+volunteer transcriptions**, not from OCR of these images. The PERSON data does not rest on the screenshots.
+What rests on them is: RULE 0.6 image-backing, rule 8 file-first archival ("it is the FILE in OUR storage
+that lifts the gate"), and any future OCR.
+
+### CONSEQUENCES
+1. `audit-1860-page-completeness.mjs` **cannot run on this corpus as written** — cropping the bottom 10%
+   of a screenshot yields the Image Index panel, not the enumerator's summary box. It is correct for
+   `owners/`-grade scans only. The completeness question stays OPEN.
+2. **Re-capture is the real remediation**, not re-OCR. `captureFamilySearchImage()` (the Download-button
+   primitive from issue #124) already exists and is what `owners/` used.
+3. Do not spend on OCR of `archives/` images. A 32x pixel deficit is not a prompting problem.
+
+**OPEN:** whether the ~992 login-wall captures produced any person rows, and whether the 12.7-rows-per-image
+ratio means many documents share a screenshot that never depicted their page.
+
+---
+
 ## 2026-09-17 · THE 1860 EXTRACTION MAY BE HALF-EMPTY — and the denominator was printed on every page
 → `scripts/audit-1860-page-completeness.mjs` · [[standard-targeted-harvesting]]
 
