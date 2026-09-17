@@ -62,18 +62,36 @@ function score(text) {
   return { hit, want: want.length, countGuess: lines, exact: hit === want.length && lines === want.length };
 }
 
-async function callModel(model, dataUrl) {
+// A MODEL MUST NOT BE SCORED ON A REQUEST THAT NEVER REACHED IT.
+// First version of this function scored `ling-3.0-flash-vl` as "0/7 ages" when OpenRouter had actually
+// returned HTTP 200 with a 429 nested in the BODY — an upstream rate-limit recorded as a fact about the
+// model's eyesight. That is precisely the bug this session fixed in vision-router, reproduced here
+// within the hour. Errors and non-answers are now separated from scores, and a model that never
+// produced output is reported as INCONCLUSIVE, never as a failure to read.
+async function callModel(model, dataUrl, maxTokens = 3000) {
   const t0 = Date.now();
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST', signal: AbortSignal.timeout(180000),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OR_KEY}` },
-    body: JSON.stringify({ model, temperature: 0, max_tokens: 1500,
+    body: JSON.stringify({ model, temperature: 0, max_tokens: maxTokens,
       messages: [{ role: 'user', content: [{ type: 'text', text: PROMPT }, { type: 'image_url', image_url: { url: dataUrl } }] }] }),
   });
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  if (!res.ok) return { err: `${res.status}: ${(await res.text()).slice(0, 70)}`, secs };
+  if (!res.ok) return { err: `http ${res.status}: ${(await res.text()).slice(0, 60)}`, secs };
+
   const j = await res.json();
-  return { text: (j.choices?.[0]?.message?.content || '').trim(), secs };
+  // OpenRouter reports upstream failures INSIDE a 200. Treat them as errors, not as answers.
+  if (j.error) return { err: `upstream ${j.error.code || ''}: ${String(j.error.message).slice(0, 55)}`, secs };
+
+  const ch = j.choices?.[0] || {};
+  // Some reasoning models emit into `reasoning` and leave `content` empty.
+  const text = (ch.message?.content || ch.message?.reasoning || '').trim();
+  if (!text) {
+    return { inconclusive: ch.finish_reason === 'length'
+      ? 'spent token budget before emitting (reasoning model)'
+      : `empty content (finish_reason=${ch.finish_reason || 'none'})`, secs };
+  }
+  return { text, secs };
 }
 
 (async () => {
@@ -92,17 +110,28 @@ async function callModel(model, dataUrl) {
   for (const m of models) {
     process.stdout.write(`  ${m.padEnd(52)} `);
     try {
-      const { text, err, secs } = await callModel(m, dataUrl);
-      if (err) { console.log(`ERR ${err}`); rows.push({ model: m, result: 'error', detail: err.slice(0, 40) }); continue; }
+      let { text, err, inconclusive, secs } = await callModel(m, dataUrl);
+      // an upstream 429 is transient by definition — give it one retry before judging the model
+      if (err && /429|rate-limit/i.test(err)) {
+        await new Promise((r) => setTimeout(r, 15000));
+        ({ text, err, inconclusive, secs } = await callModel(m, dataUrl));
+      }
+      if (err) { console.log(`ERR  ${err}`); rows.push({ model: m, verdict: 'NOT REACHED', detail: err.slice(0, 44) }); continue; }
+      if (inconclusive) { console.log(`--   ${inconclusive}`); rows.push({ model: m, verdict: 'INCONCLUSIVE', detail: inconclusive.slice(0, 44) }); continue; }
       const s = score(text);
       console.log(`${s.hit}/${s.want} ages · ~${s.countGuess} rows · ${secs}s${s.exact ? '  ★ EXACT' : ''}`);
-      rows.push({ model: m, ages_hit: `${s.hit}/${s.want}`, rows_seen: s.countGuess, secs, exact: s.exact });
-    } catch (e) { console.log(`FAIL ${e.message.slice(0, 50)}`); rows.push({ model: m, result: 'fail' }); }
+      rows.push({ model: m, verdict: s.exact ? 'EXACT' : 'read, inaccurate',
+                  ages_hit: `${s.hit}/${s.want}`, rows_seen: s.countGuess, secs });
+    } catch (e) { console.log(`FAIL ${e.message.slice(0, 50)}`); rows.push({ model: m, verdict: 'NOT REACHED', detail: e.message.slice(0, 44) }); }
   }
 
   console.log('\n=== RESULT (ranked) ===');
-  console.table(rows.filter((r) => r.ages_hit).sort((a, b) =>
-    parseInt(b.ages_hit) - parseInt(a.ages_hit)).concat(rows.filter((r) => !r.ages_hit)));
+  const scored = rows.filter((r) => r.ages_hit).sort((a, b) => parseInt(b.ages_hit) - parseInt(a.ages_hit));
+  console.table(scored.concat(rows.filter((r) => !r.ages_hit)));
+  console.log(`\n  models actually TESTED: ${scored.length} of ${rows.length}` +
+              ` (${rows.filter((r) => r.verdict === 'NOT REACHED').length} unreachable,` +
+              ` ${rows.filter((r) => r.verdict === 'INCONCLUSIVE').length} inconclusive)`);
+  if (!scored.length) console.log('  ⚠️  NOTHING WAS MEASURED. This run says nothing about model quality.');
   console.log('\nA model is only adoptable if it gets the ages AND the row count right. Close is not usable:');
   console.log('a wrong count becomes a wrong enslaved_count on a real person\'s record.\n');
 })();
