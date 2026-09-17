@@ -52,8 +52,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Transcribe an image. Drop-in for the old gemini-ocr signature.
  * @param {Buffer} buffer   image bytes (jpeg/png/webp/gif)
  * @param {{mimeType?:string, prompt?:string, maxTokens?:number}} opts
- * @returns {Promise<string>} transcription ('' if every provider fails)
+ * @returns {Promise<string>} transcription. '' ONLY when a provider answered successfully and the page
+ *   genuinely held no text. If no provider could be reached (quota / auth / network / 5xx) this THROWS
+ *   VisionProvidersExhausted — it does not return ''.
+ *
+ * WHY IT THROWS (2026-09-17). Returning '' on total failure made a dead pipeline indistinguishable from
+ * a blank page. extract-census-ocr read that '' as "OCR returned little text - may be title page" and
+ * moved on: a provider outage recorded as a fact about a historical document. That bug was already found
+ * once (Vision key 403, issue #126) and "fixed" by migrating the caller to this router — but the router
+ * reproduced it, so the caller's guard (which correctly rethrows on quota/auth, and whose comment says
+ * "an empty page and a broken pipeline must never again be indistinguishable") could never fire: there
+ * was no exception to catch. The guard was real; the layer beneath it swallowed the signal.
  */
+class VisionProvidersExhausted extends Error {
+  constructor(message, cause) { super(message); this.name = 'VisionProvidersExhausted'; this.cause = cause; }
+}
+
 async function transcribeImage(buffer, { mimeType = 'image/png', prompt = DEFAULT_PROMPT, maxTokens = 4096 } = {}) {
   if (!PROVIDERS.length) throw new Error('No vision provider key set (OPENROUTER_API_KEY / GEMINI_API_KEY)');
   // Gemini accepts jpeg/png/webp/heic; OpenRouter models accept the same set. Coerce odd types to png
@@ -61,6 +75,9 @@ async function transcribeImage(buffer, { mimeType = 'image/png', prompt = DEFAUL
   const mt = /jpe?g|png|webp|gif/i.test(mimeType) ? mimeType.replace('image/jpg', 'image/jpeg') : 'image/png';
   const dataUrl = `data:${mt};base64,${buffer.toString('base64')}`;
   let lastErr;
+  // `answered` = at least one provider returned a well-formed 200. That is the ONLY condition under which
+  // '' is a statement about the DOCUMENT rather than about our infrastructure.
+  let answered = false;
   for (const prov of PROVIDERS) {
     const body = {
       model: prov.model, temperature: 0, max_tokens: maxTokens, ...(prov.extra || {}),
@@ -82,6 +99,7 @@ async function transcribeImage(buffer, { mimeType = 'image/png', prompt = DEFAUL
           break; // 4xx (quota/auth/model) → next provider
         }
         const data = await res.json();
+        answered = true;                      // provider is alive; anything after this is about the page
         const text = (data.choices?.[0]?.message?.content || '').trim();
         if (text) return text;
         lastErr = new Error(`${prov.name}: empty response`);
@@ -90,8 +108,9 @@ async function transcribeImage(buffer, { mimeType = 'image/png', prompt = DEFAUL
     }
     // fall through to the next provider
   }
-  if (lastErr) console.warn('[vision-router] all providers failed:', lastErr.message);
-  return '';
+  if (answered) return '';   // a provider really replied, and the page really was blank — a fact about the DOCUMENT
+  throw new VisionProvidersExhausted(
+    `all providers failed: ${lastErr ? lastErr.message : 'no provider attempted'}`, lastErr);
 }
 
-module.exports = { transcribeImage, VISION_MODEL, buildProviders, DEFAULT_PROMPT };
+module.exports = { transcribeImage, VISION_MODEL, buildProviders, DEFAULT_PROMPT, VisionProvidersExhausted };
