@@ -7,6 +7,64 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-17 · THE 1860 EXTRACTION MAY BE HALF-EMPTY — and the denominator was printed on every page
+→ `scripts/audit-1860-page-completeness.mjs` · [[standard-targeted-harvesting]]
+
+**READ THE PAGE YOURSELF.** The Forrest schedule (doc 659201) was hand-read this session — the model
+looking at the image directly, the `ocr_model='claude-hand-read'` pattern the Amelia work already
+established. It settled in one look what a day of API spend could not:
+
+* **Ground truth CONFIRMED independently.** Forrest = 7 people, ages 30/22/18/16/14/8/15 — exactly the
+  fixture. Verified by reading, not by trusting the memory-bank record.
+* **The image is legible.** So the source scan and the 2500px resize are NOT the problem. Every model
+  failure this session was capability or prompting. That retires a whole branch of investigation.
+* **The page is TWO PANELS of exactly 40 rows** — two owner/description blocks side by side, ~20 owners,
+  78 people, with ditto marks carrying the owner down each block.
+* **The page carries its own checksum:** a printed summary box, `No. of male slaves 39 · No. of female
+  slaves 39 · Total slaves 78`.
+
+### THE COMPLETENESS QUESTION, AND WHY IT WAS NEVER ASKABLE
+**35 of 144,571 census documents (0.02%) carry any per-page count.** For 99.98% of the corpus nothing
+independent says how many people should have come off a page. This is the county-gap defect one level
+down: there, coverage divided scraped-by-enumerated and could only confirm itself; here there is no
+denominator at all, so "the 1860 corpus is extracted" rests on nothing external.
+
+| signal | value |
+|---|---|
+| corpus mean enslaved per page | **39.8** |
+| page capacity | **80** (two 40-row panels) |
+| pages reaching a full 80 | **372 of 38,923 — 0.96%** |
+| the one page hand-verified | **53 of 78 extracted (32% short)** |
+| memory bank's independent figure | "~55% name-recall ceiling" |
+
+A mean of 39.8 against a capacity of 80, on a page built from two 40-row panels, is a coincidence worth
+taking seriously. NOT PROVEN: rural districts genuinely have part-full pages, 89 pages hold 81+ so there
+is no hard cap, and both panels WERE represented on the verified page (Wright from the left, Forrest from
+the right) — so it is not a clean one-panel truncation. n=1 is a signal, not a measurement.
+
+### THE TEST — cheap, external, and available on every page
+`audit-1860-page-completeness.mjs` crops the bottom 10% (644KB → **167KB measured**, ~2,500 prompt tokens
+instead of 10,853) and reads three numbers anchored by printed labels instead of 78 rows of cursive.
+**~$0.0025/page → a 400-page sample ≈ $1.** SAMPLE, DO NOT CENSUS: all 144,571 would be ~$360 and tells
+you nothing a sample won't. The prompt deliberately carries an UNREADABLE escape and no output template —
+a `AGE | SEX | COLOR` template produced **40 invented rows, all male**, on this exact page.
+
+**If mean recall lands near 50%, the 1860 corpus must be revisited before the 41 new counties or the 111
+pending leaves are worked** — they would inherit the same defect.
+
+### COST REALITY, MEASURED NOT ESTIMATED
+Gemini free tier is **20 requests/day/model** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`), so the
+4,576-page OCR backlog is **229 days**. Paid Qwen-VL-72B measured at **10,853 prompt tokens = $0.0097/page
+→ $44 for the backlog** (my estimate was $15; measuring beat estimating 3×). OpenRouter is **overdrawn at
+−$0.18** ($115 lifetime spend, not the $10 the memory bank records). Free OpenRouter VL models: **9
+consecutive empty responses** — unreachable. Local `qwen2.5vl:3b`: fabricates under a template prompt,
+reads the printed header correctly under an open one; 4.7 min/page on the Mini's CPU.
+**PyLaia is the local option that actually fits the hardware** — a CRNN, tens of millions of parameters,
+CPU-designed, within 2 CER points of frontier LLMs, and the documented best result is LLM-corrects-PyLaia
+at 3.5% WER. The 139,995 pre-indexed transcription/image pairs are its training corpus.
+
+---
+
 ## 2026-09-06 · THE MINI DIED AND NOTHING SAID SO FOR 39 HOURS → the dead-man's switch
 → [[standard-project-monitoring-and-free-agents]] · issue #155
 
