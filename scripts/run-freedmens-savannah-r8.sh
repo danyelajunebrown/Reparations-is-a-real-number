@@ -4,7 +4,7 @@
 # Per Session 33 (Apr 24), Savannah was zero-yield and was killed; this script
 # is preserved but should only be re-run after the underlying issue is fixed.
 set -uo pipefail
-cd "$HOME/Desktop/Reparations-is-a-real-number"
+cd "$HOME/Reparations-is-a-real-number"
 export NODE_OPTIONS="--max-old-space-size=2048"
 set -a; [ -f .env ] && source .env; set +a
 

@@ -6,7 +6,7 @@
 # keep the dedup queues current as new records are imported.
 #
 # Cron (Mac Mini, nightly 04:10):
-#   10 4 * * * /Users/danyelica/Desktop/Reparations-is-a-real-number/scripts/er-refresh.sh >> /tmp/er-refresh.log 2>&1
+#   10 4 * * * /Users/danyelica/Reparations-is-a-real-number/scripts/er-refresh.sh >> /tmp/er-refresh.log 2>&1
 #
 # Honors OPS_NOTIFY_WEBHOOK from .env (ntfy) for a one-line completion ping.
 set -e

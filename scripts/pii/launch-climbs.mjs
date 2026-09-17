@@ -35,7 +35,7 @@ const participants = argv.reduce((acc, a, i) => (a === '--participant' ? [...acc
 if (!participants.length) { console.error('usage: --participant <uuid> [--participant <uuid>...] [--dry-run]'); process.exit(1); }
 
 const HOST = process.env.MINI_SSH_HOST || 'mac-mini-ts';
-const REPO = process.env.MINI_REPO || '/Users/danyelica/Desktop/Reparations-is-a-real-number';
+const REPO = process.env.MINI_REPO || '/Users/danyelica/Reparations-is-a-real-number';
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });

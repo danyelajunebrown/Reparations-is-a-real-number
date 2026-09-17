@@ -6,7 +6,7 @@
 # Run under PM2: pm2 start scripts/run-freedmens-remaining-3.sh
 
 set -uo pipefail
-cd "$HOME/Desktop/Reparations-is-a-real-number"
+cd "$HOME/Reparations-is-a-real-number"
 export NODE_OPTIONS="--max-old-space-size=1536"
 
 # Load .env so notify() has OPS_NOTIFY_WEBHOOK

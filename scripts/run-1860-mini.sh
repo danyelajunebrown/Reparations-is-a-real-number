@@ -6,7 +6,7 @@
 # Resumes from DB state — each invocation picks the largest unfinished state.
 set -uo pipefail
 
-cd "$HOME/Desktop/Reparations-is-a-real-number"
+cd "$HOME/Reparations-is-a-real-number"
 export NODE_OPTIONS="--max-old-space-size=2048"
 export FAMILYSEARCH_INTERACTIVE=true
 # Connect extract-census-ocr.js to the existing logged-in Chrome on :9222

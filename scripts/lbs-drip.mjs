@@ -10,7 +10,7 @@
 // DB-is-truth: all progress is queried, never assumed. A lock file prevents overlapping ticks. Mirrors
 // probate-drip / retrieval-health-audit cron discipline. See memory-bank/plan-ucl-lbs-scraper.md.
 //
-// Cron (Mini):  0 */2 * * *  cd ~/Desktop/Reparations-is-a-real-number && \
+// Cron (Mini):  0 */2 * * *  cd ~/Reparations-is-a-real-number && \
 //                             /path/to/node scripts/lbs-drip.mjs >> /tmp/lbs-drip.log 2>&1
 //
 // Usage:  node scripts/lbs-drip.mjs            # one tick (fetch self-heal + parse batch + promote)

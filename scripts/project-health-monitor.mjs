@@ -8,7 +8,7 @@
 // rubric's live-retrieve stage, orphaning, and drip liveness.
 //
 // Run ON THE MINI (needs ollama for the live-retrieve check). Cron-friendly:
-//   0 */4 * * *  cd ~/Desktop/Reparations-is-a-real-number && /usr/local/bin/node scripts/project-health-monitor.mjs
+//   0 */4 * * *  cd ~/Reparations-is-a-real-number && /usr/local/bin/node scripts/project-health-monitor.mjs
 // Env: NTFY_URL (+ NTFY_TOPIC) for alerts; OLLAMA_URL for retrieval. Flags: --no-retrieve (skip live stage).
 
 import 'dotenv/config';
