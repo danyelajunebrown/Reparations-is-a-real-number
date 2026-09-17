@@ -117,19 +117,55 @@ const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9222', d
 const page = await browser.newPage();
 await page.setViewport({ width: 1500, height: 1100 });
 
-// LEVEL 1 — states, off the collection root. No --wp, nothing to mistype.
+// LEVEL 1 — states, from the COLLECTION WAYPOINT ENDPOINT.
+//
+// My first rewrite tried to read the state list off the browse root page (`?cc=…` with no owc). That page
+// renders NO state list — the 8 "states" it found were the site's top nav (Records, Full Text, Images,
+// Family Tree, Genealogies, Catalog, Books, Wiki). Every state was skipped and the run still printed
+// "gap closed". I replaced a working hand-fed --wp with a broken discovery and called it an improvement.
+//
+// The right source is the collection-level waypoint endpoint. The 100-child cap that truncated the COUNTY
+// level cannot bite here — there are only 16 states. It must be fetched from INSIDE the authenticated page
+// (`credentials: 'include'`); a bare fetch 403s. Verified: it returns Virginia as 8BZB-6TL:1610312301,
+// byte-identical to the operator-supplied waypoint, which is what makes this trustworthy rather than clever.
 console.log(`${APPLY ? '=== APPLY ===' : '=== DRY RUN ==='} collection ${CC} · states: ${STATES.join(', ')}`);
-const stateEntries = await readAllEntries(page, browseUrl(null));
-console.log(`collection root lists ${stateEntries.length} states`);
-const stateWp = new Map(stateEntries.map((e) => [norm(e.name), waypointOf(e.to)]));
+await page.goto(browseUrl(null), { waitUntil: 'domcontentloaded', timeout: 90000 });
+await sleep(4000);
+const stateEntries = await page.evaluate(async (cc) => {
+  const r = await fetch(`https://www.familysearch.org/service/cds/recapi/collections/${cc}/waypoints`,
+    { credentials: 'include', headers: { accept: 'application/json' } });
+  if (!r.ok) return { error: `recapi HTTP ${r.status}` };
+  const j = await r.json();
+  const out = [];
+  for (const sd of (j.sourceDescriptions || [])) {
+    const name = sd.titles?.[0]?.value || sd.coverage?.[0]?.spatial?.original;
+    const href = sd.links?.waypoint?.href || sd.links?.self?.href || sd.about || '';
+    const m = href.match(/waypoints\/([^?/]+)/);
+    if (name && m) out.push({ name, wp: decodeURIComponent(m[1]) });
+  }
+  return { out };
+}, CC);
+
+if (stateEntries.error || !stateEntries.out?.length) {
+  // FAIL LOUD. Without the state map nothing can be measured, and an unmeasured run must never
+  // be mistaken for a clean one.
+  console.log(`\n⛔ could not resolve state waypoints: ${stateEntries.error || 'empty list'}`);
+  console.log('   (is the FamilySearch session signed in? a logged-out fetch returns 403)');
+  try { await page.close(); } catch {}
+  await browser.disconnect(); await pool.end();
+  process.exit(2);
+}
+console.log(`collection waypoint endpoint returned ${stateEntries.out.length} states`);
+const stateWp = new Map(stateEntries.out.map((e) => [norm(e.name), e.wp]));
 
 let exitCode = 0;
 const summary = [];
+const skipped = [];   // states we could not measure AT ALL — these must never read as success
 
 for (const STATE of STATES) {
   console.log(`\n──────── ${STATE} ────────`);
   const wp = stateWp.get(norm(STATE));
-  if (!wp) { console.log(`  ✗ no state waypoint on the root page — skipping`); exitCode = 1; continue; }
+  if (!wp) { console.log(`  ✗ no waypoint for this state — SKIPPED, not measured`); skipped.push(STATE); exitCode = 1; continue; }
   console.log(`  state waypoint: ${wp}`);
 
   // THE EXTERNAL DENOMINATOR. Absent it, refuse to measure rather than measure against ourselves.
@@ -137,7 +173,7 @@ for (const STATE of STATES) {
   if (!fs.existsSync(refFile)) {
     console.log(`  ✗ no reference list at ${path.relative(process.cwd(), refFile)} — REFUSING to report`);
     console.log(`    (a coverage number without an external denominator is not a coverage number)`);
-    exitCode = 1; continue;
+    skipped.push(STATE); exitCode = 1; continue;
   }
   const listed = fs.readFileSync(refFile, 'utf8').split('\n').map((s) => s.trim()).filter(Boolean);
 
@@ -186,12 +222,26 @@ for (const STATE of STATES) {
 }
 
 console.log('\n=== SUMMARY ===');
-console.table(summary);
+if (summary.length) console.table(summary);
+
+// A RUN THAT MEASURED NOTHING IS A FAILED RUN, NOT A CLEAN ONE.
+// The first version summed (missing - recovered) over `summary`. Skipped states push no row, so a run in
+// which EVERY state was skipped summed to 0 and printed "gap closed" — the exact self-confirming success
+// this script exists to kill, reintroduced one level up. Completeness is now asserted against the states
+// we were ASKED to measure, not against the rows we happened to produce.
 const stillOpen = summary.reduce((n, s) => n + (s.missing - s.recovered), 0);
-console.log(stillOpen === 0
-  ? (APPLY ? 'gap closed for the states measured' : 'dry run — pass --apply to record')
-  : `⚠️  ${stillOpen} counties STILL MISSING after this pass — the gap is NOT closed`);
-if (stillOpen > 0) exitCode = 1;
+const unmeasured = STATES.filter((st) => !summary.some((r) => r.state === st));
+if (unmeasured.length) {
+  console.log(`⛔ ${unmeasured.length} of ${STATES.length} state(s) were NOT MEASURED: ${unmeasured.join(', ')}`);
+  console.log('   This run proves nothing about them. Do not read it as a closed gap.');
+  exitCode = 1;
+} else if (stillOpen > 0) {
+  console.log(`⚠️  ${stillOpen} counties STILL MISSING after this pass — the gap is NOT closed`);
+  exitCode = 1;
+} else {
+  console.log(APPLY ? `✅ all ${STATES.length} state(s) measured, 0 counties missing`
+                    : 'dry run — pass --apply to record');
+}
 
 try { await page.close(); } catch {}
 await browser.disconnect();   // BORROWED session — never browser.close(), that logs the whole Mini out of FS
