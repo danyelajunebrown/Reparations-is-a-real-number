@@ -1102,8 +1102,23 @@ async function extractPreIndexedData(imageUrl, metadata = {}) {
 // belongs as a count on the holder, the way probate carries enslaved_count.
 // NOTE: matches only the synthesised "Unknown (Male|Female, ...)" shape. A bare "Unknown" is left alone --
 // that may be a real person whose name was illegible, and a false quarantine hides a human.
+// Names that name NOBODY. Two shapes, both audit-rule-5 violations ("Real or absent"):
+//   1. the TALLY form  — "Unknown (Female, age 4)" — one row per enumerator tally mark
+//   2. the BARE form   — "Unknown", "Image" — an absence marker written into the name column
+// Only (1) was caught. (2) leaked 30,699 rows (30,679 "Unknown" + 20 "Image"), every one of them a
+// person record asserting that a database row corresponds to an identified human when it does not.
+// Found 2026-09-17 while watching a live run create more of them.
+const BARE_PLACEHOLDER_NAMES = new Set([
+    'unknown', 'unnamed', 'unknown person', 'unnamed person', 'no name',
+    'n/a', 'na', 'none', 'null', '?', '-', '--', 'image', 'images',
+]);
+
 function isTallyPlaceholder(name) {
-    return typeof name === 'string' && /^(unknown|unnamed)\s*\((male|female|m|f)\b[^)]*\)$/i.test(name.trim());
+    if (typeof name !== 'string') return false;
+    const t = name.trim();
+    if (!t) return true;
+    if (BARE_PLACEHOLDER_NAMES.has(t.toLowerCase())) return true;
+    return /^(unknown|unnamed)\s*\((male|female|m|f)\b[^)]*\)$/i.test(t);
 }
 
 async function storePerson(personData, dryRun = false) {
