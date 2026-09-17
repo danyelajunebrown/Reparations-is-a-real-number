@@ -122,7 +122,8 @@ async function main() {
   console.log(`picked ${docs.length} doc(s) (prioritising never-OCR'd)`);
 
   const tally = { ocr_filled: 0, ocr_improved: 0, ocr_kept: 0, ocr_sparse: 0, ocr_empty: 0, ocr_failed: 0, skipped: 0, embedded: 0 };
-  let emptyStreak = 0;  // consecutive empty OCR results ⇒ likely provider quota/exhaustion, not blank pages
+  let emptyStreak = 0;  // belt-and-braces: repeated emptiness from any source other than an outright throw
+  let quotaWall = false; // set when the router reports it could not reach ANY provider
   for (const d of docs) {
     const ext = extOf(d.s3_key);
     let text = '', action = 'ocr_failed', note = '';
@@ -131,14 +132,27 @@ async function main() {
       if (buf.length > 25 * 1024 * 1024) { action = 'skipped'; note = `oversized ${(buf.length / 1e6) | 0}MB`; }
       else {
         text = (await ocrObject(d.s3_key, buf) || '').trim();
-        // '' is AMBIGUOUS — a blank page OR a quota wall (the router returns '' after exhausting providers).
-        // We can't tell from one result, so we watch for a STREAK (below) before trusting it.
+        // '' now means ONE thing: a provider answered and the page held no text. As of 2026-09-17
+        // vision-router THROWS VisionProvidersExhausted when no provider can be reached, so a quota wall
+        // arrives as an exception (handled below) instead of masquerading as a blank page. The streak
+        // breaker further down is kept as belt-and-braces for any other source of repeated emptiness.
         if (!text) { action = 'ocr_empty'; note = `no text from ${ext} (blank page OR provider quota)`; }
         else if (text.length < MIN_TEXT) { action = 'ocr_sparse'; note = `${text.length} chars — cover/divider/blank page`; }  // OCR succeeded; ~no text. Don't write/embed noise; don't retry.
         else if (d.prev_len >= MIN_TEXT && text.length <= d.prev_len) { action = 'ocr_kept'; note = `new ${text.length} <= existing ${d.prev_len}`; }
         else { action = d.prev_len >= MIN_TEXT ? 'ocr_improved' : 'ocr_filled'; }
       }
-    } catch (e) { action = 'ocr_failed'; note = e.message.slice(0, 120); }
+    } catch (e) {
+      // A QUOTA/AUTH WALL IS NOT A FACT ABOUT THIS DOCUMENT. Abort the run on the FIRST one, before
+      // anything is persisted: writing an ocr_failed row here would trip the REVISIT_DAYS poison-pill
+      // guard and park a perfectly OCR-able document for two weeks over our own rate limit.
+      if (e && (e.name === 'VisionProvidersExhausted' || /all providers failed/i.test(e.message || ''))) {
+        console.log(`  ⚠ vision providers exhausted — aborting run, nothing persisted for #${d.id}.`);
+        console.log(`    ${String(e.message).slice(0, 140)}`);
+        quotaWall = true;
+        break;
+      }
+      action = 'ocr_failed'; note = e.message.slice(0, 120);
+    }
 
     // CIRCUIT BREAKER: 5 empties in a row is almost certainly the vision provider hitting a daily/rate cap,
     // NOT five consecutive blank pages. Abort WITHOUT persisting these — else the REVISIT_DAYS guard would
