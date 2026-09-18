@@ -26,6 +26,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { neon } = require('@neondatabase/serverless');
 const axios = require('axios');
 const { transcribeImage } = require('../src/services/vision/vision-router');
+const { captureFamilySearchImage } = require('../src/services/scraping/familysearch-image');
 
 // Did we BORROW the shared :9222 browser, or launch our own? This decides teardown, and getting it wrong
 // is expensive: on 2026-08-21 this script finished Delaware, called browser.close() on the SHARED Chrome,
@@ -74,6 +75,7 @@ setInterval(() => {
 }, 60000).unref();
 const fs = require('fs');
 const path = require('path');
+const os = require('os');   // #124 capture writes to a per-page temp download dir
 const crypto = require('crypto');
 
 // S3 for document archiving
@@ -561,13 +563,36 @@ async function captureImage(imageUrl) {
             // Continue anyway
         }
 
-        // Take screenshot
-        const screenshot = await page.screenshot({
-            type: 'png',
-            fullPage: false
-        });
-
-        return screenshot;
+        // ISSUE #124 — the Download button, NOT a viewport screenshot.
+        //
+        // This function used to return page.screenshot(). FS renders pages as tiled <img>, so that gave a
+        // 1920x1200 frame of FS nav chrome with the census page as a ~600x780 thumbnail: 32x fewer pixels
+        // than the real 3348x4522 scan (measured 2026-09-17, 468,000 vs 15,139,656). Every archives/ image
+        // in the 1860 corpus is one of those, and that deficit — not the archive — is what produced the
+        // "~55% name-recall ceiling" the memory bank carried for months as a fact about the records.
+        //
+        // Second failure mode, worse: when the FS session lapses the viewer serves a SIGN-IN PAGE, which
+        // screenshots perfectly well. Because filenames are content hashes, every such capture collapsed
+        // onto one key — 10,879 documents ended up image-backed by a login screen across 359 real ARKs.
+        // So we return NULL rather than a screenshot: a missing image is a recoverable gap, a screenshot
+        // of a login form is corrupted evidence that looks fine.
+        const dlDir = path.join(os.tmpdir(), `fsdl-census-${Date.now()}-${Math.floor(Math.random() * 1e6)}`);
+        try {
+            fs.rmSync(dlDir, { recursive: true, force: true });
+            fs.mkdirSync(dlDir, { recursive: true });
+            const cap = await captureFamilySearchImage(page, dlDir);
+            if (!cap.signedIn) {
+                console.log('      SIGN-IN WALL — session lapsed; not capturing an image for this page');
+                return null;
+            }
+            if (!cap.imageBuffer) {
+                console.log('      Download button produced no file — no image captured for this page');
+                return null;
+            }
+            return cap.imageBuffer;
+        } finally {
+            try { fs.rmSync(dlDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
     } catch (error) {
         console.log(`   ⚠️ Could not capture image: ${error.message}`);
         return null;
