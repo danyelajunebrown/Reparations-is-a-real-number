@@ -93,31 +93,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ── reusable clean FS image capture (Download button + CDP download interception; issue #124) ──
 // Copied verbatim in behaviour from pull-marquee-schedules.cjs::captureFamilySearchImage so the two
 // pulls capture identically. Returns {imageBuffer(full-res jpg), indexText, crumb, signedIn}.
-async function captureFamilySearchImage(page, dir) {
-  const client = await page.target().createCDPSession();
-  await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dir }).catch(() => {});
-  await sleep(9000); // viewer + index panel render
-  const meta = await page.evaluate(() => {
-    let indexText = '';
-    const nodes = Array.from(document.querySelectorAll('body *')).filter(el =>
-      el.children.length < 40 && /free\s*or\s*enslaved|\bOwner\b|\bSlave\b/i.test(el.innerText || '') && (el.innerText || '').length < 20000);
-    const cand = nodes.sort((a, b) => (b.innerText || '').length - (a.innerText || '').length)[0];
-    if (cand) indexText = (cand.innerText || '').replace(/\s*\n\s*/g, ' | ').replace(/\s{2,}/g, ' ').trim().slice(0, 8000);
-    const signInWall = /create a free account to view|sign in to view this image/i.test(document.body.innerText.slice(0, 4000));
-    const crumb = (document.querySelector('nav, [class*="breadcrumb"]')?.innerText || '').replace(/\s+/g, ' ').slice(0, 200);
-    const clicked = (() => { const el = Array.from(document.querySelectorAll('button,[role=button],a')).find(e => /^download$/i.test((e.getAttribute('aria-label') || e.getAttribute('title') || e.textContent || '').trim())); if (el) { el.click(); return true; } return false; })();
-    return { indexText, signInWall, crumb, clicked };
-  });
-  let imageBuffer = null;
-  for (let i = 0; i < 24 && !imageBuffer; i++) {
-    await sleep(1500);
-    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => /\.(jpe?g|png)$/i.test(f) && !/\.crdownload$/i.test(f)) : [];
-    if (files.length) { const fp = dir + '/' + files[0]; const s1 = fs.statSync(fp).size; await sleep(1200); const s2 = fs.statSync(fp).size; if (s1 === s2 && s1 > 80000) imageBuffer = fs.readFileSync(fp); }
-  }
-  return { imageBuffer, indexText: meta.indexText, crumb: meta.crumb, signedIn: !meta.signInWall };
-}
+// captureFamilySearchImage now lives in src/services/scraping/familysearch-image.js (issue #124,
+// action 3). It was duplicated here and in the other puller; the two copies differed only in
+// comments. Behaviour is unchanged — this is the same function, moved.
+const { captureFamilySearchImage } = require('../src/services/scraping/familysearch-image');
 
-// research_findings logger (migration 128; 'truncated' is load-bearing for capped searches).
 async function logFinding(pool, { question, repository, index_searched, result, hit_count, subject_id, note }) {
   await pool.query(
     `INSERT INTO research_findings (question, repository, index_searched, result, hit_count, subject_table, subject_id, evidence_note, searched_by)
