@@ -7,6 +7,70 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-18 · THE IMAGE LINK REPAIRED — and the working pattern that keeps causing this
+→ `scripts/repair-login-wall-image-links.mjs` · issue #124
+
+### DONE: 10,879 documents no longer claim an image they never had
+The login-wall screenshots were attached to real census pages as `document_type='census_slave_schedule'`.
+Because filenames are content hashes, every capture of the sign-in page collapsed onto ONE key — one of
+which backed **1,732 documents across 30 ARKs**.
+
+**THE PEOPLE WERE NEVER FABRICATED, and the instinct to quarantine was wrong.** All 3,262 real people
+carry their own ARK; 2,838 came from FamilySearch's pre-indexed volunteer transcriptions. The 424 tagged
+`census_ocr_extraction` are real enslaved names — Henry, Sam, Moses, July, Sarah — and a sign-in page
+contains "Continue with Google", not "Moses". Proven: **0 of the 10,879 documents carry `ocr_text`**, so
+nothing could have been read off that image. They were MISLABELLED, not invented. Quarantining would have
+deleted real evidence to tidy away OUR capture failure — the same reflex that once recorded a dead API key
+as "no image available".
+
+Applied: `s3_key`/`s3_url` cleared (former key retained in `context_snippet`, reversible), **359 ARKs
+queued in `research_findings` as `result='inaccessible'`** — the honest value, since the page WAS
+inaccessible at capture. Person rows, ARKs and transcriptions untouched. Re-capture needs the
+authenticated `:9222` Chrome + `captureFamilySearchImage()`.
+
+### MEMORY-BANK CORRECTIONS (live-checked 2026-09-18)
+| claim | recorded | live |
+|---|---|---|
+| enslaver canonicals | 420,566 | **413,513** (7,053 reclassified to `unknown`) |
+| enslaved canonicals | 229,062 | **235,795** |
+| documented kin edges | 2,802 | **2,985** |
+| person_documents | 716,065 | **826,341** (345,953 s3-backed) |
+| research_findings | 1,173 | **1,997** |
+| assertable_slaveowner | 34,588 | **39,396** |
+| **"~55% name-recall ceiling"** | *a fact about the archive* | **WRONG — see below** |
+
+**THE 55% CEILING IS RETIRED.** It was never archival. The corpus was OCR'd from 1920x1200 browser
+screenshots in which the document is a ~600x780 thumbnail — **32x fewer pixels than a real scan**. Issue
+#124 filed this 62 days ago ("low-res wide screenshots — re-capture via Download button") and nobody
+connected it to the recall ceiling. Every downstream conclusion resting on "the archive can only give 55%"
+should be re-examined.
+
+### HOW WE ARE WORKING — THE PATTERN THAT KEEPS CAUSING THIS
+Four sessions of defects share one shape: **something that cannot see is asked to report, and its silence
+is recorded as a finding.** A metric divided by its own output. A watchdog that exits 1 when it crashes. A
+router that returns '' when no provider answers. A scraper that screenshots a login page. The archive is
+not sparse; our instruments were blind and said nothing.
+
+Three practices earned this session, stated as rules:
+
+1. **LOOK AT THE ARTEFACT.** One `Read` of the Forrest JPG settled in seconds what a day of API calls
+   could not: confirmed the fixture independently, proved the image legible, revealed the two-panel
+   layout, and found the printed footer total. Reading the *suspect* image is what exposed the sign-in
+   page. **Before building a pipeline over a corpus, open one item of it.**
+2. **VERIFY COLUMNS BEFORE WRITING SQL.** This repair failed THREE times on guessed schema —
+   `data_quality_flags` (absent), a wrong `research_findings` shape, `error_text` (that is on
+   `probate_scrape_progress`; I conflated two tables). CLAUDE.md already says "when in doubt about a column
+   name, query the live DB." A 6-line `information_schema` pre-flight over every column a script touches
+   would have caught all three in one pass, and now precedes the writes.
+3. **A RUN THAT MEASURED NOTHING IS NOT A CLEAN RUN.** The enumerator printed "gap closed" having measured
+   zero states; the bakeoff scored an unreachable model as 0/7; the watchdog exited 1 on a missing
+   dependency. Every reporting surface must distinguish *measured* from *not measured*, and say so.
+
+**The generalisable one:** when a tool reports failure, ask whether the tool can see before believing the
+subject is at fault. Four times this session the defect was in the instrument.
+
+---
+
 ## 2026-09-17 (later) · THE 1860 IMAGE ARCHIVE IS BROWSER SCREENSHOTS, NOT DOCUMENT SCANS — issue #124 at scale
 
 Found while validating the completeness audit: it returned "footer unreadable" on every page. The footer
@@ -1866,7 +1930,7 @@ Three scraper improvements: (1) **direct-jump resume** — `scrapeOneRoll` now b
 Branch: `audit/probate-classifier-and-source-documents` — committed + pushed (`fdb0c50e5`, `8d1c3e011`, `d42d3c9cb`, `f6660cd30`, `c95222389`, + the civilwardc/role-inversion + line-item-DAA commits earlier this session).
 
 ### The problem & the arc
-Liberty probate was scraped/OCR'd (14,450 pp) but structured extraction was never done — the regex extractor scored **7.7% precision / 9.9% recall** on enslaved names. Built a real LLM extractor and discovered, in order: (1) the extractor is fine, **segmentation** was broken; (2) the name-recall ceiling is ~**55%** (cursive-OCR misses + estates spanning multiple roll series + first-name-only ambiguity — Fillis/Jane recur), NOT the model; (3) **the financial extraction is the strong product** — appraisements name FAR more enslaved-with-dollar-values than wills do. Pivoted to financial/forensic accounting (user: option 3 then 2).
+Liberty probate was scraped/OCR'd (14,450 pp) but structured extraction was never done — the regex extractor scored **7.7% precision / 9.9% recall** on enslaved names. Built a real LLM extractor and discovered, in order: (1) the extractor is fine, **segmentation** was broken; (2) the name-recall ceiling is ~**55%** (cursive-OCR misses + estates spanning multiple roll series + first-name-only ambiguity — Fillis/Jane recur), NOT the model; **[SUPERSEDED 2026-09-18 for the CENSUS lane: that ceiling was measured on 1920x1200 browser screenshots where the document is a ~600x780 thumbnail, 32x fewer pixels than a real scan (issue #124). It is a fact about our capture, not the archive. Probate may differ — it was scraped by a different path.]** (3) **the financial extraction is the strong product** — appraisements name FAR more enslaved-with-dollar-values than wills do. Pivoted to financial/forensic accounting (user: option 3 then 2).
 
 ### What was built (all in `src/services/probate/probate-llm-extractor.js` + `scripts/`)
 - **Free multi-provider router** — OpenRouter(llama-3.3-70b:free) → OpenRouter(gpt-oss-120b:free) → Gemini-flash-lite → Cerebras gpt-oss-120b → Groq llama-70b, with 429/402/403 fall-through. Keys in `.env` (gitignored): OPENROUTER/GEMINI/CEREBRAS/GROQ. **Paid hosted ruled out** (user max $1-2/county; a county ~35M tokens ≈ $6 even cheapest). **Local ruled out empirically** — Mini is Intel i5/no-GPU/8GB; M1 MacBook 8GB swaps a 7B into a 5-min timeout. Good local needs Apple-Silicon ≥32GB (future hardware). User added **$10 OpenRouter** (one-time → 1,000 :free req/day, deposit not consumed by :free). NOTE OpenRouter :free models share *upstream* rate limits (llama-70b/qwen 429 intermittently) — gpt-oss-120b:free is the reliable workhorse.
