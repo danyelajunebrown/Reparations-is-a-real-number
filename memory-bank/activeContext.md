@@ -7,6 +7,56 @@ intake/PII; 2026-07-31 evidence-quality.)_
 
 ---
 
+## 2026-09-18 (later) · DLAS WAS STUCK FOR A MONTH — and the audit of every other lane
+→ `scripts/ingest-dlas-petitions.mjs` · commit `527c3d7d1`
+
+**FamilySearch is ~1% of the corpus.** 8,855 external ids of ~850,000. The large lanes are
+Enslaved.org 424,185 · Hall 100,666 · **DLAS 98,773** · Suriname 95,505 · SlaveVoyages 51,111 ·
+Virginia Untold 40,925 · UCL LBS 6,172 · marronnage 4,113 — none of which need an FS session. Twenty
+cron jobs run; most are FS-free. Sessions had been spent on the loudest lane, not the largest.
+
+### DLAS: 2,922 petitions behind a status nothing reads
+The cron fired every 14 minutes and logged `=== APPLY === 0 petition(s)` each time. The queue was not
+empty: 2,922 petitions carried `status='requeue_reprioritise'` while the ingester selected
+`status='queued'`. **Grep confirms nothing in the codebase reads or writes that status** — an orphan from
+a script that has since changed. Signature defect again: *a job reporting success over a selection it
+cannot see.*
+
+Verified before releasing — all real petition URLs, all `processed_at IS NULL`, **zero already had
+people** → no double-ingest risk. Released; went straight from 0 to 150 and is draining. Carries
+**~29,786 named enslaved people**, no FS session, no OCR, no API spend.
+Hardened two ways: the SELECT matches **not-done** (`status IS DISTINCT FROM 'ingested'/'failed'`) rather
+than one exact string — three "waiting" spellings exist across the repo (`queued`, `pending`, the orphan)
+so a fourth cannot strand work again — and an empty selection now prints the **actual queue states**.
+
+### The other lanes, audited
+* **Embeddings — TRUE no-op.** `canonicals lacking an embedding: 0`. The "0 row(s)" logs are honest.
+* **`promote-probate-extractions` — a BOUNDED RESIDUE, not a stall.** The log reads alarmingly (`rejected`
+  = the whole selection, every run) but it is **the same 122 extractions** re-selected every 6 hours, not
+  a growing backlog: 21 genuine artefacts, 101 name-shaped of which most are *also* artefacts
+  (`God Spinter`/`Rufus God` = will-preamble bleed, `Israel House Criber` = OCR garble,
+  `John Keele As Administrator` = a role). **Total enslaved people at stake across all 122 estates: 4.**
+  **The gate is working** — minting `Est Mathr Bennett` or `Lewis Heirs` would be fabrication.
+  Two narrow false-rejects logged, NOT fixed: `Jacob Gross` (`gross` is a ledger-noise stopword) and
+  `March Hughes`/`John March` (month-surnames — a deliberate tradeoff per the memory bank, though
+  inconsistent: `May Wilson` and `June Carter` pass). Recommend leaving it: the cost is 4 people and
+  loosening risks the fabrication class that cost 1.46M rows.
+
+### STILL OUTSTANDING
+**169,719** s3-backed documents lack `ocr_text` · **811** Suriname documents lack `ocr_text` ·
+the **1870→1950 forward corridor**, still the highest-leverage acquisition and still untouched.
+
+### PROCESS — the habit that keeps costing time
+**Three diagnostic queries in this audit alone failed on guessed schema** (`harm_events.harm_id`, an
+untyped `subject_id = integer` comparison, invented `decedent_key`/`collection_key` columns). Earlier the
+same day, the login-wall repair failed three times the same way. CLAUDE.md already says *"when in doubt
+about a column name, query the live DB."* **Introspect `information_schema` first; it costs one query and
+has now cost six failures in a day.** Equally: my first two attempts to size the probate rejects sampled
+`DISTINCT decedent_name` and got a different slice than the script's JOIN — **reproduce the script's own
+query before diagnosing the script.**
+
+---
+
 ## 2026-09-18 · THE IMAGE LINK REPAIRED — and the working pattern that keeps causing this
 → `scripts/repair-login-wall-image-links.mjs` · issue #124
 
