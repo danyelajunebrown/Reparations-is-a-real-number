@@ -84,13 +84,15 @@ function batchPrompt(estates) {
   return `Below are ${estates.length} separate probate estate files, each delimited by "=== ESTATE id=... ===". Extract EACH independently into the schema. Keep estates separate — never merge people or assets across estates; attribute each to its own decedent.\n\nSCHEMA (per estate):\n${ESTATE_SCHEMA}\n\n${FIELD_RULES}\n\nReturn STRICT JSON: {"results":[{"id": <the estate id>, ...schema fields}]} with one entry per estate, ids matching exactly.\n\n${blocks}`;
 }
 
-async function callLLM(userContent, { maxTokens = 4000 } = {}) {
+// `system` overrides the default probate SYSTEM so the SAME free multi-provider router serves any source type
+// (freedmens forms, census, etc.) — the source-type extraction registry passes its own system prompt.
+async function callLLM(userContent, { maxTokens = 4000, system = SYSTEM } = {}) {
   if (!PROVIDERS.length) throw new Error('No LLM provider key set (GEMINI_API_KEY / CEREBRAS_API_KEY / GROQ_API_KEY)');
   let lastErr;
   for (const prov of PROVIDERS) {
     const body = {
       model: prov.model,
-      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userContent }],
+      messages: [{ role: 'system', content: system }, { role: 'user', content: userContent }],
       temperature: 0, max_tokens: maxTokens, response_format: { type: 'json_object' }, ...prov.extra,
     };
     for (let attempt = 0; attempt < 3; attempt++) {

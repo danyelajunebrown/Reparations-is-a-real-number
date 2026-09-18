@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Runs heartbeat-watchdog.mjs every 30 minutes on THIS Mac.
+     The watchdog must live off the monitored host, so it belongs here and NOT on the Mini.
+     Install : launchctl load -w ~/Library/LaunchAgents/com.reparations.heartbeat.plist
+     Remove  : launchctl unload -w ~/Library/LaunchAgents/com.reparations.heartbeat.plist
+     Log     : /tmp/reparations-heartbeat.log -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.reparations.heartbeat</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main/scripts/heartbeat-watchdog.mjs</string>
+  </array>
+  <!-- dotenv reads .env from the working directory, so this must be the repo root -->
+  <key>WorkingDirectory</key><string>/Users/danyelabrown/Desktop/danyelajunebrown GITHUB/Reparations-is-a-real-number-main</string>
+  <key>StartInterval</key><integer>1800</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/reparations-heartbeat.log</string>
+  <key>StandardErrorPath</key><string>/tmp/reparations-heartbeat.log</string>
+</dict>
+</plist>

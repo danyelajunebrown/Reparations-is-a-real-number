@@ -32,6 +32,10 @@ const CONCURRENCY = ci > -1 ? Math.max(1, +process.argv[ci + 1]) : 1;
 // already-linked rows, and blocking-key inserts target distinct subject_ids (no conflict).
 // Biscoe still holds per row (no auto-merge). Pool sized to cover the workers + headroom.
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false }, max: Math.max(CONCURRENCY + 2, 10) });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const svc = new PersonService(pool);
 
 const where = ['linked_subject_id IS NULL', "name IS NOT NULL AND name <> ''"];

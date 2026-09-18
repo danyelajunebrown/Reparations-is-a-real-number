@@ -11,7 +11,7 @@
 # extract-freedmens-fields.js connects to the existing Chrome on :9222 each
 # branch and shares the same authenticated session.
 set -uo pipefail
-cd "$HOME/Desktop/Reparations-is-a-real-number"
+cd "$HOME/Reparations-is-a-real-number"
 set -a; [ -f .env ] && source .env; set +a
 
 PM2=/usr/local/bin/pm2

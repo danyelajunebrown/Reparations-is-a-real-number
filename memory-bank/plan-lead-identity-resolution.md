@@ -1,3 +1,5 @@
+> **SUPERSEDED (Jun 25 2026).** Superseded by `plan-identity-resolution-completion.md`, which the canonical-person standard cites.
+
 # PLAN — Lead Identity Resolution (one dedup layer across leads + canonicals)
 
 _Plan doc, June 24 2026. Grounded in `plan-identity-resolution-completion.md`

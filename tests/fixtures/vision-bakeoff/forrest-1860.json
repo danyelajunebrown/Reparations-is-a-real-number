@@ -1,0 +1,15 @@
+{
+  "_why": "Ground truth for the 1860-cursive vision bakeoff. Per the standing rule, truth lives in a fixture, never inside the scraper or the bakeoff script. Source of the ages is the memory-bank bakeoff record (2026-07-06, issue #142) which established Qwen2.5-VL-72B as exact on this page; enslaved_count=7 is independently corroborated by person_documents.enslaved_count on the same document.",
+  "cases": [
+    {
+      "id": "forrest-1860",
+      "person_document_id": 659201,
+      "s3_key": "owners/n-b-forrest/census_slave_schedule/n-b-forrest-1f0dcfc472913e32.jpg",
+      "source_ark": "https://www.familysearch.org/ark:/61903/3:1:33S7-9BSD-FLZ",
+      "owner": "Nathan Bedford Forrest",
+      "expected_person_count": 7,
+      "expected_ages": [30, 22, 18, 16, 14, 8, 15],
+      "notes": "1860 slave schedule, cursive. Prior bakeoff results on this page: Qwen2.5-VL-72B exact; Gemini accurate; GPT-4o returned 12; gpt-4o-mini returned 116; Groq hallucinated a name ('Sarah Patton'). A model that cannot count this page cannot be trusted on the corpus."
+    }
+  ]
+}

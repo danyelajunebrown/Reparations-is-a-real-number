@@ -4,7 +4,7 @@
 # Run: bash scripts/mac-mini-setup/offload-migration.sh
 set -euo pipefail
 
-REPO="$HOME/Desktop/Reparations-is-a-real-number"
+REPO="$HOME/Reparations-is-a-real-number"
 cd "$REPO"
 
 echo "=== 1. Pull latest ==="

@@ -577,9 +577,41 @@ async function ensureLoggedIn(startFsId) {
         await new Promise(r => setTimeout(r, 5000));
     }
 
+    // ── FAIL CLOSED ON A LOGGED-OUT SESSION ──────────────────────────────
+    // The render check above passes on a SIGN-IN page: `hasH1` is true because
+    // the login screen has an <h1> too. Before this guard existed the climber
+    // printed "Page rendered: Sign-in to your account", then "✓ Logged in and
+    // ready to climb", visited 1 ancestor, found 0 parents, and wrote a
+    // status='completed' session.
+    //
+    // That result is INDISTINGUISHABLE from a genuine dead end (a living person,
+    // or an ancestor with no parents attached). Since negative findings are
+    // first-class evidence in this project — a documented "we looked and found
+    // nothing" — silently recording an auth failure as a null result corrupts
+    // the evidence base for a real participant. Refuse to proceed instead.
+    // Observed 2026-08-03 on seed G21Y-X4B (session 9a60969b, later invalidated).
+    const postLoginUrl = page.url();
+    if (postLoginUrl.includes('ident.familysearch') || postLoginUrl.includes('/auth/') ||
+        /^sign[- ]?in\b/i.test(await page.title())) {
+        throw new Error(
+            `FamilySearch session is NOT logged in (landed on ${new URL(postLoginUrl).host}). ` +
+            `Refusing to climb — a logged-out climb produces a false negative finding. ` +
+            `Sign in to the :9222 debug Chrome (--user-data-dir=/tmp/familysearch-ancestor-climber), then re-run.`);
+    }
+
     // Check if the starting person actually exists
     const startPageText = await page.evaluate(() => document.body.innerText);
     const pageTitle = await page.title();
+
+    // Second signal: a real person page always carries one of these sections.
+    // Absent ALL of them, we are not looking at person data whatever the URL says.
+    const looksLikePersonPage = ['Family Members', 'Parents and Siblings', 'Vital Information',
+                                 'Person Not Found', 'UNKNOWN'].some(s => startPageText.includes(s));
+    if (!looksLikePersonPage) {
+        throw new Error(
+            `Person page for ${startFsId} did not render recognisable person content ` +
+            `(title: "${pageTitle}"). Refusing to climb rather than record an empty result as a finding.`);
+    }
     // Check for living person FIRST — FS shows both "UNKNOWN" and "Person Not Found"
     // in the body text for living people, so the order matters
     if (pageTitle.includes('[Unknown Name]') || pageTitle.includes('UNKNOWN') ||
@@ -2616,6 +2648,20 @@ async function saveMatch(sessionId, modernPerson, match) {
                 session_id,
                 modern_person_name,
                 modern_person_fs_id,
+                -- The canonical_persons row this match resolved to. It was being
+                -- DROPPED: findEnslaverMatch selects the id and spreads the row into
+                -- the match object, but neither INSERT below listed the column, so
+                -- every match this climber wrote had slaveholder_id NULL. Downstream
+                -- that is fatal — DAAOrchestrator.getDocumentedSlaveholders joins on
+                -- it, so an unresolved match can never carry a document, never pass
+                -- the probate gate, and never reach a DAA. Verified 2026-08-06: a
+                -- fresh 36-match climb had 36/36 NULL. (The 274 populated rows
+                -- DB-wide predate this writer; nothing in the repo backfills it.)
+                --
+                -- Storing the id is PROVENANCE for a lead, not an identity
+                -- assertion: match_type is preserved, so a name_only_match stays
+                -- name-only and the Biscoe rule still forbids auto-merging it.
+                slaveholder_id,
                 slaveholder_name,
                 slaveholder_fs_id,
                 slaveholder_birth_year,
@@ -2635,6 +2681,7 @@ async function saveMatch(sessionId, modernPerson, match) {
                 ${sessionId},
                 ${modernPerson.name},
                 ${modernPerson.fs_id || 'NAME-ONLY'},
+                ${match.match.id || null},
                 ${match.match.canonical_name || match.match.full_name},
                 ${match.person.fs_id},
                 ${match.person.birth_year},
@@ -2659,11 +2706,13 @@ async function saveMatch(sessionId, modernPerson, match) {
                 await sql`
                     INSERT INTO ancestor_climb_matches (
                         session_id, modern_person_name, modern_person_fs_id,
+                        slaveholder_id,
                         slaveholder_name, slaveholder_fs_id, slaveholder_birth_year,
                         generation_distance, lineage_path, lineage_path_fs_ids,
                         match_type, match_confidence, classification, classification_reason
                     ) VALUES (
                         ${sessionId}, ${modernPerson.name}, ${modernPerson.fs_id || 'NAME-ONLY'},
+                        ${match.match.id || null},
                         ${match.match.canonical_name || match.match.full_name},
                         ${match.person.fs_id}, ${match.person.birth_year},
                         ${match.generation}, ${match.path}, ${[]},

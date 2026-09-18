@@ -15,6 +15,10 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const SOURCE = process.env.EMBED_SOURCE || 'gemini';
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
 const BATCH = 200;
@@ -99,7 +103,7 @@ async function preflight() {
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'person_documents', u.sid, 'doc_ocr', u.m, u.v::vector, u.h
            FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS u(sid, m, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, models, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, models, vecs, hashes]);
       done += results.length;
     }
     batches++;

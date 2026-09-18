@@ -1,3 +1,5 @@
+> **STALE SNAPSHOT (Apr 23 2026).** Predates blockchain removal and the Dutchess/DAA work. Do not treat its readiness verdicts as current.
+
 # End-to-End System Readiness Gap Analysis
 
 **Date:** April 23, 2026

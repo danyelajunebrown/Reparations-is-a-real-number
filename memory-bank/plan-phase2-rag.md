@@ -1,3 +1,5 @@
+> **REALITY-CHECK (2026-07-31).** RagService is built but imported by ~zero live code (orphaned); live reads are still ILIKE keyword. Retrievability requires WIRING RAG to a live read surface, not just embedding. An untracked `src/api/routes/rag.js` may be an in-progress fix.
+
 # PLAN — Phase 2: RAG / vector retrieval + retrieval-feedback ("automated epistemology")
 
 _Follows Phase 1 (the retrieval-integrity harness, live on a 6h Mini cron). User goal: a RAG layer

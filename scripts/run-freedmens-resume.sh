@@ -21,7 +21,7 @@
 # 25 seconds).
 
 set -uo pipefail
-cd "$HOME/Desktop/Reparations-is-a-real-number"
+cd "$HOME/Reparations-is-a-real-number"
 set -a; [ -f .env ] && source .env; set +a
 
 OUT=/tmp/freedmens-resume

@@ -22,7 +22,10 @@ const require = createRequire(import.meta.url);
 const { Pool } = require('pg');
 const APPLY = process.argv.includes('--apply');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
-
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 // a real party name: non-empty, not a bare code, has a letter
 const REALPARTY = (col) => `${col} IS NOT NULL AND length(trim(${col})) > 1 AND ${col} ~ '[A-Za-z]'`;
 

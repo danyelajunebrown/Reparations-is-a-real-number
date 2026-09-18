@@ -10,7 +10,7 @@
 // DB-is-truth: all progress is queried, never assumed. A lock file prevents overlapping ticks. Mirrors
 // probate-drip / retrieval-health-audit cron discipline. See memory-bank/plan-ucl-lbs-scraper.md.
 //
-// Cron (Mini):  0 */2 * * *  cd ~/Desktop/Reparations-is-a-real-number && \
+// Cron (Mini):  0 */2 * * *  cd ~/Reparations-is-a-real-number && \
 //                             /path/to/node scripts/lbs-drip.mjs >> /tmp/lbs-drip.log 2>&1
 //
 // Usage:  node scripts/lbs-drip.mjs            # one tick (fetch self-heal + parse batch + promote)
@@ -55,6 +55,14 @@ async function main() {
   fs.writeFileSync(LOCK, String(process.pid));
 
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+  // pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+
+  // on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+
+  // STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+
+  pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
   const stamp = new Date(fs.statSync(LOCK).mtimeMs).toISOString();
   try {
     const count = async (w) => (await pool.query(`SELECT count(*)::int n FROM ${w}`)).rows[0].n;

@@ -9,6 +9,7 @@ const S3Service = require('../../src/services/storage/S3Service');
 const { classifyTranscript } = require('../../src/services/probate/document-classifier');
 const { isValidPersonName } = require('../../src/utils/person-name-validator');
 const { notify } = require('../../src/utils/notify');
+const { captureFamilySearchImage } = require('../../src/services/scraping/familysearch-image');
 const os = require('os');
 const pg = require('pg');
 
@@ -827,7 +828,40 @@ async function processImage(countyObj, roll, imageNumber, currentArkId, isDryRun
             if (VERBOSE) log(`  Image ${imageNumber}: no transcript.`);
         }
 
-        screenshotBuffer = await page.screenshot({ fullPage: false, type: 'jpeg', quality: 85 });
+        // ISSUE #124 — do NOT screenshot the viewer. FS renders pages as tiled <img>, so a viewport
+        // screenshot yields a 1920x1200 frame of FS nav chrome with the document as a ~600x780 thumbnail:
+        // 32x fewer pixels than the real scan (measured 2026-09-17). Worse, when the FS session lapses the
+        // viewer serves a SIGN-IN PAGE, which screenshots perfectly well and is worthless — that produced
+        // 10,879 census documents image-backed by a login screen across 359 real ARKs.
+        //
+        // The Download button yields the actual page JPG. If it does not, we archive NOTHING and say so:
+        // a missing image is a recoverable gap, a screenshot of a login form is corrupted evidence that
+        // looks fine. Never fall back to page.screenshot().
+        {
+            const dlDir = path.join(os.tmpdir(), `fsdl-probate-${roll.groupId}-${imageNumber}`);
+            try {
+                fs.rmSync(dlDir, { recursive: true, force: true });
+                fs.mkdirSync(dlDir, { recursive: true });
+                const cap = await captureFamilySearchImage(page, dlDir);
+                if (!cap.signedIn) {
+                    // Session lapse is a fact about OUR access, never about the document.
+                    status = 'failed';
+                    errorText = 'FamilySearch session lapsed (sign-in wall) — image NOT captured';
+                    log(`  Image ${imageNumber}: SIGN-IN WALL — not archiving`);
+                } else if (cap.imageBuffer) {
+                    screenshotBuffer = cap.imageBuffer;
+                    if (VERBOSE) log(`  Image ${imageNumber}: captured ${(cap.imageBuffer.length / 1024) | 0}KB via Download button`);
+                } else {
+                    errorText = 'Download button produced no file — image not captured (transcript still saved)';
+                    log(`  Image ${imageNumber}: no image file from Download button`);
+                }
+            } catch (capErr) {
+                errorText = `image capture failed: ${capErr.message}`.slice(0, 200);
+                log(`  Image ${imageNumber}: capture error — ${capErr.message}`);
+            } finally {
+                try { fs.rmSync(dlDir, { recursive: true, force: true }); } catch { /* best effort */ }
+            }
+        }
     } catch (e) {
         log(`  ERROR processing image ${imageNumber}: ${e.message}`);
         status = 'failed';

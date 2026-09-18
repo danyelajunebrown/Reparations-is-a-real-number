@@ -19,6 +19,23 @@ const BATCH = 500;
 const JUNK = "'^(albany|new york|sole|deceased|late|the |image|estate|will |no |unknown|county|surrogate|liber|folio|page|ditto|do\\.?$)'";
 
 const norm = (s) => (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// NY counties — used to VALIDATE a residence-phrase county so noisy OCR can't invent one.
+const NY_COUNTIES = new Set(['albany','allegany','bronx','broome','cattaraugus','cayuga','chautauqua','chemung','chenango','clinton','columbia','cortland','delaware','dutchess','erie','essex','franklin','fulton','genesee','greene','hamilton','herkimer','jefferson','kings','lewis','livingston','madison','monroe','montgomery','nassau','niagara','oneida','onondaga','ontario','orange','orleans','oswego','otsego','putnam','queens','rensselaer','richmond','rockland','saratoga','schenectady','schoharie','schuyler','seneca','steuben','suffolk','sullivan','tioga','tompkins','ulster','warren','washington','wayne','westchester','wyoming','yates']);
+// Parse the testator's residence COUNTY from the will/probate OCR ("of Fishkill in the County of Dutchess",
+// "Dutchess County ss"). THE #3 FIX: link:54 minted every NY testator with primary_state='New York' and NO
+// county — which is why the province-wide "Albany" will-book (colonial NY prerogative wills, merely FILED at
+// Albany) mislabeled Dutchess/Ulster/Kings testators. County belongs to the RESIDENCE phrase, not the
+// collection label. Validated against real NY counties; NULL when no confident match (no regression).
+function parseResidenceCounty(ocr) {
+  if (!ocr) return null;
+  const t = String(ocr).replace(/\s+/g, ' ');
+  const m = t.match(/county of ([A-Za-z][A-Za-z]+)/i) || t.match(/\b([A-Za-z][A-Za-z]+)\s+county\b/i);
+  if (!m) return null;
+  const key = m[1].toLowerCase().replace(/[^a-z]/g, '');
+  return NY_COUNTIES.has(key) ? m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase() : null;
+}
+
 function parseName(full) { const parts = String(full || '').trim().split(/[\s,]+/).filter(Boolean); if (!parts.length) return { first: '', last: '' }; if (String(full).includes(',')) return { first: parts[1] || '', last: parts[0] }; return { first: parts[0], last: parts.length > 1 ? parts[parts.length - 1] : '' }; }
 
 async function main() {
@@ -35,27 +52,29 @@ async function main() {
   for (;;) {
     if (made >= LIMIT) break;
     const { rows } = await pool.query(
-      `SELECT sp.roll_group_id AS roll, sp.testator_name AS name, max(COALESCE(sp.enslaved_count,0))::int enslaved
+      `SELECT sp.roll_group_id AS roll, sp.testator_name AS name, max(COALESCE(sp.enslaved_count,0))::int enslaved,
+              (array_agg(left(d.ocr_text, 3000) ORDER BY d.id))[1] AS ocr
          FROM probate_scrape_progress sp JOIN person_documents d ON d.id=sp.person_document_id
         WHERE d.collection_key LIKE '%new-york-probate%' AND d.canonical_person_id IS NULL AND d.unconfirmed_person_id IS NULL
           AND sp.testator_name ~* '[a-z]{2,}[ ,].*[a-z]{2,}' AND sp.testator_name !~* ${JUNK}
         GROUP BY 1,2 LIMIT $1`, [BATCH]);
     if (!rows.length) break;
-    const names = [], firsts = [], lasts = [], ptypes = [], rolls = [], keys = [], enslaved = [];
+    const names = [], firsts = [], lasts = [], ptypes = [], rolls = [], keys = [], enslaved = [], counties = [];
     for (const r of rows) {
       const { first, last } = parseName(r.name);
       names.push(r.name); firsts.push(first || null); lasts.push(last || null);
       ptypes.push(r.enslaved > 0 ? 'enslaver' : 'unknown'); rolls.push(r.roll);
       keys.push('nyp:' + r.roll + ':' + norm(r.name)); enslaved.push(r.enslaved);
+      counties.push(parseResidenceCounty(r.ocr));   // #3 fix: derive county from the residence phrase
     }
     const c = await pool.connect();
     try {
       await c.query('BEGIN');
       const ins = await c.query(
-        `INSERT INTO canonical_persons (canonical_name, first_name, last_name, first_name_soundex, last_name_soundex, last_name_metaphone, person_type, primary_state, confidence_score, verification_status, created_by)
-         SELECT b.name, b.first, b.last, soundex(COALESCE(b.first,'')), soundex(COALESCE(b.last,'')), metaphone(COALESCE(b.last,''),8), b.ptype, 'New York', 0.85, 'promoted', 'pc:'||b.k
-           FROM unnest($1::text[],$2::text[],$3::text[],$4::text[],$5::text[]) AS b(name,first,last,ptype,k)
-         RETURNING id, created_by`, [names, firsts, lasts, ptypes, keys]);
+        `INSERT INTO canonical_persons (canonical_name, first_name, last_name, first_name_soundex, last_name_soundex, last_name_metaphone, person_type, primary_state, primary_county, confidence_score, verification_status, created_by)
+         SELECT b.name, b.first, b.last, soundex(COALESCE(b.first,'')), soundex(COALESCE(b.last,'')), metaphone(COALESCE(b.last,''),8), b.ptype, 'New York', b.county, 0.85, 'promoted', 'pc:'||b.k
+           FROM unnest($1::text[],$2::text[],$3::text[],$4::text[],$5::text[],$6::text[]) AS b(name,first,last,ptype,k,county)
+         RETURNING id, created_by`, [names, firsts, lasts, ptypes, keys, counties]);
       const cid = {}, cidArr = [], keyArr = [], nameArr = [], enslArr = [];
       for (let i = 0; i < ins.rows.length; i++) { const k = ins.rows[i].created_by.slice(3); cid[k] = ins.rows[i].id; }
       // build parallel arrays keyed to canonical id for the doc-link + ext-id + keys

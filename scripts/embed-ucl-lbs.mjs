@@ -13,6 +13,10 @@
 import dotenv from 'dotenv'; import crypto from 'node:crypto'; import pg from 'pg';
 dotenv.config();
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+// pg-pool emits 'error' on IDLE clients when the server drops a socket; Node terminates the process
+// on an unhandled 'error' event. One Neon blip therefore kills a long run, and the log reads as
+// STALLED rather than crashed -- the misdiagnosis that hid a dead fleet for five weeks.
+pool.on('error', (e) => console.error(`[pool] idle client error (continuing): ${e.message}`));
 const SOURCE = process.env.EMBED_SOURCE || 'ollama';
 const MODEL = SOURCE === 'gemini' ? 'gemini-embedding-001' : (process.env.EMBED_MODEL || 'nomic-embed-text');
 const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434/api/embeddings';
@@ -79,7 +83,7 @@ const profileText = (p) => [p.full_name, p.person_type, p.context_text,
         `INSERT INTO embeddings (subject_table, subject_id, content_kind, model, embedding, content_hash)
          SELECT 'unconfirmed_persons', u.sid, 'person_profile', $2, u.v::vector, u.h
            FROM unnest($1::text[], $3::text[], $4::text[]) AS u(sid, v, h)
-         ON CONFLICT (subject_table, subject_id, content_kind, model) DO NOTHING`, [sids, MODEL, vecs, hashes]);
+         ON CONFLICT (subject_table, subject_id, content_kind, model, chunk_index) DO NOTHING`, [sids, MODEL, vecs, hashes]);
       done += results.length;
       process.stdout.write(`\r  embedded ${done}, skipped ${skip}, err ${err}   `);
     }
