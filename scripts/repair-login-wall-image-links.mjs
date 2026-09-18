@@ -83,15 +83,18 @@ if (!APPLY) {
 
 // 1. Un-gate. Keep the bad key in data_quality_flags so the failure stays visible and reversible.
 const cleared = await pool.query(
-  // NB person_documents has NO data_quality_flags column. An earlier version of this script assumed one
-  // and failed atomically (nothing applied, verified). The former key is preserved in error_text so the
-  // failure stays visible on the row and the change stays reversible.
+  // COLUMNS VERIFIED against information_schema before writing this. person_documents has NO
+  // data_quality_flags and NO error_text (error_text is on probate_scrape_progress — I conflated the two
+  // tables). The columns that DO exist and fit: s3_key, s3_url, context_snippet.
+  // The former key is appended to context_snippet so the failure stays visible on the row and the change
+  // stays reversible; context_snippet already carries provenance notes for these documents.
   `UPDATE person_documents
       SET s3_key = NULL, s3_url = NULL,
-          error_text = 'image_capture_failed: archived image was a FamilySearch sign-in page, not the '
-            || 'document. former_s3_key=' || s3_key
+          context_snippet = COALESCE(context_snippet || ' | ', '')
+            || 'IMAGE CAPTURE FAILED: archived image was a FamilySearch sign-in page, not the document. '
+            || 'former_s3_key=' || s3_key
             || '. Re-capture via captureFamilySearchImage (Download button, issue #124). cleared '
-            || now()::date || COALESCE(' | prior: ' || error_text, '')
+            || now()::date
     WHERE document_type='census_slave_schedule' AND (${like})
     RETURNING id`, HASHES);
 console.log(`  ✓ cleared false image-backing on ${cleared.rows.length} documents (reversible — former key retained)`);
@@ -100,7 +103,7 @@ console.log(`  ✓ cleared false image-backing on ${cleared.rows.length} documen
 const arks = (await pool.query(
   `SELECT DISTINCT source_url FROM person_documents
     WHERE document_type='census_slave_schedule'
-      AND error_text LIKE 'image_capture_failed%' AND source_url IS NOT NULL`)).rows;
+      AND context_snippet LIKE '%IMAGE CAPTURE FAILED%' AND source_url IS NOT NULL`)).rows;
 let queued = 0;
 for (const a of arks) {
   // Schema verified against information_schema before writing: question / repository / index_searched /
