@@ -83,14 +83,15 @@ if (!APPLY) {
 
 // 1. Un-gate. Keep the bad key in data_quality_flags so the failure stays visible and reversible.
 const cleared = await pool.query(
+  // NB person_documents has NO data_quality_flags column. An earlier version of this script assumed one
+  // and failed atomically (nothing applied, verified). The former key is preserved in error_text so the
+  // failure stays visible on the row and the change stays reversible.
   `UPDATE person_documents
       SET s3_key = NULL, s3_url = NULL,
-          data_quality_flags = COALESCE(data_quality_flags, '{}'::jsonb) || jsonb_build_object(
-            'image_capture_failed', true,
-            'reason', 'archived image was a FamilySearch sign-in page, not the document',
-            'former_s3_key', s3_key,
-            'needs_recapture_via', 'captureFamilySearchImage (Download button, issue #124)',
-            'cleared_at', now()::text)
+          error_text = 'image_capture_failed: archived image was a FamilySearch sign-in page, not the '
+            || 'document. former_s3_key=' || s3_key
+            || '. Re-capture via captureFamilySearchImage (Download button, issue #124). cleared '
+            || now()::date || COALESCE(' | prior: ' || error_text, '')
     WHERE document_type='census_slave_schedule' AND (${like})
     RETURNING id`, HASHES);
 console.log(`  ✓ cleared false image-backing on ${cleared.rows.length} documents (reversible — former key retained)`);
@@ -99,15 +100,19 @@ console.log(`  ✓ cleared false image-backing on ${cleared.rows.length} documen
 const arks = (await pool.query(
   `SELECT DISTINCT source_url FROM person_documents
     WHERE document_type='census_slave_schedule'
-      AND data_quality_flags->>'image_capture_failed' = 'true' AND source_url IS NOT NULL`)).rows;
+      AND error_text LIKE 'image_capture_failed%' AND source_url IS NOT NULL`)).rows;
 let queued = 0;
 for (const a of arks) {
+  // Schema verified against information_schema before writing: question / repository / index_searched /
+  // result are NOT NULL, and the timestamp column is searched_at, not created_at.
   await pool.query(
-    `INSERT INTO research_findings (subject_table, subject_id, searched_for, searched_by, outcome, detail, created_at)
-     VALUES ('person_documents', $1, '1860 page image re-capture (login-wall replacement)',
-             'repair-login-wall-image-links', 'pending_recapture', $2, now())`,
-    [a.source_url, JSON.stringify({ ark: a.source_url, method: 'captureFamilySearchImage', issue: 124 })]
-  ).then(() => queued++).catch(() => {});
+    `INSERT INTO research_findings
+       (question, repository, index_searched, result, subject_table, evidence_note, searched_by, searched_at)
+     VALUES ($1, 'FamilySearch', '1860 US Census Slave Schedules (cc=3161105)', 'pending',
+             'person_documents', $2, 'repair-login-wall-image-links', now())`,
+    ['Re-capture the page image for ' + a.source_url + ' — the archived image was a sign-in page',
+     JSON.stringify({ ark: a.source_url, method: 'captureFamilySearchImage', issue: 124 })]
+  ).then(() => queued++).catch((e) => { if (queued === 0) console.log('    (finding insert failed: ' + e.message.slice(0, 70) + ')'); });
 }
 console.log(`  ✓ queued ${queued} ARKs for genuine re-capture (research_findings)`);
 console.log(`\n  NEXT: re-capture needs the authenticated :9222 Chrome and the Download-button primitive.`);
