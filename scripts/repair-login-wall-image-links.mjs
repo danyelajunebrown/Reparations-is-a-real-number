@@ -106,12 +106,14 @@ const arks = (await pool.query(
       AND context_snippet LIKE '%IMAGE CAPTURE FAILED%' AND source_url IS NOT NULL`)).rows;
 let queued = 0;
 for (const a of arks) {
-  // Schema verified against information_schema before writing: question / repository / index_searched /
-  // result are NOT NULL, and the timestamp column is searched_at, not created_at.
+  // Schema verified against information_schema: question / repository / index_searched / result are NOT
+  // NULL and the timestamp is searched_at. `result` also carries a CHECK constraint —
+  // hit|none|partial|truncated|inaccessible — so 'pending' was rejected. 'inaccessible' is the honest
+  // value: the page WAS inaccessible at capture time, which is precisely why a sign-in page was stored.
   await pool.query(
     `INSERT INTO research_findings
        (question, repository, index_searched, result, subject_table, evidence_note, searched_by, searched_at)
-     VALUES ($1, 'FamilySearch', '1860 US Census Slave Schedules (cc=3161105)', 'pending',
+     VALUES ($1, 'FamilySearch', '1860 US Census Slave Schedules (cc=3161105)', 'inaccessible',
              'person_documents', $2, 'repair-login-wall-image-links', now())`,
     ['Re-capture the page image for ' + a.source_url + ' — the archived image was a sign-in page',
      JSON.stringify({ ark: a.source_url, method: 'captureFamilySearchImage', issue: 124 })]
