@@ -111,11 +111,31 @@ async function main() {
   const svc = new PersonService(pool);
 
   const queue = (await pool.query(
+    // ACCEPT EVERY 'not yet done' STATUS, not one exact string.
+    //
+    // 2,922 petitions sat unprocessed for a MONTH because a requeue wrote status='requeue_reprioritise'
+    // and this SELECT only matched 'queued'. The cron fired every 14 minutes and logged
+    // "=== APPLY === 0 petition(s)" each time — a job reporting success over a selection it could not
+    // see, which is this project's signature defect. Nothing in the codebase reads or writes
+    // 'requeue_reprioritise' any more; it was left behind by a script that has since changed.
+    //
+    // Three different 'waiting' spellings exist across the repo ('queued' here, 'pending' in
+    // autonomous-canonical-pipeline, plus the orphan). Matching on NOT-done rather than on one exact
+    // value means a future requeue cannot strand work again by inventing a fourth.
     `SELECT queue_id, ark_url, result FROM source_ingest_queue
-      WHERE source_kind='dlas_petition' AND status='queued'
+      WHERE source_kind='dlas_petition'
+        AND status IS DISTINCT FROM 'ingested' AND status IS DISTINCT FROM 'failed'
       ORDER BY (result->>'enslaved_count')::int DESC NULLS LAST, queue_id
       LIMIT $1`, [LIMIT])).rows;
   console.log(`${APPLY ? '=== APPLY ===' : '=== DRY RUN ==='} ${queue.length} petition(s)`);
+  if (!queue.length) {
+    // An empty selection is a FACT, and it must not look like success. '=== APPLY === 0 petition(s)'
+    // scrolled past every 14 minutes for a month while 2,922 petitions sat in a status this query could
+    // not see. Printing the actual queue states makes 'nothing to do' distinguishable from 'blind'.
+    const waiting = (await pool.query(
+      `SELECT status, count(*)::int n FROM source_ingest_queue WHERE source_kind='dlas_petition' GROUP BY 1 ORDER BY 2 DESC`)).rows;
+    console.log(`  nothing selected. queue states: ${waiting.map((r) => `${r.status}=${r.n}`).join(' · ') || '(table empty)'}`);
+  }
   if (!queue.length) { await pool.end(); return; }
 
   const st = { petitions: 0, people: 0, created: 0, linked: 0, rejected: 0, facts: 0, docs: 0, err: 0 };
